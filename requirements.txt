@@ -1,0 +1,4 @@
+# generated from manifests external_dependencies
+#
+# These addons need nothing beyond Odoo itself: lxml and markupsafe are already
+# Odoo dependencies, and git is invoked as a subprocess when present.

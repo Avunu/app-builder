@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_studio_root"
+              name="Studio"
+              sequence="200"
+              groups="group_studio_user"/>
+
+    <menuitem id="menu_studio_packages"
+              name="Packages"
+              parent="menu_studio_root"
+              action="studio_package_action"
+              sequence="10"/>
+</odoo>

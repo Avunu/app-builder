@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_studio_new_menu"
+              name="New Menu"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_menu_wizard_action"
+              sequence="70"/>
+
+    <menuitem id="menu_studio_new_access"
+              name="New Access Rule"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_access_wizard_action"
+              sequence="80"/>
+
+    <menuitem id="menu_studio_new_automation"
+              name="New Automation"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_automation_wizard_action"
+              sequence="90"/>
+</odoo>

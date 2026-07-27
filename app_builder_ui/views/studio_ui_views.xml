@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="studio_menu_wizard_view_form" model="ir.ui.view">
+        <field name="name">studio.menu.wizard.form</field>
+        <field name="model">studio.menu.wizard</field>
+        <field name="arch" type="xml">
+            <form string="New Menu">
+                <group>
+                    <field name="package_id"/>
+                    <field name="name"/>
+                    <field name="model_id"/>
+                    <field name="parent_id"/>
+                    <field name="view_mode"/>
+                    <field name="domain"/>
+                    <field name="sequence"/>
+                </group>
+                <footer>
+                    <button name="action_create" type="object" string="Create"
+                            class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="studio_menu_wizard_action" model="ir.actions.act_window">
+        <field name="name">New Menu</field>
+        <field name="res_model">studio.menu.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="studio_access_wizard_view_form" model="ir.ui.view">
+        <field name="name">studio.access.wizard.form</field>
+        <field name="model">studio.access.wizard</field>
+        <field name="arch" type="xml">
+            <form string="New Access Rule">
+                <group>
+                    <field name="package_id"/>
+                    <field name="model_id"/>
+                    <field name="group_id"/>
+                </group>
+                <group string="Permissions">
+                    <field name="perm_read"/>
+                    <field name="perm_write"/>
+                    <field name="perm_create"/>
+                    <field name="perm_unlink"/>
+                </group>
+                <footer>
+                    <button name="action_create" type="object" string="Create"
+                            class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="studio_access_wizard_action" model="ir.actions.act_window">
+        <field name="name">New Access Rule</field>
+        <field name="res_model">studio.access.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="studio_automation_wizard_view_form" model="ir.ui.view">
+        <field name="name">studio.automation.wizard.form</field>
+        <field name="model">studio.automation.wizard</field>
+        <field name="arch" type="xml">
+            <form string="New Automation">
+                <group>
+                    <field name="package_id"/>
+                    <field name="name"/>
+                    <field name="model_id"/>
+                    <field name="trigger"/>
+                    <field name="filter_domain" widget="domain"
+                           options="{'model': 'model_id', 'in_dialog': True}"/>
+                </group>
+                <group string="Do this">
+                    <field name="code" widget="ace" options="{'mode': 'python'}"
+                           nolabel="1"/>
+                </group>
+                <footer>
+                    <button name="action_create" type="object" string="Create"
+                            class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="studio_automation_wizard_action" model="ir.actions.act_window">
+        <field name="name">New Automation</field>
+        <field name="res_model">studio.automation.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

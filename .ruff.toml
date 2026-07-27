@@ -1,0 +1,43 @@
+
+target-version = "py310"
+fix = true
+
+[lint]
+extend-select = [
+    "B",
+    "C90",
+    "E501",  # line too long (default 88)
+    "I",  # isort
+    "UP",  # pyupgrade
+]
+extend-safe-fixes = ["UP008"]
+ignore = [
+    # Odoo's _() takes %-style placeholders so translation extraction can find
+    # them, so f-strings are not an option in user-facing messages; mixing the
+    # two styles across the codebase would be worse than being consistent.
+    "UP031",
+    # _inherit / _sql_constraints are Odoo class attributes, not dataclass
+    # fields; a ClassVar annotation on them is not idiomatic Odoo.
+    "RUF012",
+]
+exclude = ["setup/*"]
+
+[format]
+# Markdown is prettier's job here. Left to ruff, it rewrites the quotes inside
+# the README's generated-code example, which is verbatim real output -- the
+# compute body is the user's own text and genuinely comes out single-quoted.
+exclude = ["setup/*", "*.md"]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401", "I001"]  # ignore unused and unsorted imports in __init__.py
+"__manifest__.py" = ["B018"]  # useless expression
+
+[lint.isort]
+section-order = ["future", "standard-library", "third-party", "odoo", "odoo-addons", "first-party", "local-folder"]
+
+[lint.isort.sections]
+"odoo" = ["odoo"]
+"odoo-addons" = ["odoo.addons"]
+
+[lint.mccabe]
+max-complexity = 16

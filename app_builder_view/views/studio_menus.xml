@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_studio_view_editor"
+              name="View Editor"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_view_editor_action"
+              sequence="15"/>
+
+    <menuitem id="menu_studio_views"
+              name="Studio Views"
+              parent="app_builder_base.menu_studio_root"
+              action="ir_ui_view_action_studio"
+              sequence="60"/>
+</odoo>

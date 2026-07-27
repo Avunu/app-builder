@@ -1,0 +1,290 @@
+# Copyright 2026 Avunu LLC
+# License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
+"""Graduate-to-code: the handoff from metadata to owned source."""
+
+import ast
+import os
+
+from odoo.exceptions import UserError
+from odoo.tests import tagged
+
+from odoo.addons.base.models.ir_model import (
+    field_xmlid,
+    model_xmlid,
+    selection_xmlid,
+)
+
+from .common import StudioCase
+
+
+@tagged("post_install", "-at_install")
+class TestGraduate(StudioCase):
+    def _graduated_package(self):
+        package = self.make_package(name="x_grad_pkg")
+        self.build_demo_content(package)
+        package.action_write_files()
+        package.action_graduate(["x_studio_project"])
+        return package
+
+    # -- the xmlid contract that makes graduation safe --------------------
+
+    def test_xmlids_match_odoo_reflection_helpers(self):
+        """The whole handoff depends on this.
+
+        When the Python class loads, _reflect_models/_reflect_fields register
+        xmlids of their own. If ours differ, _process_end sees the originals as
+        stale and deletes the very records we just graduated.
+        """
+        package = self.make_package(name="x_xmlid_pkg")
+        model = self.build_demo_content(package)
+
+        self.assertEqual(
+            model.get_external_id()[model.id],
+            model_xmlid(package.name, "x_studio_project"),
+        )
+        field = self.env["ir.model.fields"]._get("x_studio_project", "x_name")
+        self.assertEqual(
+            field.get_external_id()[field.id],
+            field_xmlid(package.name, "x_studio_project", "x_name"),
+        )
+        stage = self.env["ir.model.fields"]._get("x_studio_project", "x_stage")
+        draft = stage.selection_ids.filtered(lambda s: s.value == "draft")
+        self.assertEqual(
+            draft.get_external_id()[draft.id],
+            selection_xmlid(package.name, "x_studio_project", "x_stage", "draft"),
+        )
+
+    # -- graduation -------------------------------------------------------
+
+    def test_graduation_writes_python_and_wires_imports(self):
+        package = self._graduated_package()
+        root = package.root_path
+        model_file = os.path.join(root, "models/x_studio_project.py")
+        self.assertTrue(os.path.isfile(model_file))
+
+        with open(model_file, encoding="utf-8") as handle:
+            source = handle.read()
+        ast.parse(source)
+        self.assertIn("class XStudioProject(models.Model):", source)
+
+        with open(os.path.join(root, "models/__init__.py"), encoding="utf-8") as h:
+            self.assertIn("from . import x_studio_project", h.read())
+        with open(os.path.join(root, "__init__.py"), encoding="utf-8") as h:
+            self.assertIn("from . import models", h.read())
+
+    def test_graduation_stops_emitting_xml_metadata(self):
+        """Emitting both the class and <record model="ir.model"> would double-define."""
+        package = self._graduated_package()
+        rendered = package._render_files()
+        self.assertNotIn("models/x_studio_project.xml", rendered)
+        self.assertFalse(
+            os.path.isfile(
+                os.path.join(package.root_path, "models/x_studio_project.xml")
+            ),
+            "the superseded XML must be pruned from disk",
+        )
+
+    def test_graduation_keeps_views_actions_and_acls_as_xml(self):
+        """Only the metadata moves; the rest stays as a hand-written addon would."""
+        package = self._graduated_package()
+        rendered = package._render_files()
+        self.assertIn("views/x_studio_project_views.xml", rendered)
+        self.assertIn("security/ir.model.access.csv", rendered)
+
+    def test_manifest_still_lists_only_data_files(self):
+        package = self._graduated_package()
+        manifest = ast.literal_eval(package._render_files()["__manifest__.py"])
+        for entry in manifest["data"]:
+            self.assertTrue(entry.endswith((".xml", ".csv")), entry)
+
+    def test_graduated_file_is_never_overwritten(self):
+        """Once handed off, the file is the developer's.
+
+        After the class loads, reflection flips the fields to state='base', so
+        regenerating would emit an empty class over working code.
+        """
+        package = self._graduated_package()
+        model_file = os.path.join(package.root_path, "models/x_studio_project.py")
+        with open(model_file, "a", encoding="utf-8") as handle:
+            handle.write("\n    # hand-written by a developer\n")
+
+        package.action_write_files()
+
+        with open(model_file, encoding="utf-8") as handle:
+            self.assertIn("hand-written by a developer", handle.read())
+
+    def test_models_init_preserves_hand_added_imports(self):
+        package = self._graduated_package()
+        init_path = os.path.join(package.root_path, "models/__init__.py")
+        with open(init_path, "a", encoding="utf-8") as handle:
+            handle.write("from . import my_own_module\n")
+
+        package.action_write_files()
+
+        with open(init_path, encoding="utf-8") as handle:
+            content = handle.read()
+        self.assertIn("from . import x_studio_project", content)
+        self.assertIn("from . import my_own_module", content)
+
+    def test_demotion_reclassifies_metadata_as_base(self):
+        """'manual' is what makes _add_manual_models compete with the class.
+
+        Reclassifying rather than deleting is what keeps _add_manual_models and
+        _add_manual_fields (which both select on state='manual') from rebuilding
+        a custom class that fights the Python one for the same _name.
+        """
+        package = self.make_package(name="x_demote_pkg")
+        self.build_demo_content(package)
+        package.action_write_files()
+        package.action_graduate(["x_studio_project"])
+
+        model = self.env["ir.model"].search([("model", "=", "x_studio_project")])
+        self.assertTrue(model, "the row must survive; only its state changes")
+        self.assertEqual(model.state, "base")
+        self.assertFalse(
+            self.env["ir.model.fields"].search(
+                [("model", "=", "x_studio_project"), ("state", "=", "manual")]
+            ),
+            "a field left as manual would be added twice at startup",
+        )
+
+    def test_demotion_keeps_the_table_and_its_data(self):
+        """The most destructive thing this feature could get wrong.
+
+        ir.model.fields.unlink calls _drop_column. If demotion ever deletes
+        instead of reclassifying, this test fails and user data is gone.
+        """
+        package = self.make_package(name="x_demote_data")
+        self.build_demo_content(package)
+        package.action_write_files()
+        record = self.env["x_studio_project"].create(
+            {"x_name": "Keep me", "x_budget": 7.0}
+        )
+        record_id = record.id
+        self.env.flush_all()
+
+        package.action_graduate(["x_studio_project"])
+
+        self.env.cr.execute(
+            "SELECT x_name, x_budget FROM x_studio_project WHERE id = %s",
+            (record_id,),
+        )
+        self.assertEqual(self.env.cr.fetchone(), ("Keep me", 7.0))
+
+    def test_demotion_does_not_cascade_into_dependent_records(self):
+        """Every model_id in Odoo is ondelete='cascade'.
+
+        Regression: deleting the ir.model row silently took the access rules,
+        record rules and automations with it.
+        """
+        package = self.make_package(name="x_demote_cascade")
+        self.build_demo_content(package)
+        model = self.env["ir.model"]._get("x_studio_project")
+        rule = self.env["ir.rule"].create(
+            {
+                "name": "demote rule",
+                "model_id": model.id,
+                "domain_force": "[(1, '=', 1)]",
+            }
+        )
+        server_action = self.env["ir.actions.server"].create(
+            {
+                "name": "demote action",
+                "model_id": model.id,
+                "state": "code",
+                "code": "pass",
+            }
+        )
+        package._assign([rule, server_action])
+        package.action_write_files()
+
+        package.action_graduate(["x_studio_project"])
+
+        self.assertTrue(rule.exists(), "record rules must survive graduation")
+        self.assertTrue(server_action.exists(), "server actions must survive")
+        self.assertTrue(
+            self.env["ir.model.access"].search(
+                [("model_id.model", "=", "x_studio_project")]
+            ),
+            "access rules must survive",
+        )
+
+    def test_demotion_preserves_the_xmlids_reflection_will_reuse(self):
+        """They must stay: reflection re-registers these exact names."""
+        package = self.make_package(name="x_demote_xmlid")
+        self.build_demo_content(package)
+        package.action_write_files()
+        before = set(
+            self.env["ir.model.data"]
+            .search([("module", "=", package.name), ("model", "=", "ir.model")])
+            .mapped("name")
+        )
+        package.action_graduate(["x_studio_project"])
+        after = set(
+            self.env["ir.model.data"]
+            .search([("module", "=", package.name), ("model", "=", "ir.model")])
+            .mapped("name")
+        )
+        self.assertEqual(before, after)
+        self.assertIn("model_x_studio_project", after)
+
+    def test_graduating_an_uninstalled_package_is_refused(self):
+        """Odoo only imports Python for installed modules.
+
+        Demoting the metadata without a module to load the class would leave
+        the model with no definition at all after a restart.
+        """
+        package = self.make_package(name="x_grad_uninstalled", installed=False)
+        self.build_demo_content(package)
+        package.action_write_files()
+        with self.assertRaises(UserError):
+            package.action_graduate(["x_studio_project"])
+
+    def test_graduating_an_unowned_model_is_refused(self):
+        package = self.make_package(name="x_grad_guard")
+        with self.assertRaises(UserError):
+            package.action_graduate(["res.partner"])
+
+    def test_graduating_nothing_is_refused(self):
+        package = self.make_package(name="x_grad_empty")
+        with self.assertRaises(UserError):
+            package.action_graduate([])
+
+    def test_graduation_is_idempotent(self):
+        package = self._graduated_package()
+        package.action_graduate(["x_studio_project"])
+        self.assertEqual(package.graduated_models, "x_studio_project")
+
+
+@tagged("post_install", "-at_install")
+class TestPackageTeardown(StudioCase):
+    def test_delete_records_removes_everything_but_keeps_files(self):
+        package = self.make_package(name="x_teardown")
+        self.build_demo_content(package)
+        package.action_write_files()
+        source = os.path.join(package.root_path, "models/x_studio_project.xml")
+        self.assertTrue(os.path.isfile(source))
+
+        package.action_delete_records()
+
+        self.assertFalse(
+            self.env["ir.model.data"].search([("module", "=", package.name)])
+        )
+        self.assertFalse(
+            self.env["ir.model"].search([("model", "=", "x_studio_project")])
+        )
+        self.assertEqual(package.state, "draft")
+        self.assertTrue(
+            os.path.isfile(source),
+            "source is the durable artifact; deleting records must not touch it",
+        )
+
+    def test_records_can_be_rebuilt_from_the_kept_files(self):
+        package = self.make_package(name="x_teardown_rebuild")
+        self.build_demo_content(package)
+        rendered = package._render_files()
+        package.action_delete_records()
+
+        self.load_rendered(package, rendered)
+        self.assertIn("x_studio_project", self.env)
+        self.assertEqual(package._render_files(), rendered)

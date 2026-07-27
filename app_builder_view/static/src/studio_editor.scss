@@ -1,0 +1,25 @@
+.o_studio_editor {
+    background-color: var(--o-view-background-color, #fff);
+
+    .o_studio_sidebar {
+        width: 320px;
+        min-width: 320px;
+    }
+
+    .o_studio_nodes {
+        // Tall enough to show real structure, bounded so the palette above it
+        // stays reachable without scrolling the whole sidebar.
+        max-height: 220px;
+        overflow-y: auto;
+    }
+
+    .o_studio_node:hover {
+        background-color: var(--o-list-row-selected-bg, #e6f2ff) !important;
+    }
+
+    .o_studio_preview {
+        // The preview renders a real view; keep it visually separated from the
+        // editing chrome so it is obvious what is being edited.
+        background-color: var(--o-webclient-background-color, #f9f9f9);
+    }
+}

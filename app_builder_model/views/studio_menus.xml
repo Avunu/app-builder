@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_studio_new_model"
+              name="New Model"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_model_wizard_action"
+              sequence="20"/>
+
+    <menuitem id="menu_studio_new_field"
+              name="New Field"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_field_wizard_action"
+              sequence="30"/>
+
+    <menuitem id="menu_studio_graduate"
+              name="Graduate to Code"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_graduate_wizard_action"
+              sequence="35"/>
+
+    <menuitem id="menu_studio_models"
+              name="Custom Models"
+              parent="app_builder_base.menu_studio_root"
+              action="ir_model_action_studio"
+              sequence="40"/>
+
+    <menuitem id="menu_studio_fields"
+              name="Custom Fields"
+              parent="app_builder_base.menu_studio_root"
+              action="ir_model_fields_action_studio"
+              sequence="50"/>
+</odoo>
