@@ -564,7 +564,7 @@ class TestEmitterIsIdempotent(StudioCase):
         package = self.make_package(name="x_emit_pkg")
         self.build_demo_content(package)
         package.action_write_files()
-        package.action_graduate(["x_studio_project"])
+        package.action_adopt(["x_studio_project"])
         return package
 
     def _source(self, package):
@@ -677,7 +677,7 @@ class TestLoadOrderFollowsModelSource(StudioCase):
         package = self.make_package(name="x_order_py")
         self.build_demo_content(package)
         package.action_write_files()
-        package.action_graduate(["x_studio_project"])
+        package.action_adopt(["x_studio_project"])
         data = ast.literal_eval(package._render_files()["__manifest__.py"])["data"]
         self.assertNotIn("models/x_studio_project.xml", data)
         self.assertEqual(
@@ -739,7 +739,7 @@ class TestDestructiveApplyGate(StudioCase):
         package = self.make_package(name="x_destr_pkg")
         self.build_demo_content(package)
         package.action_write_files()
-        package.action_graduate(["x_studio_project"])
+        package.action_adopt(["x_studio_project"])
         return package
 
     def _path(self, package):
@@ -832,7 +832,7 @@ class TestApplyIsRecoverable(StudioCase):
 
     def test_generated_python_that_cannot_be_reparsed_is_refused(self):
         package = self._python_package()
-        package.action_graduate(["x_studio_project"])
+        package.action_adopt(["x_studio_project"])
         entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
         with self.assertRaises(UserError):
             package._assert_specs_reparse(

@@ -6,8 +6,8 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 
-class StudioGraduateWizard(models.TransientModel):
-    _name = "studio.graduate.wizard"
+class StudioAdoptWizard(models.TransientModel):
+    _name = "studio.adopt.wizard"
     _description = "Studio: Graduate Models to Code"
 
     package_id = fields.Many2one("studio.package", required=True)
@@ -31,7 +31,7 @@ class StudioGraduateWizard(models.TransientModel):
                 wizard.available_model_ids = False
                 continue
             names = wizard.package_id._owned_model_names() - (
-                wizard.package_id._graduated_set()
+                wizard.package_id._python_model_set()
             )
             wizard.available_model_ids = self.env["ir.model"].search(
                 [("model", "in", list(names))]
@@ -50,8 +50,8 @@ class StudioGraduateWizard(models.TransientModel):
             )
         self.preview = "\n\n".join(chunks)
 
-    def action_graduate(self):
+    def action_adopt(self):
         self.ensure_one()
         if not self.model_ids:
             raise UserError(_("Choose at least one model."))
-        return self.package_id.action_graduate(self.model_ids.mapped("model"))
+        return self.package_id.action_adopt(self.model_ids.mapped("model"))

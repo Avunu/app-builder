@@ -70,8 +70,6 @@ def main():
     results = []
     model_name = None
     try:
-        from odoo.addons.app_builder_base.tools import scaffold
-
         # --- build it ----------------------------------------------------
         registry = Registry(dbname)
         with registry.cursor() as cr:
@@ -84,13 +82,22 @@ def main():
                     "auto_commit": "off",
                 }
             )
-            options = scaffold.ScaffoldOptions(
-                chatter=True, activities=True, stage=True, user=True, reference=True
+            # Through the wizard, not the builder API: this is the path a
+            # user actually takes, and it commits and rebuilds the registry,
+            # so no TransactionCase can reach it.
+            wizard = env["studio.model.wizard"].create(
+                {
+                    "package_id": package.id,
+                    "name": LABEL,
+                    "add_chatter": True,
+                    "add_stage": True,
+                    "add_user": True,
+                    "add_reference": True,
+                }
             )
-            built = env["studio.app.builder"].create_app(
-                package, LABEL, options=options
-            )
-            model_name = built["model"].model
+            wizard._onchange_name()
+            action = wizard.action_create()
+            model_name = action["res_model"]
             cr.commit()
 
         print("  built model: %s" % model_name)

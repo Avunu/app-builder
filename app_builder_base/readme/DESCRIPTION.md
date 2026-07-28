@@ -12,5 +12,5 @@ rather than by database id, relations always emitted as `ref="xmlid"` — so an
 unchanged package re-serializes byte-identically and produces an empty diff.
 
 This module on its own gives you packages, serialization, drift detection,
-module reload and graduate-to-code. The builder UIs live in `app_builder_model`,
+module reload and adoption of existing models. The builder UIs live in `app_builder_model`,
 `app_builder_view` and `app_builder_ui`.

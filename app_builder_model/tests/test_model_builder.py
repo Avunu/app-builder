@@ -4,67 +4,101 @@
 
 import os
 
+from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.app_builder_base.tools import scaffold
 
 
 @tagged("post_install", "-at_install")
 class TestModelBuilder(StudioCase):
-    def test_wizard_builds_a_working_model_and_writes_source(self):
-        package = self.make_package(name="x_builder_demo")
-        wizard = self.env["studio.model.wizard"].create(
+    def make_manual_model(self, package, model_name, label="Demo"):
+        """A manual model, made directly.
+
+        The wizard builds Python and reloads the package, which commits -- so
+        it cannot be used as a fixture inside a TransactionCase. These tests
+        are about the *field* builder and about ownership, so a plain manual
+        model is the right stand-in.
+        """
+        model = self.env["ir.model"].create(
             {
-                "package_id": package.id,
-                "name": "Builder Project",
-                "model": "x_builder_project",
+                "name": label,
+                "model": model_name,
+                "field_id": [
+                    Command.create(
+                        {
+                            "name": "x_name",
+                            "ttype": "char",
+                            "field_description": "Name",
+                        }
+                    )
+                ],
             }
         )
-        wizard.action_create()
-
-        # The model is live in this transaction, with no upgrade cycle.
-        self.assertIn("x_builder_project", self.env)
-        record = self.env["x_builder_project"].create({"x_name": "First"})
-        self.assertEqual(record.x_name, "First")
-
-        # ...and it exists as source.
-        root = package.root_path
-        self.assertTrue(
-            os.path.isfile(os.path.join(root, "models/x_builder_project.xml"))
+        package.studio_capture(
+            [model, model.field_id.filtered(lambda f: f.state == "manual")]
         )
-        self.assertTrue(
-            os.path.isfile(os.path.join(root, "views/x_builder_project_views.xml"))
-        )
-        self.assertTrue(
-            os.path.isfile(os.path.join(root, "security/ir.model.access.csv"))
-        )
+        return model
 
-    def test_wizard_rejects_non_x_prefixed_model(self):
-        package = self.make_package(name="x_builder_reject")
+    def test_the_wizard_derives_a_clean_technical_name(self):
+        """No x_ prefix: a Python-defined model has no such requirement, and
+        the name is what users see in filters and domains."""
+        package = self.make_package(name="x_naming_demo")
+        wizard = self.env["studio.model.wizard"].new(
+            {"package_id": package.id, "name": "My Great Thing"}
+        )
+        wizard._onchange_name()
+        self.assertEqual(wizard.model, "naming_demo.my_great_thing")
+        self.assertNotIn("x_", wizard.model)
+
+    def test_the_derived_name_follows_the_package(self):
+        first = self.make_package(name="x_alpha_pkg")
+        second = self.make_package(name="x_beta_pkg")
+        wizard = self.env["studio.model.wizard"].new(
+            {"package_id": first.id, "name": "Job"}
+        )
+        wizard._onchange_name()
+        self.assertEqual(wizard.model, "alpha_pkg.job")
+        wizard.package_id = second
+        wizard._onchange_package_id()
+        self.assertEqual(wizard.model, "beta_pkg.job")
+
+    def test_the_wizard_refuses_a_read_only_package(self):
+        """Production runs read-only from the store; say so rather than
+        failing somewhere deeper."""
+        package = self.make_package(name="x_ro_demo", root_path="/proc/nonwritable")
         wizard = self.env["studio.model.wizard"].create(
-            {"package_id": package.id, "name": "Bad", "model": "bad_model"}
+            {"package_id": package.id, "name": "Nope"}
         )
         with self.assertRaises(UserError):
             wizard.action_create()
 
-    def test_onchange_slugifies_the_technical_name(self):
-        wizard = self.env["studio.model.wizard"].new({"name": "My Great Thing"})
-        wizard._onchange_name()
-        self.assertEqual(wizard.model, "x_my_great_thing")
+    def test_scaffold_options_map_from_the_wizard_checkboxes(self):
+        """What the dialog offers has to reach the spec, or the checkboxes lie."""
+        spec = scaffold.scaffold_spec(
+            "demo.job",
+            "Demo Job",
+            scaffold.ScaffoldOptions(
+                chatter=True, activities=True, stage=True, user=True, reference=True
+            ),
+        )
+        names = spec.field_names
+        for expected in ("name", "state", "user_id", "reference"):
+            self.assertIn(expected, names)
+        self.assertEqual(spec.inherit, ("mail.thread", "mail.activity.mixin"))
+        self.assertEqual(spec.sequence_field, "reference")
+
+    # The wizard's actual build -- write the class, install, reload, then make
+    # the views against the live model -- commits and rebuilds the registry, so
+    # it cannot run in a TransactionCase at all. It is covered end to end by
+    # app_builder_base/tests/e2e/probe_scaffold.py, which also checks the thing
+    # that matters most: that a plain internal user can see the result.
 
     def test_field_wizard_creates_a_stored_compute(self):
         package = self.make_package(name="x_field_demo")
-        self.env["studio.model.wizard"].create(
-            {
-                "package_id": package.id,
-                "name": "Field Demo",
-                "model": "x_field_demo_model",
-                "add_views": False,
-                "add_menu": False,
-            }
-        ).action_create()
-        model = self.env["ir.model"]._get("x_field_demo_model")
+        model = self.make_manual_model(package, "x_field_demo_model", "Field Demo")
 
         self.env["studio.field.wizard"].create(
             {
@@ -88,16 +122,7 @@ class TestModelBuilder(StudioCase):
 
     def test_field_wizard_requires_relation_for_relational_types(self):
         package = self.make_package(name="x_rel_demo")
-        self.env["studio.model.wizard"].create(
-            {
-                "package_id": package.id,
-                "name": "Rel Demo",
-                "model": "x_rel_demo_model",
-                "add_views": False,
-                "add_menu": False,
-            }
-        ).action_create()
-        model = self.env["ir.model"]._get("x_rel_demo_model")
+        model = self.make_manual_model(package, "x_rel_demo_model", "Rel Demo")
         wizard = self.env["studio.field.wizard"].create(
             {
                 "package_id": package.id,
@@ -112,55 +137,29 @@ class TestModelBuilder(StudioCase):
 
     def test_package_ownership_is_readable_from_the_record(self):
         package = self.make_package(name="x_owner_demo")
-        self.env["studio.model.wizard"].create(
-            {
-                "package_id": package.id,
-                "name": "Owner Demo",
-                "model": "x_owner_demo_model",
-                "add_views": False,
-                "add_menu": False,
-            }
-        ).action_create()
-        model = self.env["ir.model"]._get("x_owner_demo_model")
+        model = self.make_manual_model(package, "x_owner_demo_model", "Owner Demo")
         self.assertEqual(model.studio_package_id, package)
 
-    def test_graduate_wizard_previews_the_source(self):
+    def test_adopt_wizard_previews_the_source(self):
         package = self.make_package(name="x_grad_wizard")
-        self.env["studio.model.wizard"].create(
-            {
-                "package_id": package.id,
-                "name": "Grad Demo",
-                "model": "x_grad_demo",
-                "add_views": False,
-                "add_menu": False,
-            }
-        ).action_create()
-        model = self.env["ir.model"]._get("x_grad_demo")
-        wizard = self.env["studio.graduate.wizard"].create(
+        model = self.make_manual_model(package, "x_grad_demo", "Grad Demo")
+        wizard = self.env["studio.adopt.wizard"].create(
             {"package_id": package.id, "model_ids": [(6, 0, model.ids)]}
         )
         wizard._onchange_model_ids()
         self.assertIn("class XGradDemo", wizard.preview)
         self.assertIn("x_name = fields.Char", wizard.preview)
 
-    def test_graduate_wizard_only_offers_owned_ungraduated_models(self):
+    def test_adopt_wizard_only_offers_owned_unpython_models(self):
         package = self.make_package(name="x_grad_avail")
-        self.env["studio.model.wizard"].create(
-            {
-                "package_id": package.id,
-                "name": "Avail Demo",
-                "model": "x_avail_demo",
-                "add_views": False,
-                "add_menu": False,
-            }
-        ).action_create()
-        wizard = self.env["studio.graduate.wizard"].create({"package_id": package.id})
+        self.make_manual_model(package, "x_avail_demo", "Avail Demo")
+        wizard = self.env["studio.adopt.wizard"].create({"package_id": package.id})
         wizard._compute_available_model_ids()
         offered = wizard.available_model_ids.mapped("model")
         self.assertIn("x_avail_demo", offered)
-        self.assertNotIn("res.partner", offered, "only models we own are graduable")
+        self.assertNotIn("res.partner", offered, "only models we own can be adopted")
 
-        package.action_graduate(["x_avail_demo"])
+        package.action_adopt(["x_avail_demo"])
         wizard._compute_available_model_ids()
         self.assertNotIn(
             "x_avail_demo",
@@ -178,16 +177,7 @@ class TestModelBuilder(StudioCase):
     def test_new_field_inherits_its_model_package(self):
         """A field added later must not be left out of the source tree."""
         package = self.make_package(name="x_inherit_pkg")
-        self.env["studio.model.wizard"].create(
-            {
-                "package_id": package.id,
-                "name": "Inherit Demo",
-                "model": "x_inherit_demo",
-                "add_views": False,
-                "add_menu": False,
-            }
-        ).action_create()
-        model = self.env["ir.model"]._get("x_inherit_demo")
+        model = self.make_manual_model(package, "x_inherit_demo", "Inherit Demo")
 
         field = self.env["ir.model.fields"].create(
             {

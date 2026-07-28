@@ -1,6 +1,6 @@
 from . import (
     common,
-    test_graduate,
+    test_adopt,
     test_manifest,
     test_modelspec,
     test_package,

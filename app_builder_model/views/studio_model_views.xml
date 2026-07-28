@@ -7,14 +7,27 @@
             <form string="New Model">
                 <group>
                     <field name="package_id"/>
-                    <field name="name" placeholder="Project"/>
-                    <field name="model" placeholder="x_project"/>
+                    <field name="name" placeholder="Workshop Job"/>
+                    <field name="model" placeholder="left empty, derived from the label"/>
                 </group>
-                <group string="Also create">
-                    <field name="add_views"/>
-                    <field name="add_menu"/>
-                    <field name="add_access"/>
+                <group string="Include">
+                    <field name="add_chatter"/>
+                    <field name="add_stage"/>
+                    <field name="add_user"/>
+                    <field name="add_reference"/>
+                    <field name="add_date"/>
                 </group>
+                <group string="Access">
+                    <field name="groups_ids" widget="many2many_tags"
+                           placeholder="Internal User"/>
+                </group>
+                <div class="alert alert-info" role="alert">
+                    This writes a real Python model, its views, an action, a
+                    menu and access rules, then reloads the package so you can
+                    use it straight away. Only the marked block inside the
+                    generated class belongs to the builder — the rest of the
+                    file is yours.
+                </div>
                 <footer>
                     <button name="action_create" type="object" string="Create"
                             class="btn-primary"/>
@@ -71,18 +84,22 @@
         <field name="target">new</field>
     </record>
 
-    <record id="studio_graduate_wizard_view_form" model="ir.ui.view">
-        <field name="name">studio.graduate.wizard.form</field>
-        <field name="model">studio.graduate.wizard</field>
+    <record id="studio_adopt_wizard_view_form" model="ir.ui.view">
+        <field name="name">studio.adopt.wizard.form</field>
+        <field name="model">studio.adopt.wizard</field>
         <field name="arch" type="xml">
-            <form string="Graduate to Code">
+            <form string="Adopt an existing model">
                 <div class="alert alert-info" role="alert">
-                    Graduating turns a visually-built model into an ordinary Python
-                    class you own. The records, the table and its data are untouched —
-                    only where the definition lives changes. The builder stops
-                    emitting XML for it and will never overwrite the file again.
-                    <b>Restart the server</b> (or rely on <code>--dev=reload</code>)
-                    for the class to take effect.
+                    New models are already Python. This is for the ones that
+                    are not yet — an <code>x_</code> model built by an older
+                    version of the studio, or made by hand in Settings →
+                    Technical. The records, the table and its data are
+                    untouched; only where the definition lives changes.
+                    <b>Afterwards it behaves like any other model the builder
+                    owns</b>: the marked block inside its class stays in sync
+                    and everything outside it is yours. Takes effect once the
+                    package reloads, which <code>--dev=reload</code> does
+                    automatically.
                 </div>
                 <group>
                     <field name="package_id"/>
@@ -94,7 +111,7 @@
                            nolabel="1" readonly="1"/>
                 </group>
                 <footer>
-                    <button name="action_graduate" type="object" string="Graduate"
+                    <button name="action_adopt" type="object" string="Adopt"
                             class="btn-primary"/>
                     <button string="Cancel" class="btn-secondary" special="cancel"/>
                 </footer>
@@ -102,9 +119,9 @@
         </field>
     </record>
 
-    <record id="studio_graduate_wizard_action" model="ir.actions.act_window">
-        <field name="name">Graduate to Code</field>
-        <field name="res_model">studio.graduate.wizard</field>
+    <record id="studio_adopt_wizard_action" model="ir.actions.act_window">
+        <field name="name">Adopt Existing Model</field>
+        <field name="res_model">studio.adopt.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
     </record>

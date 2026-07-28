@@ -12,10 +12,10 @@
               action="studio_field_wizard_action"
               sequence="30"/>
 
-    <menuitem id="menu_studio_graduate"
-              name="Graduate to Code"
+    <menuitem id="menu_studio_adopt"
+              name="Adopt Existing Model"
               parent="app_builder_base.menu_studio_root"
-              action="studio_graduate_wizard_action"
+              action="studio_adopt_wizard_action"
               sequence="35"/>
 
     <menuitem id="menu_studio_models"

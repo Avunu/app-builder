@@ -120,8 +120,8 @@ class StudioPackage(models.Model):
         compute="_compute_reload_mode",
         help="How this deployment can pick up newly generated Python.",
     )
-    graduated_models = fields.Char(
-        compute="_compute_graduated_models",
+    python_models = fields.Char(
+        compute="_compute_python_models",
         store=False,
         readonly=True,
         help="Models defined as Python classes. Kept as a plain string for "
@@ -278,9 +278,9 @@ class StudioPackage(models.Model):
         return grouped
 
     @api.depends("model_ids.model", "model_ids.source")
-    def _compute_graduated_models(self):
+    def _compute_python_models(self):
         for package in self:
-            package.graduated_models = ", ".join(sorted(package._python_model_set()))
+            package.python_models = ", ".join(sorted(package._python_model_set()))
 
     def _python_model_set(self):
         """Models this package defines in Python, frozen ones included.
@@ -294,9 +294,6 @@ class StudioPackage(models.Model):
             for m in self.model_ids
             if m.source in ("python", "frozen") and m.model
         }
-
-    def _graduated_set(self):
-        return self._python_model_set()
 
     def _owned_model_names(self):
         """Custom models this package owns, graduated or not.
@@ -761,17 +758,20 @@ class StudioPackage(models.Model):
 
     # -- graduate to code -------------------------------------------------
 
-    def action_graduate(self, model_names):
-        """Convert manual models into real Python classes in this package.
+    def action_adopt(self, model_names):
+        """Bring an existing ``x_`` manual model under Python management.
 
-        This is the capability Odoo Studio does not have: the customization
-        stops being metadata and becomes source a developer owns. It is safe
-        because the xmlids Odoo's reflection assigns to a code-defined model are
-        the same ones we emitted in XML, so the records, the table and its data
-        all survive; only where the definition *lives* changes.
+        Not a milestone, and not a handoff. New models are Python from the
+        first save; this is the migration path for what came before -- a
+        package built by an older version of the studio, or a model somebody
+        made by hand in Settings -> Technical.
 
-        The new class only takes effect once the Python process reloads, which
-        ``--dev=reload`` does automatically in development.
+        Afterwards the model is exactly like any other the builder owns: the
+        marked block inside its class stays in sync, and everything outside it
+        is the developer's. Adopting does not close any door.
+
+        The new class takes effect once the package reloads, which
+        ``--dev=reload`` does for you.
         """
         self._assert_studio_manager()
         self.ensure_one()
@@ -794,7 +794,7 @@ class StudioPackage(models.Model):
         # retired by it, so the Python must be on disk before the demotion; and
         # the XML must be rendered after it, so that _ownable (which excludes
         # state='base') naturally stops emitting what the class now defines.
-        self._write_graduated_source(requested)
+        self._write_adopted_source(requested)
         for model_name in sorted(requested):
             self.env["studio.package.model"]._adopt(self, model_name, source="python")
         self._demote_manual_metadata(requested)
@@ -839,7 +839,7 @@ class StudioPackage(models.Model):
                 )
             )
 
-    def _write_graduated_source(self, model_names):
+    def _write_adopted_source(self, model_names):
         """Emit the Python for ``model_names`` from their live metadata.
 
         Written directly rather than through ``action_write_files`` because
@@ -850,7 +850,7 @@ class StudioPackage(models.Model):
         env = self._source_env()
         root = self.root_path
         os.makedirs(os.path.join(root, "models"), exist_ok=True)
-        emitted = sorted(self._graduated_set() | set(model_names))
+        emitted = sorted(self._python_model_set() | set(model_names))
 
         for model_name in sorted(model_names):
             relative = "models/%s" % pycodegen.module_file_for(model_name)

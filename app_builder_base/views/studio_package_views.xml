@@ -71,8 +71,8 @@
                             <field name="is_git"/>
                             <field name="git_branch" invisible="not is_git"/>
                             <field name="auto_commit" invisible="not is_git"/>
-                            <field name="graduated_models"
-                                   invisible="not graduated_models"/>
+                            <field name="python_models"
+                                   invisible="not python_models"/>
                         </group>
                     </group>
                     <notebook>

@@ -6,6 +6,7 @@ import os
 
 from lxml import etree
 
+from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -253,14 +254,43 @@ class TestViewEditor(StudioCase):
         self.assertTrue(any(v["type"] == "form" for v in views))
 
     def test_edit_on_a_custom_model_view(self):
-        """End to end on a model the studio itself created."""
-        self.env["studio.model.wizard"].create(
+        """End to end on a model the studio itself owns.
+
+        Builds the model directly rather than through the wizard: the wizard
+        now writes Python and reloads the package, which commits -- so it
+        cannot run inside a TransactionCase at all. That path is covered by
+        tests/e2e/probe_scaffold.py.
+        """
+        model = self.env["ir.model"].create(
             {
-                "package_id": self.package.id,
                 "name": "View Demo",
                 "model": "x_view_demo",
+                "field_id": [
+                    Command.create(
+                        {
+                            "name": "x_name",
+                            "ttype": "char",
+                            "field_description": "Name",
+                        }
+                    )
+                ],
             }
-        ).action_create()
+        )
+        self.package.studio_capture(
+            [model, model.field_id.filtered(lambda f: f.state == "manual")]
+        )
+        view = self.env["ir.ui.view"].create(
+            {
+                "name": "x_view_demo.form",
+                "model": "x_view_demo",
+                "arch": (
+                    '<form string="View Demo"><sheet><group>'
+                    '<field name="x_name"/>'
+                    "</group></sheet></form>"
+                ),
+            }
+        )
+        self.package.studio_capture(view)
         self.env["ir.model.fields"].create(
             {
                 "name": "x_note",
