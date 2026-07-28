@@ -235,6 +235,18 @@ def _import_sort(name):
     return (0 if name == "_" else 1, name)
 
 
+def _docstring(text):
+    """A class docstring holding exactly ``text``.
+
+    Triple quotes read best, but fall back to an ordinary string literal when
+    the text contains something that would break out of them -- correctness
+    beats convention, and the value ends up in ``ir_model.info`` either way.
+    """
+    if '"' not in text and "\\" not in text and "\n" not in text:
+        return '    """%s"""' % text
+    return "    %s" % _py(text)
+
+
 def _render_class_header(spec):
     base = "models.TransientModel" if spec.transient else "models.Model"
     lines = ["class %s(%s):" % (spec.class_name, base)]
@@ -242,7 +254,11 @@ def _render_class_header(spec):
     # from the first docstring in the MRO, so a model without one inherits
     # mail.thread's or models.Model's -- which makes `info` unpredictable and
     # breaks the reflection-agreement invariant.
-    lines.append('    """%s."""' % spec.description.rstrip("."))
+    #
+    # Emitted verbatim, with no added punctuation: `info` is this string, so
+    # anything we tack on here shows up in the database and the prediction
+    # stops being exact.
+    lines.append(_docstring(spec.description))
     lines.append("")
     lines.append("    _name = %s" % _py(spec.name))
     if spec.inherit:

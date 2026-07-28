@@ -9,9 +9,12 @@ in agreement and to be honest when they are not.
 
 import logging
 import os
+import sys
 
 from odoo import _, api, fields, models
+from odoo import models as models_module
 from odoo.exceptions import UserError, ValidationError
+from odoo.tools import config as tools_config
 
 from odoo.addons.base.models.ir_model import (
     field_xmlid,
@@ -19,7 +22,15 @@ from odoo.addons.base.models.ir_model import (
     selection_xmlid,
 )
 
-from ..tools import checksum, gitrepo, pycodegen, xml_writer
+from ..tools import (
+    checksum,
+    gitrepo,
+    migrationgen,
+    modelspec,
+    pycodegen,
+    pyparse,
+    xml_writer,
+)
 from ..tools import manifest as manifest_tools
 
 _logger = logging.getLogger(__name__)
@@ -98,6 +109,16 @@ class StudioPackage(models.Model):
         "package_id",
         string="Models",
         help="Models this package defines, and where each definition lives.",
+    )
+    apply_ids = fields.One2many("studio.package.apply", "package_id", readonly=True)
+    reload_mode = fields.Selection(
+        [
+            ("inproc", "In this process"),
+            ("restart", "Server restart (--dev=reload)"),
+            ("manual", "Manual restart required"),
+        ],
+        compute="_compute_reload_mode",
+        help="How this deployment can pick up newly generated Python.",
     )
     graduated_models = fields.Char(
         compute="_compute_graduated_models",
@@ -911,6 +932,262 @@ class StudioPackage(models.Model):
                 continue
             keep.append(entry)
         return self.env["ir.model.data"].browse([e.id for e in keep])
+
+    # -- apply -------------------------------------------------------------
+
+    def _compute_reload_mode(self):
+        """How this deployment can pick up new Python.
+
+        ``manual`` is the correct answer under multiple workers, not a cop-out.
+        ``setup_models`` sets ``registry_invalidated``, so every other worker
+        rebuilds its registry -- but their ``sys.modules`` still holds the old
+        Python, so they would rebuild against a stale class. An in-process
+        re-import across workers is not slow, it is wrong.
+        """
+        workers = tools_config["workers"]
+        dev = tools_config["dev_mode"] or []
+        for package in self:
+            if "reload" in dev:
+                package.reload_mode = "restart"
+            elif not workers:
+                package.reload_mode = "inproc"
+            else:
+                package.reload_mode = "manual"
+
+    def _reimport_module(self):
+        """Purge this package's Python so it is imported again.
+
+        Proven necessary in ``tests/e2e/probe_reimport.py``:
+        ``load_openerp_module`` early-returns when ``odoo.addons.<name>`` is
+        already in ``sys.modules``, so an upgrade without this reports success
+        and silently re-runs the data files against the *old* classes.
+
+        ``MetaModel.module_to_models`` is append-only, so skipping it registers
+        every class a second time.
+        """
+        self.ensure_one()
+        prefix = "odoo.addons.%s" % self.name
+        for name in [
+            m for m in sys.modules if m == prefix or m.startswith(prefix + ".")
+        ]:
+            del sys.modules[name]
+        models_module.MetaModel.module_to_models.pop(self.name, None)
+        self._invalidate_module_caches()
+
+    def _reload_now(self):
+        """Make the running process see the source that is on disk.
+
+        Order is load-bearing and was measured, not reasoned about: purge
+        first, so the import happens at all; *then* upgrade, so ``init_models``
+        runs and the schema follows. Purging alone leaves the new field in the
+        ORM and absent from Postgres, because ``Registry.new`` only runs
+        ``init_models`` for modules marked ``to upgrade``.
+        """
+        self.ensure_one()
+        if self.reload_mode == "manual":
+            raise UserError(
+                _(
+                    "This server runs %(workers)s worker processes, so a "
+                    "package cannot be reloaded in place: the other workers "
+                    "would rebuild their registry against the Python they "
+                    "already have in memory. Restart the server to pick this "
+                    "change up.",
+                    workers=tools_config["workers"],
+                )
+            )
+        self._reimport_module()
+        module = self._find_or_create_module()
+        if module.state == "installed":
+            return module.button_immediate_upgrade()
+        return module.button_immediate_install()
+
+    def _assert_sources_compile(self, files):
+        """Refuse to write Python that will not import.
+
+        This is the step that keeps a bad apply recoverable. Once a broken
+        module file is on disk, the next request re-imports it during
+        ``load_modules`` and the database will not boot -- for everybody, not
+        just whoever pressed the button.
+        """
+        for path, content in sorted(files.items()):
+            if not path.endswith(".py"):
+                continue
+            try:
+                compile(content, path, "exec")
+            except SyntaxError as err:
+                raise UserError(
+                    _(
+                        "Generated %(path)s is not valid Python (%(err)s). "
+                        "Nothing was written.",
+                        path=path,
+                        err=err,
+                    )
+                ) from err
+
+    def _assert_specs_reparse(self, files):
+        """Everything we are about to write must read back as what it says.
+
+        Cheap here, and the alternative is discovering on the next save that a
+        file we generated is one the parser refuses -- at which point the model
+        freezes and the builder appears to have broken itself.
+        """
+        self.ensure_one()
+        for entry in self.model_ids.filtered(lambda m: m.source == "python"):
+            content = files.get(entry.python_path)
+            if content is None:
+                continue
+            try:
+                spec = pyparse.parse_model(content)
+            except pyparse.UnsupportedConstruct as err:
+                raise UserError(
+                    _(
+                        "Generated %(path)s is not something the builder can "
+                        "read back (%(err)s). Nothing was written.",
+                        path=entry.python_path,
+                        err=err,
+                    )
+                ) from err
+            if pycodegen.render_model(spec) != content:
+                raise UserError(
+                    _(
+                        "Generated %(path)s does not round-trip. Nothing was "
+                        "written; please report this.",
+                        path=entry.python_path,
+                    )
+                )
+
+    def _destructive_changes(self, files):
+        """Columns this apply would drop, per model.
+
+        The baseline has to be the *database*, not the file. Since the emitter
+        now regenerates from disk, comparing the two would find nothing the
+        moment a developer edits the file directly -- which is exactly the case
+        where a column is about to disappear. What matters is which fields
+        currently have a column and are not in the source we are about to
+        write, however they came to be missing.
+
+        Only fields this package introduced count. A field another module put
+        on the same model is not ours to drop and Odoo will not drop it.
+        """
+        self.ensure_one()
+        dropped = {}
+        owned_field_ids = self._owned_field_ids()
+        for entry in self.model_ids.filtered(lambda m: m.source == "python"):
+            source = files.get(entry.python_path)
+            if source is None:
+                continue
+            try:
+                after = pyparse.parse_model(source)
+            except pyparse.UnsupportedConstruct:
+                continue  # frozen; we are not rewriting it anyway
+            keeping = set(after.field_names)
+            model = self.env["ir.model"].search([("model", "=", entry.model)], limit=1)
+            if not model:
+                continue
+            gone = sorted(
+                record.name
+                for record in model.field_id
+                if record.id in owned_field_ids
+                and record.store
+                and record.name not in keeping
+                and record.name not in modelspec.MAGIC_COLUMNS
+            )
+            if gone:
+                dropped[entry.model] = tuple(gone)
+        return dropped
+
+    def _owned_field_ids(self):
+        """ids of ``ir.model.fields`` records carrying this package's xmlid."""
+        self.ensure_one()
+        entries = self.env["ir.model.data"].search(
+            [("module", "=", self.name), ("model", "=", "ir.model.fields")]
+        )
+        return set(entries.mapped("res_id"))
+
+    def _write_pre_migrations(self, dropped, stamp):
+        """Rename each doomed column aside before Odoo can drop it."""
+        self.ensure_one()
+        files = {}
+        for model_name, columns in sorted(dropped.items()):
+            table = model_name.replace(".", "_")
+            content = migrationgen.render_pre_migration(table, columns, stamp)
+            if content:
+                files[migrationgen.migration_path(self.version, stamp)] = content
+        return files
+
+    def action_apply(self, reason="", allow_destructive=False):
+        """Write the package and make the running process see it.
+
+        The sequence is fixed and none of it is optional -- see the class
+        docstring on ``studio.package.apply`` for why a half-finished apply is
+        not something the ORM can roll back for us.
+        """
+        self._assert_studio_manager()
+        self.ensure_one()
+        self._assert_writable()
+
+        files = self._render_files()  # 1. render to memory
+        self._assert_sources_compile(files)  # 2. validate before touching disk
+        self._assert_specs_reparse(files)
+
+        stamp = fields.Datetime.now().strftime("%Y%m%d%H%M%S")
+
+        dropped = self._destructive_changes(files)
+        if dropped and not allow_destructive:
+            raise UserError(
+                _(
+                    "This change removes stored field(s) and would drop their "
+                    "data:\n\n%(detail)s\n\nApply it again with the "
+                    "destructive option to keep the data under a renamed "
+                    "column instead.",
+                    detail="\n".join(
+                        "  %s: %s" % (model, ", ".join(cols))
+                        for model, cols in sorted(dropped.items())
+                    ),
+                )
+            )
+        if dropped:
+            # Ordering is what makes this work: migrate_module(pkg, 'pre') runs
+            # long before _process_end, so by the time _drop_column looks the
+            # column is already gone under its old name and it drops nothing.
+            files.update(self._write_pre_migrations(dropped, stamp))
+        apply = self.env["studio.package.apply"]._snapshot(  # 3. keep the old bytes
+            self, files, reason=reason, stamp=stamp
+        )
+        if self.is_git:
+            gitrepo.commit(self.root_path, "studio: before %s" % (reason or "apply"))
+
+        written = self._write_files(files)  # 4. write
+        self._sync_file_records(files)
+        self._run_auto_commit(written)
+        self.env.cr.commit()  # 5. commit BEFORE the reload
+
+        try:
+            self._reload_now()  # 6. reimport, then upgrade
+        except Exception as err:  # 7. restore and go back to a good registry
+            _logger.exception("Apply failed for package %s", self.name)
+            apply._restore()
+            self.env.cr.commit()
+            try:
+                self._reload_now()
+            except Exception:  # pragma: no cover - already in trouble
+                _logger.exception(
+                    "Could not reload %s after a failed apply; the package on "
+                    "disk has been restored but this process may be stale",
+                    self.name,
+                )
+            apply.write({"state": "failed", "error": str(err)})
+            raise UserError(
+                _(
+                    "This change could not be applied and has been rolled "
+                    "back:\n\n%(err)s",
+                    err=err,
+                )
+            ) from err
+
+        apply.state = "applied"
+        self.state = "synced"
+        return apply
 
     # -- drift ------------------------------------------------------------
 

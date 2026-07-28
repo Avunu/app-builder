@@ -46,3 +46,23 @@ do it: a destructive spec diff has to emit a `migrations/<version>/pre-migration
 renames the column aside first. `migrate_module(package, 'pre')` runs long before
 `_process_end`, so by then the column no longer exists under its old name and `_drop_column`
 drops nothing.
+
+## `probe_reflection.py` -- does the database agree with the source? (I2)
+
+For a Python-backed model the old round-trip invariant is false by construction: the database
+is produced by class loading, not by the files being compared. What replaces it is a
+*prediction*. `expected_reflection(spec)` reimplements what `_reflect_model_params` /
+`_reflect_field_params` will write, and the probe asserts the registry matches after a real
+install in a fresh process.
+
+Two things it encodes that are easy to get wrong:
+
+- **Only the keys reflection maintains may be compared.** Those are UPSERTed to the class's
+  value on every `init_models`. Everything else -- `compute`, `depends`, `domain`,
+  `group_expand`, `tracking` -- keeps whatever the row happened to hold and is not a function
+  of the class.
+- **The comparison runs at `lang=None`.** `upsert_en` writes only the `en_US` slot of a
+  translated column, so any other language compares against a value reflection never wrote.
+
+It also asserts every field comes back `state='base'`, which is what catches a half-completed
+adoption before it becomes a competing-definition bug.

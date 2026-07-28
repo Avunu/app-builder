@@ -5,6 +5,7 @@ from . import (
     serializers,
     studio_owned_mixin,
     studio_package,
+    studio_package_apply,
     studio_package_model,
     studio_serializer,
 )

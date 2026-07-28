@@ -9,13 +9,15 @@ several of these were silent, and two would have destroyed user data.
 
 import ast
 import os
+from unittest.mock import patch
 
 from lxml import etree
 
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
+from odoo.tools import config
 
-from ..tools import xml_writer
+from ..tools import migrationgen, xml_writer
 from .common import StudioCase
 
 
@@ -706,3 +708,189 @@ class TestDeleteRecordsSpareReflection(StudioCase):
             "a base-state field is reflection output, not ours to unlink",
         )
         self.assertTrue(deletable, "our own manual records must still be deletable")
+
+
+@tagged("post_install", "-at_install")
+class TestDestructiveApplyGate(StudioCase):
+    """Phase 0 measured that removing a field from the generated .py drops its
+    column and its data. The gate makes that a decision rather than a
+    side effect, and the pre-migration makes it recoverable."""
+
+    def _python_package(self):
+        package = self.make_package(name="x_destr_pkg")
+        self.build_demo_content(package)
+        package.action_write_files()
+        package.action_graduate(["x_studio_project"])
+        return package
+
+    def _path(self, package):
+        return os.path.join(package.root_path, "models/x_studio_project.py")
+
+    def _drop_a_field(self, package, name="x_active_flag"):
+        """Remove one field's declaration, and nothing else.
+
+        Deliberately a field nothing else references. Taking out one a compute
+        depends on leaves an orphan ``@api.depends`` and a compute method with
+        no field, which the parser rightly refuses -- see the test below.
+        """
+        with open(self._path(package), encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn(name, source, "fixture must have the field to remove")
+        kept = "\n".join(
+            line
+            for line in source.splitlines()
+            if not line.strip().startswith("%s = fields." % name)
+        )
+        with open(self._path(package), "w", encoding="utf-8") as handle:
+            handle.write(kept + "\n")
+
+    def test_dropping_a_stored_field_is_detected(self):
+        package = self._python_package()
+        self._drop_a_field(package)
+        dropped = package._destructive_changes(package._render_files())
+        self.assertIn("x_studio_project", dropped)
+        self.assertIn("x_active_flag", dropped["x_studio_project"])
+
+    def test_removing_a_field_a_compute_depends_on_freezes_instead(self):
+        """Better to stop rewriting the file than to report a tidy diff for
+        source that no longer makes sense."""
+        package = self._python_package()
+        with open(self._path(package), encoding="utf-8") as handle:
+            source = handle.read()
+        mangled = "\n".join(
+            line for line in source.splitlines() if "x_budget" not in line
+        )
+        with open(self._path(package), "w", encoding="utf-8") as handle:
+            handle.write(mangled + "\n")
+
+        package._render_files()
+
+        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
+        self.assertEqual(entry.source, "frozen")
+
+    def test_an_ordinary_change_is_not_destructive(self):
+        package = self._python_package()
+        self.assertEqual(package._destructive_changes(package._render_files()), {})
+
+    def test_the_pre_migration_renames_rather_than_drops(self):
+        rendered = migrationgen.render_pre_migration(
+            "x_studio_project", ["x_budget"], "20260728120000"
+        )
+        ast.parse(rendered)  # it has to be importable by Odoo's migration loader
+        self.assertIn("RENAME COLUMN", rendered)
+        self.assertNotIn("DROP COLUMN", rendered)
+        self.assertIn("x_budget_studio_removed_20260728120000", rendered)
+
+    def test_a_long_column_name_stays_within_the_identifier_limit(self):
+        target = migrationgen.rename_column_sql(
+            "t", "x_" + "a" * 60, migrationgen.suffix_for("20260728120000")
+        )
+        self.assertLessEqual(len(target), 63)
+        self.assertIn("studio_removed", target, "the marker must survive truncation")
+
+
+@tagged("post_install", "-at_install")
+class TestApplyIsRecoverable(StudioCase):
+    """Module operations commit, so a failed apply is not something the ORM
+    rolls back. The snapshot is what makes it recoverable."""
+
+    def _python_package(self):
+        package = self.make_package(name="x_apply_pkg")
+        self.build_demo_content(package)
+        package.action_write_files()
+        return package
+
+    def test_uncompilable_python_never_reaches_disk(self):
+        """The step that keeps a bad apply survivable: once a broken module
+        file is written, the next request re-imports it and the database will
+        not boot for anybody."""
+        package = self._python_package()
+        with self.assertRaises(UserError) as caught:
+            package._assert_sources_compile(
+                {"models/broken.py": "class Nope(:\n    pass\n"}
+            )
+        self.assertIn("not valid Python", str(caught.exception))
+
+    def test_generated_python_that_cannot_be_reparsed_is_refused(self):
+        package = self._python_package()
+        package.action_graduate(["x_studio_project"])
+        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
+        with self.assertRaises(UserError):
+            package._assert_specs_reparse(
+                {
+                    entry.python_path: (
+                        "from odoo import fields, models\n\n\n"
+                        "class X(models.Model):\n"
+                        '    _name = "x_studio_project"\n'
+                        "    _inherits = {'a': 'b'}\n"
+                    )
+                }
+            )
+
+    def test_snapshot_records_the_bytes_that_were_there(self):
+        package = self._python_package()
+        files = package._render_files()
+        apply = self.env["studio.package.apply"]._snapshot(
+            package, files, reason="test", stamp="20260728120000"
+        )
+        self.assertEqual(apply.state, "pending")
+        self.assertTrue(apply.file_ids)
+        manifest = apply.file_ids.filtered(lambda f: f.path == "__manifest__.py")
+        self.assertTrue(manifest.existed)
+        self.assertIn("__manifest__", manifest.path)
+        self.assertIn('"depends"', manifest.content_before)
+
+    def test_restore_puts_the_previous_bytes_back(self):
+        package = self._python_package()
+        files = package._render_files()
+        apply = self.env["studio.package.apply"]._snapshot(
+            package, files, reason="test", stamp="20260728120001"
+        )
+        target = os.path.join(package.root_path, "__manifest__.py")
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("# clobbered\n")
+
+        apply._restore()
+
+        with open(target, encoding="utf-8") as handle:
+            self.assertIn('"depends"', handle.read())
+
+    def test_restore_removes_files_that_did_not_exist_before(self):
+        package = self._python_package()
+        apply = self.env["studio.package.apply"]._snapshot(
+            package, {"views/brand_new.xml": "<odoo/>"}, stamp="20260728120002"
+        )
+        target = os.path.join(package.root_path, "views/brand_new.xml")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("<odoo/>")
+
+        apply._restore()
+
+        self.assertFalse(
+            os.path.exists(target),
+            "a half-written new file must not be left behind",
+        )
+
+    def test_a_pending_apply_from_a_dead_process_is_reaped(self):
+        """Step 7 cannot run if the process is gone. A row left pending is the
+        only signal that a rollback never completed."""
+        package = self._python_package()
+        self.env["studio.package.apply"]._snapshot(
+            package, {"__manifest__.py": "{}"}, stamp="20260728120003"
+        )
+        reaped = self.env["studio.package.apply"]._reap_abandoned(package)
+        self.assertTrue(reaped)
+        self.assertEqual(reaped[0].state, "failed")
+        self.assertIn("stopped", reaped[0].error)
+
+    def test_multi_worker_deployments_refuse_an_in_process_reload(self):
+        """Other workers would rebuild against the Python already in their own
+        sys.modules, which is wrong rather than merely slow."""
+        package = self._python_package()
+        with patch.dict(config.options, {"workers": 4, "dev_mode": []}):
+            package.invalidate_recordset(["reload_mode"])
+            self.assertEqual(package.reload_mode, "manual")
+            with self.assertRaises(UserError) as caught:
+                package._reload_now()
+        self.assertIn("worker", str(caught.exception))

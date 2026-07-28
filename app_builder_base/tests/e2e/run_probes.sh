@@ -41,7 +41,11 @@ else
         --http-port 8298 --gevent-port 8297 >/dev/null
 fi
 
-echo "==> probe: in-process re-import"
-"$PYTHON" "$HERE/probe_reimport.py" -c "$CONF" -d "$DB" \
-    --http-port 8298 --gevent-port 8297 2>&1 \
-    | grep -E "^  (PASS|FAIL|NOTE)|^ +->|^RESULT"
+rc=0
+for probe in probe_reimport probe_reflection; do
+    echo "==> probe: $probe"
+    "$PYTHON" "$HERE/$probe.py" -c "$CONF" -d "$DB" \
+        --http-port 8298 --gevent-port 8297 2>&1 \
+        | grep -E "^  (PASS|FAIL|NOTE)|^ +->|^RESULT" || rc=1
+done
+exit $rc
