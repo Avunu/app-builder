@@ -214,126 +214,156 @@ class TestCodegenFixedPoint(BaseCase):
         self.assertIn("\n        ", source, "this fixture should have wrapped")
         self.assert_fixed_point(spec)
 
-    def test_hand_written_method_is_preserved_verbatim(self):
-        """The whole point of `preserved`: regenerating must not eat code."""
-        method = (
-            "    def action_confirm(self):\n"
-            "        self.ensure_one()\n"
-            "        return True"
-        )
-        spec = spec_with(FieldSpec(name="f_char", ttype="char"), preserved=(method,))
-        source = pycodegen.render_model(spec)
-        self.assertIn("def action_confirm", source)
-        self.assert_fixed_point(spec)
+    def test_anything_outside_the_block_survives_a_rewrite(self):
+        """The whole point of the marker convention.
 
-    def test_extra_import_is_preserved(self):
-        spec = spec_with(
-            FieldSpec(name="f_char", ttype="char"),
-            extra_imports=("from odoo.exceptions import UserError",),
+        The studio never reads outside the block, so none of this needs to be
+        modelled, preserved, or even understood -- it simply is not touched.
+        """
+        spec = spec_with(FieldSpec(name="f_char", ttype="char", string="Char"))
+        source = pycodegen.render_model(spec)
+        hostile = source.replace(
+            "class ProbeModel(models.Model):",
+            "import functools\n"
+            "from odoo.exceptions import UserError\n\n\n"
+            "def _decor(fn):\n"
+            "    return functools.wraps(fn)(fn)\n\n\n"
+            "class ProbeModel(models.Model, metaclass=type(models.Model)):",
+        ) + (
+            "\n"
+            "    @property\n"
+            "    def shouty(self):\n"
+            "        # a comment, which the old whole-file parser froze on\n"
+            '        return (self.f_char or "").upper()\n\n'
+            "    @_decor\n"
+            "    def action_go(self):\n"
+            '        raise UserError("nope")\n'
         )
-        self.assert_fixed_point(spec)
+
+        rewritten = pycodegen.splice_block(hostile, pycodegen.render_block(spec), spec)
+
+        ast.parse(rewritten)
+        for survivor in (
+            "metaclass=type(models.Model)",
+            "import functools",
+            "def shouty",
+            "@_decor",
+            "old whole-file parser froze on",
+        ):
+            self.assertIn(survivor, rewritten, "%s must survive" % survivor)
+        self.assertEqual(rewritten.count(pycodegen.BEGIN_MARKER), 1)
+        self.assertEqual(pyparse.parse_model(rewritten), spec)
+
+    def test_a_file_with_no_block_gets_one_after_the_class(self):
+        spec = spec_with(FieldSpec(name="f_char", ttype="char"))
+        bare = (
+            "from odoo import fields, models\n\n\n"
+            "class ProbeModel(models.Model):\n"
+            '    _name = "probe.model"\n\n'
+            "    def existing(self):\n"
+            "        return 1\n"
+        )
+        rewritten = pycodegen.splice_block(bare, pycodegen.render_block(spec), spec)
+        ast.parse(rewritten)
+        self.assertIn("def existing", rewritten)
+        self.assertEqual(pyparse.parse_model(rewritten), spec)
+
+    def test_imports_widen_when_the_block_needs_more(self):
+        """The one edit outside the block, and it only ever adds."""
+        spec = spec_with(
+            FieldSpec(
+                name="total",
+                ttype="float",
+                compute="_compute_total",
+                compute_body="pass",
+            )
+        )
+        source = (
+            "from odoo import fields, models\n\n\n"
+            "class ProbeModel(models.Model):\n    pass\n"
+        )
+        widened = pycodegen.ensure_imports(source, spec)
+        self.assertIn("from odoo import api, fields, models", widened)
+        self.assertEqual(
+            pycodegen.ensure_imports(widened, spec), widened, "must be idempotent"
+        )
 
 
 @tagged("standard", "at_install")
 class TestParserIsConservative(BaseCase):
-    """A parser that silently discarded what it did not understand would be
-    worse than no parser: it would delete working code on the next save, and
-    the round-trip property would still hold on the mangled result."""
+    """Inside the block, anything unmodelled is refused rather than silently
+    dropped. Outside it, nothing is even looked at -- which is what stops a
+    developer from locking themselves out of their own builder."""
 
     def assert_refused(self, source):
+        """``source`` is a whole file."""
+        with self.assertRaises(pyparse.UnsupportedConstruct):
+            pyparse.parse_model(source)
+
+    def assert_block_refused(self, body):
+        """``body`` is class-body source that will sit inside the markers."""
+        source = "\n".join(
+            [
+                "from odoo import api, fields, models",
+                "",
+                "",
+                "class P(models.Model):",
+                pycodegen.BEGIN_MARKER,
+                body,
+                pycodegen.END_MARKER,
+                "",
+            ]
+        )
         with self.assertRaises(pyparse.UnsupportedConstruct):
             pyparse.parse_model(source)
 
     def test_unknown_class_attribute_is_refused(self):
-        self.assert_refused(
-            "from odoo import fields, models\n\n\n"
-            "class P(models.Model):\n"
-            '    _name = "p"\n'
-            '    _inherits = {"res.partner": "partner_id"}\n'
+        self.assert_block_refused(
+            '    _name = "p"\n    _inherits = {"res.partner": "partner_id"}'
         )
 
     def test_dynamically_generated_fields_are_refused(self):
-        self.assert_refused(
-            "from odoo import fields, models\n\n\n"
-            "class P(models.Model):\n"
-            '    _name = "p"\n'
-            "    for i in range(3):\n"
-            "        pass\n"
+        self.assert_block_refused(
+            '    _name = "p"\n    for i in range(3):\n        pass'
         )
 
     def test_unknown_field_type_is_refused(self):
-        self.assert_refused(
-            "from odoo import fields, models\n\n\n"
-            "class P(models.Model):\n"
-            '    _name = "p"\n'
-            "    weird = fields.Properties()\n"
-        )
+        self.assert_block_refused('    _name = "p"\n    weird = fields.Properties()')
 
     def test_non_literal_kwarg_is_refused(self):
-        self.assert_refused(
-            "from odoo import fields, models\n\n\n"
-            "class P(models.Model):\n"
-            '    _name = "p"\n'
-            "    a = fields.Char(string=SOME_CONSTANT)\n"
-        )
-
-    def test_two_classes_are_refused(self):
-        self.assert_refused(
-            "from odoo import fields, models\n\n\n"
-            "class A(models.Model):\n"
-            '    _name = "a"\n\n\n'
-            "class B(models.Model):\n"
-            '    _name = "b"\n'
+        self.assert_block_refused(
+            '    _name = "p"\n    a = fields.Char(string=SOME_CONSTANT)'
         )
 
     def test_syntax_error_is_refused(self):
-        self.assert_refused("class P(models.Model)\n    _name =\n")
+        self.assert_block_refused("    _name =")
 
     def test_orphan_compute_method_is_refused(self):
-        self.assert_refused(
-            "from odoo import api, fields, models\n\n\n"
-            "class P(models.Model):\n"
-            '    _name = "p"\n'
-            "    a = fields.Char()\n\n"
-            "    def _compute_missing(self):\n"
-            "        pass\n"
-        )
-
-    def test_a_stray_comment_is_refused(self):
-        """ast discards comments, so one in the class body would vanish on the
-        next render with nothing to signal it. Freezing is the honest outcome."""
-        self.assert_refused(
-            "from odoo import fields, models\n\n\n"
-            "class P(models.Model):\n"
+        self.assert_block_refused(
             '    _name = "p"\n'
             "    a = fields.Char()\n"
-            "    # a developer's note that we cannot reproduce\n"
+            "\n"
+            "    def _compute_missing(self):\n"
+            "        pass"
         )
 
-    def test_a_comment_inside_a_preserved_method_is_kept(self):
-        spec = pyparse.parse_model(
+    def test_a_file_with_no_block_is_refused(self):
+        self.assert_refused(
             "from odoo import fields, models\n\n\n"
             "class P(models.Model):\n"
             '    _name = "p"\n'
-            "    a = fields.Char()\n\n"
-            "    def action_go(self):\n"
-            "        # this one is safe: the whole method is verbatim\n"
-            "        return True\n"
         )
-        self.assertIn("this one is safe", spec.preserved[0])
 
-    def test_a_hand_written_method_is_kept_not_refused(self):
-        """Preserved, not rejected -- this is the common case and must work."""
-        spec = pyparse.parse_model(
-            "from odoo import fields, models\n\n\n"
-            "class P(models.Model):\n"
-            '    _name = "p"\n'
-            "    a = fields.Char()\n\n"
-            "    def action_go(self):\n"
-            "        return True\n"
+    def test_behaviour_inside_the_block_is_refused_with_a_way_out(self):
+        """Not a freeze: the message says exactly where the method belongs."""
+        spec = spec_with(FieldSpec(name="a", ttype="char"))
+        source = pycodegen.render_model(spec).replace(
+            pycodegen.END_MARKER,
+            "\n    def action_go(self):\n        return True\n" + pycodegen.END_MARKER,
         )
-        self.assertEqual(len(spec.preserved), 1)
-        self.assertIn("action_go", spec.preserved[0])
+        with self.assertRaises(pyparse.UnsupportedConstruct) as caught:
+            pyparse.parse_model(source)
+        self.assertIn("below the block", str(caught.exception))
 
 
 @tagged("standard", "at_install")

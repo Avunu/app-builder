@@ -393,15 +393,21 @@ class StudioPackage(models.Model):
         emitted = []
         for entry in owned.sorted(lambda m: m.model):
             relative = entry.python_path
+            existing = self._read_source(relative)
             spec = entry._current_spec()  # may freeze the row as a side effect
-            if spec is not None:
-                files[relative] = pycodegen.render_model(spec)
+
+            if spec is not None and existing is not None:
+                # Splice the block back in and leave every other byte alone.
+                rewritten = pycodegen.splice_block(
+                    existing, pycodegen.render_block(spec), spec
+                )
+                files[relative] = pycodegen.ensure_imports(rewritten, spec)
                 emitted.append(entry.model)
                 continue
 
-            existing = self._read_source(relative)
             if existing is not None:
-                # Frozen, or simply not ours to touch: keep the bytes exactly.
+                # Frozen, or a file whose block we could not read: keep it
+                # exactly as it is rather than guessing.
                 files[relative] = existing
                 emitted.append(entry.model)
                 continue

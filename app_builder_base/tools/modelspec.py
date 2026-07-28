@@ -26,6 +26,8 @@ field that relies on a default.
 """
 
 import ast
+import io
+import tokenize
 from dataclasses import asdict, dataclass, replace
 
 
@@ -37,9 +39,49 @@ def canonical_source(text):
     make the error harder to read.
     """
     try:
-        return ast.unparse(ast.parse(text, mode="eval").body)
+        return _prefer_double_quotes(ast.unparse(ast.parse(text, mode="eval").body))
     except (SyntaxError, ValueError):
         return text
+
+
+def _prefer_double_quotes(source):
+    """Re-quote string literals the way the rest of the generated file is quoted.
+
+    ``ast.unparse`` always emits single quotes. That is not cosmetic here: the
+    project formats generated packages with ruff, so a single-quoted default
+    would be rewritten on the next commit and the package would report as
+    drifted with nothing actually changed.
+
+    Splices by token position rather than going through ``untokenize``, which
+    reconstructs whitespace from scratch and turns ``lambda self: _("New")``
+    into ``lambda self :_ ("New")`` -- valid, but the exact churn this exists
+    to prevent.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    except (tokenize.TokenError, IndentationError):
+        return source
+
+    lines = source.splitlines(keepends=True)
+    edits = []
+    for token in tokens:
+        if token.type != tokenize.STRING:
+            continue
+        text = token.string
+        if not (text.startswith("'") and text.endswith("'") and len(text) >= 2):
+            continue
+        body = text[1:-1]
+        if '"' in body or "\\" in body:
+            continue
+        if token.start[0] != token.end[0]:
+            continue  # multi-line string: leave it alone
+        edits.append((token.start[0], token.start[1], token.end[1], '"%s"' % body))
+
+    # Apply from the end so earlier columns stay valid.
+    for row, col_start, col_end, replacement in sorted(edits, reverse=True):
+        line = lines[row - 1]
+        lines[row - 1] = line[:col_start] + replacement + line[col_end:]
+    return "".join(lines)
 
 
 # odoo.models.MAGIC_COLUMNS plus display_name. Inlined rather than imported so
@@ -233,10 +275,6 @@ class ModelSpec:
     sql_constraints: tuple[ConstraintSpec, ...] = ()
     sequence_code: str | None = None
     sequence_field: str | None = None
-    # Verbatim source blocks the parser understood well enough to keep but not
-    # to model -- method bodies, decorators, anything hand-written.
-    preserved: tuple[str, ...] = ()
-    extra_imports: tuple[str, ...] = ()
 
     def field(self, name):
         return next((f for f in self.fields if f.name == name), None)
@@ -269,8 +307,6 @@ def spec_from_json(data):
         for f in data.get("fields", ())
     )
     data["inherit"] = tuple(data.get("inherit", ()))
-    data["preserved"] = tuple(data.get("preserved", ()))
-    data["extra_imports"] = tuple(data.get("extra_imports", ()))
     data["sql_constraints"] = tuple(
         ConstraintSpec(**c) for c in data.get("sql_constraints", ())
     )

@@ -17,7 +17,7 @@ from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 from odoo.tools import config
 
-from ..tools import migrationgen, xml_writer
+from ..tools import migrationgen, pycodegen, xml_writer
 from .common import StudioCase
 
 
@@ -604,9 +604,41 @@ class TestEmitterIsIdempotent(StudioCase):
         self.assertIn("x_hand_added", rendered)
         self.assertIn('string="Hand Added"', rendered)
 
-    def test_an_unparseable_file_freezes_the_model_and_is_kept(self):
+    def test_code_outside_the_block_never_freezes_the_model(self):
+        """The point of the marker convention, and the thing the whole-file
+        parser got wrong: a developer adding their own code must not cost them
+        access to the builder."""
         package = self._python_package()
-        self._write(package, self._source(package) + "\n    _inherits = {'a': 'b'}\n")
+        self._write(
+            package,
+            self._source(package) + "\n"
+            "    @property\n"
+            "    def shouty(self):\n"
+            "        # a comment, which the old parser froze on\n"
+            "        return (self.x_name or '').upper()\n",
+        )
+
+        package.action_write_files()
+
+        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
+        self.assertEqual(entry.source, "python", "must still be builder-owned")
+        source = self._source(package)
+        self.assertIn("def shouty", source, "the developer's code must survive")
+        self.assertIn("old parser froze on", source)
+
+    def test_an_unreadable_block_freezes_the_model_and_keeps_the_file(self):
+        """The remaining freeze case is narrow and actionable: our own region
+        stopped being readable."""
+        package = self._python_package()
+        source = self._source(package)
+        self._write(
+            package,
+            source.replace(
+                pycodegen.END_MARKER,
+                '    _inherits = {"res.partner": "partner_id"}\n'
+                + pycodegen.END_MARKER,
+            ),
+        )
 
         package.action_write_files()
 
@@ -614,19 +646,6 @@ class TestEmitterIsIdempotent(StudioCase):
         self.assertEqual(entry.source, "frozen")
         self.assertTrue(entry.parse_error)
         self.assertIn("_inherits", self._source(package), "the file must be kept")
-
-    def test_a_frozen_model_can_be_thawed_once_the_file_parses(self):
-        package = self._python_package()
-        good = self._source(package)
-        self._write(package, good + "\n    _inherits = {'a': 'b'}\n")
-        package.action_write_files()
-        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
-        self.assertEqual(entry.source, "frozen")
-
-        self._write(package, good)
-        entry.action_retry_parse()
-        self.assertEqual(entry.source, "python")
-        self.assertFalse(entry.parse_error)
 
     def test_a_python_model_is_not_also_emitted_as_xml(self):
         """Two definitions of one model is the unrecoverable state:

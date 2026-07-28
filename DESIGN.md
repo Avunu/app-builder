@@ -126,23 +126,50 @@ attribute. `base_import_module._is_studio_custom` (`ir_module.py:545`) walks eve
 looking for exactly that and refuses the module with *"Studio customizations require the Odoo
 Studio app."*
 
-### ~~MVP generates zero Python — deliberately~~ → **Python from the first model**
+### ~~MVP generates zero Python — deliberately~~ → **Python, with a machine-owned block**
 
 *Superseded 2026-07-28. The original text is kept below the line because the reasoning was
 sound and the reason it stopped applying is worth knowing.*
 
-New models are generated as real `models.Model` classes from the start. No `x_` prefix. The
-`.py` file is the definition; `ir.model` and `ir.model.fields` are downstream reflection
-artefacts of it. What forced the inversion, all verified against 18.0:
+New models are generated as real `models.Model` classes. **Only a marker-delimited block
+inside the class is machine-owned**; the rest of the file is never read, never parsed and
+never rewritten:
+
+```python
+class WorkshopJob(models.Model):
+    # begin: studio-generated schema
+    _name = "workshop.job"
+    _inherit = ["mail.thread"]
+    name = fields.Char(string="Name", required=True)
+    # end: studio-generated schema
+
+    @api.constrains("name")          # anything at all out here
+    def _check_name(self): ...
+```
+
+This is Frappe's `TypeExporter` convention (`frappe/types/exporter.py`), and it is adopted for
+the same reason: writing is a pure string splice between the markers, so a developer may use a
+metaclass, a `@property`, a decorator we have never heard of, and the builder keeps working.
+**An earlier revision parsed the whole file and froze a model on any construct it did not
+model — which is the same one-way handoff this project exists to avoid, in new clothes.**
+
+What Frappe does that Odoo *cannot*: keep the schema in JSON and the behaviour in a separate
+controller class. Frappe resolves the controller by name at runtime (`get_controller`), so the
+two never contend. An Odoo model **is** a composed class, and `_add_manual_models`
+([ir_model.py:502-511]) deletes every `_custom` model from the pool and rebuilds it from
+`ir_model` rows alone on every `setup_models` — so a Python class that `_inherit`s a
+record-defined model survives install and then evaporates. Verified empirically, not inferred.
+Whatever declares the fields must therefore be the same class that carries the behaviour.
+
+The rest of what forced Python-first, all verified against 18.0:
 
 - **A live `state='manual'` field cannot have a clean name.** PostgreSQL CHECK
   `name_manual_field` (`CHECK (state != 'manual' OR name LIKE 'x\_%')`) plus
   `BaseModel._add_field` ([models.py:667-680]). So "no `x_`" ⇒ fields are class attributes ⇒
-  a new column needs the class re-imported. There is no instant clean-named field; edits
-  therefore batch behind an explicit Apply, one reload per changeset.
+  a new column needs the class re-imported. Edits therefore batch behind an explicit Apply.
 - **Data-defined fields are one bad regeneration from data loss.** `_process_end` deletes
   records absent from reloaded data, and `IrModelFields.unlink` → `_drop_column` issues
-  `ALTER TABLE … DROP COLUMN … CASCADE`. A class attribute is not exposed to that.
+  `ALTER TABLE … DROP COLUMN … CASCADE`.
 - **Manual models hit a hard ceiling**: no `_sql_constraints`, `@api.constrains`,
   `@api.onchange`, `_inherits`, `_parent_store`; `_order` restricted to stored fields; and
   `properties` / `many2one_reference` / `json` silently unusable because `_add_manual_fields`
