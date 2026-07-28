@@ -16,6 +16,8 @@ code on the next save, and the round-trip test would still pass.
 """
 
 import ast
+import io
+import tokenize
 
 from .modelspec import ConstraintSpec, FieldSpec, ModelSpec, SelectionSpec
 
@@ -58,6 +60,10 @@ _MODEL_ATTRS = {
     "_rec_name": "rec_name",
     "_active_name": "active_name",
 }
+
+
+# Lines of the generated header, which we regenerate and so may ignore.
+HEADER_LINE_COUNT = 3
 
 
 class UnsupportedConstruct(Exception):
@@ -117,7 +123,47 @@ def parse_model(source):
     if class_node is None:
         raise UnsupportedConstruct("no model class found")
 
-    return _parse_class(source, class_node, tuple(extra_imports))
+    spec = _parse_class(source, class_node, tuple(extra_imports))
+    _assert_comments_are_covered(source, spec, class_node)
+    return spec
+
+
+def _assert_comments_are_covered(source, spec, class_node):
+    """Refuse a file whose comments we could not reproduce.
+
+    ``ast`` discards comments -- they are not nodes -- so a comment sitting
+    directly in the class body would vanish on the next render with nothing to
+    signal it. Comments inside a preserved method or a compute body are safe,
+    because those are captured as verbatim source; everything else is not.
+
+    Freezing the model here is the honest outcome: the builder stops rewriting
+    a file it cannot faithfully reproduce, rather than quietly deleting a
+    developer's note.
+    """
+    covered = set()
+    header_lines = HEADER_LINE_COUNT if is_studio_generated(source) else 0
+    covered.update(range(1, header_lines + 1))
+
+    for node in ast.walk(class_node):
+        if isinstance(node, ast.FunctionDef):
+            start = min([node.lineno] + [d.lineno for d in node.decorator_list])
+            covered.update(range(start, node.end_lineno + 1))
+
+    stray = []
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+        for token in tokens:
+            if token.type == tokenize.COMMENT and token.start[0] not in covered:
+                stray.append((token.start[0], token.string.strip()))
+    except (tokenize.TokenError, IndentationError):
+        raise UnsupportedConstruct("file could not be tokenised") from None
+
+    if stray:
+        line, text = stray[0]
+        raise UnsupportedConstruct(
+            "comment on line %d (%s) is outside anything the builder can "
+            "reproduce; rewriting the file would delete it" % (line, text[:60])
+        )
 
 
 def _parse_class(source, node, extra_imports):

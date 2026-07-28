@@ -549,3 +549,160 @@ class TestOwnedViewsAreEditedDirectly(StudioCase):
         self.assertEqual(extension.inherit_id, core_view)
         self.assertEqual(extension.mode, "extension")
         self.assertEqual(core_view.arch, original, "core view must be untouched")
+
+
+@tagged("post_install", "-at_install")
+class TestEmitterIsIdempotent(StudioCase):
+    """Phase 2 -- the .py file is the definition, so it is regenerated on every
+    write rather than written once. That is only safe because it is also the
+    *input*: what the parser can read is reproduced, what it cannot freezes the
+    model instead of being overwritten."""
+
+    def _python_package(self):
+        package = self.make_package(name="x_emit_pkg")
+        self.build_demo_content(package)
+        package.action_write_files()
+        package.action_graduate(["x_studio_project"])
+        return package
+
+    def _source(self, package):
+        path = os.path.join(package.root_path, "models/x_studio_project.py")
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+
+    def _write(self, package, content):
+        path = os.path.join(package.root_path, "models/x_studio_project.py")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(content)
+
+    def test_rewriting_an_unchanged_package_is_a_no_op(self):
+        """The fixed point, end to end: a save with nothing to say must
+        produce an empty diff, or every write shows up as churn in review."""
+        package = self._python_package()
+        before = self._source(package)
+        package.action_write_files()
+        self.assertEqual(self._source(package), before)
+
+    def test_a_hand_added_field_is_adopted_not_overwritten(self):
+        """The old emitter refused to touch the file at all. Now it reads it
+        back, so an edit it understands survives regeneration."""
+        package = self._python_package()
+        source = self._source(package)
+        self.assertNotIn("x_hand_added", source)
+        edited = source.replace(
+            '    _description = "Studio Demo Project"',
+            '    _description = "Studio Demo Project"\n'
+            '    x_hand_added = fields.Char(string="Hand Added")',
+        )
+        self._write(package, edited)
+
+        package.action_write_files()
+
+        rendered = self._source(package)
+        self.assertIn("x_hand_added", rendered)
+        self.assertIn('string="Hand Added"', rendered)
+
+    def test_an_unparseable_file_freezes_the_model_and_is_kept(self):
+        package = self._python_package()
+        self._write(package, self._source(package) + "\n    _inherits = {'a': 'b'}\n")
+
+        package.action_write_files()
+
+        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
+        self.assertEqual(entry.source, "frozen")
+        self.assertTrue(entry.parse_error)
+        self.assertIn("_inherits", self._source(package), "the file must be kept")
+
+    def test_a_frozen_model_can_be_thawed_once_the_file_parses(self):
+        package = self._python_package()
+        good = self._source(package)
+        self._write(package, good + "\n    _inherits = {'a': 'b'}\n")
+        package.action_write_files()
+        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
+        self.assertEqual(entry.source, "frozen")
+
+        self._write(package, good)
+        entry.action_retry_parse()
+        self.assertEqual(entry.source, "python")
+        self.assertFalse(entry.parse_error)
+
+    def test_a_python_model_is_not_also_emitted_as_xml(self):
+        """Two definitions of one model is the unrecoverable state:
+        _add_manual_models builds a second class for the same _name and
+        _process_end then reaps our own xmlids."""
+        package = self._python_package()
+        files = package._render_files()
+        self.assertIn("models/x_studio_project.py", files)
+        self.assertNotIn("models/x_studio_project.xml", files)
+
+
+@tagged("post_install", "-at_install")
+class TestLoadOrderFollowsModelSource(StudioCase):
+    """security/ had to follow models/ only because generated ACLs ref an
+    ir.model record that models/*.xml defines. A package whose models are all
+    Python has no such file: reflection creates the row during init_models,
+    which runs before load_data."""
+
+    def test_xml_models_keep_security_after_models(self):
+        package = self.make_package(name="x_order_xml")
+        self.build_demo_content(package)
+        data = ast.literal_eval(package._render_files()["__manifest__.py"])["data"]
+        self.assertLess(
+            data.index("models/x_studio_project.xml"),
+            data.index("security/ir.model.access.csv"),
+        )
+
+    def test_python_models_get_the_conventional_order_back(self):
+        package = self.make_package(name="x_order_py")
+        self.build_demo_content(package)
+        package.action_write_files()
+        package.action_graduate(["x_studio_project"])
+        data = ast.literal_eval(package._render_files()["__manifest__.py"])["data"]
+        self.assertNotIn("models/x_studio_project.xml", data)
+        self.assertEqual(
+            data[0],
+            "security/ir.model.access.csv",
+            "with no XML models, security may load first as in any addon",
+        )
+
+
+@tagged("post_install", "-at_install")
+class TestDeleteRecordsSpareReflection(StudioCase):
+    """action_delete_records runs with _force_unlink, which makes
+    IrModelFields.unlink drop columns. Reflection writes an ir.model.data row
+    for every field a Python class declares -- including the magic columns and
+    everything mail.thread brings -- so feeding those to unlink would destroy
+    data the package never created."""
+
+    def test_reflected_base_fields_are_not_in_the_delete_set(self):
+        package = self.make_package(name="x_del_pkg")
+        model = self.build_demo_content(package)
+        package.action_write_files()
+
+        # Simulate what reflection does for a code-defined model: a base-state
+        # metadata row carrying this package's module name.
+        reflected = self.env["ir.model.fields"].create(
+            {
+                "name": "x_reflected",
+                "ttype": "char",
+                "field_description": "Reflected",
+                "model_id": model.id,
+                "state": "base",
+            }
+        )
+        self.env["ir.model.data"].create(
+            {
+                "module": package.name,
+                "name": "field_x_studio_project__x_reflected",
+                "model": "ir.model.fields",
+                "res_id": reflected.id,
+            }
+        )
+
+        deletable = package._deletable_data()
+        self.assertNotIn(
+            reflected.id,
+            [d.res_id for d in deletable if d.model == "ir.model.fields"],
+            "a base-state field is reflection output, not ours to unlink",
+        )
+        self.assertTrue(deletable, "our own manual records must still be deletable")

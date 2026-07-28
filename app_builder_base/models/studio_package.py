@@ -93,11 +93,18 @@ class StudioPackage(models.Model):
     file_ids = fields.One2many("studio.package.file", "package_id", readonly=True)
     record_count = fields.Integer(compute="_compute_record_count")
 
+    model_ids = fields.One2many(
+        "studio.package.model",
+        "package_id",
+        string="Models",
+        help="Models this package defines, and where each definition lives.",
+    )
     graduated_models = fields.Char(
+        compute="_compute_graduated_models",
+        store=False,
         readonly=True,
-        help="Comma-separated models that have been converted to Python classes. "
-        "The builder stops emitting XML metadata for these and will not "
-        "overwrite their source files.",
+        help="Models defined as Python classes. Kept as a plain string for "
+        "readability; model_ids is the real registry.",
     )
 
     is_git = fields.Boolean(compute="_compute_git_info")
@@ -249,11 +256,26 @@ class StudioPackage(models.Model):
             )
         return grouped
 
-    def _graduated_set(self):
+    @api.depends("model_ids.model", "model_ids.source")
+    def _compute_graduated_models(self):
+        for package in self:
+            package.graduated_models = ", ".join(sorted(package._python_model_set()))
+
+    def _python_model_set(self):
+        """Models this package defines in Python, frozen ones included.
+
+        A frozen model is still ours -- we simply must not rewrite its file --
+        so it counts here, where the question is "does XML own this?".
+        """
         self.ensure_one()
         return {
-            m.strip() for m in (self.graduated_models or "").split(",") if m.strip()
+            m.model
+            for m in self.model_ids
+            if m.source in ("python", "frozen") and m.model
         }
+
+    def _graduated_set(self):
+        return self._python_model_set()
 
     def _owned_model_names(self):
         """Custom models this package owns, graduated or not.
@@ -320,8 +342,9 @@ class StudioPackage(models.Model):
             access = serializers._for_model("ir.model.access")
             files[target] = access._render_csv([row for _key, row in rows])
 
-        # Graduated models become Python source rather than XML metadata.
+        # Python-defined models become source rather than XML metadata.
         python_files = self._render_python()
+        self._assert_no_double_definition(files, python_files)
         files.update(python_files)
 
         files["__manifest__.py"] = self._render_manifest(sorted(files), dep_sink)
@@ -329,52 +352,95 @@ class StudioPackage(models.Model):
         return files
 
     def _render_python(self):
-        """Render ``models/*.py`` for every graduated model.
+        """Render ``models/*.py`` for every model this package defines in Python.
 
-        Returns an empty dict when nothing has graduated, which keeps the
-        generated addon data-only -- and therefore reloadable without a server
-        restart -- for as long as the user wants it that way.
+        Regenerated on every write, not written once. That inverts the old
+        one-way handoff, and it is only safe because the file is the *input*:
+        ``_current_spec`` parses it back, so rendering reproduces whatever is
+        there, including anything a developer added by hand. What the parser
+        cannot read at all freezes the model instead of being overwritten.
 
-        Graduation is a **one-way handoff**: a model file is generated once and
-        then belongs to the developer. Regenerating would be actively wrong,
-        because once the Python class loads, reflection flips its fields to
-        ``state='base'`` and there is no longer any manual metadata to render --
-        we would overwrite a working class with an empty one.
+        Returns an empty dict when the package has no Python models, which
+        keeps a purely data-driven addon exactly as it was.
         """
         self.ensure_one()
-        graduated = sorted(self._graduated_set())
-        if not graduated:
+        owned = self.model_ids.filtered(lambda m: m.source in ("python", "frozen"))
+        if not owned:
             return {}
 
         files = {}
         emitted = []
-        for model_name in graduated:
-            relative = "models/%s" % pycodegen.module_file_for(model_name)
-            existing = self._read_source(relative)
-            if existing is not None:
-                files[relative] = existing
-                emitted.append(model_name)
+        for entry in owned.sorted(lambda m: m.model):
+            relative = entry.python_path
+            spec = entry._current_spec()  # may freeze the row as a side effect
+            if spec is not None:
+                files[relative] = pycodegen.render_model(spec)
+                emitted.append(entry.model)
                 continue
 
-            model = self.env["ir.model"].search([("model", "=", model_name)], limit=1)
-            if not model:
-                _logger.warning(
-                    "Package %s lists %s as graduated but no such model exists",
-                    self.name,
-                    model_name,
-                )
+            existing = self._read_source(relative)
+            if existing is not None:
+                # Frozen, or simply not ours to touch: keep the bytes exactly.
+                files[relative] = existing
+                emitted.append(entry.model)
                 continue
-            # Only fields this package owns: Odoo declares the magic columns
-            # itself, and a field from another module is not ours to redeclare.
-            owned = model.field_id.filtered(lambda f: f.state == "manual")
-            files[relative] = pycodegen.render_model(
-                pycodegen.spec_from_ir_model(model, owned)
-            )
-            emitted.append(model_name)
+
+            seeded = self._seed_python_from_metadata(entry)
+            if seeded is None:
+                continue
+            files[relative] = seeded
+            emitted.append(entry.model)
 
         if emitted:
             files["models/__init__.py"] = self._render_models_init(emitted)
         return files
+
+    def _assert_no_double_definition(self, data_files, python_files):
+        """Refuse to emit a model as both a class and a set of data records.
+
+        ``_ownable`` should already prevent this, but the window where a row is
+        still ``state='manual'`` for a Python-backed model -- mid-adoption, or
+        after a half-failed apply -- is exactly where it would bite. A silent
+        double definition is unrecoverable: ``_add_manual_models`` builds a
+        second class competing for the same ``_name``, and ``_process_end``
+        then reaps the package's own xmlids. A raised error costs a retry.
+        """
+        self.ensure_one()
+        for entry in self.model_ids:
+            if entry.python_path not in python_files:
+                continue
+            clash = "models/%s.xml" % entry.model.replace(".", "_")
+            if clash in data_files:
+                raise UserError(
+                    _(
+                        "%(model)s would be written both as a Python class and "
+                        "as data records (%(path)s). Its metadata rows are "
+                        "still marked manual; reload the package to let "
+                        "reflection settle them.",
+                        model=entry.model,
+                        path=clash,
+                    )
+                )
+
+    def _seed_python_from_metadata(self, entry):
+        """First render for a model that has no file yet -- i.e. adoption.
+
+        The only direction in which ``ir.model`` is an input rather than a
+        reflection artefact, and it happens exactly once per model.
+        """
+        self.ensure_one()
+        model = self.env["ir.model"].search([("model", "=", entry.model)], limit=1)
+        if not model:
+            _logger.warning(
+                "Package %s claims %s but no such model exists",
+                self.name,
+                entry.model,
+            )
+            return None
+        # Only fields this package owns: Odoo declares the magic columns
+        # itself, and a field from another module is not ours to redeclare.
+        owned_fields = model.field_id.filtered(lambda f: f.state == "manual")
+        return pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned_fields))
 
     def _read_source(self, relative):
         """Return the on-disk content of a package file, or ``None``."""
@@ -452,13 +518,22 @@ class StudioPackage(models.Model):
         """Order manifest 'data' so every ref resolves when the file loads.
 
         A hand-written addon puts ``security/`` first because its groups are
-        needed by everything else. We cannot: everything we emit under
-        ``security/`` -- both the ACL csv and ir.rule -- carries a ``model_id``
-        ref to an ``ir.model`` record that ``models/`` has not defined yet.
-        Loading a rule first makes the generated package fail to install with an
-        unresolvable external id, so security has to follow models here.
+        needed by everything else. A package with **XML-defined** models cannot:
+        everything we emit under ``security/`` -- both the ACL csv and ir.rule --
+        carries a ``model_id`` ref to an ``ir.model`` record that ``models/``
+        has not defined yet, so loading a rule first fails the install with an
+        unresolvable external id.
+
+        A package whose models are all Python does not have that problem, and
+        gets the conventional order back. Reflection creates the ``ir.model``
+        row and its xmlid during ``init_models``, which runs before ``load_data``
+        -- so ``pkg.model_workshop_project`` already resolves by the time the
+        csv is read, on the very first install.
         """
-        rank = {"models": 0, "data": 1, "security": 2, "views": 3, "report": 4}
+        if self._has_xml_models():
+            rank = {"models": 0, "data": 1, "security": 2, "views": 3, "report": 4}
+        else:
+            rank = {"security": 0, "models": 1, "data": 2, "views": 3, "report": 4}
 
         def key(path):
             head = rank.get(path.split("/")[0], 9)
@@ -469,6 +544,19 @@ class StudioPackage(models.Model):
             return (head, path)
 
         return sorted((p for p in paths if p.endswith((".xml", ".csv"))), key=key)
+
+    def _has_xml_models(self):
+        """Whether any model this package owns is still defined as data.
+
+        A mixed package -- some Python models, some manual ones, or a manual
+        field on a core model -- still needs models before security.
+        """
+        self.ensure_one()
+        python_owned = self._python_model_set()
+        for _xmlid, record in self._owned_records().get("ir.model", []):
+            if record.model not in python_owned:
+                return True
+        return False
 
     # -- disk I/O ---------------------------------------------------------
 
@@ -618,7 +706,8 @@ class StudioPackage(models.Model):
         # the XML must be rendered after it, so that _ownable (which excludes
         # state='base') naturally stops emitting what the class now defines.
         self._write_graduated_source(requested)
-        self.graduated_models = ",".join(sorted(self._graduated_set() | requested))
+        for model_name in sorted(requested):
+            self.env["studio.package.model"]._adopt(self, model_name, source="python")
         self._demote_manual_metadata(requested)
         self.action_write_files()
         return {
@@ -677,7 +766,12 @@ class StudioPackage(models.Model):
         for model_name in sorted(model_names):
             relative = "models/%s" % pycodegen.module_file_for(model_name)
             if self._read_source(relative) is not None:
-                continue  # one-way handoff: never overwrite
+                # Adoption seeds a file that does not exist yet. If one is
+                # already there the model is adopted, and from then on that
+                # file is the definition -- _render_python regenerates it from
+                # its own parsed contents rather than from this metadata, which
+                # by now has been demoted to state='base' anyway.
+                continue
             model = env["ir.model"].search([("model", "=", model_name)], limit=1)
             if not model:
                 continue
@@ -759,10 +853,17 @@ class StudioPackage(models.Model):
         Uses the same ``_force_unlink`` flag as Odoo's own
         ``_module_data_uninstall``: without it ``_prepare_update`` refuses to
         drop any column that carries module data.
+
+        That flag is also why the reflection guard below is not optional. Once
+        a package defines models in Python, reflection writes an
+        ``ir.model.data`` row for *every* field it declares -- the magic
+        columns, and everything ``mail.thread`` brings with it. Feeding those to
+        ``unlink`` with ``_force_unlink`` set would run ``_drop_column`` over
+        columns this package never created and take their data with it.
         """
         self._assert_studio_manager()
         self.ensure_one()
-        data = self.env["ir.model.data"].search([("module", "=", self.name)])
+        data = self._deletable_data()
         by_model = {}
         for entry in data:
             by_model.setdefault(entry.model, []).append(entry.res_id)
@@ -784,6 +885,32 @@ class StudioPackage(models.Model):
         self.file_ids.unlink()
         self.state = "draft"
         return True
+
+    def _deletable_data(self):
+        """The package's ``ir.model.data`` rows minus reflection artefacts.
+
+        A row is ours to delete only if the record behind it is one the
+        serializers would have emitted. Anything reflected from a Python class
+        -- ``state='base'`` metadata, mixin fields, magic columns -- carries our
+        module name purely because our class declared it, and deleting it is
+        Odoo's job during uninstall, not ours.
+        """
+        self.ensure_one()
+        data = self.env["ir.model.data"].search([("module", "=", self.name)])
+        serializers = self._serializer_env()
+        keep = []
+        for entry in data:
+            if entry.model not in self.env:
+                continue
+            record = self.env[entry.model].browse(entry.res_id)
+            if not record.exists():
+                keep.append(entry)  # a dangling row: dropping it is harmless
+                continue
+            serializer = serializers._for_model(entry.model)
+            if serializer is not None and not serializer._ownable(record):
+                continue
+            keep.append(entry)
+        return self.env["ir.model.data"].browse([e.id for e in keep])
 
     # -- drift ------------------------------------------------------------
 

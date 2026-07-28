@@ -299,6 +299,29 @@ class TestParserIsConservative(BaseCase):
             "        pass\n"
         )
 
+    def test_a_stray_comment_is_refused(self):
+        """ast discards comments, so one in the class body would vanish on the
+        next render with nothing to signal it. Freezing is the honest outcome."""
+        self.assert_refused(
+            "from odoo import fields, models\n\n\n"
+            "class P(models.Model):\n"
+            '    _name = "p"\n'
+            "    a = fields.Char()\n"
+            "    # a developer's note that we cannot reproduce\n"
+        )
+
+    def test_a_comment_inside_a_preserved_method_is_kept(self):
+        spec = pyparse.parse_model(
+            "from odoo import fields, models\n\n\n"
+            "class P(models.Model):\n"
+            '    _name = "p"\n'
+            "    a = fields.Char()\n\n"
+            "    def action_go(self):\n"
+            "        # this one is safe: the whole method is verbatim\n"
+            "        return True\n"
+        )
+        self.assertIn("this one is safe", spec.preserved[0])
+
     def test_a_hand_written_method_is_kept_not_refused(self):
         """Preserved, not rejected -- this is the common case and must work."""
         spec = pyparse.parse_model(

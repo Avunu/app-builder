@@ -3,3 +3,5 @@ access_studio_package_user,studio.package user,model_studio_package,group_studio
 access_studio_package_manager,studio.package manager,model_studio_package,group_studio_manager,1,1,1,1
 access_studio_package_file_user,studio.package.file user,model_studio_package_file,group_studio_user,1,0,0,0
 access_studio_package_file_manager,studio.package.file manager,model_studio_package_file,group_studio_manager,1,1,1,1
+access_studio_package_model_user,studio.package.model user,model_studio_package_model,group_studio_user,1,0,0,0
+access_studio_package_model_manager,studio.package.model manager,model_studio_package_model,group_studio_manager,1,1,1,1

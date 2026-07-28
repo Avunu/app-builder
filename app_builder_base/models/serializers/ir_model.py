@@ -27,7 +27,12 @@ class IrModelSerializer(models.AbstractModel):
     def _ownable(self, record):
         # Only custom models. A base model reflected from Python code is owned
         # by the addon that declares it, not by a studio package.
-        return record.state == "manual"
+        if record.state != "manual":
+            return False
+        # And never one a package already defines as a Python class. Such a row
+        # is a reconciliation artefact, not a definition -- emitting it would
+        # give _add_manual_models a second class competing for the same _name.
+        return not self.env["studio.package.model"]._is_python_owned(record.model)
 
     @api.model
     def _should_skip(self, record, fname):
@@ -101,7 +106,13 @@ class IrModelFieldsSerializer(models.AbstractModel):
     @api.model
     def _ownable(self, record):
         # Excludes the magic columns and any field declared in Python.
-        return record.state == "manual"
+        if record.state != "manual":
+            return False
+        # A field on a Python-defined model belongs to that class, even while
+        # its metadata row still says manual.
+        return not self.env["studio.package.model"]._is_python_owned(
+            record.model_id.model
+        )
 
     @api.model
     def _should_skip(self, record, fname):
