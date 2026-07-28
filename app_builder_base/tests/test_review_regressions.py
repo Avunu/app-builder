@@ -12,7 +12,7 @@ import os
 
 from lxml import etree
 
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
 from ..tools import xml_writer
@@ -254,3 +254,298 @@ class TestDeterministicRefs(StudioCase):
             part.split("'")[1] for part in rendered.split("ref(")[1:] if "'" in part
         ]
         self.assertEqual(refs, sorted(refs))
+
+
+@tagged("post_install", "-at_install")
+class TestStudioAccessControl(StudioCase):
+    """D1 -- every RPC-reachable studio method was callable by any user.
+
+    ``ir.model.access`` cannot protect this: ``studio.view.editor`` is an
+    AbstractModel, which ACL rows do not apply to, and ``call_kw`` is
+    ``auth="user"`` with no access check of its own. Since these methods write
+    Python and XML into a directory on ``addons_path``, an unguarded entry
+    point is remote code execution, not a data leak.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.outsider = self.env["res.users"].create(
+            {
+                "name": "Nosy Employee",
+                "login": "studio_outsider",
+                "groups_id": [(6, 0, [self.env.ref("base.group_user").id])],
+            }
+        )
+
+    def test_view_editor_methods_refuse_a_plain_user(self):
+        editor = self.env["studio.view.editor"].with_user(self.outsider)
+        view = self.env.ref("base.view_partner_form")
+        package = self.make_package(name="x_acl_probe")
+        for call in (
+            lambda: editor.get_editable_views("res.partner"),
+            lambda: editor.get_view_nodes(view.id),
+            lambda: editor.get_addable_fields("res.partner", view.id),
+            lambda: editor.apply_operation(
+                view.id,
+                package.id,
+                {
+                    "type": "add_field",
+                    "name": "ref",
+                    "xpath": "//field[@name='function']",
+                    "position": "after",
+                },
+            ),
+        ):
+            with self.assertRaises(AccessError):
+                call()
+
+    def test_package_write_methods_refuse_a_plain_user(self):
+        package = self.make_package(name="x_acl_pkg")
+        # sudo() to dodge the record-level ACL so we are proving the *method*
+        # guard fires, not merely that the user cannot read studio.package.
+        as_outsider = package.with_user(self.outsider).sudo(False)
+        with self.assertRaises(AccessError):
+            as_outsider.action_write_files()
+        with self.assertRaises(AccessError):
+            as_outsider.action_reload()
+        with self.assertRaises(AccessError):
+            as_outsider.action_delete_records()
+
+    def test_superuser_and_settings_admin_still_pass(self):
+        """The guard must not lock out install, data loading, or the admin."""
+        package = self.make_package(name="x_acl_ok")
+        self.assertTrue(package.action_check_drift())
+        admin = self.env.ref("base.user_admin")
+        self.assertTrue(admin.has_group("app_builder_base.group_studio_manager"))
+
+
+@tagged("post_install", "-at_install")
+class TestLocatorAmbiguity(StudioCase):
+    """D2 -- a bare //tag[@name='x'] is not a locator when it is not unique.
+
+    ``res.partner``'s form carries ``function`` three times: once on the sheet
+    and twice inside inline ``child_ids`` subviews grafted in by
+    ``_postprocess_tag_field``. ``locate_node`` takes the first match, so the
+    picker was handing out one path for three different nodes and an edit
+    aimed at a subview column silently patched the sheet.
+    """
+
+    def test_repeated_names_get_distinct_qualified_paths(self):
+        editor = self.env["studio.view.editor"]
+        view = self.env.ref("base.view_partner_form")
+        nodes = editor.get_view_nodes(view.id)
+        functions = [n for n in nodes if n["is_field"] and n["label"] == "function"]
+        self.assertGreater(len(functions), 1, "fixture assumes a repeated name")
+        paths = [n["xpath"] for n in functions]
+        self.assertEqual(len(set(paths)), len(paths), "each occurrence needs its own")
+        self.assertNotIn("//field[@name='function']", paths)
+
+    def test_unique_names_keep_the_bare_predicate(self):
+        """The qualification must be conditional: //field[@name] is preferred
+        precisely because it survives a sibling being inserted."""
+        editor = self.env["studio.view.editor"]
+        view = self.env.ref("base.view_partner_form")
+        nodes = editor.get_view_nodes(view.id)
+        vat = next(n for n in nodes if n["is_field"] and n["label"] == "vat")
+        self.assertEqual(vat["xpath"], "//field[@name='vat']")
+
+    def test_every_emitted_locator_resolves_to_exactly_one_node(self):
+        """The property that actually matters, asserted over the whole tree."""
+        editor = self.env["studio.view.editor"]
+        view = self.env.ref("base.view_partner_form")
+        root = etree.fromstring(view.get_combined_arch().encode())
+        for node in editor.get_view_nodes(view.id):
+            matches = root.xpath(node["xpath"])
+            self.assertEqual(
+                len(matches),
+                1,
+                "%s matched %d nodes" % (node["xpath"], len(matches)),
+            )
+
+
+@tagged("post_install", "-at_install")
+class TestOrphanManualField(StudioCase):
+    """D3 -- autocapture had no else, so a manual field on a core model was
+    created live and written to no file at all: the exact drift the project
+    exists to prevent, on the models people reach for first."""
+
+    def test_manual_field_on_a_core_model_is_captured_via_context(self):
+        package = self.make_package(name="x_orphan_pkg")
+        partner_model = self.env["ir.model"]._get("res.partner")
+        field = (
+            self.env["ir.model.fields"]
+            .with_context(studio_package_id=package.id)
+            .create(
+                {
+                    "name": "x_studio_loyalty",
+                    "ttype": "integer",
+                    "field_description": "Loyalty",
+                    "model_id": partner_model.id,
+                }
+            )
+        )
+        self.assertEqual(
+            field.studio_package_id,
+            package,
+            "a manual field on a core model must land in the editing package",
+        )
+        rendered = package._render_files()
+        self.assertTrue(
+            any("x_studio_loyalty" in body for body in rendered.values()),
+            "the field must reach the source tree, not just the database",
+        )
+
+    def test_orphan_field_warns_rather_than_raising(self):
+        """A non-studio caller creating a manual field is legitimate and must
+        not be forced into a package -- but it must not be silent either."""
+        partner_model = self.env["ir.model"]._get("res.partner")
+        with self.assertLogs(
+            "odoo.addons.app_builder_base.models.studio_owned_mixin", "WARNING"
+        ) as logs:
+            field = self.env["ir.model.fields"].create(
+                {
+                    "name": "x_studio_unowned",
+                    "ttype": "char",
+                    "field_description": "Unowned",
+                    "model_id": partner_model.id,
+                }
+            )
+        self.assertTrue(field.exists())
+        self.assertTrue(any("x_studio_unowned" in line for line in logs.output))
+
+
+@tagged("post_install", "-at_install")
+class TestAddableFieldScope(StudioCase):
+    """D4 -- arch.iter() is recursive, so a field inside an embedded x2many
+    subview (a different model entirely) masked the parent's field of the same
+    name and the palette came back empty on core models."""
+
+    def test_subview_fields_do_not_mask_parent_model_fields(self):
+        editor = self.env["studio.view.editor"]
+        view = self.env.ref("base.view_partner_form")
+        root = etree.fromstring(view.get_combined_arch().encode())
+        nested_only = {
+            el.get("name")
+            for el in root.iter("field")
+            if el.get("name") and any(a.tag == "field" for a in el.iterancestors())
+        } - {
+            el.get("name")
+            for el in root.iter("field")
+            if el.get("name") and not any(a.tag == "field" for a in el.iterancestors())
+        }
+        addable = {f["name"] for f in editor.get_addable_fields("res.partner", view.id)}
+        real = {n for n in nested_only if n in self.env["res.partner"]._fields}
+        self.assertTrue(real, "fixture assumes the subview introduces a name")
+        self.assertTrue(
+            real & addable,
+            "a field only present inside a subview is still addable to the form",
+        )
+
+
+@tagged("post_install", "-at_install")
+class TestAddFieldIdempotence(StudioCase):
+    """D5 -- _op_add_field always appended a new <xpath>, so a double-click put
+    the field into the combined arch twice."""
+
+    def test_same_field_twice_is_a_no_op(self):
+        package = self.make_package(name="x_idem_pkg")
+        editor = self.env["studio.view.editor"]
+        view = self.env.ref("base.view_partner_form")
+        operation = {
+            "type": "add_field",
+            "name": "ref",
+            "xpath": "//field[@name='function']",
+            "position": "after",
+        }
+        editor.apply_operation(view.id, package.id, operation)
+        result = editor.apply_operation(view.id, package.id, operation)
+        root = etree.fromstring(
+            self.env["ir.ui.view"].browse(result["view_id"]).arch.encode()
+        )
+        added = [f for x in root.findall("xpath") for f in x.findall("field")]
+        self.assertEqual(
+            [f.get("name") for f in added],
+            ["ref"],
+            "re-applying the same add must not duplicate the field",
+        )
+
+    def test_distinct_fields_stay_in_separate_blocks(self):
+        """Merging them would silently reverse the order the user added them:
+        two position="after" blocks apply in sequence, one block does not."""
+        package = self.make_package(name="x_order_pkg")
+        editor = self.env["studio.view.editor"]
+        view = self.env.ref("base.view_partner_form")
+        for name in ("ref", "lang"):
+            editor.apply_operation(
+                view.id,
+                package.id,
+                {
+                    "type": "add_field",
+                    "name": name,
+                    "xpath": "//field[@name='function']",
+                    "position": "after",
+                },
+            )
+        extension = self.env["ir.ui.view"].search(
+            [("inherit_id", "=", view.id), ("priority", "=", 99)], limit=1
+        )
+        root = etree.fromstring(extension.arch.encode())
+        self.assertEqual(len(root.findall("xpath")), 2)
+
+
+@tagged("post_install", "-at_install")
+class TestOwnedViewsAreEditedDirectly(StudioCase):
+    """D6 -- apply_operation always emitted an inheriting view, so a package's
+    own generated form shipped alongside a pile of <xpath> patches against
+    itself in the same addon: source no developer would have written."""
+
+    def _owned_form(self, package):
+        self.build_demo_content(package)
+        return self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+        )
+
+    def test_a_package_edits_its_own_primary_view_in_place(self):
+        package = self.make_package(name="x_owned_pkg")
+        form = self._owned_form(package)
+        self.assertEqual(form.studio_package_id, package, "fixture must own it")
+        before = self.env["ir.ui.view"].search_count([("inherit_id", "=", form.id)])
+        result = self.env["studio.view.editor"].apply_operation(
+            form.id,
+            package.id,
+            {
+                "type": "add_field",
+                "name": "x_budget",
+                "xpath": "//field[@name='x_name']",
+                "position": "after",
+            },
+        )
+        self.assertEqual(result["view_id"], form.id, "must edit the view itself")
+        self.assertIn('name="x_budget"', form.arch)
+        self.assertNotIn("<xpath", form.arch, "no patch against our own view")
+        self.assertEqual(
+            self.env["ir.ui.view"].search_count([("inherit_id", "=", form.id)]),
+            before,
+            "no extension view may be created for a view we own",
+        )
+
+    def test_a_foreign_view_still_gets_an_inheriting_patch(self):
+        """The invariant that makes this project worth using is unchanged."""
+        package = self.make_package(name="x_foreign_pkg")
+        core_view = self.env.ref("base.view_partner_form")
+        original = core_view.arch
+        result = self.env["studio.view.editor"].apply_operation(
+            core_view.id,
+            package.id,
+            {
+                "type": "add_field",
+                "name": "ref",
+                "xpath": "//field[@name='function']",
+                "position": "after",
+            },
+        )
+        extension = self.env["ir.ui.view"].browse(result["view_id"])
+        self.assertNotEqual(extension, core_view)
+        self.assertEqual(extension.inherit_id, core_view)
+        self.assertEqual(extension.mode, "extension")
+        self.assertEqual(core_view.arch, original, "core view must be untouched")

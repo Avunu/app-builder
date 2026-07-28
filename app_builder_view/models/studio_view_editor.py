@@ -1,21 +1,27 @@
 # Copyright 2026 Avunu LLC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
-"""View editing that produces inheriting views, never replacements.
+"""View editing that never rewrites another module's view.
 
 Odoo Studio rewrites view arch in place, which is why a Studio-customised
-database fights every upstream upgrade. Here, every edit becomes an ``<xpath>``
-inside a single extension view per (base view, package) at ``priority=99`` --
-core's own convention for last-loaded views (``ir_ui_view.py:658``). The result
-reads like a patch a developer would have written, survives upstream changes to
-the base view, and is reviewable in git.
+database fights every upstream upgrade. Here, editing a view somebody else owns
+becomes an ``<xpath>`` inside a single extension view per (base view, package)
+at ``priority=99`` -- core's own convention for last-loaded views
+(``ir_ui_view.py:658``). The result reads like a patch a developer would have
+written, survives upstream changes to the base view, and is reviewable in git.
+
+A view the editing package *owns* is edited directly instead. Emitting a patch
+against your own primary view would produce source no developer would write --
+a generated form plus a pile of xpaths against it in the same addon.
 """
 
 import logging
+from collections import Counter
 
 from lxml import etree
 
 from odoo import _, api, models
 from odoo.exceptions import UserError, ValidationError
+from odoo.tools.template_inheritance import apply_inheritance_specs
 
 from odoo.addons.app_builder_base.tools import xml_writer
 
@@ -30,6 +36,7 @@ VALID_POSITIONS = ("after", "before", "inside", "replace", "attributes")
 
 class StudioViewEditor(models.AbstractModel):
     _name = "studio.view.editor"
+    _inherit = ["studio.security.mixin"]
     _description = "Studio View Editor"
 
     # -- extension view lifecycle -----------------------------------------
@@ -112,7 +119,18 @@ class StudioViewEditor(models.AbstractModel):
 
         ``operation`` is a dict with at least ``type``, ``xpath`` and
         ``position``; the remaining keys depend on the type.
+
+        Two modes, chosen by ownership. Editing *someone else's* view emits an
+        inheriting view -- that is the whole point of the project, and it keeps
+        the edit reviewable as a patch that survives upstream changes. But a
+        view this package owns is ours to edit outright, and stapling an
+        ``.studio`` extension onto our own primary view would produce source no
+        developer would have written. Both modes run the same handlers over the
+        same ``<xpath>`` spec; the owned path just feeds that spec through
+        core's own ``apply_inheritance_specs`` instead of storing it, so the
+        two can never drift apart semantically.
         """
+        self._assert_studio_manager()
         base_view = self.env["ir.ui.view"].browse(view_id).exists()
         if not base_view:
             raise UserError(_("The view being edited no longer exists."))
@@ -124,15 +142,33 @@ class StudioViewEditor(models.AbstractModel):
         if handler is None:
             raise UserError(_("Unknown studio operation '%s'.", operation.get("type")))
 
-        extension = self._get_or_create_extension(base_view, package)
-        root = self._parse_data(extension)
-        handler(root, operation)
-        self._write_arch(extension, root)
-        package.studio_capture(extension)
+        if self._owns_outright(base_view, package):
+            target = base_view
+            spec = etree.Element("data")
+            handler(spec, operation)
+            arch = apply_inheritance_specs(xml_writer.parse_arch(base_view.arch), spec)
+        else:
+            target = self._get_or_create_extension(base_view, package)
+            arch = self._parse_data(target)
+            handler(arch, operation)
+
+        self._write_arch(target, arch)
+        package.studio_capture(target)
         return {
-            "view_id": extension.id,
-            "arch": extension.arch,
+            "view_id": target.id,
+            "arch": target.arch,
         }
+
+    @api.model
+    def _owns_outright(self, view, package):
+        """Whether ``package`` may edit ``view``'s arch directly.
+
+        Only a *primary* view the package already owns. An extension view is
+        itself a patch and is always edited as one, and a view owned by another
+        module must never be rewritten in place -- that is the Studio failure
+        mode this project exists to avoid.
+        """
+        return view.mode == "primary" and view.studio_package_id == package
 
     @api.model
     def _new_xpath(self, root, expr, position):
@@ -144,14 +180,32 @@ class StudioViewEditor(models.AbstractModel):
         return node
 
     def _op_add_field(self, root, operation):
-        """Insert a field relative to an existing node."""
+        """Insert a field relative to an existing node.
+
+        Adding the *same* field at the same anchor twice -- a double-click, a
+        replayed request -- must be idempotent, or the field lands in the
+        combined arch twice. Adding a *different* field at the same anchor must
+        not be folded into the same block: two separate ``position="after"``
+        blocks apply in sequence and read back in the order the user added
+        them, whereas merging them into one block silently reverses that.
+        """
         name = operation.get("name")
         if not name:
             raise UserError(_("Adding a field requires a field name."))
-        node = self._new_xpath(
-            root, operation["xpath"], operation.get("position", "after")
-        )
-        field = etree.SubElement(node, "field")
+        position = operation.get("position", "after")
+        expr = operation["xpath"]
+        node = None
+        for candidate in root.findall("xpath"):
+            if candidate.get("expr") != expr or candidate.get("position") != position:
+                continue
+            if any(f.get("name") == name for f in candidate.findall("field")):
+                node = candidate
+                break
+        if node is None:
+            node = self._new_xpath(root, expr, position)
+        field = next((f for f in node.findall("field") if f.get("name") == name), None)
+        if field is None:
+            field = etree.SubElement(node, "field")
         field.set("name", name)
         for key, value in (operation.get("attrs") or {}).items():
             field.set(key, str(value))
@@ -215,6 +269,7 @@ class StudioViewEditor(models.AbstractModel):
     @api.model
     def get_editable_views(self, model_name):
         """Views of ``model_name`` the editor can offer as a starting point."""
+        self._assert_studio_user()
         views = self.env["ir.ui.view"].search(
             [("model", "=", model_name), ("mode", "=", "primary")],
             order="type, priority, id",
@@ -234,37 +289,45 @@ class StudioViewEditor(models.AbstractModel):
         ``apply_inheritance_specs`` matches on -- a DOM-derived path would drift
         the moment another module extends the same view.
         """
+        self._assert_studio_user()
         view = self.env["ir.ui.view"].browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
         root = etree.fromstring(view.get_combined_arch().encode())
+        # A bare //tag[@name='x'] is only a valid locator when nothing else in
+        # the arch answers to it. An embedded x2many subview routinely repeats
+        # the parent's field names, and locate_node silently takes the first
+        # match -- so without this count an edit aimed at a sublist column
+        # patches the sheet instead, for the wrong model.
+        occurrences = Counter(
+            (el.tag, el.get("name"))
+            for el in root.iter()
+            if isinstance(el.tag, str) and el.get("name")
+        )
         nodes = []
-        self._walk_nodes(root, "", nodes, depth=0)
+        self._walk_nodes(root, nodes, depth=0, occurrences=occurrences)
         return nodes
 
     @api.model
-    def _walk_nodes(self, node, parent_path, nodes, depth):
+    def _walk_nodes(self, node, nodes, depth, occurrences):
         """Depth-first walk emitting one entry per element."""
         if not isinstance(node.tag, str):
             return
         # Prefer an identifying predicate over a positional index: //field[@name]
-        # survives a sibling being inserted, //div[3] does not.
+        # survives a sibling being inserted, //div[3] does not -- but only while
+        # exactly one node in the arch answers to it.
+        #
+        # The fallback has to be an *absolute* path, not one relative to a
+        # hand-built ancestor chain. An inline x2many subview is itself a
+        # <form><sheet>, so "//form/sheet/..." is ambiguous from its first step
+        # and everything built on it inherits that. getpath() is anchored at the
+        # document root and indexes every step, so it is unique by construction
+        # -- it is the same call core's own distribute_branding uses.
         name = node.get("name")
-        if name:
+        if name and occurrences[(node.tag, name)] == 1:
             path = "//%s[@name='%s']" % (node.tag, name)
         else:
-            siblings = [
-                child
-                for child in (node.getparent() or [])
-                if isinstance(child.tag, str) and child.tag == node.tag
-            ]
-            if node.getparent() is None:
-                path = "//%s" % node.tag
-            elif len(siblings) > 1:
-                index = siblings.index(node) + 1
-                path = "%s/%s[%d]" % (parent_path, node.tag, index)
-            else:
-                path = "%s/%s" % (parent_path, node.tag)
+            path = node.getroottree().getpath(node)
 
         label = name or node.get("string") or node.get("class") or ""
         nodes.append(
@@ -279,11 +342,12 @@ class StudioViewEditor(models.AbstractModel):
             }
         )
         for child in node:
-            self._walk_nodes(child, path, nodes, depth + 1)
+            self._walk_nodes(child, nodes, depth + 1, occurrences)
 
     @api.model
     def get_addable_fields(self, model_name, view_id=None):
         """Fields on the model that are not already in the combined arch."""
+        self._assert_studio_user()
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
         model = self.env[model_name]
@@ -292,8 +356,16 @@ class StudioViewEditor(models.AbstractModel):
             view = self.env["ir.ui.view"].browse(view_id).exists()
             if view:
                 arch = etree.fromstring(view.get_combined_arch().encode())
+                # Only fields at this arch's own level count as placed. iter()
+                # is recursive, so an embedded x2many subview -- which belongs
+                # to another model entirely -- would otherwise mask the parent's
+                # field of the same name, and the palette comes back empty on
+                # exactly the core models people reach for first.
                 present = {
-                    node.get("name") for node in arch.iter("field") if node.get("name")
+                    node.get("name")
+                    for node in arch.iter("field")
+                    if node.get("name")
+                    and not any(a.tag == "field" for a in node.iterancestors())
                 }
         result = []
         for name, field in sorted(model._fields.items()):

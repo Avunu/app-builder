@@ -202,13 +202,34 @@ class TestViewEditor(StudioCase):
     def test_named_nodes_get_identifying_xpaths(self):
         """//field[@name='x'] survives a sibling insert; //div[3] does not."""
         nodes = self.editor.get_view_nodes(self.base_view.id)
-        function = next(n for n in nodes if n["is_field"] and n["label"] == "function")
-        self.assertEqual(function["xpath"], "//field[@name='function']")
+        # 'vat' is on the sheet and nowhere else in the partner form, so the
+        # bare predicate is unambiguous and is what the picker should emit.
+        vat = next(n for n in nodes if n["is_field"] and n["label"] == "vat")
+        self.assertEqual(vat["xpath"], "//field[@name='vat']")
+
+    def test_ambiguous_names_are_qualified_by_their_parent(self):
+        """A bare predicate is only a locator while exactly one node answers it.
+
+        ``res.partner``'s form carries ``function`` three times: once on the
+        sheet and twice inside the inline ``child_ids`` subviews, which are a
+        different view of a different arch grafted in by
+        ``_postprocess_tag_field``. Emitting ``//field[@name='function']`` for
+        all three means ``locate_node`` takes whichever comes first, so an edit
+        aimed at a subview column silently patches the sheet.
+        """
+        nodes = self.editor.get_view_nodes(self.base_view.id)
+        functions = [n for n in nodes if n["is_field"] and n["label"] == "function"]
+        self.assertGreater(len(functions), 1, "fixture assumes a repeated name")
+        paths = {n["xpath"] for n in functions}
+        self.assertEqual(
+            len(paths), len(functions), "each occurrence needs its own path"
+        )
+        self.assertNotIn("//field[@name='function']", paths)
 
     def test_node_xpaths_are_usable_as_operation_targets(self):
         """A picked xpath must actually resolve, or the picker is a lie."""
         nodes = self.editor.get_view_nodes(self.base_view.id)
-        target = next(n for n in nodes if n["xpath"] == "//field[@name='function']")
+        target = next(n for n in nodes if n["xpath"] == "//field[@name='vat']")
         self.editor.apply_operation(
             self.base_view.id,
             self.package.id,

@@ -60,6 +60,7 @@ STATES = [
 
 class StudioPackage(models.Model):
     _name = "studio.package"
+    _inherit = ["studio.security.mixin"]
     _description = "Studio Package"
     _order = "name"
 
@@ -483,6 +484,7 @@ class StudioPackage(models.Model):
 
     def action_write_files(self):
         """Serialize the package to disk and record checksums."""
+        self._assert_studio_manager()
         for package in self:
             package._assert_writable()
             files = package._render_files()
@@ -567,6 +569,7 @@ class StudioPackage(models.Model):
         both advance or both roll back -- which is what lets us treat the DB
         write as an optimisation rather than a second source of truth.
         """
+        self._assert_studio_manager()
         self.ensure_one()
         if not any(True for _rec in self._flatten(records)):
             return False
@@ -591,6 +594,7 @@ class StudioPackage(models.Model):
         The new class only takes effect once the Python process reloads, which
         ``--dev=reload`` does automatically in development.
         """
+        self._assert_studio_manager()
         self.ensure_one()
         self._assert_writable()
         requested = {m.strip() for m in model_names if m and m.strip()}
@@ -752,6 +756,7 @@ class StudioPackage(models.Model):
         ``_module_data_uninstall``: without it ``_prepare_update`` refuses to
         drop any column that carries module data.
         """
+        self._assert_studio_manager()
         self.ensure_one()
         data = self.env["ir.model.data"].search([("module", "=", self.name)])
         by_model = {}
@@ -780,6 +785,7 @@ class StudioPackage(models.Model):
 
     def action_check_drift(self):
         """Compare disk against what we last generated."""
+        self._assert_studio_user()
         for package in self:
             package.file_ids._refresh_disk_checksum()
             if not os.path.isdir(package.root_path or ""):
@@ -791,6 +797,7 @@ class StudioPackage(models.Model):
         return True
 
     def action_view_diff(self):
+        self._assert_studio_user()
         self.ensure_one()
         return {
             "type": "ir.actions.act_window",
@@ -812,6 +819,7 @@ class StudioPackage(models.Model):
         importlib.invalidate_caches(), so without them a package edited on disk
         stays invisible for the lifetime of the process.
         """
+        self._assert_studio_manager()
         self.ensure_one()
         self._invalidate_module_caches()
         module = self._find_or_create_module()
