@@ -16,7 +16,11 @@ class TestPyCodegen(StudioCase):
         package = package or self.make_package()
         model = self.build_demo_content(package)
         owned = model.field_id.filtered(lambda f: f.state == "manual")
-        return model, pycodegen.render_model(model, owned)
+        return model, pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned))
+
+    def _render_for(self, model):
+        owned = model.field_id.filtered(lambda f: f.state == "manual")
+        return pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned))
 
     def test_class_name_conversion(self):
         self.assertEqual(pycodegen.class_name_for("x_studio_project"), "XStudioProject")
@@ -102,9 +106,7 @@ class TestPyCodegen(StudioCase):
             }
         )
         package._assign([model, model.field_id.filtered(lambda f: f.state == "manual")])
-        plain = pycodegen.render_model(
-            model, model.field_id.filtered(lambda f: f.state == "manual")
-        )
+        plain = self._render_for(model)
         self.assertIn("from odoo import fields, models", plain)
         self.assertNotIn("api", plain.split("\n")[3])
 
@@ -119,8 +121,8 @@ class TestPyCodegen(StudioCase):
         model = self.build_demo_content(package)
         owned = model.field_id.filtered(lambda f: f.state == "manual")
         self.assertEqual(
-            pycodegen.render_model(model, owned),
-            pycodegen.render_model(model, owned),
+            pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned)),
+            pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned)),
         )
 
     def test_transient_model_uses_transient_base(self):
@@ -144,9 +146,7 @@ class TestPyCodegen(StudioCase):
             }
         )
         package._assign(model)
-        source = pycodegen.render_model(
-            model, model.field_id.filtered(lambda f: f.state == "manual")
-        )
+        source = self._render_for(model)
         self.assertIn("class XWizardy(models.TransientModel):", source)
         ast.parse(source)
 
@@ -177,9 +177,7 @@ class TestPyCodegen(StudioCase):
             }
         )
         package._assign(model)
-        source = pycodegen.render_model(
-            model, model.field_id.filtered(lambda f: f.state == "manual")
-        )
+        source = self._render_for(model)
         ast.parse(source)
         self.assertIn("fields.Selection([]", source)
 
@@ -216,9 +214,7 @@ class TestPyCodegen(StudioCase):
             }
         )
         package._assign(model)
-        source = pycodegen.render_model(
-            model, model.field_id.filtered(lambda f: f.state == "manual")
-        )
+        source = self._render_for(model)
         stage = source.split("x_stage = fields.Selection")[1].split("\n")[0]
         partner = source.split("x_partner_id = fields.Many2one")[1].split(")")[0]
         self.assertIn("group_expand=True", stage)

@@ -367,7 +367,9 @@ class StudioPackage(models.Model):
             # Only fields this package owns: Odoo declares the magic columns
             # itself, and a field from another module is not ours to redeclare.
             owned = model.field_id.filtered(lambda f: f.state == "manual")
-            files[relative] = pycodegen.render_model(model, owned)
+            files[relative] = pycodegen.render_model(
+                pycodegen.spec_from_ir_model(model, owned)
+            )
             emitted.append(model_name)
 
         if emitted:
@@ -681,7 +683,9 @@ class StudioPackage(models.Model):
                 continue
             owned = model.field_id.filtered(lambda f: f.state == "manual")
             with open(os.path.join(root, relative), "w", encoding="utf-8") as handle:
-                handle.write(pycodegen.render_model(model, owned))
+                handle.write(
+                    pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned))
+                )
 
         with open(
             os.path.join(root, "models/__init__.py"), "w", encoding="utf-8"

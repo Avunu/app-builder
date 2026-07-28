@@ -2,6 +2,7 @@ from . import (
     common,
     test_graduate,
     test_manifest,
+    test_modelspec,
     test_package,
     test_pycodegen,
     test_review_regressions,

@@ -45,7 +45,9 @@ class StudioGraduateWizard(models.TransientModel):
         chunks = []
         for model in self.model_ids:
             owned = model.field_id.filtered(lambda f: f.state == "manual")
-            chunks.append(pycodegen.render_model(model, owned))
+            chunks.append(
+                pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned))
+            )
         self.preview = "\n\n".join(chunks)
 
     def action_graduate(self):
