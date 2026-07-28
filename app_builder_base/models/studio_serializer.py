@@ -43,6 +43,9 @@ SEQ_MENU = 70
 SEQ_RULE = 80
 SEQ_AUTOMATION = 90
 SEQ_ACCESS = 95
+# Sequences are referenced by a create() override, not by an xmlid ref, so
+# they only need to exist before records are made -- not before the views.
+SEQ_SEQUENCE = 15
 
 
 class StudioSerializer(models.AbstractModel):

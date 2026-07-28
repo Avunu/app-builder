@@ -6,5 +6,6 @@ from . import (
     modelspec,
     pycodegen,
     pyparse,
+    scaffold,
     xml_writer,
 )

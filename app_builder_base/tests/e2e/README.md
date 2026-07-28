@@ -66,3 +66,19 @@ Two things it encodes that are easy to get wrong:
 
 It also asserts every field comes back `state='base'`, which is what catches a half-completed
 adoption before it becomes a competing-definition bug.
+
+## `probe_scaffold.py` -- does one gesture produce a usable app?
+
+The acceptance test. It builds an app with `studio.app.builder.create_app`, then logs in as a
+**plain internal user** -- no studio group, no settings access -- and asks whether they can read
+the model, create a record, and see the menu.
+
+That last question is the whole point. `IrModelAccess.check` returns True immediately for
+`env.su`, so an app with missing or wrong ACLs looks perfect to the administrator who built it
+and is invisible to everybody it was built for. The previous wizard shipped exactly that: it
+parented the generated menu under the studio root, which is gated on the studio group, so a
+manager could build "Projects", hand it to staff, and nobody could find it. Nothing in the
+product would have told them.
+
+It also checks the source is honest -- no `x_` prefix, `mail.thread` as a real mixin, and
+re-rendering the file produces no diff.

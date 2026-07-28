@@ -463,6 +463,41 @@ class StudioPackage(models.Model):
         owned_fields = model.field_id.filtered(lambda f: f.state == "manual")
         return pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned_fields))
 
+    def _render_bootstrap_files(self):
+        """Write the least a directory needs to be an installable module.
+
+        Deliberately empty of content: this is installed before any model
+        exists, so that the one slow step -- ``button_immediate_install`` --
+        happens on a module with nothing in it that can fail.
+        """
+        self.ensure_one()
+        self._assert_writable()
+        files = {
+            "__init__.py": pycodegen.render_package_init(False),
+            "__manifest__.py": self._render_manifest([]),
+        }
+        self._write_files(files)
+        return files
+
+    def _seed_source_for(self, model_name, spec):
+        """Put a model's first Python on disk, before it has ever been loaded.
+
+        The only moment a spec flows *to* the file without having been parsed
+        from it. Everything after this is a regeneration of what is there.
+        """
+        self.ensure_one()
+        self._assert_writable()
+        relative = "models/%s" % pycodegen.module_file_for(model_name)
+        emitted = sorted(self._python_model_set() | {model_name})
+        self._write_files(
+            {
+                relative: pycodegen.render_model(spec),
+                "models/__init__.py": self._render_models_init(emitted),
+                "__init__.py": pycodegen.render_package_init(True),
+            }
+        )
+        return relative
+
     def _read_source(self, relative):
         """Return the on-disk content of a package file, or ``None``."""
         self.ensure_one()
@@ -526,13 +561,40 @@ class StudioPackage(models.Model):
         )
 
     def _effective_depends(self, dep_sink=None):
-        """Union of declared depends and modules referenced by our records."""
+        """Union of declared depends and every module we actually need."""
         self.ensure_one()
         declared = {d.strip() for d in (self.depends or "").split(",") if d.strip()}
         referenced = set(dep_sink or ())
         # 'base' is implicit but harmless (and conventional) to state.
-        depends = (declared | referenced | {"base"}) - {self.name}
+        depends = (declared | referenced | self._python_depends() | {"base"}) - {
+            self.name
+        }
         return sorted(depends)
+
+    def _python_depends(self):
+        """Modules our generated *classes* need, which no xmlid ref reveals.
+
+        ``dep_sink`` is filled while serializing records, so it only ever sees
+        what XML points at. A class doing ``_inherit = ["mail.thread"]`` needs
+        ``mail`` just as much, and nothing in the data files says so -- the
+        package installs fine here and fails on a database without mail, which
+        is the same class of bug as the one recorded as design finding 4.
+        """
+        self.ensure_one()
+        needed = set()
+        IrModel = self.env["ir.model"].sudo()
+        for entry in self.model_ids.filtered(lambda m: m.source == "python"):
+            spec = entry._current_spec()
+            if spec is None:
+                continue
+            for inherited in spec.inherit:
+                record = IrModel.search([("model", "=", inherited)], limit=1)
+                if not record:
+                    continue
+                needed.update(
+                    part.strip() for part in (record.modules or "").split(",")
+                )
+        return {name for name in needed if name and name != self.name}
 
     @api.model
     def _order_data_files(self, paths):
@@ -1080,17 +1142,24 @@ class StudioPackage(models.Model):
                 after = pyparse.parse_model(source)
             except pyparse.UnsupportedConstruct:
                 continue  # frozen; we are not rewriting it anyway
-            keeping = set(after.field_names)
             model = self.env["ir.model"].search([("model", "=", entry.model)], limit=1)
             if not model:
                 continue
+            # Everything the class itself did not declare. Reflection attributes
+            # a mixin's fields to whichever module introduced the *model*, so
+            # message_ids and friends carry our xmlid too -- and reading them as
+            # columns we are about to drop would block every ordinary save.
+            # Asking the live mixin is exact; a hardcoded list would not be.
+            keeping = set(after.field_names) | set(modelspec.MAGIC_COLUMNS)
+            for mixin in after.inherit:
+                if mixin in self.env:
+                    keeping |= set(self.env[mixin]._fields)
             gone = sorted(
                 record.name
                 for record in model.field_id
                 if record.id in owned_field_ids
                 and record.store
                 and record.name not in keeping
-                and record.name not in modelspec.MAGIC_COLUMNS
             )
             if gone:
                 dropped[entry.model] = tuple(gone)
