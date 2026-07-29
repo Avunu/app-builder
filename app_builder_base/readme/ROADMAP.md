@@ -1,15 +1,14 @@
 ## Next
 
-- **The composer client.** A client action with a resizable sidebar and a live
-  preview of the model being built: a pending-changes tray, and a field editor
-  modelled on core's `properties` field popover. The server side it sits on —
-  the edit buffer, the field-type catalogue, apply and diff preview — is in
-  place; what is missing is the OWL.
-- **Relationships.** A one2many that creates its own inverse many2one and places
-  itself on the parent form. Nothing does this today, and every real app needs it
-  within the first five minutes.
+- **Click-to-select in the preview.** The composer renders the real form beside
+  the field list; clicking a field there should open its editor. We generated the
+  view, so `ev.target.closest("[name]")` already carries the field name — no
+  branding machinery needed.
+- **Record rules and automations**, in the composer rather than in the technical
+  menus, where they would have the context that makes them answerable.
 - **Drag-and-drop.** Deliberately *after* the composer rather than instead of it.
-  It is one gesture in a vocabulary, not the vocabulary.
+  It is one gesture in a vocabulary, not the vocabulary, and it lands on top of
+  the already-tested view operations.
 
 ## Known limits
 
@@ -19,10 +18,16 @@
   constraint, plus `BaseModel._add_field`), so a clean-named field has to be a
   class attribute. Adding a field to a *core* model stays instant, because there
   the `x_` prefix is expected anyway.
+- **The preview shows the applied state, not the pending one.** A form cannot
+  render a field the registry does not have, so the tray carries the difference
+  rather than the preview pretending to.
 - **Multi-worker deployments cannot reload in place** and are told so rather than
   served badly: the other workers rebuild their registry from Python they still
   hold in `sys.modules`, so they would rebuild against a stale class. Studio
   editing is a single-process development activity; production runs read-only.
+- **The inverse of a related list can only be created on a model this package
+  defines in Python.** Pointing at anything else needs a many2one that already
+  aims back; the picker lists the candidates and says so when there are none.
 - **Adopting two custom models that reference each other** in the same operation
   is untested; adopt them one at a time.
 - **`many2one_reference` cannot be serialized portably** — its value is a raw
@@ -32,3 +37,6 @@
   server-side against the combined arch, never in the browser: the arch a client
   receives is a per-user projection, with nodes removed by group rights and whole
   subviews grafted in, so a path derived from it can be wrong for somebody else.
+- **Placement only edits views the package owns.** A field added to a model whose
+  form belongs to another module is created but not placed; use the view editor,
+  which emits an inheriting view for that case on purpose.
