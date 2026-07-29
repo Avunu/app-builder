@@ -104,8 +104,14 @@
                 <group>
                     <field name="package_id"/>
                     <field name="available_model_ids" invisible="1"/>
+                    <field name="unowned_count" invisible="1"/>
                     <field name="model_ids" widget="many2many_tags"/>
                 </group>
+                <div class="text-muted" invisible="not unowned_count">
+                    Some of these belong to no package yet — a model made by
+                    hand in Settings → Technical has none. Adopting one puts it
+                    in the package chosen above.
+                </div>
                 <group string="Preview" invisible="not preview">
                     <field name="preview" widget="ace" options="{'mode': 'python'}"
                            nolabel="1" readonly="1"/>

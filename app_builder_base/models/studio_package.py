@@ -790,13 +790,13 @@ class StudioPackage(models.Model):
         self._assert_writable()
         requested = {m.strip() for m in model_names if m and m.strip()}
         if not requested:
-            raise UserError(_("Choose at least one model to graduate."))
+            raise UserError(_("Choose at least one model to adopt."))
 
         unknown = requested - self._owned_model_names()
         if unknown:
             raise UserError(
                 _(
-                    "This package does not own %(models)s, so it cannot graduate them.",
+                    "This package does not own %(models)s, so it cannot adopt them.",
                     models=", ".join(sorted(unknown)),
                 )
             )
@@ -815,7 +815,7 @@ class StudioPackage(models.Model):
             "type": "ir.actions.client",
             "tag": "display_notification",
             "params": {
-                "title": _("Graduated to code"),
+                "title": _("Adopted"),
                 "message": _(
                     "%(models)s now live in models/ as Python. Restart the server "
                     "(or rely on --dev=reload) for the classes to take effect.",
@@ -827,7 +827,7 @@ class StudioPackage(models.Model):
         }
 
     def _assert_module_installed(self):
-        """Refuse to graduate a package Odoo has not installed as a module.
+        """Refuse to adopt into a package Odoo has not installed as a module.
 
         Odoo only imports Python for modules in the dependency graph. If the
         package is merely a directory of files that nobody installed, demoting
