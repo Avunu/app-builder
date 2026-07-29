@@ -135,42 +135,134 @@ PYTHON_KEYWORDS = frozenset(
 
 RELATIONAL = ("many2one", "one2many", "many2many")
 
-# ttypes the studio will generate. Deliberately narrower than
-# fields.Field.by_type: see validate_spec for why each exclusion exists.
-SUPPORTED_TTYPES = (
-    "binary",
-    "boolean",
-    "char",
-    "date",
-    "datetime",
-    "float",
-    "html",
-    "integer",
-    "many2many",
-    "many2one",
-    "monetary",
-    "one2many",
-    "reference",
-    "selection",
-    "text",
+
+@dataclass(frozen=True, slots=True)
+class FieldType:
+    """One entry in the field picker.
+
+    ``label`` is deliberately an affordance rather than an ORM type -- a site
+    manager choosing "Related list" should not have to know it spells
+    ``one2many``. ``params`` names the extra spec attributes this type needs,
+    so the editor can show exactly the right rows and no others. ``unsupported``
+    carries the reason a type is offered but disabled, because a type that
+    silently vanishes from the list teaches nobody anything.
+    """
+
+    ttype: str
+    label: str
+    group: str
+    params: tuple[str, ...] = ()
+    unsupported: str | None = None
+
+    @property
+    def supported(self):
+        return self.unsupported is None
+
+
+# Ordered: this is the order the picker shows.
+FIELD_TYPES = (
+    FieldType("char", "Text", "basic", ("size", "translate", "default")),
+    FieldType("text", "Long text", "basic", ("translate", "default")),
+    FieldType("html", "Rich text", "basic", ("translate",)),
+    FieldType("boolean", "Checkbox", "basic", ("default",)),
+    FieldType("integer", "Whole number", "basic", ("default",)),
+    FieldType("float", "Decimal", "basic", ("digits", "default")),
+    FieldType("monetary", "Amount", "basic", ("currency_field",)),
+    FieldType("date", "Date", "basic", ("default",)),
+    FieldType("datetime", "Date & Time", "basic", ("default",)),
+    FieldType("selection", "Selection", "basic", ("selection", "default")),
+    FieldType("binary", "File", "basic", ()),
+    FieldType(
+        "many2one",
+        "Link to one record",
+        "relational",
+        ("comodel", "domain", "ondelete", "default"),
+    ),
+    FieldType(
+        "one2many", "Related list", "relational", ("comodel", "inverse_name", "domain")
+    ),
+    FieldType(
+        "many2many",
+        "Tags",
+        "relational",
+        ("comodel", "domain", "relation_table", "column1", "column2"),
+    ),
+    FieldType("reference", "Reference", "advanced", ("selection",)),
+    FieldType(
+        "properties",
+        "Properties",
+        "advanced",
+        unsupported=(
+            "Properties are defined by a parent record: definition_record and "
+            "definition_record_field are class attributes with no "
+            "ir.model.fields column, so the field cannot be described here."
+        ),
+    ),
+    FieldType(
+        "properties_definition",
+        "Properties definition",
+        "advanced",
+        unsupported=(
+            "A properties definition only means anything alongside a "
+            "properties field on a child model."
+        ),
+    ),
+    FieldType(
+        "many2one_reference",
+        "Reference by id",
+        "advanced",
+        unsupported=(
+            "Its value is a raw database id, which cannot be written to source "
+            "in a form that survives a fresh install."
+        ),
+    ),
+    FieldType(
+        "json",
+        "JSON",
+        "advanced",
+        unsupported="No editor widget. Use a Long text field.",
+    ),
 )
 
-UNSUPPORTED_TTYPES = {
-    "properties": (
-        "Properties are defined by a parent record: definition_record and "
-        "definition_record_field are class attributes with no ir.model.fields "
-        "column, so the field cannot be described here."
-    ),
-    "properties_definition": (
-        "A properties definition only means anything alongside a properties "
-        "field on a child model."
-    ),
-    "many2one_reference": (
-        "Its value is a raw database id, which cannot be written to source in "
-        "a form that survives a fresh install."
-    ),
-    "json": "No editor widget. Use a Long text field.",
-}
+FIELD_TYPES_BY_TTYPE = {entry.ttype: entry for entry in FIELD_TYPES}
+
+SUPPORTED_TTYPES = tuple(e.ttype for e in FIELD_TYPES if e.supported)
+UNSUPPORTED_TTYPES = {e.ttype: e.unsupported for e in FIELD_TYPES if not e.supported}
+
+
+def available_field_types(spec=None):
+    """The picker's contents, with each entry's availability decided here.
+
+    Shown-but-disabled beats hidden: a manager who wants an amount field and
+    cannot find one learns nothing, whereas one who sees *Amount* greyed out
+    with "needs a Currency field on this model" knows what to do next.
+    """
+    currency_present = bool(
+        spec
+        and any(
+            f.ttype == "many2one" and f.comodel == "res.currency" for f in spec.fields
+        )
+    )
+    out = []
+    for entry in FIELD_TYPES:
+        enabled, tooltip = entry.supported, entry.unsupported or ""
+        if enabled and entry.ttype == "monetary" and not currency_present:
+            enabled = False
+            tooltip = (
+                "An amount needs a Currency field on this model. Add a "
+                '"Link to one record" pointing at res.currency first.'
+            )
+        out.append(
+            {
+                "value": entry.ttype,
+                "label": entry.label,
+                "group": entry.group,
+                "params": list(entry.params),
+                "enabled": enabled,
+                "tooltip": tooltip,
+            }
+        )
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +382,29 @@ class ModelSpec:
 def spec_to_json(spec):
     """Plain-dict form, for the transient edit buffer."""
     return asdict(spec)
+
+
+FIELD_ATTRS = frozenset(FieldSpec.__slots__)
+
+
+def field_spec_from_json(data):
+    """A ``FieldSpec`` from whatever the client sent.
+
+    Unknown keys are dropped rather than raising: the editor sends a whole form
+    payload, and a stray ``id`` or display value should not be an error.
+    """
+    values = {k: v for k, v in data.items() if k in FIELD_ATTRS}
+    values["selection"] = tuple(
+        SelectionSpec(**s) if isinstance(s, dict) else SelectionSpec(*s)
+        for s in values.get("selection") or ()
+    )
+    values["depends"] = tuple(values.get("depends") or ())
+    values["extra"] = tuple(tuple(pair) for pair in values.get("extra") or ())
+    if values.get("digits"):
+        values["digits"] = tuple(values["digits"])
+    else:
+        values["digits"] = None
+    return FieldSpec(**values)
 
 
 def spec_from_json(data):
