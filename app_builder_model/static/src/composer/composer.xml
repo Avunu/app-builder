@@ -110,7 +110,11 @@
                                         'text-bg-secondary': change.kind === 'model'}"
                                       t-esc="change.kind"/>
                                 <div>
-                                    <div t-esc="change.name"/>
+                                    <div>
+                                        <t t-esc="change.name"/>
+                                        <span t-if="change.model" class="badge text-bg-light ms-1"
+                                              t-esc="change.model"/>
+                                    </div>
                                     <small class="text-muted" t-esc="change.detail"/>
                                 </div>
                             </div>

@@ -20,10 +20,13 @@ the user actually asks for one.
 import difflib
 import json
 
-from odoo import _, api, fields, models
-from odoo.exceptions import AccessError, UserError
+from lxml import etree
 
-from ..tools import modelspec, pycodegen
+from odoo import _, api, fields, models
+from odoo.exceptions import AccessError, UserError, ValidationError
+
+from ..tools import modelspec, pycodegen, xml_writer
+from ..tools import placement as placement_tool
 
 
 class StudioModelDraft(models.TransientModel):
@@ -43,6 +46,22 @@ class StudioModelDraft(models.TransientModel):
         readonly=True, help="The spec as it was when this draft was opened."
     )
     spec_json = fields.Text(help="The spec with the pending edits applied.")
+    placement_json = fields.Text(
+        default="{}",
+        help="Which views each staged field should appear in. View intent, "
+        "not class definition, so it is kept out of the spec.",
+    )
+
+    # A related list needs a field on the *other* model pointing back, and that
+    # field has to exist by the time the registry is rebuilt or setup fails on
+    # the inverse it cannot resolve. So the other model's edit is staged here
+    # too, and both are written before the single reload.
+    parent_draft_id = fields.Many2one(
+        "studio.model.draft", ondelete="cascade", readonly=True
+    )
+    companion_ids = fields.One2many(
+        "studio.model.draft", "parent_draft_id", readonly=True
+    )
 
     dirty = fields.Boolean(compute="_compute_dirty")
     change_count = fields.Integer(compute="_compute_dirty")
@@ -91,6 +110,7 @@ class StudioModelDraft(models.TransientModel):
         """Everything the composer needs, in one round trip."""
         self.ensure_one()
         spec = self._spec()
+        placement = self._placement()
         return {
             "id": self.id,
             "model": self.model,
@@ -105,6 +125,9 @@ class StudioModelDraft(models.TransientModel):
                 {
                     **modelspec.spec_to_json(f),
                     "type_label": self._type_label(f.ttype),
+                    "placement": placement.get(
+                        f.name, modelspec.default_placement(f.ttype)
+                    ),
                 }
                 for f in spec.fields
             ],
@@ -172,37 +195,218 @@ class StudioModelDraft(models.TransientModel):
         self.spec_json = json.dumps(modelspec.spec_to_json(spec), sort_keys=True)
         return True
 
-    @api.depends("spec_json", "base_spec_json")
+    @api.depends(
+        "spec_json",
+        "base_spec_json",
+        "companion_ids.spec_json",
+        "companion_ids.base_spec_json",
+    )
     def _compute_dirty(self):
         for draft in self:
-            diff = modelspec.diff_specs(draft._base_spec(), draft._spec())
-            draft.change_count = len(
-                diff.added + diff.removed + diff.changed + diff.model_changed
-            )
-            draft.dirty = bool(draft.change_count)
+            # Companions count: staging a related list changes two models, and
+            # an Apply button that stayed grey would be lying about it.
+            count = 0
+            for staged in draft | draft.companion_ids:
+                diff = modelspec.diff_specs(staged._base_spec(), staged._spec())
+                count += len(
+                    diff.added + diff.removed + diff.changed + diff.model_changed
+                )
+            draft.change_count = count
+            draft.dirty = bool(count)
 
     # -- operations -------------------------------------------------------
 
     def add_field(self, values):
-        """Stage a new field. ``values`` is a FieldSpec-shaped dict."""
+        """Stage a new field. ``values`` is a FieldSpec-shaped dict.
+
+        ``placement`` rides along but is not part of the spec: it says which
+        views should show the field, which is a fact about the arch and not
+        about the class.
+        """
         self._assert_studio_manager()
         self.ensure_one()
+        placement = values.pop("placement", None) if isinstance(values, dict) else None
+        create_inverse = (
+            values.pop("create_inverse", False) if isinstance(values, dict) else False
+        )
         spec_field = modelspec.field_spec_from_json(values)
         spec = self._spec()
         if spec.field(spec_field.name):
             raise UserError(
                 _("This model already has a field called '%s'.", spec_field.name)
             )
-        return self._store(modelspec.with_field(spec, spec_field))
+        self._set_placement(
+            spec_field.name, modelspec.clean_placement(placement, spec_field.ttype)
+        )
+        self._store(modelspec.with_field(spec, spec_field))
+        if create_inverse and spec_field.ttype == "one2many":
+            self._stage_inverse(spec_field)
+        return True
+
+    # -- relationships ----------------------------------------------------
+
+    def inverse_options(self, comodel):
+        """What could link ``comodel`` back to this model, for the picker.
+
+        Odoo needs a many2one on the other side before a related list can
+        exist. Asking the user to go and build it there first is the gesture
+        every studio gets wrong, so the options are: reuse a link that already
+        points back, or have one made -- and if neither is possible, say why
+        in the same breath rather than failing on Apply.
+        """
+        self.ensure_one()
+        out = {"candidates": [], "can_create": False, "suggested": "", "reason": ""}
+        if not comodel:
+            return out
+        sibling = self._sibling(comodel)
+        for name, label in self._links_back_from(comodel, sibling).items():
+            out["candidates"].append({"name": name, "string": label})
+        out["candidates"].sort(key=lambda entry: entry["name"])
+        if sibling:
+            out["can_create"] = True
+            out["suggested"] = self._suggest_inverse_name(comodel)
+        elif not out["candidates"]:
+            out["reason"] = _(
+                "%(comodel)s is not a model this package defines in Python, so "
+                "the builder cannot add the link back to %(model)s for you. Add "
+                "a link to %(model)s on %(comodel)s first, then pick it here.",
+                comodel=comodel,
+                model=self.model,
+            )
+        return out
+
+    def _sibling(self, comodel):
+        """The package model for ``comodel``, if we may write to its class."""
+        self.ensure_one()
+        return self.package_id.model_ids.filtered(
+            lambda m: m.model == comodel and m.source == "python"
+        )[:1]
+
+    def _links_back_from(self, comodel, sibling):
+        """``{name: label}`` for every many2one on ``comodel`` aimed here.
+
+        Read from the sibling's *file* when we own it, and only from the
+        registry otherwise. A model we own may not be in the registry at all --
+        that is exactly the state a just-adopted model is in, before anything
+        has imported its class -- and the file is the definition regardless.
+        """
+        self.ensure_one()
+        if sibling:
+            spec = sibling._current_spec()
+            return {
+                f.name: f.string or f.name
+                for f in (spec.fields if spec else ())
+                if f.ttype == "many2one" and f.comodel == self.model
+            }
+        if comodel in self.env:
+            return {
+                name: field.string or name
+                for name, field in self.env[comodel]._fields.items()
+                if field.type == "many2one" and field.comodel_name == self.model
+            }
+        return {}
+
+    def _names_on(self, comodel, sibling):
+        """Every field name already used on ``comodel``, from the same source."""
+        self.ensure_one()
+        if sibling:
+            spec = sibling._current_spec()
+            return {f.name for f in (spec.fields if spec else ())}
+        return set(self.env[comodel]._fields) if comodel in self.env else set()
+
+    def _suggest_inverse_name(self, comodel):
+        """``workshop.project`` linked from its lines becomes ``project_id``."""
+        base = self.model.rsplit(".", 1)[-1]
+        taken = self._names_on(comodel, self._sibling(comodel))
+        candidate = "%s_id" % base
+        suffix = 2
+        while candidate in taken:
+            candidate = "%s_%d_id" % (base, suffix)
+            suffix += 1
+        return candidate
+
+    def _companion_for(self, package_model):
+        """The staged edit for another model, created on first need."""
+        self.ensure_one()
+        existing = self.companion_ids.filtered(
+            lambda d: d.package_model_id == package_model
+        )
+        if existing:
+            return existing[:1]
+        companion = self.open_for(package_model)
+        companion.parent_draft_id = self.id
+        return companion
+
+    def _stage_inverse(self, spec_field):
+        """Put the many2one that makes ``spec_field`` resolvable on the other
+        model, in the same changeset so one Apply covers both."""
+        self.ensure_one()
+        sibling = self._sibling(spec_field.comodel)
+        if not sibling:
+            raise UserError(
+                _(
+                    "The link back from %(comodel)s cannot be created here: it "
+                    "is not a model this package defines in Python.",
+                    comodel=spec_field.comodel,
+                )
+            )
+        companion = self._companion_for(sibling)
+        if companion._spec().field(spec_field.inverse_name):
+            # Already there -- reusing it is exactly what the picker offers.
+            return companion
+        companion.add_field(
+            {
+                "name": spec_field.inverse_name,
+                "ttype": "many2one",
+                "comodel": self.model,
+                "string": self._spec().description or self.model,
+                # The lines of a record are meaningless once it is gone, and
+                # 'set null' would leave them orphaned in every list view.
+                "ondelete": "cascade",
+                "index": True,
+            }
+        )
+        return companion
+
+    # -- placement --------------------------------------------------------
+
+    def _placement(self):
+        self.ensure_one()
+        return json.loads(self.placement_json or "{}")
+
+    def _set_placement(self, name, values):
+        data = self._placement()
+        data[name] = values
+        self.placement_json = json.dumps(data, sort_keys=True)
+        return True
+
+    def set_placement(self, name, values):
+        """Change which views a staged field will appear in."""
+        self._assert_studio_manager()
+        self.ensure_one()
+        spec_field = self._spec().field(name)
+        if not spec_field:
+            raise UserError(_("There is no field called '%s' to place.", name))
+        return self._set_placement(
+            name, modelspec.clean_placement(values, spec_field.ttype)
+        )
 
     def update_field(self, name, values):
         """Replace one field, keeping its position in the class."""
         self._assert_studio_manager()
         self.ensure_one()
+        placement = values.pop("placement", None) if isinstance(values, dict) else None
         spec = self._spec()
         existing = spec.field(name)
         if not existing:
             raise UserError(_("There is no field called '%s' to change.", name))
+        if placement is not None:
+            self._set_placement(
+                name,
+                modelspec.clean_placement(
+                    placement, values.get("ttype", existing.ttype)
+                ),
+            )
         merged = {**modelspec.spec_to_json(existing), **values, "name": name}
         return self._store(
             modelspec.with_field(spec, modelspec.field_spec_from_json(merged))
@@ -214,6 +418,9 @@ class StudioModelDraft(models.TransientModel):
         spec = self._spec()
         if not spec.field(name):
             raise UserError(_("There is no field called '%s' to remove.", name))
+        data = self._placement()
+        if data.pop(name, None) is not None:
+            self.placement_json = json.dumps(data, sort_keys=True)
         return self._store(modelspec.without_field(spec, name))
 
     def move_field(self, name, before=None):
@@ -254,7 +461,20 @@ class StudioModelDraft(models.TransientModel):
     # -- what the tray shows ----------------------------------------------
 
     def pending_changes(self):
-        """One entry per staged edit, in the order a person would read them."""
+        """One entry per staged edit, in the order a person would read them.
+
+        Companion edits are listed with their model, because "you are also
+        about to change workshop.task" is exactly the thing a user would be
+        annoyed to discover only in the diff.
+        """
+        self.ensure_one()
+        out = self._own_changes()
+        for companion in self.companion_ids:
+            for change in companion._own_changes():
+                out.append({**change, "model": companion.model})
+        return out
+
+    def _own_changes(self):
         self.ensure_one()
         before, after = self._base_spec(), self._spec()
         diff = modelspec.diff_specs(before, after)
@@ -322,26 +542,55 @@ class StudioModelDraft(models.TransientModel):
         return pycodegen.render_block(self._spec())
 
     def preview_diff(self):
-        """A unified diff of the block, so Apply is never a leap of faith."""
+        """A unified diff of every block Apply will write, so it is never a
+        leap of faith -- including the one on the other model."""
         self.ensure_one()
-        before = pycodegen.render_block(self._base_spec()).splitlines(keepends=True)
-        after = pycodegen.render_block(self._spec()).splitlines(keepends=True)
-        return "".join(
-            difflib.unified_diff(before, after, fromfile="before", tofile="after", n=3)
-        )
+        chunks = []
+        for draft in self | self.companion_ids:
+            base = pycodegen.render_block(draft._base_spec())
+            before = base.splitlines(keepends=True)
+            after = pycodegen.render_block(draft._spec()).splitlines(keepends=True)
+            body = "".join(
+                difflib.unified_diff(
+                    before,
+                    after,
+                    fromfile="%s (before)" % draft.model,
+                    tofile="%s (after)" % draft.model,
+                    n=3,
+                )
+            )
+            if body:
+                chunks.append(body)
+        return "\n".join(chunks)
 
     def validate(self):
-        """Problems the user can still fix, before anything is written."""
+        """Problems the user can still fix, before anything is written.
+
+        Companions are validated too: they apply in the same transaction, so a
+        problem on the other model is a problem with *this* Apply, and finding
+        it afterwards would mean finding it during a rollback.
+        """
         self.ensure_one()
-        taken = set(self.env["ir.model"].sudo().search([]).mapped("model")) - {
-            self.model
-        }
-        return modelspec.validate_spec(self._spec(), taken_model_names=taken)
+        known = set(self.env["ir.model"].sudo().search([]).mapped("model"))
+        out = []
+        for draft in self | self.companion_ids:
+            errors = modelspec.validate_spec(
+                draft._spec(), taken_model_names=known - {draft.model}
+            )
+            prefix = "" if draft == self else "%s: " % draft.model
+            out.extend("%s%s" % (prefix, error) for error in errors)
+        return out
 
     # -- commit -----------------------------------------------------------
 
     def action_apply(self, allow_destructive=False):
-        """Write the block and reload, once, for everything staged."""
+        """Write every staged block and reload, once, for the whole changeset.
+
+        A related list and the link back are two files and must be one reload:
+        writing only the one2many would leave the registry resolving an
+        inverse that does not exist yet, and the setup it fails is the setup
+        that was meant to create it.
+        """
         self._assert_studio_manager()
         self.ensure_one()
         errors = self.validate()
@@ -349,30 +598,147 @@ class StudioModelDraft(models.TransientModel):
             raise UserError(
                 _("This change cannot be applied:\n\n%s", "\n".join(errors))
             )
-        package_model = self.package_model_id
-        package = package_model.package_id
+        package = self.package_id
         package._assert_writable()
 
-        source = package._read_source(package_model.python_path)
+        drafts = self | self.companion_ids
+        payload = {}
+        planned = []
+        for draft in drafts:
+            spec = draft._spec()
+            payload[draft.package_model_id.python_path] = draft._rewritten_source(spec)
+            diff = modelspec.diff_specs(draft._base_spec(), spec)
+            planned.append((draft, spec, diff))
+        package._write_files(payload)
+
+        # Removals go first, and that ordering is not stylistic. The upgrade
+        # re-imports the package's view files, so a <field> naming a column
+        # this apply drops would fail the import and roll the whole thing back.
+        # Taking it out of the arch now means the file rendered *by* the apply
+        # is already consistent. Removing a field from a view is safe to do
+        # before the reload; adding one is not.
+        for draft, _spec, diff in planned:
+            draft._retract_from_views(diff)
+
+        applied = package.action_apply(
+            reason=_("edit %s", self.model),
+            allow_destructive=allow_destructive,
+        )
+        # Additions can only go in afterwards: the registry has to have the
+        # column before a view naming it will validate.
+        for draft, spec, diff in planned:
+            draft._place_in_views(spec, diff)
+        # The file is the definition, so each draft's baseline moves with it.
+        for draft in drafts:
+            draft.base_spec_json = draft.spec_json
+        return applied
+
+    def _rewritten_source(self, spec):
+        """This model's file with the studio block replaced by ``spec``."""
+        self.ensure_one()
+        package_model = self.package_model_id
+        source = self.package_id._read_source(package_model.python_path)
         if source is None:
             raise UserError(
                 _("%s has no source file to write into.", package_model.model)
             )
-        spec = self._spec()
-        rewritten = pycodegen.ensure_imports(
+        return pycodegen.ensure_imports(
             pycodegen.splice_block(source, pycodegen.render_block(spec), spec), spec
         )
-        package._write_files({package_model.python_path: rewritten})
 
-        applied = package.action_apply(
-            reason=_("edit %s", package_model.model),
-            allow_destructive=allow_destructive,
+    # -- views ------------------------------------------------------------
+
+    def _owned_views(self):
+        """The views this package owns for this model, by type."""
+        views = self.env["ir.ui.view"].search(
+            [
+                ("model", "=", self.model),
+                ("mode", "=", "primary"),
+                ("studio_package_id", "=", self.package_id.id),
+                ("type", "in", ("form", "list", "search")),
+            ]
         )
-        # The file is the definition, so the draft's baseline moves with it.
-        self.base_spec_json = self.spec_json
-        return applied
+        return {view.type: view for view in views}
+
+    def _retract_from_views(self, diff):
+        """Take dropped fields out of the arches, before the reload sees them."""
+        if not diff.removed:
+            return False
+        touched = self.env["ir.ui.view"].browse()
+        for view in self._owned_views().values():
+            root = xml_writer.parse_arch(view.arch)
+            changed = False
+            for name in diff.removed:
+                changed |= placement_tool.remove_field(root, name)
+            if changed:
+                self._write_arch(view, root)
+                touched |= view
+        if touched:
+            self.package_id.studio_capture(touched)
+        # Deliberately no file write: the apply that follows renders the whole
+        # package anyway, and these arches are part of what it renders.
+        return bool(touched)
+
+    def _place_in_views(self, spec, diff):
+        """Put added fields on screen, now that the columns exist."""
+        if not diff.added:
+            return False
+        placement = self._placement()
+        touched = self.env["ir.ui.view"].browse()
+        for view_type, view in self._owned_views().items():
+            root = xml_writer.parse_arch(view.arch)
+            changed = False
+            for name in diff.added:
+                spec_field = spec.field(name)
+                if not spec_field or spec_field.name in placement_tool.NEVER_PLACE:
+                    continue
+                where = placement.get(
+                    name, modelspec.default_placement(spec_field.ttype)
+                )
+                label = spec_field.string or name
+                if view_type == "form" and where.get("form"):
+                    changed |= placement_tool.place_in_form(
+                        root, name, spec_field.ttype, label
+                    )
+                elif view_type == "list" and where.get("list"):
+                    changed |= placement_tool.place_in_list(root, name)
+                elif view_type == "search":
+                    if where.get("search"):
+                        changed |= placement_tool.place_in_search(root, name)
+                    if where.get("group_by"):
+                        changed |= placement_tool.place_group_by(root, name, label)
+            if changed:
+                self._write_arch(view, root)
+                touched |= view
+        if touched:
+            self.package_id.studio_capture(touched)
+            # Views are data: they take effect immediately and need no reload,
+            # so writing the files here keeps git in step without a second one.
+            self.package_id.action_write_files()
+        return bool(touched)
+
+    def _write_arch(self, view, root):
+        xml_writer.canonicalize_attributes(root)
+        xml_writer.indent(root)
+        try:
+            view.write({"arch": etree.tostring(root, encoding="unicode")})
+        except ValidationError as err:
+            raise UserError(
+                _(
+                    "%(model)s was changed, but its %(type)s view could not be "
+                    "updated to match:\n\n%(err)s",
+                    model=self.model,
+                    type=view.type,
+                    err=err,
+                )
+            ) from err
+        return view
 
     def action_discard(self):
         self.ensure_one()
         self.spec_json = self.base_spec_json
+        self.placement_json = "{}"
+        # A companion exists only to serve an edit on this draft, so discarding
+        # that edit leaves nothing for it to do.
+        self.companion_ids.unlink()
         return True

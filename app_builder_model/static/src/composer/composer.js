@@ -167,9 +167,22 @@ export class StudioComposer extends Component {
             fieldTypes: this.data.field_types || [],
             existingNames: this.fields.map((f) => f.name),
             modelName: this.data.model,
+            inverseOptions: (comodel) => this.inverseOptions(comodel),
             onSave: (values) => this.saveField(existing, values),
             onDelete: existing ? () => this.removeField(existing.name) : null,
         });
+    }
+
+    /**
+     * Asked of the server rather than derived here: whether a model can be
+     * linked back depends on what the package owns in Python, which is a fact
+     * only the server has.
+     */
+    inverseOptions(comodel) {
+        return this.orm.call("studio.model.draft", "inverse_options", [
+            [this.draftId],
+            comodel,
+        ]);
     }
 
     async saveField(existing, values) {

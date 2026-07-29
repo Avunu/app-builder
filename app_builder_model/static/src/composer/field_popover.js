@@ -36,6 +36,7 @@ export class FieldPopover extends Component {
         modelName: String,
         onSave: Function,
         onDelete: { type: [Function, { value: null }], optional: true },
+        inverseOptions: Function,
         close: Function,
     };
 
@@ -58,6 +59,9 @@ export class FieldPopover extends Component {
         this.state.error = "";
 
         onMounted(() => {
+            if (this.state.ttype === "one2many" && this.state.comodel) {
+                this.loadInverseOptions(this.state.comodel);
+            }
             const input = this.labelRef.el;
             if (input) {
                 input.focus();
@@ -127,12 +131,82 @@ export class FieldPopover extends Component {
         return ONDELETE_CHOICES;
     }
 
+    // -- relationships ----------------------------------------------------
+
+    /**
+     * Odoo needs a many2one on the other side before a related list can exist.
+     * Making the user go and build it there first is the gesture every studio
+     * gets wrong, so the choice is offered inline: reuse a link that already
+     * points back, or have one made in the same Apply.
+     */
+    async loadInverseOptions(comodel) {
+        this.state.inverse = await this.props.inverseOptions(comodel);
+        const { candidates, can_create: canCreate, suggested } = this.state.inverse;
+        if (candidates.length) {
+            this.state.create_inverse = false;
+            this.state.inverse_name = candidates[0].name;
+        } else if (canCreate) {
+            this.state.create_inverse = true;
+            this.state.inverse_name = suggested;
+        }
+    }
+
+    get inverse() {
+        return this.state.inverse || { candidates: [], can_create: false, reason: "" };
+    }
+
+    onInverseChange(value) {
+        if (value === "__new__") {
+            this.state.create_inverse = true;
+            this.state.inverse_name = this.inverse.suggested;
+        } else {
+            this.state.create_inverse = false;
+            this.state.inverse_name = value;
+        }
+    }
+
+    async onComodelSelected(model) {
+        this.state.comodel = model.technical;
+        if (this.state.ttype === "one2many") {
+            await this.loadInverseOptions(model.technical);
+        }
+    }
+
+    // -- placement --------------------------------------------------------
+
+    /**
+     * Placement is view intent, not part of the field definition, so it lives
+     * beside the spec rather than in it. It is edited here anyway because
+     * "where does this show up" is the question people ask *while* adding a
+     * field, not on a separate screen afterwards.
+     */
+    get placement() {
+        return this.state.placement || this.currentType.placement || {};
+    }
+
+    setPlacement(slot, value) {
+        this.state.placement = { ...this.placement, [slot]: value };
+    }
+
+    get canGroupBy() {
+        return ["many2one", "selection", "date", "datetime", "boolean"].includes(
+            this.state.ttype
+        );
+    }
+
+    get wantsPage() {
+        return ["one2many", "many2many", "html", "text"].includes(this.state.ttype);
+    }
+
     onTypeChange(value) {
         const entry = this.props.fieldTypes.find((t) => t.value === value);
         if (!entry || !entry.enabled) {
             return;
         }
         this.state.ttype = value;
+        // Placement follows the type: a long note does not belong in a list
+        // column just because the char field it started as did.
+        this.state.placement = { ...entry.placement };
         // Parameters that no longer apply would otherwise be written out on a
         // field whose type cannot carry them.
         for (const param of ["comodel", "inverse_name", "selection", "currency_field"]) {
@@ -181,7 +255,10 @@ export class FieldPopover extends Component {
             return _t("Choose the model this points at.");
         }
         if (this.state.ttype === "one2many" && !this.state.inverse_name) {
-            return _t("Name the field on the other model that points back.");
+            return _t(
+                "Choose how %s links back to this model.",
+                this.state.comodel || _t("the other model")
+            );
         }
         if (
             ["selection", "reference"].includes(this.state.ttype) &&
@@ -201,6 +278,10 @@ export class FieldPopover extends Component {
         const values = { ...this.state };
         delete values.error;
         delete values.type_label;
+        // Picker state, not field definition: the server re-derives what it
+        // needs from create_inverse and would reject the rest.
+        delete values.inverse;
+        values.placement = { ...this.placement };
         if (values.selection) {
             values.selection = this.selectionRows.filter((r) => r.value);
         }

@@ -664,14 +664,23 @@ class StudioPackage(models.Model):
         for package in self:
             package._assert_writable()
             files = package._render_files()
-            written = package._write_files(files)
+            written = package._write_files(files, prune=True)
             package._sync_file_records(files)
             package._run_auto_commit(written)
             package.state = "synced"
         return True
 
-    def _write_files(self, files):
-        """Write rendered content, pruning generated files that vanished."""
+    def _write_files(self, files, prune=False):
+        """Write rendered content; optionally remove generated files that went.
+
+        ``prune`` is off by default and that default is load-bearing. Pruning
+        reads *absent from ``files``* as *deleted*, which is only true when
+        ``files`` is the whole rendered package. Hand a partial set to a
+        pruning write -- one model's ``.py``, say -- and it deletes every other
+        file the package generated: the other models, the views, the menus, the
+        ACLs. Callers that render everything opt in; callers that render one
+        thing cannot make that mistake by forgetting a flag.
+        """
         self.ensure_one()
         root = self.root_path
         os.makedirs(root, exist_ok=True)
@@ -686,6 +695,9 @@ class StudioPackage(models.Model):
             with open(full, "w", encoding="utf-8") as handle:
                 handle.write(content)
             written.append(relative)
+
+        if not prune:
+            return written
 
         for stale in self.file_ids.filtered(lambda f: f.path not in files):
             full = os.path.join(root, stale.path)
@@ -1232,7 +1244,7 @@ class StudioPackage(models.Model):
         if self.is_git:
             gitrepo.commit(self.root_path, "studio: before %s" % (reason or "apply"))
 
-        written = self._write_files(files)  # 4. write
+        written = self._write_files(files, prune=True)  # 4. write
         self._sync_file_records(files)
         self._run_auto_commit(written)
         self.env.cr.commit()  # 5. commit BEFORE the reload

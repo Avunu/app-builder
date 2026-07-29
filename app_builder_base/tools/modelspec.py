@@ -260,9 +260,56 @@ def available_field_types(spec=None):
                 "params": list(entry.params),
                 "enabled": enabled,
                 "tooltip": tooltip,
+                "placement": default_placement(entry.ttype),
             }
         )
     return out
+
+
+# Where a field of each type goes in the scaffolded views, unless the user says
+# otherwise. These are the defaults a developer would pick by hand: a name or a
+# link is worth a column and worth searching; a long note is not.
+PLACEMENT_SLOTS = ("form", "list", "search", "group_by")
+
+_LIST_BY_DEFAULT = frozenset(
+    {
+        "char",
+        "many2one",
+        "date",
+        "datetime",
+        "selection",
+        "integer",
+        "float",
+        "monetary",
+        "boolean",
+    }
+)
+_SEARCH_BY_DEFAULT = frozenset({"char", "text", "many2one"})
+
+
+def default_placement(ttype):
+    """Which views a newly added field of ``ttype`` should appear in.
+
+    ``group_by`` is off even for the types that support it: a group-by the user
+    did not ask for is clutter in the search panel, and it is one tick to turn
+    on. ``form`` is on for everything, because a field nobody can see is the
+    single most confusing thing the builder could produce -- which is exactly
+    what it produced before placement existed.
+    """
+    return {
+        "form": True,
+        "list": ttype in _LIST_BY_DEFAULT,
+        "search": ttype in _SEARCH_BY_DEFAULT,
+        "group_by": False,
+    }
+
+
+def clean_placement(values, ttype=None):
+    """Coerce whatever the client sent into exactly the known slots."""
+    base = default_placement(ttype) if ttype else dict.fromkeys(PLACEMENT_SLOTS, False)
+    if not values:
+        return base
+    return {slot: bool(values.get(slot, base[slot])) for slot in PLACEMENT_SLOTS}
 
 
 @dataclass(frozen=True, slots=True)

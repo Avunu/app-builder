@@ -12,6 +12,7 @@ import json
 import os
 
 from odoo.exceptions import AccessError, UserError
+from odoo.fields import Command
 from odoo.tests import tagged
 
 from ..tools import modelspec
@@ -237,3 +238,223 @@ class TestModelDraft(StudioCase):
         reloaded = modelspec.spec_from_json(json.loads(draft.spec_json))
         self.assertEqual(reloaded, draft._spec())
         self.assertEqual(len(reloaded.field("x_state").selection), 2)
+
+
+@tagged("post_install", "-at_install")
+class TestRelationships(StudioCase):
+    """A related list needs a field on the other model pointing back.
+
+    Making the user go and build that first is the gesture every studio gets
+    wrong. The interesting part is not the UI but the atomicity: both classes
+    have to be written before the single reload, because a one2many whose
+    inverse does not exist yet fails registry setup -- and the setup it fails
+    is the one that was going to create it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.package = self.make_package(name="x_rel_pkg")
+        self.build_demo_content(self.package)
+        self._make_sibling()
+        self.package.action_write_files()
+        self.package.action_adopt(["x_studio_project", "x_studio_task"])
+        self.project = self.package.model_ids.filtered(
+            lambda m: m.model == "x_studio_project"
+        )
+        self.task = self.package.model_ids.filtered(
+            lambda m: m.model == "x_studio_task"
+        )
+
+    def _make_sibling(self):
+        model = self.env["ir.model"].create(
+            {
+                "name": "Studio Demo Task",
+                "model": "x_studio_task",
+                "field_id": [
+                    Command.create(
+                        {
+                            "name": "x_name",
+                            "ttype": "char",
+                            "field_description": "Name",
+                        }
+                    )
+                ],
+            }
+        )
+        self.package.studio_capture(
+            [model, model.field_id.filtered(lambda f: f.state == "manual")]
+        )
+
+    def _draft(self):
+        return self.env["studio.model.draft"].open_for(self.project)
+
+    # -- what the picker offers -------------------------------------------
+
+    def test_a_sibling_can_have_the_link_made_for_it(self):
+        options = self._draft().inverse_options("x_studio_task")
+        self.assertTrue(options["can_create"])
+        self.assertEqual(options["suggested"], "x_studio_project_id")
+        self.assertFalse(options["reason"])
+
+    def test_a_model_we_do_not_own_says_why_not(self):
+        options = self._draft().inverse_options("res.partner")
+        self.assertFalse(options["can_create"])
+        self.assertIn("res.partner", options["reason"])
+        self.assertIn(
+            "Add a link",
+            options["reason"],
+            "the message has to say what to do next, not just refuse",
+        )
+
+    def test_an_existing_link_back_is_offered(self):
+        """Reusing a link that already points back beats making a second one
+        that means the same thing."""
+        # Staged on the sibling's own draft and applied to its file, because
+        # candidates are read from the definition rather than the registry --
+        # an adopted model has no class imported yet.
+        draft = self._draft()
+        companion = draft._companion_for(self.task)
+        companion.add_field(
+            {
+                "name": "x_owner_id",
+                "ttype": "many2one",
+                "comodel": "x_studio_project",
+                "string": "Owner",
+            }
+        )
+        self.task.package_id._write_files(
+            {self.task.python_path: companion._rewritten_source(companion._spec())}
+        )
+        options = draft.inverse_options("x_studio_task")
+        self.assertEqual(
+            [candidate["name"] for candidate in options["candidates"]], ["x_owner_id"]
+        )
+        self.assertTrue(
+            options["can_create"], "making a new one stays available as well"
+        )
+
+    # -- staging both sides -----------------------------------------------
+
+    def test_creating_the_inverse_stages_it_on_the_other_model(self):
+        draft = self._draft()
+        draft.add_field(
+            {
+                "name": "task_ids",
+                "ttype": "one2many",
+                "comodel": "x_studio_task",
+                "inverse_name": "x_studio_project_id",
+                "string": "Tasks",
+                "create_inverse": True,
+            }
+        )
+        companion = draft.companion_ids
+        self.assertEqual(len(companion), 1)
+        self.assertEqual(companion.model, "x_studio_task")
+        inverse = companion._spec().field("x_studio_project_id")
+        self.assertEqual(inverse.ttype, "many2one")
+        self.assertEqual(inverse.comodel, "x_studio_project")
+        self.assertEqual(
+            inverse.ondelete,
+            "cascade",
+            "lines outliving their parent would be orphans in every list",
+        )
+
+    def test_the_change_count_covers_both_models(self):
+        draft = self._draft()
+        draft.add_field(
+            {
+                "name": "task_ids",
+                "ttype": "one2many",
+                "comodel": "x_studio_task",
+                "inverse_name": "x_studio_project_id",
+                "string": "Tasks",
+                "create_inverse": True,
+            }
+        )
+        draft.invalidate_recordset()
+        self.assertEqual(
+            draft.change_count,
+            2,
+            "an Apply button that stayed grey would be lying about the other model",
+        )
+
+    def test_the_tray_names_the_other_model(self):
+        draft = self._draft()
+        draft.add_field(
+            {
+                "name": "task_ids",
+                "ttype": "one2many",
+                "comodel": "x_studio_task",
+                "inverse_name": "x_studio_project_id",
+                "string": "Tasks",
+                "create_inverse": True,
+            }
+        )
+        entries = draft.pending_changes()
+        companion = [entry for entry in entries if entry.get("model")]
+        self.assertEqual(len(companion), 1)
+        self.assertEqual(companion[0]["model"], "x_studio_task")
+        self.assertEqual(companion[0]["name"], "x_studio_project_id")
+
+    def test_the_diff_shows_both_files(self):
+        draft = self._draft()
+        draft.add_field(
+            {
+                "name": "task_ids",
+                "ttype": "one2many",
+                "comodel": "x_studio_task",
+                "inverse_name": "x_studio_project_id",
+                "string": "Tasks",
+                "create_inverse": True,
+            }
+        )
+        diff = draft.preview_diff()
+        self.assertIn("x_studio_project (after)", diff)
+        self.assertIn("x_studio_task (after)", diff)
+        self.assertIn("x_studio_project_id", diff)
+
+    def test_discarding_drops_the_companion(self):
+        draft = self._draft()
+        draft.add_field(
+            {
+                "name": "task_ids",
+                "ttype": "one2many",
+                "comodel": "x_studio_task",
+                "inverse_name": "x_studio_project_id",
+                "string": "Tasks",
+                "create_inverse": True,
+            }
+        )
+        draft.action_discard()
+        self.assertFalse(draft.companion_ids)
+        draft.invalidate_recordset()
+        self.assertEqual(draft.change_count, 0)
+
+    def test_an_inverse_on_a_model_we_do_not_own_is_refused(self):
+        draft = self._draft()
+        with self.assertRaises(UserError) as caught:
+            draft.add_field(
+                {
+                    "name": "partner_ids",
+                    "ttype": "one2many",
+                    "comodel": "res.partner",
+                    "inverse_name": "x_studio_project_id",
+                    "string": "Partners",
+                    "create_inverse": True,
+                }
+            )
+        self.assertIn("res.partner", str(caught.exception))
+
+    def test_a_companion_error_blocks_this_apply(self):
+        """The companion applies in the same transaction, so its problem is
+        this Apply's problem -- finding it afterwards means finding it during
+        a rollback."""
+        draft = self._draft()
+        companion = draft._companion_for(self.task)
+        companion.add_field({"name": "id", "ttype": "char", "string": "Broken"})
+        errors = draft.validate()
+        self.assertTrue(errors)
+        self.assertTrue(
+            any(error.startswith("x_studio_task: ") for error in errors),
+            "an error has to say which model it is about: %s" % errors,
+        )

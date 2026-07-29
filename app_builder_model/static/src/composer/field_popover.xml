@@ -50,18 +50,29 @@
         <div t-if="shows('comodel')" class="mb-2">
             <label class="form-label small text-muted mb-0">Points at</label>
             <ModelSelector value="state.comodel"
-                           onModelSelected="(m) => this.state.comodel = m.technical"/>
+                           onModelSelected="(m) => this.onComodelSelected(m)"/>
         </div>
 
-        <div t-if="state.ttype === 'one2many'" class="mb-2">
+        <div t-if="state.ttype === 'one2many' and state.comodel" class="mb-2">
             <label class="form-label small text-muted mb-0">Linked back by</label>
-            <input type="text" class="form-control form-control-sm"
-                   t-att-value="state.inverse_name"
-                   t-on-input="(ev) => this.state.inverse_name = ev.target.value"
-                   placeholder="project_id"/>
-            <small class="text-muted">
-                The field on the other model that points back at this one.
+            <select class="form-select form-select-sm"
+                    t-on-change="(ev) => this.onInverseChange(ev.target.value)">
+                <option t-foreach="inverse.candidates" t-as="candidate"
+                        t-key="candidate.name" t-att-value="candidate.name"
+                        t-att-selected="!state.create_inverse and candidate.name === state.inverse_name">
+                    <t t-esc="candidate.string"/> (<t t-esc="candidate.name"/>)
+                </option>
+                <option t-if="inverse.can_create" value="__new__"
+                        t-att-selected="state.create_inverse">
+                    Create a new link
+                </option>
+            </select>
+            <small t-if="state.create_inverse" class="text-muted">
+                A field called <t t-esc="state.inverse_name"/> will be added to
+                <t t-esc="state.comodel"/> in the same step.
             </small>
+            <small t-if="inverse.reason" class="text-danger d-block"
+                   t-esc="inverse.reason"/>
         </div>
 
         <div t-if="shows('selection')" class="mb-2">
@@ -131,6 +142,23 @@
             <input type="text" class="form-control form-control-sm"
                    t-att-value="state.help"
                    t-on-input="(ev) => this.state.help = ev.target.value || null"/>
+        </div>
+
+        <div class="mb-2 pt-2 border-top">
+            <label class="form-label small text-muted mb-1 d-block">Show it in</label>
+            <div class="d-flex flex-wrap gap-3">
+                <CheckBox value="!!placement.form"
+                          onChange="(v) => this.setPlacement('form', v)">The form</CheckBox>
+                <CheckBox value="!!placement.list"
+                          onChange="(v) => this.setPlacement('list', v)">The list</CheckBox>
+                <CheckBox value="!!placement.search"
+                          onChange="(v) => this.setPlacement('search', v)">Search</CheckBox>
+                <CheckBox t-if="canGroupBy" value="!!placement.group_by"
+                          onChange="(v) => this.setPlacement('group_by', v)">Group by</CheckBox>
+            </div>
+            <small t-if="placement.form and wantsPage" class="text-muted">
+                A related list gets its own page — it is unreadable in a column.
+            </small>
         </div>
 
         <div t-if="state.error" class="alert alert-danger py-1 px-2 small"

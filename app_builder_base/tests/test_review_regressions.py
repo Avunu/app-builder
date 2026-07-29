@@ -17,7 +17,7 @@ from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 from odoo.tools import config
 
-from ..tools import migrationgen, pycodegen, xml_writer
+from ..tools import checksum, migrationgen, pycodegen, xml_writer
 from .common import StudioCase
 
 
@@ -913,3 +913,69 @@ class TestApplyIsRecoverable(StudioCase):
             with self.assertRaises(UserError) as caught:
                 package._reload_now()
         self.assertIn("worker", str(caught.exception))
+
+
+@tagged("post_install", "-at_install")
+class TestPartialWriteDoesNotPrune(StudioCase):
+    """A partial write must not read *absent* as *deleted*.
+
+    ``_write_files`` removes tracked files missing from the dict it is handed,
+    which is right only when that dict is the whole rendered package. Handing
+    it one model's ``.py`` -- what editing a single model naturally produces --
+    deleted every other file the package had generated: the other models, the
+    views, the menus, the ACLs. It went unnoticed because the next apply then
+    regenerated an *empty* class for the model whose file had vanished, and the
+    destructive-change gate refused that, so the symptom was a confusing
+    refusal rather than the data loss that caused it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.package = self.make_package(name="x_prune_pkg")
+        self.build_demo_content(self.package)
+        self.package.action_write_files()
+
+    def _paths(self):
+        return set(self.package.file_ids.mapped("path"))
+
+    def _on_disk(self, relative):
+        return os.path.isfile(os.path.join(self.package.root_path, relative))
+
+    def test_a_partial_write_leaves_the_rest_of_the_package_alone(self):
+        before = self._paths()
+        self.assertGreater(len(before), 1, "fixture should generate several files")
+        victim = next(path for path in before if path != "__manifest__.py")
+
+        self.package._write_files({"__manifest__.py": "{'name': 'x'}\n"})
+
+        self.assertTrue(
+            self._on_disk(victim),
+            "%s was deleted by a write that never mentioned it" % victim,
+        )
+        for path in before:
+            self.assertTrue(self._on_disk(path), "%s went missing" % path)
+
+    def test_a_full_write_still_prunes_what_it_no_longer_generates(self):
+        """The pruning itself is wanted -- a file the package stopped
+        generating should not linger and get imported."""
+        self.package._write_files({"__manifest__.py": "{'name': 'x'}\n"})
+        self.package._sync_file_records({"__manifest__.py": "{'name': 'x'}\n"})
+        orphan = os.path.join(self.package.root_path, "views/leftover.xml")
+        os.makedirs(os.path.dirname(orphan), exist_ok=True)
+        with open(orphan, "w", encoding="utf-8") as handle:
+            handle.write("<odoo/>\n")
+        record = self.env["studio.package.file"].create(
+            {
+                "package_id": self.package.id,
+                "path": "views/leftover.xml",
+                "generated_checksum": checksum.hash_text("<odoo/>\n"),
+            }
+        )
+        self.package.invalidate_recordset(["file_ids"])
+
+        self.package._write_files({"__manifest__.py": "{'name': 'x'}\n"}, prune=True)
+
+        self.assertFalse(
+            os.path.isfile(orphan), "a full write should still drop what it dropped"
+        )
+        self.assertTrue(record.exists())
