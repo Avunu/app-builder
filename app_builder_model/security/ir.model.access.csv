@@ -1,4 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_studio_model_wizard,studio.model.wizard,model_studio_model_wizard,app_builder_base.group_studio_manager,1,1,1,1
 access_studio_field_wizard,studio.field.wizard,model_studio_field_wizard,app_builder_base.group_studio_manager,1,1,1,1
-access_studio_graduate_wizard,studio.graduate.wizard,model_studio_graduate_wizard,app_builder_base.group_studio_manager,1,1,1,1
+access_studio_adopt_wizard,studio.adopt.wizard,model_studio_adopt_wizard,app_builder_base.group_studio_manager,1,1,1,1

@@ -8,8 +8,12 @@ model builder, and a mixin defined in a module you do not depend on aborts the
 registry at install time.
 """
 
+import logging
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
 
 
 class StudioOwnedMixin(models.AbstractModel):
@@ -124,14 +128,37 @@ class IrModelFields(models.Model):
         Without this, adding a field through the studio would create it in the
         database and leave it out of the source tree until somebody remembered
         to assign it -- exactly the drift the project exists to prevent.
+
+        The model's own package is only the *first* place to look. A manual
+        field added to a core model -- ``res.partner``, the single most likely
+        thing anyone does here -- resolves to no package at all, because
+        ``res.partner`` belongs to ``base``. Falling back to the package the
+        caller is editing in is what stops that field from being created live
+        and written nowhere.
         """
         records = super().create(vals_list)
         if self.env.context.get("studio_skip_autocapture"):
             return records
+        fallback = (
+            self.env["studio.package"]
+            .browse(self.env.context.get("studio_package_id") or [])
+            .exists()
+        )
         for record in records:
             if record.state != "manual":
                 continue
-            package = record.model_id.studio_package_id
+            package = record.model_id.studio_package_id or fallback
             if package:
                 package.studio_capture(record)
+            else:
+                # Warn rather than raise: creating a manual field outside any
+                # package is legitimate for callers that are not the studio,
+                # and they must not be forced into one. The studio surfaces the
+                # orphan count separately so this is not the only signal.
+                _logger.warning(
+                    "Manual field %s.%s was created outside any studio package "
+                    "and will not be written to source.",
+                    record.model,
+                    record.name,
+                )
         return records

@@ -18,12 +18,12 @@ from .common import StudioCase
 
 
 @tagged("post_install", "-at_install")
-class TestGraduate(StudioCase):
+class TestAdopt(StudioCase):
     def _graduated_package(self):
         package = self.make_package(name="x_grad_pkg")
         self.build_demo_content(package)
         package.action_write_files()
-        package.action_graduate(["x_studio_project"])
+        package.action_adopt(["x_studio_project"])
         return package
 
     # -- the xmlid contract that makes graduation safe --------------------
@@ -97,7 +97,7 @@ class TestGraduate(StudioCase):
         for entry in manifest["data"]:
             self.assertTrue(entry.endswith((".xml", ".csv")), entry)
 
-    def test_graduated_file_is_never_overwritten(self):
+    def test_adoptd_file_is_never_overwritten(self):
         """Once handed off, the file is the developer's.
 
         After the class loads, reflection flips the fields to state='base', so
@@ -136,7 +136,7 @@ class TestGraduate(StudioCase):
         package = self.make_package(name="x_demote_pkg")
         self.build_demo_content(package)
         package.action_write_files()
-        package.action_graduate(["x_studio_project"])
+        package.action_adopt(["x_studio_project"])
 
         model = self.env["ir.model"].search([("model", "=", "x_studio_project")])
         self.assertTrue(model, "the row must survive; only its state changes")
@@ -163,7 +163,7 @@ class TestGraduate(StudioCase):
         record_id = record.id
         self.env.flush_all()
 
-        package.action_graduate(["x_studio_project"])
+        package.action_adopt(["x_studio_project"])
 
         self.env.cr.execute(
             "SELECT x_name, x_budget FROM x_studio_project WHERE id = %s",
@@ -198,7 +198,7 @@ class TestGraduate(StudioCase):
         package._assign([rule, server_action])
         package.action_write_files()
 
-        package.action_graduate(["x_studio_project"])
+        package.action_adopt(["x_studio_project"])
 
         self.assertTrue(rule.exists(), "record rules must survive graduation")
         self.assertTrue(server_action.exists(), "server actions must survive")
@@ -219,7 +219,7 @@ class TestGraduate(StudioCase):
             .search([("module", "=", package.name), ("model", "=", "ir.model")])
             .mapped("name")
         )
-        package.action_graduate(["x_studio_project"])
+        package.action_adopt(["x_studio_project"])
         after = set(
             self.env["ir.model.data"]
             .search([("module", "=", package.name), ("model", "=", "ir.model")])
@@ -238,22 +238,22 @@ class TestGraduate(StudioCase):
         self.build_demo_content(package)
         package.action_write_files()
         with self.assertRaises(UserError):
-            package.action_graduate(["x_studio_project"])
+            package.action_adopt(["x_studio_project"])
 
     def test_graduating_an_unowned_model_is_refused(self):
         package = self.make_package(name="x_grad_guard")
         with self.assertRaises(UserError):
-            package.action_graduate(["res.partner"])
+            package.action_adopt(["res.partner"])
 
     def test_graduating_nothing_is_refused(self):
         package = self.make_package(name="x_grad_empty")
         with self.assertRaises(UserError):
-            package.action_graduate([])
+            package.action_adopt([])
 
     def test_graduation_is_idempotent(self):
         package = self._graduated_package()
-        package.action_graduate(["x_studio_project"])
-        self.assertEqual(package.graduated_models, "x_studio_project")
+        package.action_adopt(["x_studio_project"])
+        self.assertEqual(package.python_models, "x_studio_project")
 
 
 @tagged("post_install", "-at_install")

@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_model.FieldPopover">
+    <div class="o_studio_field_popover_body p-3" t-on-keydown="onKeydown">
+
+        <div class="d-flex align-items-center mb-2">
+            <strong t-if="isNew">New field</strong>
+            <strong t-if="!isNew" t-esc="props.field.name"/>
+            <div class="flex-grow-1"/>
+            <button t-if="props.onDelete" class="btn btn-link btn-sm text-danger p-1"
+                    title="Remove this field" t-on-click="onDelete">
+                <i class="fa fa-trash"/>
+            </button>
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label small text-muted mb-0">Label</label>
+            <input type="text" class="form-control form-control-sm" t-ref="label"
+                   t-att-value="state.string" t-on-input="onLabelInput"
+                   placeholder="Customer reference"/>
+            <small class="text-muted">
+                <t t-esc="state.name"/>
+                <t t-if="!isNew"> — fixed once the field exists</t>
+            </small>
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label small text-muted mb-0">Type</label>
+            <select class="form-select form-select-sm"
+                    t-on-change="(ev) => this.onTypeChange(ev.target.value)">
+                <t t-foreach="typeGroups" t-as="group" t-key="group.name">
+                    <optgroup t-att-label="group.name">
+                        <t t-foreach="group.choices" t-as="choice" t-key="choice.value">
+                            <option t-att-value="choice.value"
+                                    t-att-selected="choice.value === state.ttype"
+                                    t-att-disabled="!choice.enabled"
+                                    t-att-title="choice.tooltip">
+                                <t t-esc="choice.label"/>
+                                <t t-if="!choice.enabled"> (unavailable)</t>
+                            </option>
+                        </t>
+                    </optgroup>
+                </t>
+            </select>
+            <small t-if="currentType.tooltip" class="text-muted d-block"
+                   t-esc="currentType.tooltip"/>
+        </div>
+
+        <div t-if="shows('comodel')" class="mb-2">
+            <label class="form-label small text-muted mb-0">Points at</label>
+            <ModelSelector value="state.comodel"
+                           onModelSelected="(m) => this.onComodelSelected(m)"/>
+        </div>
+
+        <div t-if="state.ttype === 'one2many' and state.comodel" class="mb-2">
+            <label class="form-label small text-muted mb-0">Linked back by</label>
+            <select class="form-select form-select-sm"
+                    t-on-change="(ev) => this.onInverseChange(ev.target.value)">
+                <option t-foreach="inverse.candidates" t-as="candidate"
+                        t-key="candidate.name" t-att-value="candidate.name"
+                        t-att-selected="!state.create_inverse and candidate.name === state.inverse_name">
+                    <t t-esc="candidate.string"/> (<t t-esc="candidate.name"/>)
+                </option>
+                <option t-if="inverse.can_create" value="__new__"
+                        t-att-selected="state.create_inverse">
+                    Create a new link
+                </option>
+            </select>
+            <small t-if="state.create_inverse" class="text-muted">
+                A field called <t t-esc="state.inverse_name"/> will be added to
+                <t t-esc="state.comodel"/> in the same step.
+            </small>
+            <small t-if="inverse.reason" class="text-danger d-block"
+                   t-esc="inverse.reason"/>
+        </div>
+
+        <div t-if="shows('selection')" class="mb-2">
+            <label class="form-label small text-muted mb-0">Values</label>
+            <div t-foreach="selectionRows" t-as="row" t-key="row_index"
+                 class="d-flex gap-1 mb-1">
+                <input type="text" class="form-control form-control-sm"
+                       t-att-value="row.label" placeholder="Draft"
+                       t-on-input="(ev) => this.updateSelectionRow(row_index, 'label', ev.target.value)"/>
+                <input type="text" class="form-control form-control-sm font-monospace"
+                       t-att-value="row.value" placeholder="draft"
+                       t-on-input="(ev) => this.updateSelectionRow(row_index, 'value', ev.target.value)"/>
+                <button class="btn btn-link btn-sm text-danger p-1"
+                        t-on-click="() => this.removeSelectionRow(row_index)">
+                    <i class="fa fa-times"/>
+                </button>
+            </div>
+            <button class="btn btn-link btn-sm p-0" t-on-click="addSelectionRow">
+                <i class="fa fa-plus me-1"/>Add a value
+            </button>
+        </div>
+
+        <div t-if="shows('ondelete')" class="mb-2">
+            <label class="form-label small text-muted mb-0">
+                When the linked record is deleted
+            </label>
+            <select class="form-select form-select-sm"
+                    t-on-change="(ev) => this.state.ondelete = ev.target.value">
+                <t t-foreach="ondeleteChoices" t-as="choice" t-key="choice.value">
+                    <option t-att-value="choice.value"
+                            t-att-selected="choice.value === state.ondelete"
+                            t-esc="choice.label"/>
+                </t>
+            </select>
+        </div>
+
+        <div t-if="shows('currency_field')" class="mb-2">
+            <label class="form-label small text-muted mb-0">Currency field</label>
+            <input type="text" class="form-control form-control-sm"
+                   t-att-value="state.currency_field"
+                   t-on-input="(ev) => this.state.currency_field = ev.target.value"
+                   placeholder="currency_id"/>
+        </div>
+
+        <div t-if="shows('default')" class="mb-2">
+            <label class="form-label small text-muted mb-0">Default</label>
+            <input type="text" class="form-control form-control-sm font-monospace"
+                   t-att-value="state.default"
+                   t-on-input="(ev) => this.state.default = ev.target.value || null"
+                   placeholder='"draft"'/>
+            <small class="text-muted">Python: a literal, or a lambda.</small>
+        </div>
+
+        <div class="d-flex flex-wrap gap-3 mb-2">
+            <CheckBox value="!!state.required"
+                      onChange="(v) => this.state.required = v || null">Required</CheckBox>
+            <CheckBox value="!!state.readonly"
+                      onChange="(v) => this.state.readonly = v || null">Read-only</CheckBox>
+            <CheckBox value="!!state.index"
+                      onChange="(v) => this.state.index = v || null">Indexed</CheckBox>
+            <CheckBox t-if="shows('translate')" value="!!state.translate"
+                      onChange="(v) => this.state.translate = v || null">Translatable</CheckBox>
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label small text-muted mb-0">Help text</label>
+            <input type="text" class="form-control form-control-sm"
+                   t-att-value="state.help"
+                   t-on-input="(ev) => this.state.help = ev.target.value || null"/>
+        </div>
+
+        <div class="mb-2 pt-2 border-top">
+            <label class="form-label small text-muted mb-1 d-block">Show it in</label>
+            <div class="d-flex flex-wrap gap-3">
+                <CheckBox value="!!placement.form"
+                          onChange="(v) => this.setPlacement('form', v)">The form</CheckBox>
+                <CheckBox value="!!placement.list"
+                          onChange="(v) => this.setPlacement('list', v)">The list</CheckBox>
+                <CheckBox value="!!placement.search"
+                          onChange="(v) => this.setPlacement('search', v)">Search</CheckBox>
+                <CheckBox t-if="canGroupBy" value="!!placement.group_by"
+                          onChange="(v) => this.setPlacement('group_by', v)">Group by</CheckBox>
+            </div>
+            <small t-if="placement.form and wantsPage" class="text-muted">
+                A related list gets its own page — it is unreadable in a column.
+            </small>
+        </div>
+
+        <div t-if="state.error" class="alert alert-danger py-1 px-2 small"
+             t-esc="state.error"/>
+
+        <div class="d-flex justify-content-end gap-2 mt-2">
+            <button class="btn btn-secondary btn-sm" t-on-click="() => this.props.close()">
+                Cancel
+            </button>
+            <button class="btn btn-primary btn-sm" t-on-click="onSave">Done</button>
+        </div>
+
+        <div class="text-muted small mt-2">
+            Staged only — nothing is written until you apply.
+        </div>
+    </div>
+</t>
+
+</templates>

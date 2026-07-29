@@ -15,21 +15,23 @@ Three buttons matter:
   generated. A file somebody edited by hand is reported, never silently
   overwritten and never deleted.
 
-## Graduate to code
+## Adopt an existing model
 
-**Studio → Graduate to Code** converts a visually-built model into an ordinary
-`models.Model` subclass in `models/*.py` that you own outright. The records, the
-table and its data are untouched; only where the definition lives changes.
+New models are already Python. **Studio → Adopt Existing Model** is for the ones
+that are not yet: an `x_` model built by an older version of the studio, or one
+made by hand in Settings → Technical. The records, the table and its data are
+untouched; only where the definition lives changes.
 
 It is lossless because the xmlids Odoo's reflection assigns to a code-defined
 model are identical to the ones the studio emitted, and because the metadata is
 reclassified rather than deleted. A sandboxed `compute` string is promoted to a
 real method with a real `@api.depends`.
 
-Graduation requires the package to be installed as a module (Odoo only imports
-Python for installed modules) and takes effect at the next restart, which
-`--dev=reload` triggers automatically when the file lands. It is a one-way
-handoff: the file is generated once and never overwritten.
+Adopting requires the package to be installed as a module (Odoo only imports
+Python for installed modules) and takes effect once the package reloads, which
+`--dev=reload` does automatically when the file lands. It closes no doors:
+afterwards the model behaves like any other the builder owns, with the marked
+block kept in sync and everything outside it yours.
 
 ## Production
 

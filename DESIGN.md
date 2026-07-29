@@ -58,6 +58,13 @@ path — run explicitly, on drift, or in CI — not the edit path.
 
 If that property holds, the DB write is an optimization, not a divergent source of truth.
 
+*Amended 2026-07-28.* This still holds for everything emitted as XML/CSV, and it is still what
+makes the DB write legitimate there. It is **false by construction for a Python-backed model**,
+where the database is produced by class loading rather than by the file being compared — so it
+splits into three properties. See *Status → The three invariants*. The other half of the bet
+changes with it: a new *column* no longer arrives in the caller's transaction, so edits batch
+behind an explicit Apply and pay one reload per changeset.
+
 ### Module layout
 
 Five addons under `custom/`. **Do not name anything `studio_customization`** — it is hardcoded
@@ -119,7 +126,67 @@ attribute. `base_import_module._is_studio_custom` (`ir_module.py:545`) walks eve
 looking for exactly that and refuses the module with *"Studio customizations require the Odoo
 Studio app."*
 
-### MVP generates zero Python — deliberately
+### ~~MVP generates zero Python — deliberately~~ → **Python, with a machine-owned block**
+
+*Superseded 2026-07-28. The original text is kept below the line because the reasoning was
+sound and the reason it stopped applying is worth knowing.*
+
+New models are generated as real `models.Model` classes. **Only a marker-delimited block
+inside the class is machine-owned**; the rest of the file is never read, never parsed and
+never rewritten:
+
+```python
+class WorkshopJob(models.Model):
+    # begin: studio-generated schema
+    _name = "workshop.job"
+    _inherit = ["mail.thread"]
+    name = fields.Char(string="Name", required=True)
+    # end: studio-generated schema
+
+    @api.constrains("name")          # anything at all out here
+    def _check_name(self): ...
+```
+
+This is Frappe's `TypeExporter` convention (`frappe/types/exporter.py`), and it is adopted for
+the same reason: writing is a pure string splice between the markers, so a developer may use a
+metaclass, a `@property`, a decorator we have never heard of, and the builder keeps working.
+**An earlier revision parsed the whole file and froze a model on any construct it did not
+model — which is the same one-way handoff this project exists to avoid, in new clothes.**
+
+What Frappe does that Odoo *cannot*: keep the schema in JSON and the behaviour in a separate
+controller class. Frappe resolves the controller by name at runtime (`get_controller`), so the
+two never contend. An Odoo model **is** a composed class, and `_add_manual_models`
+([ir_model.py:502-511]) deletes every `_custom` model from the pool and rebuilds it from
+`ir_model` rows alone on every `setup_models` — so a Python class that `_inherit`s a
+record-defined model survives install and then evaporates. Verified empirically, not inferred.
+Whatever declares the fields must therefore be the same class that carries the behaviour.
+
+The rest of what forced Python-first, all verified against 18.0:
+
+- **A live `state='manual'` field cannot have a clean name.** PostgreSQL CHECK
+  `name_manual_field` (`CHECK (state != 'manual' OR name LIKE 'x\_%')`) plus
+  `BaseModel._add_field` ([models.py:667-680]). So "no `x_`" ⇒ fields are class attributes ⇒
+  a new column needs the class re-imported. Edits therefore batch behind an explicit Apply.
+- **Data-defined fields are one bad regeneration from data loss.** `_process_end` deletes
+  records absent from reloaded data, and `IrModelFields.unlink` → `_drop_column` issues
+  `ALTER TABLE … DROP COLUMN … CASCADE`.
+- **Manual models hit a hard ceiling**: no `_sql_constraints`, `@api.constrains`,
+  `@api.onchange`, `_inherits`, `_parent_store`; `_order` restricted to stored fields; and
+  `properties` / `many2one_reference` / `json` silently unusable because `_add_manual_fields`
+  swallows every per-field exception ([ir_model.py:1379-1384]).
+- **Field order is non-deterministic** for manual fields — `_all_manual_field_data` reads
+  unordered SQL — which is a direct threat to byte-identical output. Class order is not.
+
+Chatter was *not* a reason: `ir.model.is_mail_thread` and mail's `_instanciate` override are
+the one mixin exception for manual models. It is irreversible there, and an ordinary
+`_inherit` in a class.
+
+`graduate-to-code` inverts into **adopt**: bringing an existing `x_` manual model under
+Python management. Editing a *core* model keeps both modes, labelled — `_inherit` + Python
+(clean names, real constraints) as the default, and `x_` + manual + XML as the instant
+escape hatch.
+
+<details><summary>Original reasoning (no longer in force)</summary>
 
 This is what buys restart-free live editing, and it costs almost nothing:
 
@@ -130,36 +197,98 @@ This is what buys restart-free live editing, and it costs almost nothing:
 
 So the MVP is genuinely data-only → `load_openerp_module`'s `sys.modules` guard never bites.
 
-**Phase 5 "graduate to code"** is then the feature that actually beats Studio: convert an `x_`
-manual model into a real `models.Model` Python class, rewriting `state='manual'` records to
-`state='base'`. That needs a restart, which `--dev=reload` already provides.
+</details>
 
-### View edits emit inheriting views, never replacements
+### View edits never rewrite another module's view
 
 A studio edit to `sale.view_order_form` produces a new `ir.ui.view` with `inherit_id` +
 `<xpath position=...>`, at `priority = 99` (core's own convention, commented at
 [ir_ui_view.py:658]). Survives upstream changes, reads as a normal patch in review.
 
-Mapping a clicked DOM node back to an xpath is **already solved in core**: the
-`inherit_branding` / `distribute_branding` / `data-oe-xpath` machinery
-([ir_ui_view.py:775-789, 2136, 2203]) used by the website editor. Reuse it rather than writing
-an arch-locator. `base_view_inheritance_extension` adds AST-level dict merging so `context` and
-`options` attributes can be patched without replacing the whole string.
+A view the editing package **owns** is edited directly instead. Emitting a patch against your
+own primary view produces source no developer would write — a generated form plus a pile of
+xpaths against it in the same addon. Both modes run the same handlers over the same `<xpath>`
+spec; the owned path feeds that spec through core's `apply_inheritance_specs` instead of
+storing it, so the two cannot drift apart.
 
-### Reload orchestration — three known core traps
+**The branding plan below was wrong and is struck.** Mapping a clicked DOM node back to an
+xpath is *not* solved by `inherit_branding` for backend views:
 
-`studio.package._reload()` must, in order:
+- `distribute_branding` — the half that computes per-node xpaths — is only reached from
+  `_read_template`, i.e. the QWeb render path. Backend form/list views never go through it.
+- `inherit_branding` is absent from `_get_view_cache_key` ([ir_ui_view.py:2740-2758]), so
+  requesting it through `get_view` either returns the cached unbranded arch or poisons a
+  shared cache. `loadViews` filters the client context down to `lang` + `*_view_ref` anyway.
+- `data-oe-xpath` is relative to the **owning view's own arch**, not the combined arch that
+  `apply_inheritance_specs` matches. Core's own `test_branding_inherit` shows a node that is
+  `item[2]` in the combined tree carrying `/root[1]/item[1]`.
 
-1. `odoo.modules.module._get_manifest_cached.cache_clear()` — an `lru_cache` at `module.py:365`
-   that **is never invalidated anywhere in the codebase**. An edited manifest is otherwise
-   invisible for the process lifetime.
-2. `importlib.invalidate_caches()` — likewise never called by Odoo.
-3. `update_list()` then `button_immediate_upgrade()`.
+Node identity does not survive `view_compiler.js` either: `copyAttributes` forwards only
+`class` and `style`, `Group` has a closed prop list, and `<page>` compiles to a slot with no
+element. Carry identity as a **class token** if it is ever needed on the canvas.
+
+What actually works is what the code does: mint locators **server-side** from
+`get_combined_arch()`, preferring `//tag[@name='x']` while exactly one node answers it and
+falling back to `getroottree().getpath()`, which is absolute and unique by construction —
+the same call `distribute_branding` itself uses.
+
+### Reload orchestration — and the ordering that makes it work
+
+Two caches Odoo never invalidates itself: `_get_manifest_cached` (an `lru_cache` at
+`module.py:365`, an edited manifest is otherwise invisible for the process lifetime) and
+`importlib.invalidate_caches()`. Both are handled by `_invalidate_module_caches`.
+
+Once the studio generates Python, that is not enough. **`button_immediate_upgrade` does not
+reload Python.** `load_openerp_module` ([module.py:370-382]) early-returns when
+`odoo.addons.<name>` is already in `sys.modules`, so an upgrade in a live process re-runs the
+data files against the *old* classes and reports success.
+
+`_reload_now()` therefore does, and the order is the whole trick:
+
+1. purge `sys.modules` for the package **and** `MetaModel.module_to_models[pkg]` — the latter
+   is append-only ([models.py:265]), so skipping it registers every class a second time;
+2. **then** `button_immediate_upgrade()`, so `init_models` runs and the schema follows.
+
+Each half is justified by a measured failure, not by reading the source
+(`tests/e2e/probe_reimport.py`):
+
+- purge without upgrading → the field is in the ORM and the column is *not* in Postgres,
+  because `Registry.new` only runs `init_models` for modules marked `to upgrade`;
+- upgrade without purging → nothing changes at all, and it looks like it worked.
+
+Three reload modes, chosen from config. `manual` (multiple workers) is **refused**, not
+degraded: `setup_models` makes every other worker rebuild its registry, but their
+`sys.modules` still holds the old Python, so they would rebuild against a stale class. That is
+wrong rather than merely slow. Studio editing is a single-process development activity;
+production runs read-only from the nix store.
 
 Also: `_button_immediate_function` ([ir_module.py:601-644]) raises if the registry is
 initialising or in test mode, and takes `SELECT * FROM ir_cron FOR UPDATE NOWAIT` — it fails
 outright while cron runs, so this needs a retry/queue. And a **new addons directory** cannot be
 registered at runtime; packages must live under an existing addons_path entry (`custom/`).
+
+### Apply is a state machine, because module operations commit
+
+`_button_immediate_function` commits before rebuilding the registry and again after, so a
+failure halfway is not something the ORM rolls back. Worse, if the new Python does not import,
+the *next* request re-imports the same file and the database will not boot — for everybody.
+
+So `action_apply` is fixed: render to memory → `compile()` every `.py` → re-parse every `.py`
+→ snapshot the old bytes (a `studio.package.apply` record, `.studio/backup/<stamp>/`, and a git
+commit) → write → commit → reload → on failure restore, reload again, record why.
+
+The compile gate is what keeps a bad apply survivable, because it runs before anything reaches
+disk. The snapshot covers what compiling cannot catch. Both copies of the old bytes matter: the
+on-disk one is all that is left when the process dies mid-reload, and recovery is then
+`git checkout` from a shell. An apply row still `pending` after a restart is exactly that
+signal.
+
+**Removing a field drops its column and its data** — measured, not assumed
+(`_process_end` → `IrModelFields.unlink` → `_drop_column` → `DROP COLUMN CASCADE`). An apply
+that would do that refuses unless asked explicitly, then emits
+`migrations/<version>/pre-studio-<stamp>.py` renaming the column aside.
+`migrate_module(pkg, 'pre')` runs long before `_process_end`, so there is nothing left under
+the old name and `_drop_column` drops nothing.
 
 ### Reverse direction: developer edits the file
 
@@ -290,26 +419,59 @@ unstored, and a valueless `Selection` produced un-importable Python.
 
 ## Status
 
-All five planned phases are done, with **126 tests** across the suite:
+**198 unit tests** plus three end-to-end probes. CI runs ruff + pre-commit and
+the suite against both Odoo and OCB 18.0 in the OCA CI containers.
 
 - `app_builder_base` — packages, serializer framework, canonical writer, drift,
-  reload, teardown, graduate-to-code, and the round-trip invariant
-- `app_builder_model` — model & field builder
+  the spec layer (`modelspec` / `pycodegen` / `pyparse`), apply + snapshot +
+  rollback, reload modes, pre-migration generation, scaffold
+- `app_builder_model` — model & field builder, app builder, adopt
 - `app_builder_view` — view editor: operation API, node picker, OWL client
 - `app_builder_ui` — menus, actions, ACLs, record rules, automations
 
-CI runs ruff + pre-commit, and the test suite against both Odoo and OCB 18.0 in
-the OCA CI containers.
+### The three invariants
+
+The original one — `load_from_files(serialize(db)) == db`, byte-identical — is
+**false by construction** for a Python-backed model, because the database is
+produced by class loading rather than by the files being compared. It splits:
+
+- **I1, the codegen fixed point** (`tests/test_modelspec.py`, no database):
+  `parse(render(spec)) == spec` and `render(parse(src)) == src`, over every
+  ttype, every attribute toggle and every pair of them. This is the primary
+  determinism guard now, and it is strictly stronger than byte-identity on a
+  fixture — it is what makes the *parser* safe. One that dropped a `help=`
+  string would satisfy the second property forever, on a file that had quietly
+  lost the developer's text.
+- **I2, reflection agreement** (`tests/e2e/probe_reflection.py`): after a real
+  install in a fresh process, the metadata matches a *prediction* of what
+  `_reflect_model_params` / `_reflect_field_params` will write. Only the keys
+  reflection maintains may be compared, and the comparison runs at `lang=None`
+  because `upsert_en` writes only the `en_US` slot.
+- **I3, the data-file round trip** — unchanged, narrowed to what is still
+  XML/CSV: views, actions, menus, ACLs, rules, automations, sequences, and
+  `x_` manual fields on core models.
+
+### Why some tests cannot be `TransactionCase`s
+
+`ir.module.module._button_immediate_function` raises outright when
+`threading.current_thread().testing` is set, so every path that installs,
+upgrades or reloads a module is unreachable from the normal suite. Those live
+in `tests/e2e/` and drive real registries in real processes:
+`probe_reimport` (is in-process re-import sound?), `probe_reflection` (I2), and
+`probe_scaffold` (can a plain user actually use what we built?).
 
 Remaining:
 
-- **Client depth** — true drag-and-drop using core's `data-oe-xpath` branding
-  machinery (`ir_ui_view.py:775-789`); a domain builder via
-  `web_widget_domain_editor_dialog`; browser tour tests.
+- **The composer client** — an OWL client action with a `ResizablePanel`
+  sidebar and a live `View` preview, a pending-changes tray, and the field
+  popover modelled on core's `properties` field. Drag-and-drop lands on top of
+  that, not before it.
+- **Relationships** — one2many with automatic inverse creation and notebook
+  placement; then sub-models.
 - **19.0** — the code is kept 19.0-clean but is only tested on 18.0. Several
   OCA dependencies are not ported to 19.0 yet.
-- **Graduating two custom models that reference each other** in one operation is
-  untested; graduate them one at a time.
+- **Adopting two custom models that reference each other** in one operation is
+  untested; adopt them one at a time.
 - **`many2one_reference`** cannot be serialized portably (its value is a raw
   database id) and is refused rather than silently corrupted.
 
@@ -330,23 +492,36 @@ model + views + action + menu from one record), `odoo-pim/attribute_set`
 ## Verification
 
 ```sh
+# unit suite
 python odoo/odoo-bin -c odoo.conf -d studio_test -i app_builder \
   --test-enable \
   --test-tags /app_builder_base,/app_builder_model,/app_builder_view,/app_builder_ui \
   --stop-after-init
+
+# the paths a TransactionCase cannot reach: install, upgrade, reload
+app_builder_base/tests/e2e/run_probes.sh -c odoo.conf -t studio_test
 ```
 
 End-to-end acceptance, in order:
 
-1. Create a package `x_demo` -> the addon directory appears with a manifest
-2. Create a model with a char, a m2o and a **stored computed** field ->
-   table exists, fields queryable, `models/` + `views/` XML on disk
-3. Add it to a menu and grant access -> menu renders, ACL csv written
+1. Create a package -> the addon directory appears with a manifest
+2. **Build an app** from a label -> a real Python class on disk with no `x_`
+   anywhere, plus list/form/search views, an action, an app menu, ACL rows,
+   chatter, activities and a sequence
+3. **Log in as a plain internal user** -> the menu is visible, records can be
+   created, the reference numbers itself. *This is the one that matters*: the
+   previous wizard failed it silently, because `env.su` bypasses every ACL
+   check and the app looked perfect to whoever built it
 4. Edit a core view -> an *inheriting* view at `priority=99` is written
-5. **Round-trip:** drop the DB, install the package from files alone,
-   re-serialize -> **byte-identical output**
-6. **Drift:** hand-edit a generated file -> package reports `drifted`,
-   one-click reload adopts it
-7. **Graduate:** convert the model to Python, restart -> class loads, data
-   intact, compute still recomputes
-8. **Read-only:** point at a read-only checkout -> editor disabled, no traceback
+5. Edit a view the package owns -> its arch changes in place, no xpath patch
+   against itself
+6. **Fixed point:** save again with nothing changed -> zero diff
+7. **Reflection:** re-read the metadata -> it matches what the source predicts,
+   every field `state='base'`
+8. **Drift:** hand-edit a generated file -> an edit the parser understands is
+   adopted; one it cannot read freezes the model and the file is kept verbatim
+9. **Destructive:** remove a stored field -> refused, then applied with a
+   pre-migration that renames the column aside instead of dropping it
+10. **Read-only:** point at a read-only checkout -> editor disabled, no traceback
+
+Steps 2, 3, 6 and 7 are automated in `tests/e2e/`.

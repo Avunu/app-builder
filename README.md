@@ -44,37 +44,53 @@ Studio's export is unreadable in review because ordering follows dict iteration 
 
 Edits to existing views become **inheriting views** at `priority=99` — core's own convention (`ir_ui_view.py:658`) — never rewrites. Manifest `depends` are derived from the refs actually emitted, and data files are ordered so every ref resolves when its file loads.
 
-## Packages are data-only until you say otherwise
+## Python from the first save, but only a block of it is ours
 
-Computed fields and server actions are already _data_ in Odoo: `ir.model.fields.compute` is a sandboxed string turned into a real compute by `make_compute` (`ir_model.py:48-52`). Generated packages are therefore data-only and never trip `load_openerp_module`'s `sys.modules` guard — models, fields, views and automations go live without restarting the server.
-
-## Graduate to code
-
-The thing Odoo Studio cannot do. **Studio → Graduate to Code** converts a visually-built model into an ordinary `models.Model` subclass you own outright:
+A new model is a real `models.Model` class immediately — no `x_` prefix, no later conversion
+step. What the builder owns is a marker-delimited block inside the class; everything else in
+that file is yours from the moment it exists:
 
 ```python
-class XGradTask(models.Model):
-    _name = "x_grad_task"
-    _description = "Grad Task"
-    _rec_name = "x_name"
+class WorkshopJob(models.Model):
+    # begin: studio-generated schema
+    _name = "workshop.job"
+    _inherit = ["mail.thread", "mail.activity.mixin"]
+    _order = "sequence, id"
 
-    x_hours = fields.Float(string="Hours")
-    x_name = fields.Char(string="Name", required=True)
-    x_summary = fields.Char(string="Summary", compute="_compute_x_summary", store=True)
+    name = fields.Char(string="Name", required=True, tracking=1)
+    partner_id = fields.Many2one("res.partner", string="Customer")
+    # end: studio-generated schema
 
-    @api.depends("x_name", "x_hours")
-    def _compute_x_summary(self):
-        for r in self:
-            r['x_summary'] = '%s (%sh)' % (r.x_name or '', r.x_hours)
+    @api.constrains("name")           # anything at all out here
+    def _check_name(self):
+        ...
 ```
 
-Three things make it lossless rather than a rewrite:
+Writing is a pure string splice between the markers — the same approach
+[Frappe's `TypeExporter`](https://github.com/frappe/frappe/blob/develop/frappe/types/exporter.py)
+uses — so the studio never parses, reads or rewrites the rest of the file. Add a metaclass, a
+`@property`, a decorator nobody has heard of: the builder keeps working. Reading parses only
+the block, which is text the studio generated, so a failure there is a loud error about our
+own region rather than a model that quietly locks itself out.
 
--   the xmlids Odoo's reflection assigns to a code-defined model are _identical_ to the ones the studio emitted (`model_xmlid` / `field_xmlid` / `selection_xmlid`), so nothing is orphaned and `_process_end` reaps nothing;
--   the sandboxed `compute` string is promoted to a real method with a real `@api.depends`;
--   the metadata rows are _reclassified_ (`state` manual → base), never deleted. Deleting would be doubly catastrophic: `ir.model.fields.unlink` calls `_drop_column` and would destroy user data, and every `model_id` in Odoo is `ondelete='cascade'`, so dropping the `ir.model` row silently takes the access rules and automations with it.
+**This is what makes it not an export.** Odoo Studio's "export to module" is one-way: touch the
+code and you can never go back to the visual tool. Here there is no door to close.
 
-Graduation is a **one-way handoff**: the file is generated once and never overwritten. It takes effect at the next restart, which `--dev=reload` triggers automatically when the `.py` lands.
+Three things make the generated class lossless rather than a rewrite:
+
+-   the xmlids Odoo's reflection assigns to a code-defined model are _identical_ to the ones the
+    studio emitted (`model_xmlid` / `field_xmlid` / `selection_xmlid`), so nothing is orphaned and
+    `_process_end` reaps nothing;
+-   a sandboxed `compute` string is promoted to a real method with a real `@api.depends`;
+-   metadata rows are _reclassified_ (`state` manual → base), never deleted. Deleting would be
+    doubly catastrophic: `ir.model.fields.unlink` calls `_drop_column` and would destroy user
+    data, and every `model_id` in Odoo is `ondelete='cascade'`, so dropping the `ir.model` row
+    silently takes the access rules and automations with it.
+
+Adding a field means re-importing the class, so edits batch behind an explicit **Apply** — one
+reload per changeset rather than one per field. **Studio → Adopt Existing Model** brings an
+older `x_` model under the same management; it is a migration for what came before, not a
+milestone.
 
 ## Read-only in production is a feature
 

@@ -1,0 +1,43 @@
+.o_studio_composer {
+    background-color: var(--o-view-background-color, #fff);
+
+    .o_studio_composer_side {
+        background-color: #f9f9f9;
+        min-width: 300px;
+    }
+
+    .o_studio_field {
+        cursor: pointer;
+
+        &:hover {
+            background-color: rgba(0, 0, 0, 0.04);
+        }
+
+        // The row controls are noise until the row is the one you mean.
+        .btn-link {
+            opacity: 0;
+            transition: opacity 0.1s ease-in-out;
+        }
+
+        &:hover .btn-link,
+        .btn-link:focus-visible {
+            opacity: 1;
+        }
+    }
+
+    .o_studio_diff {
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .o_studio_preview_note {
+        background-color: #f4f4f4;
+    }
+}
+
+.o_studio_field_popover {
+    // Wide enough for a domain row, short enough to stay beside the field it
+    // belongs to rather than covering the list.
+    max-width: 420px;
+    min-width: 340px;
+}

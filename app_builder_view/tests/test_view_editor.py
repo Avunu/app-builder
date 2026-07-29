@@ -6,6 +6,7 @@ import os
 
 from lxml import etree
 
+from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -202,13 +203,34 @@ class TestViewEditor(StudioCase):
     def test_named_nodes_get_identifying_xpaths(self):
         """//field[@name='x'] survives a sibling insert; //div[3] does not."""
         nodes = self.editor.get_view_nodes(self.base_view.id)
-        function = next(n for n in nodes if n["is_field"] and n["label"] == "function")
-        self.assertEqual(function["xpath"], "//field[@name='function']")
+        # 'vat' is on the sheet and nowhere else in the partner form, so the
+        # bare predicate is unambiguous and is what the picker should emit.
+        vat = next(n for n in nodes if n["is_field"] and n["label"] == "vat")
+        self.assertEqual(vat["xpath"], "//field[@name='vat']")
+
+    def test_ambiguous_names_are_qualified_by_their_parent(self):
+        """A bare predicate is only a locator while exactly one node answers it.
+
+        ``res.partner``'s form carries ``function`` three times: once on the
+        sheet and twice inside the inline ``child_ids`` subviews, which are a
+        different view of a different arch grafted in by
+        ``_postprocess_tag_field``. Emitting ``//field[@name='function']`` for
+        all three means ``locate_node`` takes whichever comes first, so an edit
+        aimed at a subview column silently patches the sheet.
+        """
+        nodes = self.editor.get_view_nodes(self.base_view.id)
+        functions = [n for n in nodes if n["is_field"] and n["label"] == "function"]
+        self.assertGreater(len(functions), 1, "fixture assumes a repeated name")
+        paths = {n["xpath"] for n in functions}
+        self.assertEqual(
+            len(paths), len(functions), "each occurrence needs its own path"
+        )
+        self.assertNotIn("//field[@name='function']", paths)
 
     def test_node_xpaths_are_usable_as_operation_targets(self):
         """A picked xpath must actually resolve, or the picker is a lie."""
         nodes = self.editor.get_view_nodes(self.base_view.id)
-        target = next(n for n in nodes if n["xpath"] == "//field[@name='function']")
+        target = next(n for n in nodes if n["xpath"] == "//field[@name='vat']")
         self.editor.apply_operation(
             self.base_view.id,
             self.package.id,
@@ -232,14 +254,43 @@ class TestViewEditor(StudioCase):
         self.assertTrue(any(v["type"] == "form" for v in views))
 
     def test_edit_on_a_custom_model_view(self):
-        """End to end on a model the studio itself created."""
-        self.env["studio.model.wizard"].create(
+        """End to end on a model the studio itself owns.
+
+        Builds the model directly rather than through the wizard: the wizard
+        now writes Python and reloads the package, which commits -- so it
+        cannot run inside a TransactionCase at all. That path is covered by
+        tests/e2e/probe_scaffold.py.
+        """
+        model = self.env["ir.model"].create(
             {
-                "package_id": self.package.id,
                 "name": "View Demo",
                 "model": "x_view_demo",
+                "field_id": [
+                    Command.create(
+                        {
+                            "name": "x_name",
+                            "ttype": "char",
+                            "field_description": "Name",
+                        }
+                    )
+                ],
             }
-        ).action_create()
+        )
+        self.package.studio_capture(
+            [model, model.field_id.filtered(lambda f: f.state == "manual")]
+        )
+        view = self.env["ir.ui.view"].create(
+            {
+                "name": "x_view_demo.form",
+                "model": "x_view_demo",
+                "arch": (
+                    '<form string="View Demo"><sheet><group>'
+                    '<field name="x_name"/>'
+                    "</group></sheet></form>"
+                ),
+            }
+        )
+        self.package.studio_capture(view)
         self.env["ir.model.fields"].create(
             {
                 "name": "x_note",
