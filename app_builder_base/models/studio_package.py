@@ -832,7 +832,7 @@ class StudioPackage(models.Model):
             raise UserError(
                 _(
                     "Install the '%(name)s' module first (Reload from disk). "
-                    "Odoo only loads Python for installed modules, so graduating "
+                    "Odoo only loads Python for installed modules, so adopting "
                     "now would leave %(name)s with no definition at all after a "
                     "restart.",
                     name=self.name,
@@ -928,7 +928,7 @@ class StudioPackage(models.Model):
         self.env.invalidate_all()
         self.env.registry.clear_cache()
         _logger.info(
-            "Graduated %s in package %s: metadata reclassified as base; "
+            "Adopted %s in package %s: metadata reclassified as base; "
             "tables, data, access rules and automations untouched",
             ", ".join(names),
             self.name,

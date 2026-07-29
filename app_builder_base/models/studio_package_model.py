@@ -103,6 +103,11 @@ class StudioPackageModel(models.Model):
             )
             return None
 
+    def action_compose(self):
+        """Open the composer on this model."""
+        self.ensure_one()
+        return self.env["studio.model.draft"].open_action(self.id)
+
     def action_retry_parse(self):
         """Give a frozen model another chance after the file was fixed."""
         for record in self.filtered(lambda r: r.source == "frozen"):

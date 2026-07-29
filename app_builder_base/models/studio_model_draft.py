@@ -21,7 +21,7 @@ import difflib
 import json
 
 from odoo import _, api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 
 from ..tools import modelspec, pycodegen
 
@@ -71,6 +71,93 @@ class StudioModelDraft(models.TransientModel):
                 "spec_json": payload,
             }
         )
+
+    @api.model
+    def open_action(self, package_model_id):
+        """The client action for editing one model."""
+        draft = self.open_for(self.env["studio.package.model"].browse(package_model_id))
+        return {
+            "type": "ir.actions.client",
+            "tag": "app_builder_composer",
+            "name": draft.model,
+            "params": {"draft_id": draft.id},
+            # URL-resumable: Apply rebuilds the registry, and a page that could
+            # not be reopened from its address would lose the session on every
+            # save.
+            "context": {"studio_draft_id": draft.id},
+        }
+
+    def load(self):
+        """Everything the composer needs, in one round trip."""
+        self.ensure_one()
+        spec = self._spec()
+        return {
+            "id": self.id,
+            "model": self.model,
+            "package": {
+                "id": self.package_id.id,
+                "name": self.package_id.name,
+                "writable": self.package_id.writable,
+                "reload_mode": self.package_id.reload_mode,
+            },
+            "spec": modelspec.spec_to_json(spec),
+            "fields": [
+                {
+                    **modelspec.spec_to_json(f),
+                    "type_label": self._type_label(f.ttype),
+                }
+                for f in spec.fields
+            ],
+            "pending": self.pending_changes(),
+            "change_count": self.change_count,
+            "field_types": modelspec.available_field_types(spec),
+            "errors": self.validate(),
+            "view": self._preview_view(self.package_model_id),
+        }
+
+    @api.model
+    def _preview_view(self, package_model):
+        """Which view the live preview should render, or why it cannot.
+
+        A model with no access rule is a normal state -- it is exactly what a
+        freshly adopted one looks like -- and it is not something to crash over.
+        Rendering the preview would raise an AccessError the user cannot act on
+        from a modal, so the question is asked here and answered in words.
+
+        Falls back to whatever Odoo would synthesize when there is no form
+        view, so a model whose form was deleted still previews as something.
+        """
+        model_name = package_model.model
+        if model_name not in self.env:
+            return {
+                "available": False,
+                "reason": _(
+                    "This model is not loaded yet. Apply your changes, or "
+                    "reload the package."
+                ),
+            }
+        try:
+            self.env[model_name].check_access("read")
+        except AccessError:
+            return {
+                "available": False,
+                "reason": _(
+                    "No access rule grants read on %s yet, so there is nothing "
+                    "to preview. Editing still works -- add a rule and it will "
+                    "appear.",
+                    model_name,
+                ),
+            }
+        view = self.env["ir.ui.view"].search(
+            [("model", "=", model_name), ("type", "=", "form")],
+            order="priority,id",
+            limit=1,
+        )
+        return {
+            "available": True,
+            "res_model": model_name,
+            "view_id": view.id or False,
+        }
 
     def _spec(self):
         self.ensure_one()
