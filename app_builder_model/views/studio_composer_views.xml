@@ -76,7 +76,14 @@
         </field>
     </record>
 
-    <menuitem id="menu_studio_models"
+    <!--
+        Deliberately not "menu_studio_models": studio_menus.xml already uses
+        that id for the technical ir.model list and loads after this file, so
+        sharing it replaced this menu with that one and left no way into the
+        composer at all. Odoo does not warn about a redefined xmlid; the only
+        symptom was a missing menu.
+    -->
+    <menuitem id="menu_studio_composer"
               name="Models"
               parent="app_builder_base.menu_studio_root"
               action="studio_package_model_action"
