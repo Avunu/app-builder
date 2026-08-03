@@ -52,6 +52,9 @@ export class StudioViewEditor extends Component {
             message: "",
             addable: [],
             history: [],
+            search: { fields: [], filters: [], group_bys: [] },
+            filterField: "",
+            filterCondition: "set",
         });
 
         onWillStart(async () => {
@@ -67,6 +70,7 @@ export class StudioViewEditor extends Component {
             this.state.loading = false;
             await this.loadAddable();
             await this.loadHistory();
+            await this.loadSearch();
         });
 
         // Capture phase, on the container rather than per element: the view
@@ -112,6 +116,16 @@ export class StudioViewEditor extends Component {
 
     get view() {
         return (this.state.context && this.state.context.view) || {};
+    }
+
+    get preview() {
+        return (
+            (this.state.context && this.state.context.preview) || {
+                type: this.view.type,
+                view_id: this.view.id,
+                search_view_id: false,
+            }
+        );
     }
 
     get packageId() {
@@ -239,6 +253,107 @@ export class StudioViewEditor extends Component {
 
     onInput(row, ev) {
         return this.onRowChange(row, ev.target.value);
+    }
+
+    // -- search views -------------------------------------------------------
+    //
+    // Edited as the three lists a search view really is, because it has no
+    // rendering of its own to click. The preview still shows the menus being
+    // edited -- attached to a real list -- so the feedback loop is intact.
+
+    get isSearch() {
+        return this.view.type === "search";
+    }
+
+    get searchFieldChoices() {
+        // Straight from the server: "not already in this view" has to ignore
+        // embedded subviews, whose fields belong to another model, and that
+        // rule is not one to reimplement here.
+        return this.state.search.addable || [];
+    }
+
+    get groupByChoices() {
+        const present = new Set(
+            (this.state.search.group_bys || []).map((g) => g.name.replace("group_by_", ""))
+        );
+        return (this.state.context.fields || []).filter(
+            (f) =>
+                ["many2one", "selection", "boolean", "date", "datetime"].includes(f.type) &&
+                !present.has(f.name)
+        );
+    }
+
+    async loadSearch() {
+        if (!this.isSearch) {
+            return;
+        }
+        this.state.search = await this.orm.call(
+            "studio.view.editor",
+            "search_elements",
+            [this.viewId]
+        );
+    }
+
+    async addSearchElement(kind, values) {
+        if (!values.field || !this.packageId) {
+            return;
+        }
+        this.state.busy = true;
+        try {
+            await this.orm.call("studio.view.editor", "add_search_element", [
+                this.viewId,
+                this.packageId,
+                kind,
+                values,
+            ]);
+            await this.afterSearchChange();
+        } finally {
+            this.state.busy = false;
+        }
+    }
+
+    async removeSearchElement(kind, name) {
+        this.state.busy = true;
+        try {
+            await this.orm.call("studio.view.editor", "remove_search_element", [
+                this.viewId,
+                this.packageId,
+                kind,
+                name,
+            ]);
+            await this.afterSearchChange();
+        } finally {
+            this.state.busy = false;
+        }
+    }
+
+    async afterSearchChange() {
+        await this.loadSearch();
+        await this.loadHistory();
+        this.env.bus.trigger("CLEAR-CACHES");
+        this.state.previewKey += 1;
+    }
+
+    onAddSearchField(ev) {
+        const field = ev.target.value;
+        ev.target.value = "";
+        return this.addSearchElement("field", { field });
+    }
+
+    onAddGroupBy(ev) {
+        const field = ev.target.value;
+        ev.target.value = "";
+        return this.addSearchElement("group_by", { field });
+    }
+
+    onAddFilter() {
+        const field = this.state.filterField;
+        const condition = this.state.filterCondition || "set";
+        if (!field) {
+            return;
+        }
+        this.state.filterField = "";
+        return this.addSearchElement("filter", { field, condition });
     }
 
     // -- reordering ---------------------------------------------------------

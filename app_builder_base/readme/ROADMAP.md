@@ -3,15 +3,11 @@
 - **Drag-to-reorder beyond list columns** — form fields between groups, kanban
   card contents. The move operation and the gesture both exist now; what each
   case needs is a sensible answer to "what did you drop it *into*".
-- **Search views.** The only view type the editor does not cover, because a
-  search view has no standalone rendering to click — it lives in another view's
-  control panel. It needs a list-shaped editor (fields, filters, group-bys)
-  rather than the click-to-select spine.
 - **Record rules and automations**, in the composer rather than in the technical
   menus, where they would have the context that makes them answerable.
-- **Retire the old view editor.** `studio_editor.js` — a node list beside a
-  free-text xpath box — is now redundant for list, form, kanban and calendar. It
-  stays until search views are covered, then goes.
+- **Richer filters.** Search filters are generated from a field and a condition
+  (is set, is not set, is true, is false). A domain with several terms still
+  belongs in the source; a domain *builder* would be the way to change that.
 
 ## Known limits
 
@@ -51,6 +47,10 @@
   `<field>` puts its name in the DOM. Cards the builder generates use real
   fields for exactly this reason; existing ones are edited as source, and the
   editor says so rather than absorbing the click.
+- **A search view is edited as three lists, not by clicking.** It has no
+  rendering of its own — it furnishes another view's control panel — so it is
+  edited as searchable fields, filters and group-bys, and previewed inside a
+  real list so the menus on screen are the ones being edited.
 - **A calendar is edited as settings, not by clicking.** It draws events rather
   than fields, so there is no per-node DOM to aim at. What a calendar *is* lives
   in its root attributes, which is what the panel edits.

@@ -284,9 +284,17 @@ class TestStudioAccessControl(StudioCase):
         view = self.env.ref("base.view_partner_form")
         package = self.make_package(name="x_acl_probe")
         for call in (
-            lambda: editor.get_editable_views("res.partner"),
-            lambda: editor.get_view_nodes(view.id),
-            lambda: editor.get_addable_fields("res.partner", view.id),
+            lambda: editor.locate_target(view.id, {"kind": "root"}),
+            lambda: editor.editing_context(view.id),
+            lambda: editor.search_elements(view.id),
+            lambda: editor.addable_view_types("res.partner"),
+            lambda: editor.add_view("res.partner", "kanban", package.id),
+            lambda: editor.move_node(
+                view.id,
+                package.id,
+                {"kind": "field", "name": "vat"},
+                {"kind": "field", "name": "function"},
+            ),
             lambda: editor.apply_operation(
                 view.id,
                 package.id,
@@ -332,36 +340,53 @@ class TestLocatorAmbiguity(StudioCase):
     aimed at a subview column silently patched the sheet.
     """
 
-    def test_repeated_names_get_distinct_qualified_paths(self):
+    def _locators(self):
+        """Every node of the partner form, with the locator minted for it.
+
+        Walked here rather than through an RPC: the invariant belongs to
+        `_locator_for`, which is what the descriptor resolver calls, and the
+        node-list API that used to expose it has been retired along with the
+        editor that consumed it.
+        """
         editor = self.env["studio.view.editor"]
         view = self.env.ref("base.view_partner_form")
-        nodes = editor.get_view_nodes(view.id)
-        functions = [n for n in nodes if n["is_field"] and n["label"] == "function"]
-        self.assertGreater(len(functions), 1, "fixture assumes a repeated name")
-        paths = [n["xpath"] for n in functions]
+        root = etree.fromstring(view.get_combined_arch().encode())
+        occurrences = editor._occurrences(root)
+        return root, [
+            (node, editor._locator_for(node, occurrences))
+            for node in root.iter()
+            if isinstance(node.tag, str)
+        ]
+
+    def test_repeated_names_get_distinct_qualified_paths(self):
+        _root, pairs = self._locators()
+        paths = [
+            path
+            for node, path in pairs
+            if node.tag == "field" and node.get("name") == "function"
+        ]
+        self.assertGreater(len(paths), 1, "fixture assumes a repeated name")
         self.assertEqual(len(set(paths)), len(paths), "each occurrence needs its own")
         self.assertNotIn("//field[@name='function']", paths)
 
     def test_unique_names_keep_the_bare_predicate(self):
         """The qualification must be conditional: //field[@name] is preferred
         precisely because it survives a sibling being inserted."""
-        editor = self.env["studio.view.editor"]
-        view = self.env.ref("base.view_partner_form")
-        nodes = editor.get_view_nodes(view.id)
-        vat = next(n for n in nodes if n["is_field"] and n["label"] == "vat")
-        self.assertEqual(vat["xpath"], "//field[@name='vat']")
+        _root, pairs = self._locators()
+        vat = next(
+            path
+            for node, path in pairs
+            if node.tag == "field" and node.get("name") == "vat"
+        )
+        self.assertEqual(vat, "//field[@name='vat']")
 
     def test_every_emitted_locator_resolves_to_exactly_one_node(self):
         """The property that actually matters, asserted over the whole tree."""
-        editor = self.env["studio.view.editor"]
-        view = self.env.ref("base.view_partner_form")
-        root = etree.fromstring(view.get_combined_arch().encode())
-        for node in editor.get_view_nodes(view.id):
-            matches = root.xpath(node["xpath"])
+        root, pairs = self._locators()
+        for _node, path in pairs:
+            matches = root.xpath(path)
             self.assertEqual(
-                len(matches),
-                1,
-                "%s matched %d nodes" % (node["xpath"], len(matches)),
+                len(matches), 1, "%s matched %d nodes" % (path, len(matches))
             )
 
 

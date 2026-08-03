@@ -16,9 +16,6 @@
     ],
     "assets": {
         "web.assets_backend": [
-            "app_builder_view/static/src/studio_editor.js",
-            "app_builder_view/static/src/studio_editor.xml",
-            "app_builder_view/static/src/studio_editor.scss",
             "app_builder_view/static/src/wysiwyg/selection.js",
             "app_builder_view/static/src/wysiwyg/options.js",
             "app_builder_view/static/src/wysiwyg/view_editor.js",

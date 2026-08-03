@@ -291,6 +291,31 @@ class StudioViewEditor(models.AbstractModel):
         moved.set("position", "move")
         return node
 
+    def _op_add_filter(self, root, operation):
+        """Add a ``<filter>`` -- a saved condition, or a group-by.
+
+        Group-bys are filters too; what makes one a group-by is a ``group_by``
+        context *and* living inside the ``<group>``. Outside it the same node
+        renders as an ordinary filter in the Filters menu, which is why the
+        group is created here when the view has none rather than left to a
+        second operation the user would have to understand.
+        """
+        node = self._new_xpath(
+            root, operation["xpath"], operation.get("position", "inside")
+        )
+        container = node
+        if operation.get("in_new_group"):
+            container = etree.SubElement(node, "group")
+            container.set("string", operation.get("group_string") or "Group By")
+        filter_node = etree.SubElement(container, "filter")
+        filter_node.set("name", operation["name"])
+        filter_node.set("string", operation.get("string") or operation["name"])
+        if operation.get("domain"):
+            filter_node.set("domain", operation["domain"])
+        if operation.get("context"):
+            filter_node.set("context", operation["context"])
+        return node
+
     def _op_remove_node(self, root, operation):
         """Remove a node from the rendered view.
 
@@ -347,38 +372,6 @@ class StudioViewEditor(models.AbstractModel):
     # -- helpers for the client -------------------------------------------
 
     @api.model
-    def get_editable_views(self, model_name):
-        """Views of ``model_name`` the editor can offer as a starting point."""
-        self._assert_studio_user()
-        views = self.env["ir.ui.view"].search(
-            [("model", "=", model_name), ("mode", "=", "primary")],
-            order="type, priority, id",
-        )
-        return [
-            {"id": v.id, "name": v.name, "type": v.type, "xml_id": v.xml_id}
-            for v in views
-        ]
-
-    @api.model
-    def get_view_nodes(self, view_id):
-        """Return the combined arch as a flat, pickable node list.
-
-        Each entry carries a *stable* xpath the user never has to type. Building
-        it server-side from the combined arch (rather than from the DOM) means
-        the xpath is expressed against the view definition, which is what
-        ``apply_inheritance_specs`` matches on -- a DOM-derived path would drift
-        the moment another module extends the same view.
-        """
-        self._assert_studio_user()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
-        if not view:
-            raise UserError(_("The view no longer exists."))
-        root = etree.fromstring(view.get_combined_arch().encode())
-        nodes = []
-        self._walk_nodes(root, nodes, depth=0, occurrences=self._occurrences(root))
-        return nodes
-
-    @api.model
     def _occurrences(self, root):
         """How many nodes answer to each ``(tag, name)`` pair.
 
@@ -415,28 +408,6 @@ class StudioViewEditor(models.AbstractModel):
         return node.getroottree().getpath(node)
 
     @api.model
-    def _walk_nodes(self, node, nodes, depth, occurrences):
-        """Depth-first walk emitting one entry per element."""
-        if not isinstance(node.tag, str):
-            return
-        name = node.get("name")
-        path = self._locator_for(node, occurrences)
-        label = name or node.get("string") or node.get("class") or ""
-        nodes.append(
-            {
-                "tag": node.tag,
-                "xpath": path,
-                "label": label,
-                "depth": depth,
-                "is_field": node.tag == "field",
-                "container": node.tag
-                in ("form", "sheet", "group", "notebook", "page", "list", "header"),
-            }
-        )
-        for child in node:
-            self._walk_nodes(child, nodes, depth + 1, occurrences)
-
-    @api.model
     def move_node(self, view_id, package_id, source, target, position="before"):
         """Reorder by descriptor, resolving both ends server-side.
 
@@ -464,6 +435,149 @@ class StudioViewEditor(models.AbstractModel):
                 "xpath": self._locator_for(source_node, occurrences),
                 "target_xpath": self._locator_for(target_node, occurrences),
                 "position": position,
+            },
+        )
+
+    # -- search views -------------------------------------------------------
+    #
+    # The one view type with nothing to click: a search view has no rendering
+    # of its own, it furnishes another view's control panel. So it is edited as
+    # the three lists it really is -- searchable fields, filters, group-bys --
+    # while the preview shows a real list with this search view attached, so the
+    # menus being edited are the menus on screen.
+
+    # Conditions offered per field, rather than a domain box. A free-text domain
+    # is the most powerful option and the least usable one; these cover what
+    # people actually add, and anything else belongs in the source.
+    FILTER_CONDITIONS = {
+        "set": ("%s is set", "[('%s', '!=', False)]"),
+        "not_set": ("%s is not set", "[('%s', '=', False)]"),
+        "true": ("%s", "[('%s', '=', True)]"),
+        "false": ("Not %s", "[('%s', '=', False)]"),
+    }
+
+    @api.model
+    def search_elements(self, view_id):
+        """What a search view offers, in the three groups the sidebar shows."""
+        self._assert_studio_user()
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view:
+            raise UserError(_("The view no longer exists."))
+        root = etree.fromstring(view.get_combined_arch().encode())
+        fields_, filters, group_bys = [], [], []
+        for node in root.iter("field"):
+            if not any(a.tag == "field" for a in node.iterancestors()):
+                fields_.append(
+                    {"name": node.get("name"), "string": node.get("string") or ""}
+                )
+        for node in root.iter("filter"):
+            entry = {
+                "name": node.get("name") or "",
+                "string": node.get("string") or node.get("name") or "",
+                "domain": node.get("domain") or "",
+            }
+            if "group_by" in (node.get("context") or ""):
+                group_bys.append(entry)
+            else:
+                filters.append(entry)
+        return {
+            "fields": fields_,
+            "filters": filters,
+            "group_bys": group_bys,
+            # Not computed on the client: "already offered" has to ignore
+            # fields belonging to embedded subviews, which are another model's
+            # entirely, and that rule lives here with the reason for it.
+            "addable": self.get_addable_fields(view.model, view.id),
+        }
+
+    @api.model
+    def add_search_element(self, view_id, package_id, kind, values):
+        """Add a searchable field, a filter, or a group-by."""
+        self._assert_studio_manager()
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view:
+            raise UserError(_("The view no longer exists."))
+        root = etree.fromstring(view.get_combined_arch().encode())
+        occurrences = self._occurrences(root)
+        field_name = values.get("field")
+        if not field_name or field_name not in self.env[view.model]._fields:
+            raise UserError(_("Choose a field that exists on %s.", view.model))
+        field = self.env[view.model]._fields[field_name]
+
+        if kind == "field":
+            anchor, position = self._search_anchor(root, "field")
+            operation = {
+                "type": "add_field",
+                "xpath": self._locator_for(anchor, occurrences),
+                "position": position,
+                "name": field_name,
+            }
+        elif kind == "filter":
+            condition = values.get("condition", "set")
+            if condition not in self.FILTER_CONDITIONS:
+                raise UserError(_("Unknown filter condition '%s'.", condition))
+            label, domain = self.FILTER_CONDITIONS[condition]
+            anchor, position = self._search_anchor(root, "filter")
+            operation = {
+                "type": "add_filter",
+                "xpath": self._locator_for(anchor, occurrences),
+                "position": position,
+                "name": "filter_%s_%s" % (field_name, condition),
+                "string": label % (field.string or field_name),
+                "domain": domain % field_name,
+            }
+        elif kind == "group_by":
+            group = next(iter(root.iter("group")), None)
+            anchor = group if group is not None else root
+            operation = {
+                "type": "add_filter",
+                "xpath": self._locator_for(anchor, occurrences),
+                "position": "inside",
+                "in_new_group": group is None,
+                "name": "group_by_%s" % field_name,
+                "string": field.string or field_name,
+                "context": "{'group_by': '%s'}" % field_name,
+            }
+        else:
+            raise UserError(_("A search view has no '%s' to add.", kind))
+        return self.apply_operation(view_id, package_id, operation)
+
+    @api.model
+    def _search_anchor(self, root, tag):
+        """Where a new node of ``tag`` should go, and on which side.
+
+        After the last one of its kind, so additions read in the order they
+        were made; inside the view itself when there is no example to follow.
+        """
+        existing = [
+            node
+            for node in root.iter(tag)
+            if not any(a.tag == "field" for a in node.iterancestors())
+            and not any(a.tag == "group" for a in node.iterancestors())
+        ]
+        if existing:
+            return existing[-1], "after"
+        return root, "inside"
+
+    @api.model
+    def remove_search_element(self, view_id, package_id, kind, name):
+        """Take a field, filter or group-by out of a search view."""
+        self._assert_studio_manager()
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view:
+            raise UserError(_("The view no longer exists."))
+        root = etree.fromstring(view.get_combined_arch().encode())
+        descriptor = {"kind": "field" if kind == "field" else "filter", "name": name}
+        node = self._find_descriptor(root, descriptor)
+        if node is None:
+            raise UserError(_("There is no '%s' in this search view.", name))
+        return self.apply_operation(
+            view_id,
+            package_id,
+            {
+                "type": "remove_node",
+                "xpath": self._locator_for(node, self._occurrences(root)),
+                "position": "replace",
             },
         )
 
@@ -609,6 +723,7 @@ class StudioViewEditor(models.AbstractModel):
             # colour has to be groupable; a free-text box would let the user
             # type a name that breaks the view on open.
             "fields": self._model_fields(view.model),
+            "preview": self._preview_for(view),
             # Whether an edit rewrites this view or emits a patch against it.
             # The preview shows the combined result either way, so saying which
             # is the difference between understanding the output and not.
@@ -807,6 +922,28 @@ class StudioViewEditor(models.AbstractModel):
         if touched:
             package.studio_capture(touched)
         return touched
+
+    @api.model
+    def _preview_for(self, view):
+        """How to render the view being edited.
+
+        Every type renders itself, except search: a search view has no
+        rendering of its own, it furnishes another view's control panel. So it
+        previews as the model's list *with this search view attached*, which
+        means the Filters and Group By menus on screen are the ones being
+        edited rather than an approximation of them.
+        """
+        if view.type != "search":
+            return {"type": view.type, "view_id": view.id, "search_view_id": False}
+        host = self.env["ir.ui.view"].default_view(view.model, "list")
+        return {
+            "type": "list",
+            "view_id": host or False,
+            "search_view_id": view.id,
+            # Without a list to host it there is nothing to show. Editing still
+            # works -- the sidebar is the editor for a search view anyway.
+            "unavailable": not host,
+        }
 
     @api.model
     def _model_fields(self, model_name):
