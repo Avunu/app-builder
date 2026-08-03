@@ -27,6 +27,7 @@ import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { ResizablePanel } from "@web/core/resizable_panel/resizable_panel";
 import { useService } from "@web/core/utils/hooks";
+import { useSortable } from "@web/core/utils/sortable_owl";
 import { View } from "@web/views/view";
 import { describeTarget, sameTarget, shouldPassThrough } from "./selection";
 import { optionsFor, visibleRows, writeValue } from "./options";
@@ -82,6 +83,19 @@ export class StudioViewEditor extends Component {
             },
             () => [this.previewRef.el]
         );
+
+        // Reordering rides on core's own sortable hook rather than native
+        // HTML5 drag-and-drop. Two reasons, and the second is decisive: core's
+        // is pointer-based, so it works on touch, and it is what Odoo's own
+        // tour helper drives -- native dragstart events are never dispatched by
+        // `hoot.drag`, so a native implementation is untestable by tour.
+        useSortable({
+            enable: () => this.view.type === "list" && Boolean(this.packageId),
+            ref: this.previewRef,
+            elements: "th[data-name]",
+            cursor: "grabbing",
+            onDrop: (params) => this.onColumnDropped(params),
+        });
     }
 
     // -- what we are editing ----------------------------------------------
@@ -225,6 +239,44 @@ export class StudioViewEditor extends Component {
 
     onInput(row, ev) {
         return this.onRowChange(row, ev.target.value);
+    }
+
+    // -- reordering ---------------------------------------------------------
+    //
+    // Native drag-and-drop rather than core's sortable hook: the preview is
+    // re-rendered wholesale after every edit, and a hook bound to the old nodes
+    // would silently stop working the first time somebody changed something.
+
+    /**
+     * Where a dragged column landed.
+     *
+     * The hook reports the element's new neighbours, which is exactly what the
+     * move needs: "before that one" is what the user expressed by dropping
+     * there, and it survives optional columns being hidden -- an index would
+     * not, because the DOM only contains the visible ones.
+     */
+    async onColumnDropped({ element, previous, next }) {
+        const name = element && element.dataset.name;
+        const anchor = next || previous;
+        if (!name || !anchor || !anchor.dataset.name || !this.packageId) {
+            return;
+        }
+        this.state.busy = true;
+        try {
+            await this.orm.call("studio.view.editor", "move_node", [
+                this.viewId,
+                this.packageId,
+                { kind: "column", name },
+                { kind: "column", name: anchor.dataset.name },
+                next ? "before" : "after",
+            ]);
+            await this.loadHistory();
+            await this.refreshSelection();
+            this.env.bus.trigger("CLEAR-CACHES");
+            this.state.previewKey += 1;
+        } finally {
+            this.state.busy = false;
+        }
     }
 
     // -- undo ---------------------------------------------------------------

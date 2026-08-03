@@ -6,6 +6,11 @@
         // before the user finds out by clicking.
         cursor: pointer;
 
+        th[data-name] {
+            // Say it can be dragged before the user discovers it by trying.
+            cursor: grab;
+        }
+
         th[data-name]:hover,
         .o_field_widget[name]:hover {
             outline: 2px solid var(--o-color-primary, #714b67);

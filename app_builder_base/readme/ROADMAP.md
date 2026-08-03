@@ -1,10 +1,8 @@
 ## Next
 
-- **Drag-to-reorder**, starting with list columns. The operation API supports
-  `position="move"` already, and the selection layer knows what was grabbed —
-  what is missing is only the gesture. Deliberately after click-to-edit rather
-  than instead of it: dragging is one gesture in a vocabulary, not the
-  vocabulary.
+- **Drag-to-reorder beyond list columns** — form fields between groups, kanban
+  card contents. The move operation and the gesture both exist now; what each
+  case needs is a sensible answer to "what did you drop it *into*".
 - **Search views.** The only view type the editor does not cover, because a
   search view has no standalone rendering to click — it lives in another view's
   control panel. It needs a list-shaped editor (fields, filters, group-bys)

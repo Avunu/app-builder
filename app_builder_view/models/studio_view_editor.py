@@ -266,6 +266,31 @@ class StudioViewEditor(models.AbstractModel):
             field.set(key, str(value))
         return node
 
+    def _op_move_node(self, root, operation):
+        """Relocate an existing node, using core's own ``position="move"``.
+
+        Core extracts the named node and re-inserts it at the anchor
+        (``template_inheritance.py:45``), so this is a real move rather than a
+        delete-and-recreate: attributes contributed by *other* inheriting views
+        travel with it, which a recreate would silently drop.
+        """
+        expr = operation.get("xpath")
+        anchor = operation.get("target_xpath")
+        position = operation.get("position", "before")
+        if not expr or not anchor:
+            raise UserError(_("Moving a node needs both what moves and where."))
+        if position not in ("before", "after"):
+            raise UserError(
+                _("A node can move before or after another, not '%s'.", position)
+            )
+        if expr == anchor:
+            raise UserError(_("A node cannot be moved relative to itself."))
+        node = self._new_xpath(root, anchor, position)
+        moved = etree.SubElement(node, "xpath")
+        moved.set("expr", expr)
+        moved.set("position", "move")
+        return node
+
     def _op_remove_node(self, root, operation):
         """Remove a node from the rendered view.
 
@@ -410,6 +435,37 @@ class StudioViewEditor(models.AbstractModel):
         )
         for child in node:
             self._walk_nodes(child, nodes, depth + 1, occurrences)
+
+    @api.model
+    def move_node(self, view_id, package_id, source, target, position="before"):
+        """Reorder by descriptor, resolving both ends server-side.
+
+        The client says "this column goes before that one" and never computes a
+        locator, for the same reason it never computes one when selecting: the
+        arch it can see is a per-user projection.
+        """
+        self._assert_studio_manager()
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view:
+            raise UserError(_("The view being edited no longer exists."))
+        root = etree.fromstring(view.get_combined_arch().encode())
+        occurrences = self._occurrences(root)
+        source_node = self._find_descriptor(root, source)
+        target_node = self._find_descriptor(root, target)
+        if source_node is None or target_node is None:
+            raise UserError(
+                _("One end of that move is not a node the builder can address.")
+            )
+        return self.apply_operation(
+            view_id,
+            package_id,
+            {
+                "type": "move_node",
+                "xpath": self._locator_for(source_node, occurrences),
+                "target_xpath": self._locator_for(target_node, occurrences),
+                "position": position,
+            },
+        )
 
     # -- the WYSIWYG editor ------------------------------------------------
 

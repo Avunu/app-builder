@@ -58,15 +58,16 @@ class TestViewEditorTour(HttpCase):
         self.assertNotIn(
             "Full Name", base.arch, "the core view must not have been rewritten"
         )
-        # The tour undoes its own edit at the end, and undoing the edit that
-        # created the patch removes the patch -- an emptied one would still be
-        # loaded and still be wrong.
-        self.assertFalse(
-            self.env["ir.ui.view"].search(
-                [("inherit_id", "=", base.id), ("name", "like", "studio")]
-            ),
-            "undo should have taken the patch with it",
+        # The tour renames a column, undoes it, then drags a column to reorder.
+        # So what should be on disk at the end is a patch containing the move
+        # and *not* the rename -- proving both that undo removed what it should
+        # and that the reorder is expressed as a patch rather than a rewrite.
+        patch = self.env["ir.ui.view"].search(
+            [("inherit_id", "=", base.id), ("name", "like", "studio")]
         )
+        self.assertTrue(patch, "the reorder should live in an inheriting view")
+        self.assertIn('position="move"', patch.arch)
+        self.assertNotIn("Full Name", patch.arch, "the undone rename should be gone")
 
     def test_a_form_view_can_be_edited_by_clicking_it(self):
         self.env["studio.package"].create(

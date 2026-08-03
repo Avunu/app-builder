@@ -85,6 +85,18 @@ registry.category("web_tour.tours").add("app_builder_view_editor_tour", {
             trigger:
                 ".o_studio_view_editor_preview th[data-name='display_name']:not(:contains('Full Name'))",
         },
+        {
+            content: "drag a column onto another to reorder it",
+            trigger: ".o_studio_view_editor_preview th[data-name='email']",
+            run: "drag_and_drop .o_studio_view_editor_preview th[data-name='display_name']",
+        },
+        {
+            // Adjacency, not :first-of-type -- the list's own selector column is
+            // also a <th>, so "first of type" is not the first *field* column.
+            content: "the dragged column now sits immediately before the other",
+            trigger:
+                ".o_studio_view_editor_preview th[data-name='email'] + th[data-name='display_name']",
+        },
     ],
 });
 
