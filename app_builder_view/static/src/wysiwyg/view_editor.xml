@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.StudioViewEditor">
+    <div class="o_studio_view_editor d-flex flex-column h-100">
+
+        <div class="o_studio_view_editor_bar d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+            <span class="fw-bold" t-esc="view.model"/>
+            <span class="badge text-bg-secondary" t-esc="view.type"/>
+            <small class="text-muted" t-esc="view.name"/>
+            <span t-if="state.context and !state.context.owned"
+                  class="badge text-bg-info">inheriting view</span>
+            <div class="flex-grow-1"/>
+            <span t-if="state.busy" class="fa fa-circle-o-notch fa-spin text-muted"/>
+            <button class="btn btn-secondary btn-sm" t-on-click="() => this.selectRoot()">
+                Select the view itself
+            </button>
+        </div>
+
+        <div t-if="state.context and !packageId"
+             class="alert alert-warning rounded-0 mb-0" role="alert">
+            No studio package is set up to record changes in, so nothing can be
+            edited yet. Create one under Studio → Packages.
+        </div>
+
+        <div class="d-flex flex-grow-1 overflow-hidden">
+            <ResizablePanel initialWidth="340" minWidth="280" handleSide="'end'"
+                            class="'o_studio_view_editor_side border-end'">
+                <div class="d-flex flex-column h-100 overflow-auto p-2">
+
+                    <div class="alert alert-light small" role="alert" t-esc="ownershipNote"/>
+
+                    <div t-if="!state.target" class="text-muted p-2">
+                        Click anything in the view to edit it — a column heading,
+                        a value, or empty space for the view's own settings.
+                    </div>
+
+                    <div t-if="state.message" class="alert alert-info small"
+                         role="alert" t-esc="state.message"/>
+
+                    <t t-foreach="panels" t-as="panel" t-key="panel.id">
+                        <div class="fw-bold px-1 mb-1" t-esc="panel.title"/>
+                        <div t-foreach="panel.rows" t-as="row" t-key="row.name"
+                             class="mb-2 px-1">
+
+                            <t t-if="row.type === 'toggle'">
+                                <label class="d-flex align-items-center gap-2 mb-0">
+                                    <input type="checkbox" class="form-check-input mt-0"
+                                           t-att-checked="row.value"
+                                           t-on-change="(ev) => this.onToggle(row, ev)"/>
+                                    <span t-esc="row.label"/>
+                                </label>
+                            </t>
+
+                            <t t-else="">
+                                <label class="form-label small text-muted mb-0"
+                                       t-esc="row.label"/>
+                                <select t-if="row.type === 'select'"
+                                        class="form-select form-select-sm"
+                                        t-on-change="(ev) => this.onInput(row, ev)">
+                                    <option t-foreach="row.choices" t-as="choice"
+                                            t-key="choice[0]" t-att-value="choice[0]"
+                                            t-att-selected="choice[0] === row.value"
+                                            t-esc="choice[1]"/>
+                                </select>
+                                <input t-else="" type="text"
+                                       class="form-control form-control-sm"
+                                       t-att-value="row.value"
+                                       t-att-placeholder="row.placeholder"
+                                       t-on-change="(ev) => this.onInput(row, ev)"/>
+                            </t>
+
+                            <small t-if="row.help" class="text-muted d-block"
+                                   t-esc="row.help"/>
+                        </div>
+                    </t>
+
+                    <div class="text-muted small mt-3 px-1">
+                        Changes are saved as you make them and are visible to
+                        everyone straight away — a view is data, so there is
+                        nothing to reload.
+                    </div>
+                </div>
+            </ResizablePanel>
+
+            <div class="flex-grow-1 overflow-auto o_studio_view_editor_preview"
+                 t-ref="preview">
+                <View t-if="state.context" t-key="state.previewKey"
+                      resModel="view.model" type="view.type" viewId="view.id"/>
+            </div>
+        </div>
+    </div>
+</t>
+
+</templates>

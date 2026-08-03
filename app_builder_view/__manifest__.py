@@ -18,6 +18,16 @@
             "app_builder_view/static/src/studio_editor.js",
             "app_builder_view/static/src/studio_editor.xml",
             "app_builder_view/static/src/studio_editor.scss",
+            "app_builder_view/static/src/wysiwyg/selection.js",
+            "app_builder_view/static/src/wysiwyg/options.js",
+            "app_builder_view/static/src/wysiwyg/view_editor.js",
+            "app_builder_view/static/src/wysiwyg/view_editor.xml",
+            "app_builder_view/static/src/wysiwyg/view_editor.scss",
+            "app_builder_view/static/src/wysiwyg/cog_menu_item.js",
+            "app_builder_view/static/src/wysiwyg/cog_menu_item.xml",
+        ],
+        "web.assets_tests": [
+            "app_builder_view/static/tests/tours/view_editor_tour.js",
         ],
     },
 }

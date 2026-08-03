@@ -1,1 +1,1 @@
-from . import test_view_editor
+from . import test_locate_target, test_view_editor, test_view_editor_tour

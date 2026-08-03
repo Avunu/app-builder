@@ -154,9 +154,19 @@ class StudioViewEditor(models.AbstractModel):
 
         self._write_arch(target, arch)
         package.studio_capture(target)
+        # A view edit is live the moment the arch is written -- views are data,
+        # there is no reload to wait for -- so the file has to keep up in the
+        # same breath. Leaving it behind would report the package as drifted
+        # while nothing was wrong, and the next reload from disk would quietly
+        # undo the edit.
+        if package.writable:
+            package.action_write_files()
         return {
             "view_id": target.id,
             "arch": target.arch,
+            "combined_arch": self.env["ir.ui.view"]
+            .browse(base_view.id)
+            .get_combined_arch(),
         }
 
     @api.model
@@ -294,41 +304,53 @@ class StudioViewEditor(models.AbstractModel):
         if not view:
             raise UserError(_("The view no longer exists."))
         root = etree.fromstring(view.get_combined_arch().encode())
-        # A bare //tag[@name='x'] is only a valid locator when nothing else in
-        # the arch answers to it. An embedded x2many subview routinely repeats
-        # the parent's field names, and locate_node silently takes the first
-        # match -- so without this count an edit aimed at a sublist column
-        # patches the sheet instead, for the wrong model.
-        occurrences = Counter(
+        nodes = []
+        self._walk_nodes(root, nodes, depth=0, occurrences=self._occurrences(root))
+        return nodes
+
+    @api.model
+    def _occurrences(self, root):
+        """How many nodes answer to each ``(tag, name)`` pair.
+
+        A bare ``//tag[@name='x']`` is only a valid locator when nothing else in
+        the arch answers to it. An embedded x2many subview routinely repeats the
+        parent's field names, and ``locate_node`` silently takes the first match
+        -- so without this count an edit aimed at a sublist column patches the
+        sheet instead, for the wrong model.
+        """
+        return Counter(
             (el.tag, el.get("name"))
             for el in root.iter()
             if isinstance(el.tag, str) and el.get("name")
         )
-        nodes = []
-        self._walk_nodes(root, nodes, depth=0, occurrences=occurrences)
-        return nodes
+
+    @api.model
+    def _locator_for(self, node, occurrences):
+        """The most durable xpath identifying exactly ``node``.
+
+        Prefer an identifying predicate over a positional index: ``//field[@name]``
+        survives a sibling being inserted, ``//div[3]`` does not -- but only
+        while exactly one node in the arch answers to it.
+
+        The fallback has to be an *absolute* path, not one relative to a
+        hand-built ancestor chain. An inline x2many subview is itself a
+        ``<form><sheet>``, so "//form/sheet/..." is ambiguous from its first
+        step and everything built on it inherits that. ``getpath()`` is anchored
+        at the document root and indexes every step, so it is unique by
+        construction -- the same call core's own ``distribute_branding`` uses.
+        """
+        name = node.get("name")
+        if name and occurrences[(node.tag, name)] == 1:
+            return "//%s[@name='%s']" % (node.tag, name)
+        return node.getroottree().getpath(node)
 
     @api.model
     def _walk_nodes(self, node, nodes, depth, occurrences):
         """Depth-first walk emitting one entry per element."""
         if not isinstance(node.tag, str):
             return
-        # Prefer an identifying predicate over a positional index: //field[@name]
-        # survives a sibling being inserted, //div[3] does not -- but only while
-        # exactly one node in the arch answers to it.
-        #
-        # The fallback has to be an *absolute* path, not one relative to a
-        # hand-built ancestor chain. An inline x2many subview is itself a
-        # <form><sheet>, so "//form/sheet/..." is ambiguous from its first step
-        # and everything built on it inherits that. getpath() is anchored at the
-        # document root and indexes every step, so it is unique by construction
-        # -- it is the same call core's own distribute_branding uses.
         name = node.get("name")
-        if name and occurrences[(node.tag, name)] == 1:
-            path = "//%s[@name='%s']" % (node.tag, name)
-        else:
-            path = node.getroottree().getpath(node)
-
+        path = self._locator_for(node, occurrences)
         label = name or node.get("string") or node.get("class") or ""
         nodes.append(
             {
@@ -343,6 +365,145 @@ class StudioViewEditor(models.AbstractModel):
         )
         for child in node:
             self._walk_nodes(child, nodes, depth + 1, occurrences)
+
+    # -- the WYSIWYG editor ------------------------------------------------
+
+    # What a click in the rendered view can select, and which arch tag it means.
+    # Data rather than branching, so supporting a new view type is a line here.
+    DESCRIPTOR_TAGS = {
+        "field": "field",
+        "column": "field",
+        "button": "button",
+        "page": "page",
+        "group": "group",
+        "filter": "filter",
+    }
+
+    @api.model
+    def locate_target(self, view_id, descriptor):
+        """Resolve what the user clicked to a stable xpath, server-side.
+
+        The browser sends a *descriptor* -- "the column for user_id" -- and
+        never an xpath, and that division is the whole point. The arch a client
+        receives is a per-user projection: nodes are dropped by group rights and
+        whole subviews are grafted in, so a path derived from it can be wrong
+        for somebody else looking at the same view. Resolution happens here,
+        against the combined arch, using the same uniqueness rule the node list
+        already uses.
+        """
+        self._assert_studio_user()
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view:
+            raise UserError(_("The view no longer exists."))
+        root = etree.fromstring(view.get_combined_arch().encode())
+        node = self._find_descriptor(root, descriptor)
+        if node is None:
+            return {
+                "found": False,
+                "reason": _(
+                    "That element is not something the builder can edit: it "
+                    "does not correspond to a node in the view's definition."
+                ),
+            }
+        return {
+            "found": True,
+            "xpath": self._locator_for(node, self._occurrences(root)),
+            "tag": node.tag,
+            "attrs": dict(node.attrib),
+            "field": self._field_info(view.model, node),
+        }
+
+    @api.model
+    def _find_descriptor(self, root, descriptor):
+        """The arch node a descriptor refers to, or ``None``."""
+        kind = descriptor.get("kind")
+        if kind == "root":
+            return root
+        tag = self.DESCRIPTOR_TAGS.get(kind)
+        name = descriptor.get("name")
+        if not tag or not name:
+            return None
+        for node in root.iter(tag):
+            if node.get("name") != name:
+                continue
+            # A node inside an embedded subview belongs to another model
+            # entirely; selecting it here would edit the wrong thing.
+            if any(ancestor.tag == "field" for ancestor in node.iterancestors()):
+                continue
+            return node
+        return None
+
+    @api.model
+    def _field_info(self, model_name, node):
+        """What the sidebar needs in order to offer the right options.
+
+        Options are type-aware -- a column sum belongs on a number and nowhere
+        else -- so the panel is built from the live field rather than guessed
+        from the arch.
+        """
+        if node.tag != "field" or model_name not in self.env:
+            return None
+        field = self.env[model_name]._fields.get(node.get("name"))
+        if not field:
+            return None
+        return {
+            "name": field.name,
+            "type": field.type,
+            "string": field.string or field.name,
+            "store": bool(field.store),
+            "required": bool(field.required),
+            "readonly": bool(field.readonly),
+        }
+
+    @api.model
+    def editing_context(self, view_id=None, model=None, view_type=None):
+        """Everything the editor needs to open on a view.
+
+        ``view_id`` is optional on purpose. An ordinary action rarely pins one
+        -- ``view_mode="list,form"`` resolves its views at load time -- so the
+        client usually knows only *which model and which kind of view* the user
+        is looking at. Asking core's own ``default_view`` for the rest means the
+        editor opens the view Odoo would actually render, rather than whichever
+        one happened to be first.
+
+        Also reports which package will record the edit. A view the studio owns
+        records into its own package; anything else needs one chosen, and when
+        exactly one writable package exists that is not worth asking about.
+        """
+        self._assert_studio_user()
+        View = self.env["ir.ui.view"]
+        view = View.browse(view_id).exists() if view_id else View.browse()
+        if not view and model and view_type:
+            view = View.browse(View.default_view(model, view_type))
+        if not view:
+            raise UserError(
+                _(
+                    "There is no %(type)s view of %(model)s to edit.",
+                    type=view_type or _("such"),
+                    model=model or _("that model"),
+                )
+            )
+        packages = self.env["studio.package"].search([])
+        writable = packages.filtered("writable")
+        owner = view.studio_package_id
+        suggested = owner or (writable[:1] if len(writable) == 1 else packages.browse())
+        return {
+            "view": {
+                "id": view.id,
+                "name": view.name,
+                "type": view.type,
+                "model": view.model,
+                "mode": view.mode,
+            },
+            # Whether an edit rewrites this view or emits a patch against it.
+            # The preview shows the combined result either way, so saying which
+            # is the difference between understanding the output and not.
+            "owned": bool(owner) and self._owns_outright(view, owner),
+            "packages": [
+                {"id": p.id, "name": p.name, "writable": p.writable} for p in packages
+            ],
+            "suggested_package_id": suggested.id if suggested else False,
+        }
 
     @api.model
     def get_addable_fields(self, model_name, view_id=None):

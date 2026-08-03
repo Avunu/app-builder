@@ -1,0 +1,15 @@
+// The preview is a live view, so selection has to read as an overlay on top of
+// it rather than as a change to it -- an outline, never a layout shift.
+.o_studio_view_editor {
+    .o_studio_view_editor_preview {
+        // Every click selects instead of acting, and the cursor should say so
+        // before the user finds out by clicking.
+        cursor: pointer;
+
+        th[data-name]:hover,
+        .o_field_widget[name]:hover {
+            outline: 2px solid var(--o-color-primary, #714b67);
+            outline-offset: -2px;
+        }
+    }
+}
