@@ -49,6 +49,7 @@ export class StudioViewEditor extends Component {
             previewKey: 1,
             busy: false,
             message: "",
+            addable: [],
         });
 
         onWillStart(async () => {
@@ -62,6 +63,7 @@ export class StudioViewEditor extends Component {
                 }
             );
             this.state.loading = false;
+            await this.loadAddable();
         });
 
         // Capture phase, on the container rather than per element: the view
@@ -137,6 +139,24 @@ export class StudioViewEditor extends Component {
         }
 
         const descriptor = describeTarget(ev.target, this.view.type);
+        if (
+            this.view.type === "kanban" &&
+            descriptor.kind === "root" &&
+            ev.target &&
+            ev.target.closest &&
+            ev.target.closest(".o_kanban_record")
+        ) {
+            // A card whose values are `t-esc="record.x.value"` renders no field
+            // name into the DOM, so there is nothing to aim at. Silence would
+            // read as a broken editor; this says what is going on instead.
+            this.state.target = null;
+            this.state.message = _t(
+                "This card is built from a custom template, so its parts cannot " +
+                    "be selected individually. The kanban's own settings are " +
+                    "still editable — click outside a card."
+            );
+            return;
+        }
         if (this.state.target && sameTarget(this.state.target.descriptor, descriptor)) {
             return;
         }
@@ -207,6 +227,47 @@ export class StudioViewEditor extends Component {
 
     onInput(row, ev) {
         return this.onRowChange(row, ev.target.value);
+    }
+
+    // -- adding a view -----------------------------------------------------
+
+    async loadAddable() {
+        this.state.addable = await this.orm.call(
+            "studio.view.editor",
+            "addable_view_types",
+            [this.view.model]
+        );
+    }
+
+    async onAddView(entry) {
+        if (!entry.enabled || !this.packageId) {
+            return;
+        }
+        // A calendar cannot be built without being told which date to place
+        // records on -- date_start is mandatory and the view throws without it.
+        let dateField = null;
+        if (entry.type === "calendar") {
+            dateField = entry.date_fields.length && entry.date_fields[0].name;
+            if (!dateField) {
+                return;
+            }
+        }
+        this.state.busy = true;
+        try {
+            await this.orm.call("studio.view.editor", "add_view", [
+                this.view.model,
+                entry.type,
+                this.packageId,
+                dateField,
+            ]);
+            this.notification.add(
+                _t("%s view created. It is now offered by this app's menu.", entry.type),
+                { type: "success" }
+            );
+            await this.loadAddable();
+        } finally {
+            this.state.busy = false;
+        }
     }
 
     openPackage() {

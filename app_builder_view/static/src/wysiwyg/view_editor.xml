@@ -75,6 +75,21 @@
                         </div>
                     </t>
 
+                    <div t-if="state.addable.length" class="mt-3 pt-2 border-top px-1">
+                        <div class="fw-bold mb-1">Add a view</div>
+                        <div t-foreach="state.addable" t-as="entry" t-key="entry.type"
+                             class="mb-1">
+                            <button class="btn btn-light btn-sm w-100 text-start"
+                                    t-att-disabled="!entry.enabled or !packageId"
+                                    t-att-title="entry.reason"
+                                    t-on-click="() => this.onAddView(entry)">
+                                <i class="fa fa-plus me-1"/><t t-esc="entry.type"/>
+                            </button>
+                            <small t-if="entry.reason" class="text-muted d-block"
+                                   t-esc="entry.reason"/>
+                        </div>
+                    </div>
+
                     <div class="text-muted small mt-3 px-1">
                         Changes are saved as you make them and are visible to
                         everyone straight away — a view is data, so there is

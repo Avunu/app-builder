@@ -23,7 +23,12 @@ from odoo import _, api, models
 from odoo.exceptions import UserError, ValidationError
 from odoo.tools.template_inheritance import apply_inheritance_specs
 
-from odoo.addons.app_builder_base.tools import xml_writer
+from odoo.addons.app_builder_base.tools import (
+    modelspec,
+    pycodegen,
+    scaffold,
+    xml_writer,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -512,6 +517,195 @@ class StudioViewEditor(models.AbstractModel):
             ],
             "suggested_package_id": suggested.id if suggested else False,
         }
+
+    # Types the builder can create from nothing, and what each one needs first.
+    ADDABLE_VIEW_TYPES = {
+        "kanban": (),
+        "calendar": ("date",),
+        "list": (),
+        "form": (),
+    }
+
+    @api.model
+    def addable_view_types(self, model_name):
+        """Which views this model could have that it does not already.
+
+        Calendar is reported as unavailable rather than hidden when the model
+        has no date field: somebody looking for it learns why, and what to add
+        to get it, instead of concluding the builder cannot do calendars.
+        """
+        self._assert_studio_user()
+        if model_name not in self.env:
+            raise UserError(_("Unknown model '%s'.", model_name))
+        model = self.env[model_name]
+        existing = set(
+            self.env["ir.ui.view"]
+            .search([("model", "=", model_name), ("mode", "=", "primary")])
+            .mapped("type")
+        )
+        # create_date and write_date are dates too, and a calendar of when
+        # records happened to be typed in is not a calendar anybody wants. They
+        # also mean every model looks like it has a date, which would hide the
+        # "add one first" answer the user actually needs.
+        date_fields = [
+            {"name": name, "string": field.string or name}
+            for name, field in sorted(model._fields.items())
+            if field.type in ("date", "datetime")
+            and field.store
+            and name not in modelspec.MAGIC_COLUMNS
+        ]
+        out = []
+        for view_type in self.ADDABLE_VIEW_TYPES:
+            enabled, reason = True, ""
+            if view_type in existing:
+                enabled = False
+                reason = _("This model already has a %s view.", view_type)
+            elif view_type == "calendar" and not date_fields:
+                enabled = False
+                reason = _(
+                    "A calendar needs a date field to place records on, and "
+                    "this model has none. Add one first."
+                )
+            out.append(
+                {
+                    "type": view_type,
+                    "enabled": enabled,
+                    "reason": reason,
+                    "date_fields": date_fields if view_type == "calendar" else [],
+                }
+            )
+        return out
+
+    @api.model
+    def add_view(self, model_name, view_type, package_id, date_field=None):
+        """Create a view of ``view_type`` for ``model_name``, and make it
+        reachable.
+
+        Creating the record is the easy half. A view no action offers is a view
+        nobody can open, so the window actions this package owns for the model
+        gain the type in their ``view_mode`` -- otherwise the builder would
+        report success and the user would never find what it built.
+        """
+        self._assert_studio_manager()
+        if view_type not in self.ADDABLE_VIEW_TYPES:
+            raise UserError(_("The builder does not create %s views.", view_type))
+        if model_name not in self.env:
+            raise UserError(_("Unknown model '%s'.", model_name))
+        package = self.env["studio.package"].browse(package_id).exists()
+        if not package:
+            raise UserError(_("Choose a studio package to record this view in."))
+        package._assert_writable()
+
+        model = self.env[model_name]
+        existing = self.env["ir.ui.view"].search(
+            [
+                ("model", "=", model_name),
+                ("type", "=", view_type),
+                ("mode", "=", "primary"),
+            ]
+        )
+        if existing:
+            raise UserError(
+                _(
+                    "%(model)s already has a %(type)s view.",
+                    model=model_name,
+                    type=view_type,
+                )
+            )
+
+        if view_type == "calendar" and (
+            not date_field or date_field not in model._fields
+        ):
+            raise UserError(
+                _(
+                    "A calendar has to know which date to place records on. "
+                    "Choose a date field on %s first.",
+                    model_name,
+                )
+            )
+        arch = self._scaffold_arch(model, view_type, date_field)
+        view = self.env["ir.ui.view"].create(
+            {
+                "name": "%s.%s" % (model_name, view_type),
+                "model": model_name,
+                "type": view_type,
+                "arch": etree.tostring(arch, encoding="unicode"),
+            }
+        )
+        package.studio_capture(view)
+        self._offer_view_in_actions(package, model_name, view_type)
+        package.action_write_files()
+        return {"view_id": view.id, "type": view_type}
+
+    @api.model
+    def _scaffold_arch(self, model, view_type, date_field):
+        """The starting arch for a new view, built from the live model."""
+        spec = self._spec_for(model)
+        options = scaffold.ScaffoldOptions(
+            stage="state" in model._fields,
+            user="user_id" in model._fields,
+            chatter="message_ids" in model._fields,
+        )
+        if view_type == "kanban":
+            return scaffold.scaffold_kanban_arch(model, spec, options)
+        if view_type == "calendar":
+            return scaffold.scaffold_calendar_arch(model, spec, date_field, options)
+        if view_type == "list":
+            return scaffold.scaffold_list_arch(model, spec, options)
+        return scaffold.scaffold_form_arch(model, spec, options)
+
+    @api.model
+    def _spec_for(self, model):
+        """A spec describing the live model, for the scaffold to read.
+
+        The scaffolds take a spec because that is what building a *new* model
+        produces. Here the model already exists, so one is derived from the
+        registry -- the same direction adoption uses.
+        """
+        entry = self.env["studio.package.model"].search(
+            [("model", "=", model._name), ("source", "=", "python")], limit=1
+        )
+        spec = entry._current_spec() if entry else None
+        if spec is not None:
+            return spec
+        fields_ = [
+            modelspec.FieldSpec(name=name, ttype=field.type, string=field.string)
+            for name, field in model._fields.items()
+            if field.store and name not in modelspec.MAGIC_COLUMNS
+        ]
+        return modelspec.ModelSpec(
+            name=model._name,
+            description=model._description or model._name,
+            class_name=pycodegen.class_name_for(model._name),
+            fields=tuple(fields_),
+            rec_name=model._rec_name or "name",
+        )
+
+    @api.model
+    def _offer_view_in_actions(self, package, model_name, view_type):
+        """Add the new view type to the window actions that show this model."""
+        actions = self.env["ir.actions.act_window"].search(
+            [("res_model", "=", model_name)]
+        )
+        touched = actions.browse()
+        for action in actions:
+            if action.studio_package_id != package:
+                # Somebody else's action is not ours to change; the studio's
+                # whole premise is that it does not rewrite what it does not own.
+                continue
+            modes = [
+                m.strip() for m in (action.view_mode or "").split(",") if m.strip()
+            ]
+            if view_type in modes:
+                continue
+            # After list, before form: a form is a detail view and reads last.
+            insert_at = len(modes) if "form" not in modes else modes.index("form")
+            modes.insert(insert_at, view_type)
+            action.view_mode = ",".join(modes)
+            touched |= action
+        if touched:
+            package.studio_capture(touched)
+        return touched
 
     @api.model
     def get_addable_fields(self, model_name, view_id=None):

@@ -207,6 +207,60 @@ viewOptions.add("form_root", {
     ],
 });
 
+// -- kanban -------------------------------------------------------------
+
+viewOptions.add("kanban_field", {
+    id: "kanban_field",
+    viewTypes: ["kanban"],
+    match: (target) => target.kind === "field",
+    title: (target) => (target.field && target.field.string) || target.name,
+    rows: [
+        { name: "widget", label: _t("Shown as"), type: "select", choices: widgetChoices },
+        {
+            name: "invisible",
+            label: _t("Hidden"),
+            type: "toggle",
+            help: _t("Hides it on the card without removing it."),
+        },
+    ],
+});
+
+viewOptions.add("kanban_root", {
+    id: "kanban_root",
+    viewTypes: ["kanban"],
+    match: (target) => target.kind === "root",
+    title: () => _t("This kanban"),
+    rows: [
+        {
+            name: "default_group_by",
+            label: _t("Group by"),
+            type: "text",
+            help: _t("The field whose values become the columns, e.g. state."),
+        },
+        {
+            name: "quick_create",
+            label: _t("Quick create"),
+            type: "toggle",
+            invert: true,
+            help: _t("Lets a user add a card from the column without a form."),
+        },
+        {
+            name: "records_draggable",
+            label: _t("Cards can be dragged"),
+            type: "toggle",
+            invert: true,
+        },
+        { name: "group_create", label: _t("Columns can be added"), type: "toggle", invert: true },
+        { name: "archivable", label: _t("Columns can be archived"), type: "toggle", invert: true },
+        {
+            name: "default_order",
+            label: _t("Default sort"),
+            type: "text",
+            help: _t("A field name, optionally followed by desc."),
+        },
+    ],
+});
+
 /**
  * Every option group that applies to the current selection.
  *
