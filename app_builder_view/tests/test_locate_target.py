@@ -9,6 +9,7 @@ and whole subviews grafted in, so an xpath derived from it can be wrong for the
 next person to open the same view. Everything here guards that boundary.
 """
 
+from odoo import Command
 from odoo.exceptions import AccessError
 from odoo.tests import tagged
 
@@ -227,3 +228,123 @@ class TestPageDescriptors(StudioCase):
         )
         self.assertTrue(found["found"])
         self.assertEqual(found["field"]["name"], "comment")
+
+
+CALENDAR_ARCH = """
+<calendar string="Schedule" date_start="x_when" color="x_user_id" mode="month">
+    <field name="x_name"/>
+    <field name="x_user_id" filters="1"/>
+</calendar>
+"""
+
+
+@tagged("post_install", "-at_install")
+class TestCalendarEditing(StudioCase):
+    """A calendar is edited as settings, not by clicking events.
+
+    It draws events rather than fields, so there is no per-node DOM that maps
+    back to the arch. What a calendar *is* lives in its root attributes, which
+    is what the panel reads and writes -- and the fields it offers for those
+    attributes have to be typed correctly, because a date_start that is not a
+    date throws on open rather than degrading.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.editor = self.env["studio.view.editor"]
+        # A model that genuinely has a date and a link to colour by. res.partner
+        # has neither, and a calendar naming a field that does not exist fails
+        # view validation at create time.
+        self.env["ir.model"].create(
+            {
+                "name": "Calendar Demo",
+                "model": "x_cal_demo",
+                "field_id": [
+                    # x_name explicitly: Odoo only auto-creates it when the
+                    # model is made with no fields at all.
+                    Command.create(
+                        {
+                            "name": "x_name",
+                            "ttype": "char",
+                            "field_description": "Name",
+                        }
+                    ),
+                    Command.create(
+                        {
+                            "name": "x_when",
+                            "ttype": "date",
+                            "field_description": "When",
+                        }
+                    ),
+                    Command.create(
+                        {
+                            "name": "x_user_id",
+                            "ttype": "many2one",
+                            "field_description": "Owner",
+                            "relation": "res.users",
+                        }
+                    ),
+                ],
+            }
+        )
+        self.view = self.env["ir.ui.view"].create(
+            {
+                "name": "studio.calendar.test",
+                "model": "x_cal_demo",
+                "type": "calendar",
+                "arch": CALENDAR_ARCH,
+            }
+        )
+
+    def test_the_root_carries_the_settings_the_panel_edits(self):
+        found = self.editor.locate_target(self.view.id, {"kind": "root"})
+        self.assertTrue(found["found"])
+        self.assertEqual(found["tag"], "calendar")
+        self.assertEqual(found["attrs"]["date_start"], "x_when")
+        self.assertEqual(found["attrs"]["color"], "x_user_id")
+        self.assertEqual(found["attrs"]["mode"], "month")
+
+    def test_a_calendar_field_resolves_for_its_filter_option(self):
+        found = self.editor.locate_target(
+            self.view.id, {"kind": "field", "name": "x_user_id"}
+        )
+        self.assertTrue(found["found"])
+        self.assertEqual(found["attrs"].get("filters"), "1")
+
+    def test_the_context_offers_the_models_fields_for_naming(self):
+        """date_start and color name a field, so the panel needs real ones to
+        offer rather than a free-text box."""
+        context = self.editor.editing_context(self.view.id)
+        by_name = {f["name"]: f for f in context["fields"]}
+        self.assertEqual(by_name["x_when"]["type"], "date")
+        self.assertEqual(by_name["x_user_id"]["type"], "many2one")
+
+    def test_audit_timestamps_are_not_offered(self):
+        context = self.editor.editing_context(self.view.id)
+        names = {f["name"] for f in context["fields"]}
+        self.assertNotIn("create_date", names)
+        self.assertNotIn("write_date", names)
+
+    def test_changing_a_setting_writes_a_patch_not_a_rewrite(self):
+        # The base view belongs to somebody else -- which is what makes this
+        # the patch path -- and it has an external ID, because the serializer
+        # rightly refuses to emit a patch naming a view it cannot reference.
+        owner = self.make_package(name="x_cal_owner")
+        owner.studio_capture(self.view)
+        package = self.make_package(name="x_cal_pkg")
+        found = self.editor.locate_target(self.view.id, {"kind": "root"})
+        self.editor.apply_operation(
+            self.view.id,
+            package.id,
+            {
+                "type": "set_attributes",
+                "xpath": found["xpath"],
+                "position": "attributes",
+                "attrs": {"mode": "week"},
+            },
+        )
+        self.view.invalidate_recordset()
+        self.assertIn('mode="month"', self.view.arch, "the base view is untouched")
+        patch = self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)])
+        self.assertTrue(patch)
+        self.assertIn("week", patch.arch)

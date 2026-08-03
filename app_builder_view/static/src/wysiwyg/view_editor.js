@@ -109,7 +109,7 @@ export class StudioViewEditor extends Component {
         return optionsFor(this.view.type, this.state.target).map((option) => ({
             id: option.id || option.title(this.state.target),
             title: option.title(this.state.target),
-            rows: visibleRows(option, this.state.target),
+            rows: visibleRows(option, this.state.target, this.state.context || {}),
         }));
     }
 

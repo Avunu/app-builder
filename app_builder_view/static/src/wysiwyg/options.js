@@ -262,6 +262,111 @@ viewOptions.add("kanban_root", {
 });
 
 /**
+ * Choices drawn from the model's own fields.
+ *
+ * Options that *name* a field -- a calendar's date_start, its colour -- must
+ * offer the fields that can actually serve. A free-text box would let somebody
+ * type a name that is wrong by type or does not exist, and a calendar whose
+ * date_start is not a date throws on open rather than degrading.
+ */
+function fieldChoices(types, { allowEmpty = true, emptyLabel } = {}) {
+    return (target, context) => {
+        const fields = (context && context.fields) || [];
+        const matching = fields
+            .filter((f) => types.includes(f.type))
+            .map((f) => [f.name, `${f.string} (${f.name})`]);
+        return allowEmpty
+            ? [["", emptyLabel || _t("None")], ...matching]
+            : matching;
+    };
+}
+
+const DATE_TYPES = ["date", "datetime"];
+// What Odoo can colour or group a calendar by: a discrete value per record.
+const GROUPABLE = ["many2one", "selection", "boolean"];
+
+// -- calendar -----------------------------------------------------------
+//
+// Deliberately a settings panel rather than click-to-select. A calendar draws
+// events, not fields: there is no per-node DOM that maps back to the arch, so
+// inventing click targets would be pretending. What a calendar *is* lives
+// almost entirely in its root attributes, and that is what this edits.
+
+viewOptions.add("calendar_root", {
+    id: "calendar_root",
+    viewTypes: ["calendar"],
+    match: (target) => target.kind === "root",
+    title: () => _t("This calendar"),
+    rows: [
+        { name: "string", label: _t("Title"), type: "text" },
+        {
+            name: "date_start",
+            label: _t("Starts on"),
+            type: "select",
+            choices: fieldChoices(DATE_TYPES, { allowEmpty: false }),
+            help: _t("Required — the calendar cannot open without it."),
+        },
+        {
+            name: "date_stop",
+            label: _t("Ends on"),
+            type: "select",
+            choices: fieldChoices(DATE_TYPES),
+            help: _t("Leave empty for single-moment events."),
+        },
+        {
+            name: "color",
+            label: _t("Colour by"),
+            type: "select",
+            choices: fieldChoices(GROUPABLE),
+            help: _t("Records sharing a value share a colour."),
+        },
+        {
+            name: "mode",
+            label: _t("Opens on"),
+            type: "select",
+            choices: () => [
+                ["", _t("Default")],
+                ["day", _t("Day")],
+                ["week", _t("Week")],
+                ["month", _t("Month")],
+                ["year", _t("Year")],
+            ],
+        },
+        {
+            name: "quick_create",
+            label: _t("Create by dragging a slot"),
+            type: "toggle",
+            invert: true,
+        },
+        {
+            name: "event_open_popup",
+            label: _t("Open events in a popup"),
+            type: "toggle",
+        },
+    ],
+});
+
+viewOptions.add("calendar_field", {
+    id: "calendar_field",
+    viewTypes: ["calendar"],
+    match: (target) => target.kind === "field",
+    title: (target) => (target.field && target.field.string) || target.name,
+    rows: [
+        {
+            name: "filters",
+            label: _t("Offer as a side filter"),
+            type: "toggle",
+            help: _t("Shows the field's values in the panel beside the calendar."),
+        },
+        {
+            name: "invisible",
+            label: _t("Hidden"),
+            type: "toggle",
+        },
+    ],
+});
+
+/**
  * Every option group that applies to the current selection.
  *
  * More than one may match, and they render in registry order, so a general
@@ -283,12 +388,15 @@ export function optionsFor(viewType, target) {
  * Rows of an option group that apply to this target, with their current value
  * read from the node's real attributes.
  */
-export function visibleRows(option, target) {
+export function visibleRows(option, target, context = {}) {
     return option.rows
-        .filter((row) => !row.when || row.when(target))
+        .filter((row) => !row.when || row.when(target, context))
         .map((row) => ({
             ...row,
-            choices: typeof row.choices === "function" ? row.choices(target) : row.choices,
+            choices:
+                typeof row.choices === "function"
+                    ? row.choices(target, context)
+                    : row.choices,
             placeholder:
                 typeof row.placeholder === "function"
                     ? row.placeholder(target)

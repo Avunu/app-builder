@@ -508,6 +508,11 @@ class StudioViewEditor(models.AbstractModel):
                 "model": view.model,
                 "mode": view.mode,
             },
+            # The model's fields, so options that *name* a field can offer the
+            # right ones. A calendar's date_start has to be a date and its
+            # colour has to be groupable; a free-text box would let the user
+            # type a name that breaks the view on open.
+            "fields": self._model_fields(view.model),
             # Whether an edit rewrites this view or emits a patch against it.
             # The preview shows the combined result either way, so saying which
             # is the difference between understanding the output and not.
@@ -706,6 +711,17 @@ class StudioViewEditor(models.AbstractModel):
         if touched:
             package.studio_capture(touched)
         return touched
+
+    @api.model
+    def _model_fields(self, model_name):
+        """Every stored field of a model, for option rows that name one."""
+        if model_name not in self.env:
+            return []
+        return [
+            {"name": name, "string": field.string or name, "type": field.type}
+            for name, field in sorted(self.env[model_name]._fields.items())
+            if field.store and name not in modelspec.MAGIC_COLUMNS
+        ]
 
     @api.model
     def get_addable_fields(self, model_name, view_id=None):
