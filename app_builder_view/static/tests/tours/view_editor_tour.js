@@ -73,3 +73,65 @@ registry.category("web_tour.tours").add("app_builder_view_editor_tour", {
         },
     ],
 });
+
+/**
+ * The same spine on a form: click a field, make it required *on this form*, and
+ * click a notebook tab to rename it.
+ *
+ * The tab is the interesting one. Every other click is swallowed so the live
+ * view does not act on it, but a tab has to still switch pages -- selecting a
+ * page you cannot bring into view would mean editing something you cannot see.
+ */
+registry.category("web_tour.tours").add("app_builder_form_editor_tour", {
+    steps: () => [
+        {
+            content: "a form is on screen",
+            trigger: ".o_form_view",
+        },
+        {
+            content: "open the cog menu",
+            trigger: ".o_cp_action_menus button:has(.fa-cog)",
+            run: "click",
+        },
+        {
+            content: "edit this form",
+            trigger: ".o_studio_edit_view",
+            run: "click",
+        },
+        {
+            content: "the editor opened on the form",
+            trigger: ".o_studio_view_editor_bar .badge:contains('form')",
+        },
+        {
+            content: "click a field in the live form",
+            trigger: ".o_studio_view_editor_preview .o_field_widget[name='function']",
+            run: "click",
+        },
+        {
+            content: "field options are offered, including form-only required",
+            trigger: ".o_studio_view_editor_side:contains('Required')",
+        },
+        {
+            content: "click the second notebook tab",
+            trigger: ".o_studio_view_editor_preview .o_notebook .nav-link:eq(1)",
+            run: "click",
+        },
+        {
+            content: "the tab actually switched, rather than only being selected",
+            trigger: ".o_studio_view_editor_preview .o_notebook .nav-link:eq(1).active",
+        },
+        {
+            content: "and its options are offered",
+            trigger: ".o_studio_view_editor_side:contains('Tab name')",
+        },
+        {
+            content: "rename the tab",
+            trigger: ".o_studio_view_editor_side input.form-control-sm",
+            run: "edit Renamed Tab && press Tab",
+        },
+        {
+            content: "the live form shows the new tab name",
+            trigger: ".o_studio_view_editor_preview .o_notebook .nav-link:contains('Renamed Tab')",
+        },
+    ],
+});

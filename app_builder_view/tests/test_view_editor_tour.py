@@ -63,3 +63,42 @@ class TestViewEditorTour(HttpCase):
         )
         self.assertTrue(patch, "the edit should live in an inheriting view")
         self.assertIn("Full Name", patch.arch)
+
+    def test_a_form_view_can_be_edited_by_clicking_it(self):
+        self.env["studio.package"].create(
+            {
+                "name": "x_tour_form_pkg",
+                "display_name_": "Tour Forms",
+                "root_path": tempfile.mkdtemp(prefix="studio-tour-form-"),
+                "auto_commit": "off",
+            }
+        )
+        self.env["ir.module.module"].create(
+            {"name": "x_tour_form_pkg", "state": "installed"}
+        )
+        self.env.ref("base.user_admin").groups_id |= self.env.ref(
+            "app_builder_base.group_studio_manager"
+        )
+        partner = self.env["res.partner"].create({"name": "Tour Subject"})
+        action = self.env["ir.actions.act_window"].create(
+            {
+                "name": "Tour Contact",
+                "res_model": "res.partner",
+                "view_mode": "form",
+                "res_id": partner.id,
+            }
+        )
+
+        self.start_tour(
+            "/odoo/action-%s/%s" % (action.id, partner.id),
+            "app_builder_form_editor_tour",
+            login="admin",
+        )
+
+        base = self.env.ref("base.view_partner_form")
+        self.assertNotIn("Renamed Tab", base.arch)
+        patch = self.env["ir.ui.view"].search(
+            [("inherit_id", "=", base.id), ("name", "like", "studio")]
+        )
+        self.assertTrue(patch)
+        self.assertIn("Renamed Tab", patch.arch)

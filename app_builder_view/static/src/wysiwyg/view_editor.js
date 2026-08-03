@@ -28,7 +28,7 @@ import { registry } from "@web/core/registry";
 import { ResizablePanel } from "@web/core/resizable_panel/resizable_panel";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
-import { describeTarget, sameTarget } from "./selection";
+import { describeTarget, sameTarget, shouldPassThrough } from "./selection";
 import { optionsFor, visibleRows, writeValue } from "./options";
 
 export class StudioViewEditor extends Component {
@@ -128,9 +128,13 @@ export class StudioViewEditor extends Component {
 
     async onPreviewClick(ev) {
         // The preview is a working view: without this a click opens a record,
-        // sorts a column, or ticks a checkbox instead of selecting.
-        ev.preventDefault();
-        ev.stopPropagation();
+        // sorts a column, or ticks a checkbox instead of selecting. Notebook
+        // tabs are the exception -- selecting a page you cannot switch to
+        // would mean editing a tab whose contents you cannot see.
+        if (!shouldPassThrough(ev.target)) {
+            ev.preventDefault();
+            ev.stopPropagation();
+        }
 
         const descriptor = describeTarget(ev.target, this.view.type);
         if (this.state.target && sameTarget(this.state.target.descriptor, descriptor)) {

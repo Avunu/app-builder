@@ -22,6 +22,19 @@
 const HEADER = "th[data-name]";
 const FIELD = ".o_field_widget[name]";
 const BUTTON = "button[name]";
+const TAB = ".o_notebook .nav-link";
+
+/**
+ * Whether a click should still reach the view after being used to select.
+ *
+ * Almost nothing should: a click in a list would open a record and navigate
+ * away mid-edit. A notebook tab is the exception, because selecting a page you
+ * cannot switch to is useless -- you would be editing a tab whose contents are
+ * hidden behind the one you are looking at.
+ */
+export function shouldPassThrough(el) {
+    return Boolean(el && el.closest && el.closest(TAB));
+}
 
 /**
  * @param {HTMLElement} el the clicked element
@@ -39,6 +52,21 @@ export function describeTarget(el, viewType) {
     const header = el.closest(HEADER);
     if (header && header.dataset.name) {
         return { kind: "column", name: header.dataset.name };
+    }
+
+    // A notebook tab, so a page can be renamed by clicking the tab that names
+    // it. Core pages often carry no name attribute, and there is nothing to put
+    // in a locator then -- so fall back to the tab's position, which is exactly
+    // how `getpath` would index it anyway.
+    const tab = el.closest(TAB);
+    if (tab) {
+        const name = tab.getAttribute("name");
+        if (name) {
+            return { kind: "page", name };
+        }
+        const strip = tab.closest(".nav");
+        const tabs = strip ? [...strip.querySelectorAll(".nav-link")] : [tab];
+        return { kind: "page", index: tabs.indexOf(tab) };
     }
 
     // Before fields: a button rendered inside a cell should select the button.

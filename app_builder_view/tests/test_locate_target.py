@@ -161,3 +161,69 @@ class TestLocateTarget(StudioCase):
             editor.locate_target(view.id, {"kind": "root"})
         with self.assertRaises(AccessError):
             editor.editing_context(view.id)
+
+
+NOTEBOOK_FORM = """
+<form string="Job">
+    <sheet>
+        <group><field name="name"/></group>
+        <notebook>
+            <page string="Details"><field name="comment"/></page>
+            <page string="Lines" name="page_lines"><field name="function"/></page>
+        </notebook>
+    </sheet>
+</form>
+"""
+
+
+@tagged("post_install", "-at_install")
+class TestPageDescriptors(StudioCase):
+    """Notebook pages, which mostly have no name to be found by.
+
+    Core forms rarely name their pages, so refusing to resolve an unnamed one
+    would put nearly every existing form out of reach. Position is what the
+    user actually pointed at -- the third tab is the third <page> -- and it is
+    how an absolute locator would index it anyway.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.editor = self.env["studio.view.editor"]
+        self.view = self.env["ir.ui.view"].create(
+            {
+                "name": "studio.page.test",
+                "model": "res.partner",
+                "type": "form",
+                "arch": NOTEBOOK_FORM,
+            }
+        )
+
+    def test_a_named_page_resolves_by_name(self):
+        found = self.editor.locate_target(
+            self.view.id, {"kind": "page", "name": "page_lines"}
+        )
+        self.assertTrue(found["found"])
+        self.assertEqual(found["xpath"], "//page[@name='page_lines']")
+        self.assertEqual(found["attrs"]["string"], "Lines")
+
+    def test_an_unnamed_page_resolves_by_position(self):
+        found = self.editor.locate_target(self.view.id, {"kind": "page", "index": 0})
+        self.assertTrue(found["found"])
+        self.assertEqual(
+            found["attrs"]["string"], "Details", "index 0 is the first tab"
+        )
+
+    def test_position_counts_pages_in_render_order(self):
+        found = self.editor.locate_target(self.view.id, {"kind": "page", "index": 1})
+        self.assertEqual(found["attrs"]["string"], "Lines")
+
+    def test_a_position_past_the_end_is_refused(self):
+        found = self.editor.locate_target(self.view.id, {"kind": "page", "index": 9})
+        self.assertFalse(found["found"])
+
+    def test_a_form_field_resolves_and_carries_its_type(self):
+        found = self.editor.locate_target(
+            self.view.id, {"kind": "field", "name": "comment"}
+        )
+        self.assertTrue(found["found"])
+        self.assertEqual(found["field"]["name"], "comment")

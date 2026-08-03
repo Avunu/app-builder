@@ -136,6 +136,77 @@ viewOptions.add("list_root", {
     ],
 });
 
+// -- form ---------------------------------------------------------------
+
+viewOptions.add("form_field", {
+    id: "form_field",
+    viewTypes: ["form"],
+    match: (target) => target.kind === "field",
+    title: (target) => (target.field && target.field.string) || target.name,
+    rows: [
+        {
+            name: "string",
+            label: _t("Label"),
+            type: "text",
+            placeholder: (target) => (target.field && target.field.string) || "",
+            help: _t("Leave empty to use the field's own label."),
+        },
+        { name: "widget", label: _t("Shown as"), type: "select", choices: widgetChoices },
+        {
+            name: "placeholder",
+            label: _t("Placeholder"),
+            type: "text",
+            help: _t("Grey hint text shown while the field is empty."),
+        },
+        {
+            name: "help",
+            label: _t("Tooltip"),
+            type: "text",
+            help: _t("Shown when the user hovers the label."),
+        },
+        {
+            name: "required",
+            label: _t("Required"),
+            type: "toggle",
+            help: _t(
+                "Required on this form only. The field itself stays optional, " +
+                    "so other screens and imports are unaffected."
+            ),
+        },
+        { name: "readonly", label: _t("Read-only"), type: "toggle" },
+        {
+            name: "invisible",
+            label: _t("Hidden"),
+            type: "toggle",
+            help: _t(
+                "Hides the field without removing it, so anything depending on " +
+                    "it keeps working."
+            ),
+        },
+    ],
+});
+
+viewOptions.add("form_page", {
+    id: "form_page",
+    viewTypes: ["form"],
+    match: (target) => target.kind === "page",
+    title: () => _t("This tab"),
+    rows: [{ name: "string", label: _t("Tab name"), type: "text" }],
+});
+
+viewOptions.add("form_root", {
+    id: "form_root",
+    viewTypes: ["form"],
+    match: (target) => target.kind === "root",
+    title: () => _t("This form"),
+    rows: [
+        { name: "string", label: _t("Title"), type: "text" },
+        { name: "create", label: _t("Allow creating"), type: "toggle", invert: true },
+        { name: "edit", label: _t("Allow editing"), type: "toggle", invert: true },
+        { name: "delete", label: _t("Allow deleting"), type: "toggle", invert: true },
+    ],
+});
+
 /**
  * Every option group that applies to the current selection.
  *

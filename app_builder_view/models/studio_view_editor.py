@@ -420,17 +420,25 @@ class StudioViewEditor(models.AbstractModel):
         if kind == "root":
             return root
         tag = self.DESCRIPTOR_TAGS.get(kind)
-        name = descriptor.get("name")
-        if not tag or not name:
+        if not tag:
             return None
-        for node in root.iter(tag):
-            if node.get("name") != name:
-                continue
-            # A node inside an embedded subview belongs to another model
-            # entirely; selecting it here would edit the wrong thing.
-            if any(ancestor.tag == "field" for ancestor in node.iterancestors()):
-                continue
-            return node
+        # A node inside an embedded subview belongs to another model entirely;
+        # selecting one here would edit the wrong thing.
+        candidates = [
+            node
+            for node in root.iter(tag)
+            if not any(ancestor.tag == "field" for ancestor in node.iterancestors())
+        ]
+        name = descriptor.get("name")
+        if name:
+            return next((n for n in candidates if n.get("name") == name), None)
+        # Position, for nodes that carry no name at all. Core notebook pages
+        # usually do not, and refusing to edit them would put most existing
+        # forms out of reach -- so the nth tab means the nth <page>, which is
+        # the order they render in.
+        index = descriptor.get("index")
+        if isinstance(index, int) and 0 <= index < len(candidates):
+            return candidates[index]
         return None
 
     @api.model
