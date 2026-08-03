@@ -1,14 +1,19 @@
 ## Next
 
-- **Click-to-select in the preview.** The composer renders the real form beside
-  the field list; clicking a field there should open its editor. We generated the
-  view, so `ev.target.closest("[name]")` already carries the field name — no
-  branding machinery needed.
+- **Drag-to-reorder**, starting with list columns. The operation API supports
+  `position="move"` already, and the selection layer knows what was grabbed —
+  what is missing is only the gesture. Deliberately after click-to-edit rather
+  than instead of it: dragging is one gesture in a vocabulary, not the
+  vocabulary.
+- **Search views.** The only view type the editor does not cover, because a
+  search view has no standalone rendering to click — it lives in another view's
+  control panel. It needs a list-shaped editor (fields, filters, group-bys)
+  rather than the click-to-select spine.
 - **Record rules and automations**, in the composer rather than in the technical
   menus, where they would have the context that makes them answerable.
-- **Drag-and-drop.** Deliberately *after* the composer rather than instead of it.
-  It is one gesture in a vocabulary, not the vocabulary, and it lands on top of
-  the already-tested view operations.
+- **Retire the old view editor.** `studio_editor.js` — a node list beside a
+  free-text xpath box — is now redundant for list, form, kanban and calendar. It
+  stays until search views are covered, then goes.
 
 ## Known limits
 
@@ -40,3 +45,14 @@
 - **Placement only edits views the package owns.** A field added to a model whose
   form belongs to another module is created but not placed; use the view editor,
   which emits an inheriting view for that case on purpose.
+- **View edits are live and shared.** A view is data, so there is no reload to
+  batch behind and no Apply — an edit is visible to everyone immediately. Undo
+  is the counterweight, and it walks back one edit at a time; undoing something
+  older would silently discard everything done since, so it is refused.
+- **A kanban card written with `t-esc` cannot be selected part by part.** Only a
+  `<field>` puts its name in the DOM. Cards the builder generates use real
+  fields for exactly this reason; existing ones are edited as source, and the
+  editor says so rather than absorbing the click.
+- **A calendar is edited as settings, not by clicking.** It draws events rather
+  than fields, so there is no per-node DOM to aim at. What a calendar *is* lives
+  in its root attributes, which is what the panel edits.
