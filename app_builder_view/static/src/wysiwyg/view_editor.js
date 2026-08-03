@@ -50,6 +50,7 @@ export class StudioViewEditor extends Component {
             busy: false,
             message: "",
             addable: [],
+            history: [],
         });
 
         onWillStart(async () => {
@@ -64,6 +65,7 @@ export class StudioViewEditor extends Component {
             );
             this.state.loading = false;
             await this.loadAddable();
+            await this.loadHistory();
         });
 
         // Capture phase, on the container rather than per element: the view
@@ -201,14 +203,10 @@ export class StudioViewEditor extends Component {
                     attrs: { [row.name]: writeValue(row, rawValue) },
                 },
             ]);
-            // Re-read the node so the panel shows what the arch now says rather
-            // than what we hoped it would say.
-            const found = await this.orm.call("studio.view.editor", "locate_target", [
-                this.viewId,
-                this.state.target.descriptor,
-            ]);
-            const descriptor = this.state.target.descriptor;
-            this.state.target = { ...descriptor, ...found, descriptor };
+            // Re-read the node so the panel shows what the arch now says
+            // rather than what we hoped it would say.
+            await this.refreshSelection();
+            await this.loadHistory();
             // Two separate staleness problems, and fixing only one leaves the
             // user looking at their unchanged view after a successful edit.
             // viewService caches loaded arches by (model, view id, type), so
@@ -227,6 +225,56 @@ export class StudioViewEditor extends Component {
 
     onInput(row, ev) {
         return this.onRowChange(row, ev.target.value);
+    }
+
+    // -- undo ---------------------------------------------------------------
+
+    async loadHistory() {
+        this.state.history = await this.orm.call(
+            "studio.view.edit",
+            "history_for",
+            [this.viewId]
+        );
+    }
+
+    get lastEdit() {
+        return this.state.history.length ? this.state.history[0] : null;
+    }
+
+    /**
+     * Live edits are the honest design -- a view needs no reload -- but on a
+     * shared database a mistake is immediately everybody's mistake. Undo is
+     * what makes that bargain fair rather than merely fast.
+     */
+    async onUndo() {
+        if (!this.lastEdit) {
+            return;
+        }
+        this.state.busy = true;
+        try {
+            await this.orm.call("studio.view.edit", "action_undo", [
+                [this.lastEdit.id],
+            ]);
+            await this.loadHistory();
+            await this.refreshSelection();
+            this.env.bus.trigger("CLEAR-CACHES");
+            this.state.previewKey += 1;
+        } finally {
+            this.state.busy = false;
+        }
+    }
+
+    /** Re-read the selected node, so the panel shows what the arch now says. */
+    async refreshSelection() {
+        if (!this.state.target || !this.state.target.descriptor) {
+            return;
+        }
+        const descriptor = this.state.target.descriptor;
+        const found = await this.orm.call("studio.view.editor", "locate_target", [
+            this.viewId,
+            descriptor,
+        ]);
+        this.state.target = { ...descriptor, ...found, descriptor };
     }
 
     // -- adding a view -----------------------------------------------------

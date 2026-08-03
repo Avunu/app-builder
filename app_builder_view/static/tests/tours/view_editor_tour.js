@@ -71,6 +71,20 @@ registry.category("web_tour.tours").add("app_builder_view_editor_tour", {
             content: "root options are offered",
             trigger: ".o_studio_view_editor_side:contains('Edit rows inline')",
         },
+        {
+            content: "the change is listed as undoable",
+            trigger: ".o_studio_view_editor_side:contains('Recent changes')",
+        },
+        {
+            content: "undo it",
+            trigger: ".o_studio_view_editor_bar button:contains('Undo')",
+            run: "click",
+        },
+        {
+            content: "the heading is back to what it was",
+            trigger:
+                ".o_studio_view_editor_preview th[data-name='display_name']:not(:contains('Full Name'))",
+        },
     ],
 });
 

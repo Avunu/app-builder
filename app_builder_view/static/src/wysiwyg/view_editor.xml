@@ -12,6 +12,11 @@
                   class="badge text-bg-info">inheriting view</span>
             <div class="flex-grow-1"/>
             <span t-if="state.busy" class="fa fa-circle-o-notch fa-spin text-muted"/>
+            <button class="btn btn-secondary btn-sm" t-att-disabled="!lastEdit"
+                    t-att-title="lastEdit and ('Undo: ' + lastEdit.summary)"
+                    t-on-click="() => this.onUndo()">
+                <i class="fa fa-undo me-1"/>Undo
+            </button>
             <button class="btn btn-secondary btn-sm" t-on-click="() => this.selectRoot()">
                 Select the view itself
             </button>
@@ -88,6 +93,12 @@
                             <small t-if="entry.reason" class="text-muted d-block"
                                    t-esc="entry.reason"/>
                         </div>
+                    </div>
+
+                    <div t-if="state.history.length" class="mt-3 pt-2 border-top px-1">
+                        <div class="fw-bold mb-1">Recent changes</div>
+                        <div t-foreach="state.history" t-as="entry" t-key="entry.id"
+                             class="small text-muted" t-esc="entry.summary"/>
                     </div>
 
                     <div class="text-muted small mt-3 px-1">

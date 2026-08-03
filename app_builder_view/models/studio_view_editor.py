@@ -51,6 +51,31 @@ class StudioViewEditor(models.AbstractModel):
         return "%s.studio" % (base_view.name or base_view.model)
 
     @api.model
+    def _find_extension(self, base_view, package):
+        """This package's extension of ``base_view``, if it already has one."""
+        name = self._extension_name(base_view)
+        candidates = self.env["ir.ui.view"].search(
+            [("inherit_id", "=", base_view.id), ("name", "=", name)]
+        )
+        for candidate in candidates:
+            if candidate.studio_package_id == package:
+                return candidate
+        return self.env["ir.ui.view"].browse()
+
+    @api.model
+    def _describe(self, operation):
+        """A one-line account of an edit, for the history list."""
+        kind = operation.get("type", "edit")
+        if kind == "set_attributes":
+            keys = ", ".join(sorted((operation.get("attrs") or {}).keys()))
+            return _("changed %s", keys) if keys else _("changed attributes")
+        if kind == "add_field":
+            return _("added %s", operation.get("name", "a field"))
+        if kind == "remove_node":
+            return _("removed a node")
+        return kind.replace("_", " ")
+
+    @api.model
     def _get_or_create_extension(self, base_view, package):
         """One extension view per (base view, package).
 
@@ -149,15 +174,30 @@ class StudioViewEditor(models.AbstractModel):
 
         if self._owns_outright(base_view, package):
             target = base_view
+            created = False
             spec = etree.Element("data")
             handler(spec, operation)
             arch = apply_inheritance_specs(xml_writer.parse_arch(base_view.arch), spec)
         else:
-            target = self._get_or_create_extension(base_view, package)
+            existing = self._find_extension(base_view, package)
+            target = existing or self._get_or_create_extension(base_view, package)
+            created = not existing
             arch = self._parse_data(target)
             handler(arch, operation)
 
+        # Captured before the write, and including whether the target had to be
+        # brought into existence -- undoing an edit that created the patch has
+        # to remove it rather than leave an empty one behind.
+        arch_before = "" if created else target.arch
         self._write_arch(target, arch)
+        self.env["studio.view.edit"].record(
+            base_view,
+            target,
+            package,
+            self._describe(operation),
+            arch_before,
+            created,
+        )
         package.studio_capture(target)
         # A view edit is live the moment the arch is written -- views are data,
         # there is no reload to wait for -- so the file has to keep up in the

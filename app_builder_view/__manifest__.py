@@ -10,6 +10,7 @@
     "installable": True,
     "depends": ["app_builder_base", "web"],
     "data": [
+        "security/ir.model.access.csv",
         "views/studio_view_editor_views.xml",
         "views/studio_menus.xml",
     ],
