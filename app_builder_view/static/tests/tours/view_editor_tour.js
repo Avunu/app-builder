@@ -40,6 +40,21 @@ registry.category("web_tour.tours").add("app_builder_view_editor_tour", {
             trigger: ".o_studio_view_editor_side:contains('Click anything in the view')",
         },
         {
+            // A list is the widest preview there is, so it is where the panel
+            // was being flex-shrunk below the width it had just set -- which
+            // looked like a narrow sidebar *and* a dead resize handle.
+            content: "the sidebar is not squeezed by the wide list beside it",
+            trigger: ".o_studio_view_editor_side",
+            run: function () {
+                const width = document
+                    .querySelector(".o_studio_view_editor_side")
+                    .getBoundingClientRect().width;
+                if (width < 400) {
+                    throw new Error(`sidebar squeezed to ${Math.round(width)}px`);
+                }
+            },
+        },
+        {
             content: "a core view is reported as inheriting, not rewritten",
             trigger: ".o_studio_view_editor_bar .badge:contains('inheriting view')",
         },
