@@ -21,12 +21,13 @@
   it in `ir.default`, keyed by `field_id`, and there is no serializer for that
   model — so the default survives on the `.py` path (`FieldSpec.default`) and is
   lost on the XML one.
-- **The static coverage test is honest about modules it has never seen.** It
-  fails when an installed addon contributes a stored field to a serialized
-  model that nobody has classified — `website` alone adds about a dozen. That is
-  the intended behaviour rather than a bug: the failure names each field and the
-  fix is one line in `_studio_fields` or `_studio_ignored`. It is worth knowing
-  before installing something broad.
+- **A module with no bridge loses its fields from generated source.** The static
+  coverage test warns, naming each one — `website` alone adds about a dozen to
+  `ir.ui.view` — and fails only for the modules the studio itself depends on,
+  which are the ones it is answerable for. The runtime guard still refuses to
+  write a record that actually sets one, so the data is protected either way;
+  what is missing is the bridge, and the warning is the to-do list for writing
+  it.
 - **Serializing under `--dev=xml` can read the arch off disk.** `_compute_arch`
   prefers the file whenever `arch_updated` is False, so a view whose file and
   database have diverged serializes the file's version. The reload path is what

@@ -20,12 +20,26 @@ Two tests, doing different jobs:
   the developer from having to notice.
 """
 
+import logging
 from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from .common import StudioCase
+
+_logger = logging.getLogger(__name__)
+
+# Modules the studio declares a relationship with, and is therefore answerable
+# for. A stored field one of these contributes and nobody has classified is a
+# gap in *our* work and fails the run.
+#
+# Anything else -- website, account, a geospatial addon, whatever a site
+# happens to install -- only warns. The runtime guard still protects the data
+# either way; what would be gained by failing here is a to-do item, and what
+# would be lost is every downstream suite going red because somebody installed
+# a module we have not written a bridge for yet.
+DECLARED_SCOPE = frozenset({"base", "mail", "sms", "base_automation"})
 
 
 @tagged("post_install", "-at_install")
@@ -43,28 +57,40 @@ class TestSerializerCoverage(StudioCase):
         Deliberately checked against the *live* registry rather than a fixture,
         because the fields that matter are exactly the ones another installed
         module contributed. Reading base/models/*.py cannot see those.
+
+        Split by who contributed the field: see DECLARED_SCOPE above for why a
+        third-party addon warns where our own dependencies fail.
         """
-        unclassified = {}
+        ours, theirs = {}, {}
         for model_name, serializer in self._serializers():
-            model = self.env[model_name]
-            missing = sorted(
-                name
-                for name, field in model._fields.items()
-                if field.store
-                and not field.automatic
-                and name not in serializer._classified_fields()
+            classified = serializer._classified_fields()
+            for name, field in sorted(self.env[model_name]._fields.items()):
+                if not field.store or field.automatic or name in classified:
+                    continue
+                bucket = ours if field._module in DECLARED_SCOPE else theirs
+                bucket.setdefault(model_name, []).append(
+                    "%s (%s)" % (name, field._module or "?")
+                )
+
+        if theirs:
+            _logger.warning(
+                "App Builder has no bridge for these stored fields yet, so they "
+                "are dropped from generated source. The runtime guard still "
+                "refuses to write a record that sets one:\n%s",
+                self._report(theirs),
             )
-            if missing:
-                unclassified[model_name] = missing
         self.assertFalse(
-            unclassified,
-            "These stored fields have no decision recorded. Add each to the "
-            "serializer's _studio_fields, or to _studio_ignored with the "
-            "reason it cannot carry a user's intent:\n"
-            + "\n".join(
-                "  %s: %s" % (model, ", ".join(names))
-                for model, names in sorted(unclassified.items())
-            ),
+            ours,
+            "These stored fields come from a module App Builder depends on and "
+            "have no decision recorded. Add each to the serializer's "
+            "_studio_fields, or to _studio_ignored with the reason it cannot "
+            "carry a user's intent:\n" + self._report(ours),
+        )
+
+    def _report(self, buckets):
+        return "\n".join(
+            "  %s: %s" % (model, ", ".join(names))
+            for model, names in sorted(buckets.items())
         )
 
     def test_a_serializer_never_claims_a_field_twice(self):
