@@ -46,9 +46,7 @@ Edits to existing views become **inheriting views** at `priority=99` — core's 
 
 ## Python from the first save, but only a block of it is ours
 
-A new model is a real `models.Model` class immediately — no `x_` prefix, no later conversion
-step. What the builder owns is a marker-delimited block inside the class; everything else in
-that file is yours from the moment it exists:
+A new model is a real `models.Model` class immediately — no `x_` prefix, no later conversion step. What the builder owns is a marker-delimited block inside the class; everything else in that file is yours from the moment it exists:
 
 ```python
 class WorkshopJob(models.Model):
@@ -66,31 +64,17 @@ class WorkshopJob(models.Model):
         ...
 ```
 
-Writing is a pure string splice between the markers — the same approach
-[Frappe's `TypeExporter`](https://github.com/frappe/frappe/blob/develop/frappe/types/exporter.py)
-uses — so the studio never parses, reads or rewrites the rest of the file. Add a metaclass, a
-`@property`, a decorator nobody has heard of: the builder keeps working. Reading parses only
-the block, which is text the studio generated, so a failure there is a loud error about our
-own region rather than a model that quietly locks itself out.
+Writing is a pure string splice between the markers — the same approach [Frappe's `TypeExporter`](https://github.com/frappe/frappe/blob/develop/frappe/types/exporter.py) uses — so the studio never parses, reads or rewrites the rest of the file. Add a metaclass, a `@property`, a decorator nobody has heard of: the builder keeps working. Reading parses only the block, which is text the studio generated, so a failure there is a loud error about our own region rather than a model that quietly locks itself out.
 
-**This is what makes it not an export.** Odoo Studio's "export to module" is one-way: touch the
-code and you can never go back to the visual tool. Here there is no door to close.
+**This is what makes it not an export.** Odoo Studio's "export to module" is one-way: touch the code and you can never go back to the visual tool. Here there is no door to close.
 
 Three things make the generated class lossless rather than a rewrite:
 
--   the xmlids Odoo's reflection assigns to a code-defined model are _identical_ to the ones the
-    studio emitted (`model_xmlid` / `field_xmlid` / `selection_xmlid`), so nothing is orphaned and
-    `_process_end` reaps nothing;
+-   the xmlids Odoo's reflection assigns to a code-defined model are _identical_ to the ones the studio emitted (`model_xmlid` / `field_xmlid` / `selection_xmlid`), so nothing is orphaned and `_process_end` reaps nothing;
 -   a sandboxed `compute` string is promoted to a real method with a real `@api.depends`;
--   metadata rows are _reclassified_ (`state` manual → base), never deleted. Deleting would be
-    doubly catastrophic: `ir.model.fields.unlink` calls `_drop_column` and would destroy user
-    data, and every `model_id` in Odoo is `ondelete='cascade'`, so dropping the `ir.model` row
-    silently takes the access rules and automations with it.
+-   metadata rows are _reclassified_ (`state` manual → base), never deleted. Deleting would be doubly catastrophic: `ir.model.fields.unlink` calls `_drop_column` and would destroy user data, and every `model_id` in Odoo is `ondelete='cascade'`, so dropping the `ir.model` row silently takes the access rules and automations with it.
 
-Adding a field means re-importing the class, so edits batch behind an explicit **Apply** — one
-reload per changeset rather than one per field. **Studio → Adopt Existing Model** brings an
-older `x_` model under the same management; it is a migration for what came before, not a
-milestone.
+Adding a field means re-importing the class, so edits batch behind an explicit **Apply** — one reload per changeset rather than one per field. **Studio → Adopt Existing Model** brings an older `x_` model under the same management; it is a migration for what came before, not a milestone.
 
 ## Read-only in production is a feature
 
