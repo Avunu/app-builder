@@ -8,6 +8,12 @@ convention for last-loaded views. The result reads like a patch a developer woul
 have written, survives upstream changes to the base view, and is reviewable in
 git.
 
+Fields, buttons, tabs and groups can be added and removed, not only configured —
+and because every edit becomes a patch, that works on core screens as readily as
+on your own. Where a new node lands is decided from what you have selected: a
+container takes a child, anything else takes a sibling, and the panel says which
+before you click.
+
 The editor never asks you to type an xpath: the target is picked from a tree of
 the view's nodes computed on the server, preferring identifying predicates
 (`//field[@name='x']`) over positional ones (`//div[3]`) so a picked target

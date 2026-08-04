@@ -2,7 +2,11 @@
 
 - **Drag-to-reorder beyond list columns** — form fields between groups, kanban
   card contents. The move operation and the gesture both exist now; what each
-  case needs is a sensible answer to "what did you drop it *into*".
+  case needs is a sensible answer to "what did you drop it *into*". Adding works
+  by clicking, anchored on the selection, for the same reason.
+- **A new field from inside the view editor.** Adding an *existing* field is
+  there; creating one still means the composer, or the New Field wizard for a
+  core model.
 - **Record rules and automations**, in the composer rather than in the technical
   menus, where they would have the context that makes them answerable.
 - **Richer filters.** Search filters are generated from a field and a condition
@@ -61,8 +65,9 @@
   receives is a per-user projection, with nodes removed by group rights and whole
   subviews grafted in, so a path derived from it can be wrong for somebody else.
 - **Placement only edits views the package owns.** A field added to a model whose
-  form belongs to another module is created but not placed; use the view editor,
-  which emits an inheriting view for that case on purpose.
+  form belongs to another module is created but not placed automatically — the
+  view editor is where it goes onto somebody else's screen, as an inheriting
+  view, on purpose.
 - **View edits are live and shared.** A view is data, so there is no reload to
   batch behind and no Apply — an edit is visible to everyone immediately. Undo
   is the counterweight, and it walks back one edit at a time; undoing something
