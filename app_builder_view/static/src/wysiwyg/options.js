@@ -1,18 +1,22 @@
 /** @odoo-module **/
 /**
- * What you can change about the thing you selected.
+ * Resolving the server's option catalogue against what this browser has.
  *
- * Shaped after two things already in this codebase and one in core:
+ * The rows themselves used to be declared here. They are declared in
+ * `app_builder_view/tools/view_options.py` now, beside the field-type catalogue
+ * the model composer reads, because two files describing one product drift and
+ * nothing compares them. What is left here is the half that genuinely belongs
+ * on the client:
  *
- *  - the field-type catalogue in `app_builder_base/tools/modelspec.py`, whose
- *    `params` decide which rows a field editor shows -- same idea, so the model
- *    composer and the view editor feel like one product rather than two;
- *  - master's `html_builder`, where options are a registry matched against the
- *    selected element rather than a component per case.
- *
- * Every row is data. Adding "kanban card options" later is an entry here, not a
- * new component, and each row produces the same `set_attributes` operation the
- * view editor has always had -- no new server plumbing per option.
+ *  - **the widget list**, because only the browser knows what is registered.
+ *    The server *proposes* a curated set; `registry.category("fields")`
+ *    disposes. A widget the server names but this database has not installed
+ *    is dropped rather than offered, and one whose `supportedTypes` disagree
+ *    with the field is dropped too — a widget that does not apply renders an
+ *    error where the field should be.
+ *  - **the `options="{...}"` merge**, because a row targeting an option is
+ *    editing one key of a JSON blob the node already carries, and the node's
+ *    current value is here.
  *
  * `null` means *remove the attribute*, which is different from the empty
  * string: it restores Odoo's own default rather than pinning a blank value.
@@ -21,411 +25,200 @@
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 
-export const viewOptions = registry.category("app_builder.view_options");
-
-const NUMERIC = ["integer", "float", "monetary"];
-
-// Curated per type rather than "every widget Odoo has". A widget that does not
-// apply to the field renders as an error in the user's face, and a list of
-// eighty is not a choice anybody can make.
-const WIDGETS = {
-    char: [
-        ["email", _t("Email")],
-        ["phone", _t("Phone")],
-        ["url", _t("Link")],
-        ["badge", _t("Badge")],
-    ],
-    text: [["text", _t("Plain text")]],
-    integer: [["progressbar", _t("Progress bar")], ["handle", _t("Drag handle")]],
-    float: [["percentage", _t("Percentage")], ["float_time", _t("Duration")]],
-    monetary: [["monetary", _t("Amount")]],
-    boolean: [["boolean_toggle", _t("Toggle")]],
-    date: [["remaining_days", _t("Remaining days")]],
-    datetime: [["remaining_days", _t("Remaining days")]],
-    selection: [["badge", _t("Badge")], ["priority", _t("Stars")]],
-    many2one: [["many2one_avatar", _t("Avatar")]],
-    many2many: [["many2many_tags", _t("Tags")]],
-    binary: [["image", _t("Image")]],
-};
-
-function widgetChoices(target) {
-    const type = target.field && target.field.type;
-    return [["", _t("Default")], ...(WIDGETS[type] || [])];
-}
-
-// -- list ---------------------------------------------------------------
-
-viewOptions.add("list_column", {
-    id: "list_column",
-    viewTypes: ["list"],
-    match: (target) => target.kind === "column",
-    title: (target) => (target.field && target.field.string) || target.name,
-    rows: [
-        {
-            name: "string",
-            label: _t("Column heading"),
-            type: "text",
-            placeholder: (target) => (target.field && target.field.string) || "",
-            help: _t("Leave empty to use the field's own label."),
-        },
-        { name: "widget", label: _t("Shown as"), type: "select", choices: widgetChoices },
-        {
-            name: "optional",
-            label: _t("Optional column"),
-            type: "select",
-            choices: () => [
-                ["", _t("Always shown")],
-                ["show", _t("Optional, on by default")],
-                ["hide", _t("Optional, off by default")],
-            ],
-            help: _t(
-                "Optional columns can be turned on and off by each user from " +
-                    "the toggle at the right of the header row."
-            ),
-        },
-        {
-            name: "sum",
-            label: _t("Column total"),
-            type: "text",
-            when: (target) => NUMERIC.includes(target.field && target.field.type),
-            help: _t("The label shown beside the total, e.g. “Total”."),
-        },
-        {
-            name: "column_invisible",
-            label: _t("Hide this column"),
-            type: "toggle",
-            help: _t(
-                "Hides the column without removing it, so nothing that depends " +
-                    "on the field breaks."
-            ),
-        },
-    ],
-});
-
-viewOptions.add("list_root", {
-    id: "list_root",
-    viewTypes: ["list"],
-    match: (target) => target.kind === "root",
-    title: () => _t("This list"),
-    rows: [
-        { name: "string", label: _t("Title"), type: "text" },
-        {
-            name: "editable",
-            label: _t("Edit rows inline"),
-            type: "select",
-            choices: () => [
-                ["", _t("Open the form")],
-                ["top", _t("Inline, new rows on top")],
-                ["bottom", _t("Inline, new rows at the bottom")],
-            ],
-        },
-        {
-            name: "multi_edit",
-            label: _t("Edit many records at once"),
-            type: "toggle",
-            help: _t("Lets a user select rows and change a value on all of them."),
-        },
-        {
-            name: "default_order",
-            label: _t("Default sort"),
-            type: "text",
-            help: _t("A field name, optionally followed by desc — e.g. date desc."),
-        },
-        { name: "create", label: _t("Allow creating"), type: "toggle", invert: true },
-        { name: "delete", label: _t("Allow deleting"), type: "toggle", invert: true },
-    ],
-});
-
-// -- form ---------------------------------------------------------------
-
-viewOptions.add("form_field", {
-    id: "form_field",
-    viewTypes: ["form"],
-    match: (target) => target.kind === "field",
-    title: (target) => (target.field && target.field.string) || target.name,
-    rows: [
-        {
-            name: "string",
-            label: _t("Label"),
-            type: "text",
-            placeholder: (target) => (target.field && target.field.string) || "",
-            help: _t("Leave empty to use the field's own label."),
-        },
-        { name: "widget", label: _t("Shown as"), type: "select", choices: widgetChoices },
-        {
-            name: "placeholder",
-            label: _t("Placeholder"),
-            type: "text",
-            help: _t("Grey hint text shown while the field is empty."),
-        },
-        {
-            name: "help",
-            label: _t("Tooltip"),
-            type: "text",
-            help: _t("Shown when the user hovers the label."),
-        },
-        {
-            name: "required",
-            label: _t("Required"),
-            type: "toggle",
-            help: _t(
-                "Required on this form only. The field itself stays optional, " +
-                    "so other screens and imports are unaffected."
-            ),
-        },
-        { name: "readonly", label: _t("Read-only"), type: "toggle" },
-        {
-            name: "invisible",
-            label: _t("Hidden"),
-            type: "toggle",
-            help: _t(
-                "Hides the field without removing it, so anything depending on " +
-                    "it keeps working."
-            ),
-        },
-    ],
-});
-
-viewOptions.add("form_page", {
-    id: "form_page",
-    viewTypes: ["form"],
-    match: (target) => target.kind === "page",
-    title: () => _t("This tab"),
-    rows: [{ name: "string", label: _t("Tab name"), type: "text" }],
-});
-
-viewOptions.add("form_root", {
-    id: "form_root",
-    viewTypes: ["form"],
-    match: (target) => target.kind === "root",
-    title: () => _t("This form"),
-    rows: [
-        { name: "string", label: _t("Title"), type: "text" },
-        { name: "create", label: _t("Allow creating"), type: "toggle", invert: true },
-        { name: "edit", label: _t("Allow editing"), type: "toggle", invert: true },
-        { name: "delete", label: _t("Allow deleting"), type: "toggle", invert: true },
-    ],
-});
-
-// -- kanban -------------------------------------------------------------
-
-viewOptions.add("kanban_field", {
-    id: "kanban_field",
-    viewTypes: ["kanban"],
-    match: (target) => target.kind === "field",
-    title: (target) => (target.field && target.field.string) || target.name,
-    rows: [
-        { name: "widget", label: _t("Shown as"), type: "select", choices: widgetChoices },
-        {
-            name: "invisible",
-            label: _t("Hidden"),
-            type: "toggle",
-            help: _t("Hides it on the card without removing it."),
-        },
-    ],
-});
-
-viewOptions.add("kanban_root", {
-    id: "kanban_root",
-    viewTypes: ["kanban"],
-    match: (target) => target.kind === "root",
-    title: () => _t("This kanban"),
-    rows: [
-        {
-            name: "default_group_by",
-            label: _t("Group by"),
-            type: "text",
-            help: _t("The field whose values become the columns, e.g. state."),
-        },
-        {
-            name: "quick_create",
-            label: _t("Quick create"),
-            type: "toggle",
-            invert: true,
-            help: _t("Lets a user add a card from the column without a form."),
-        },
-        {
-            name: "records_draggable",
-            label: _t("Cards can be dragged"),
-            type: "toggle",
-            invert: true,
-        },
-        { name: "group_create", label: _t("Columns can be added"), type: "toggle", invert: true },
-        { name: "archivable", label: _t("Columns can be archived"), type: "toggle", invert: true },
-        {
-            name: "default_order",
-            label: _t("Default sort"),
-            type: "text",
-            help: _t("A field name, optionally followed by desc."),
-        },
-    ],
-});
+const fieldRegistry = registry.category("fields");
 
 /**
- * Choices drawn from the model's own fields.
+ * Widgets the server offers for this field that actually exist here.
  *
- * Options that *name* a field -- a calendar's date_start, its colour -- must
- * offer the fields that can actually serve. A free-text box would let somebody
- * type a name that is wrong by type or does not exist, and a calendar whose
- * date_start is not a date throws on open rather than degrading.
+ * `supportedTypes` is core's own declaration on each field descriptor, so this
+ * agrees with what the view would really accept rather than with what we
+ * believed when the catalogue was written.
  */
-function fieldChoices(types, { allowEmpty = true, emptyLabel } = {}) {
-    return (target, context) => {
-        const fields = (context && context.fields) || [];
-        const matching = fields
-            .filter((f) => types.includes(f.type))
-            .map((f) => [f.name, `${f.string} (${f.name})`]);
-        return allowEmpty
-            ? [["", emptyLabel || _t("None")], ...matching]
-            : matching;
+function widgetChoices(target, context) {
+    const type = target.field && target.field.type;
+    const proposed = (context.catalogue && context.catalogue.widgets) || [];
+    const usable = proposed.filter((entry) => {
+        const descriptor = fieldRegistry.get(entry.value, null);
+        if (!descriptor) {
+            return false;
+        }
+        const supported = descriptor.supportedTypes;
+        // A descriptor that declares nothing supports whatever it is given;
+        // fall back to what the server transcribed from core.
+        return supported ? supported.includes(type) : entry.types.includes(type);
+    });
+    return [["", _t("Default")], ...usable.map((entry) => [entry.value, entry.label])];
+}
+
+function fieldChoices(row, context) {
+    const types = row.field_types || [];
+    const fields = (context && context.fields) || [];
+    const matching = fields
+        .filter((f) => !types.length || types.includes(f.type))
+        .map((f) => [f.name, `${f.string} (${f.name})`]);
+    return row.allow_empty
+        ? [["", row.empty_label || _t("None")], ...matching]
+        : matching;
+}
+
+function choicesFor(row, target, context) {
+    switch (row.source) {
+        case "widgets":
+            return widgetChoices(target, context);
+        case "fields":
+            return fieldChoices(row, context);
+        case "image_size":
+            return [
+                ["", _t("Default")],
+                ...((context.catalogue && context.catalogue.image_sizes) || []),
+            ];
+        case "comodel_fields":
+            // Fields of the model this relation points at, not of the model
+            // being edited -- a tag colour lives on the tag.
+            return fieldChoices(row, {
+                fields: (target.field && target.field.comodel_fields) || [],
+            });
+        default:
+            return row.choices || [];
+    }
+}
+
+/** Every option group the server sent that matches this selection. */
+export function optionsFor(context, target) {
+    if (!target || !context || !context.options) {
+        return [];
+    }
+    return context.options.filter((group) => group.kinds.includes(target.kind));
+}
+
+/**
+ * The rows of a group that apply to this target, with their current values.
+ *
+ * A row whose widget brings extra configuration of its own contributes those
+ * rows immediately after it, so choosing "Image" makes its size row appear
+ * without a round trip.
+ */
+export function visibleRows(group, target, context = {}) {
+    const out = [];
+    for (const row of group.rows) {
+        if (!applies(row, target)) {
+            continue;
+        }
+        out.push(resolve(row, target, context));
+        if (row.source === "widgets") {
+            out.push(...widgetOwnRows(target, context));
+        }
+    }
+    return out;
+}
+
+function applies(row, target) {
+    if (!row.only_for || !row.only_for.length) {
+        return true;
+    }
+    return row.only_for.includes(target.field && target.field.type);
+}
+
+/** The rows the currently chosen widget brings with it. */
+function widgetOwnRows(target, context) {
+    const current = (target.attrs || {}).widget;
+    if (!current) {
+        return [];
+    }
+    const entry = ((context.catalogue && context.catalogue.widgets) || []).find(
+        (w) => w.value === current
+    );
+    return (entry ? entry.rows : []).map((row) => resolve(row, target, context));
+}
+
+function resolve(row, target, context) {
+    return {
+        ...row,
+        // Not the name: one attribute can have two rows. `invisible` is both a
+        // checkbox ("hidden") and a condition ("hidden when"), and two rows
+        // sharing a t-key makes Owl reuse one element for both.
+        key: `${row.name}:${row.type}`,
+        choices: choicesFor(row, target, context),
+        placeholder:
+            row.placeholder_from === "field.string"
+                ? (target.field && target.field.string) || ""
+                : row.placeholder || "",
+        value: readValue(row, target),
     };
 }
 
-const DATE_TYPES = ["date", "datetime"];
-// What Odoo can colour or group a calendar by: a discrete value per record.
-const GROUPABLE = ["many2one", "selection", "boolean"];
-
-// -- calendar -----------------------------------------------------------
-//
-// Deliberately a settings panel rather than click-to-select. A calendar draws
-// events, not fields: there is no per-node DOM that maps back to the arch, so
-// inventing click targets would be pretending. What a calendar *is* lives
-// almost entirely in its root attributes, and that is what this edits.
-
-viewOptions.add("calendar_root", {
-    id: "calendar_root",
-    viewTypes: ["calendar"],
-    match: (target) => target.kind === "root",
-    title: () => _t("This calendar"),
-    rows: [
-        { name: "string", label: _t("Title"), type: "text" },
-        {
-            name: "date_start",
-            label: _t("Starts on"),
-            type: "select",
-            choices: fieldChoices(DATE_TYPES, { allowEmpty: false }),
-            help: _t("Required — the calendar cannot open without it."),
-        },
-        {
-            name: "date_stop",
-            label: _t("Ends on"),
-            type: "select",
-            choices: fieldChoices(DATE_TYPES),
-            help: _t("Leave empty for single-moment events."),
-        },
-        {
-            name: "color",
-            label: _t("Colour by"),
-            type: "select",
-            choices: fieldChoices(GROUPABLE),
-            help: _t("Records sharing a value share a colour."),
-        },
-        {
-            name: "mode",
-            label: _t("Opens on"),
-            type: "select",
-            choices: () => [
-                ["", _t("Default")],
-                ["day", _t("Day")],
-                ["week", _t("Week")],
-                ["month", _t("Month")],
-                ["year", _t("Year")],
-            ],
-        },
-        {
-            name: "quick_create",
-            label: _t("Create by dragging a slot"),
-            type: "toggle",
-            invert: true,
-        },
-        {
-            name: "event_open_popup",
-            label: _t("Open events in a popup"),
-            type: "toggle",
-        },
-    ],
-});
-
-viewOptions.add("calendar_field", {
-    id: "calendar_field",
-    viewTypes: ["calendar"],
-    match: (target) => target.kind === "field",
-    title: (target) => (target.field && target.field.string) || target.name,
-    rows: [
-        {
-            name: "filters",
-            label: _t("Offer as a side filter"),
-            type: "toggle",
-            help: _t("Shows the field's values in the panel beside the calendar."),
-        },
-        {
-            name: "invisible",
-            label: _t("Hidden"),
-            type: "toggle",
-        },
-    ],
-});
-
-/**
- * Every option group that applies to the current selection.
- *
- * More than one may match, and they render in registry order, so a general
- * group can be declared once and a specific one added beside it later.
- */
-export function optionsFor(viewType, target) {
-    if (!target) {
-        return [];
+/** The `options="{...}"` blob a node currently carries. */
+function readOptions(target) {
+    const raw = (target.attrs || {}).options;
+    if (!raw) {
+        return {};
     }
-    return viewOptions
-        .getAll()
-        .filter(
-            (option) =>
-                option.viewTypes.includes(viewType) && option.match(target)
+    try {
+        // Odoo writes this with Python's repr, so single quotes and True/False.
+        return JSON.parse(
+            raw.replace(/'/g, '"').replace(/\bTrue\b/g, "true").replace(/\bFalse\b/g, "false")
         );
-}
-
-/**
- * Rows of an option group that apply to this target, with their current value
- * read from the node's real attributes.
- */
-export function visibleRows(option, target, context = {}) {
-    return option.rows
-        .filter((row) => !row.when || row.when(target, context))
-        .map((row) => ({
-            ...row,
-            choices:
-                typeof row.choices === "function"
-                    ? row.choices(target, context)
-                    : row.choices,
-            placeholder:
-                typeof row.placeholder === "function"
-                    ? row.placeholder(target)
-                    : row.placeholder,
-            value: readValue(row, target),
-        }));
+    } catch {
+        return {};
+    }
 }
 
 function readValue(row, target) {
-    const raw = (target.attrs || {})[row.name];
+    const raw =
+        row.target === "option"
+            ? readOptions(target)[row.name]
+            : (target.attrs || {})[row.name];
+    if (row.type === "groups") {
+        // A comma-separated list of xmlids, which is what the arch carries and
+        // what survives being loaded into another database.
+        return raw ? raw.split(",").map((x) => x.trim()).filter(Boolean) : [];
+    }
     if (row.type === "toggle") {
         // `invert` covers attributes that exist to switch something *off*:
         // create="0" means "no creating", so the checkbox reads the other way
         // round and an unset attribute means allowed.
-        const on = raw === undefined ? row.invert : !["0", "false", "False"].includes(raw);
+        if (row.target === "option") {
+            return row.invert ? raw !== false : raw === true;
+        }
+        const on =
+            raw === undefined ? row.invert : !["0", "false", "False"].includes(raw);
         return row.invert ? on : raw !== undefined && on;
     }
-    return raw === undefined ? "" : raw;
+    if (raw === undefined || raw === null) {
+        return "";
+    }
+    return typeof raw === "string" ? raw : JSON.stringify(raw);
 }
 
 /**
- * The attribute value an edited row should write. `null` removes the attribute.
+ * The attributes an edited row should write.
+ *
+ * Returns a whole `{attribute: value}` map rather than a single value, because
+ * a row targeting an option is editing one key of a blob and has to hand back
+ * the blob. `null` removes the attribute.
  */
-export function writeValue(row, value) {
+export function writeValue(row, value, target) {
+    if (row.target === "option") {
+        const options = readOptions(target);
+        const next = row.type === "toggle" ? Boolean(value) : value;
+        if (next === "" || next === false) {
+            delete options[row.name];
+        } else {
+            options[row.name] = next;
+        }
+        return {
+            options: Object.keys(options).length ? JSON.stringify(options) : null,
+        };
+    }
     if (row.type === "toggle") {
         if (row.invert) {
-            return value ? null : "0";
+            return { [row.name]: value ? null : "0" };
         }
-        return value ? "1" : null;
+        return { [row.name]: value ? "1" : null };
     }
-    return value === "" ? null : value;
+    if (row.type === "groups") {
+        const chosen = (value || []).filter(Boolean);
+        return { [row.name]: chosen.length ? chosen.join(",") : null };
+    }
+    return { [row.name]: value === "" ? null : value };
 }

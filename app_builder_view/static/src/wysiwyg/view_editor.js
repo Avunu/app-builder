@@ -136,10 +136,11 @@ export class StudioViewEditor extends Component {
         if (!this.state.target || !this.state.target.found) {
             return [];
         }
-        return optionsFor(this.view.type, this.state.target).map((option) => ({
-            id: option.id || option.title(this.state.target),
-            title: option.title(this.state.target),
-            rows: visibleRows(option, this.state.target, this.state.context || {}),
+        const context = this.state.context || {};
+        return optionsFor(context, this.state.target).map((group) => ({
+            id: group.id,
+            title: group.title,
+            rows: visibleRows(group, this.state.target, context),
         }));
     }
 
@@ -228,7 +229,10 @@ export class StudioViewEditor extends Component {
                     type: "set_attributes",
                     xpath: this.state.target.xpath,
                     position: "attributes",
-                    attrs: { [row.name]: writeValue(row, rawValue) },
+                    // A whole map, not one value: a row that edits a widget
+                    // option is changing one key of the node's options="{...}"
+                    // blob and has to hand the blob back.
+                    attrs: writeValue(row, rawValue, this.state.target),
                 },
             ]);
             // Re-read the node so the panel shows what the arch now says
@@ -253,6 +257,18 @@ export class StudioViewEditor extends Component {
 
     onInput(row, ev) {
         return this.onRowChange(row, ev.target.value);
+    }
+
+    onMultiSelect(row, ev) {
+        return this.onRowChange(
+            row,
+            [...ev.target.selectedOptions].map((option) => option.value)
+        );
+    }
+
+    /** Groups a `groups=""` attribute can name; only ones with an xmlid. */
+    get groupChoices() {
+        return (this.state.context && this.state.context.groups) || [];
     }
 
     // -- search views -------------------------------------------------------

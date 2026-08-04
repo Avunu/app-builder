@@ -1,4 +1,5 @@
 from . import (
+    catalogue,
     checksum,
     gitrepo,
     manifest,

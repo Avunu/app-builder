@@ -24,11 +24,14 @@ from odoo.exceptions import UserError, ValidationError
 from odoo.tools.template_inheritance import apply_inheritance_specs
 
 from odoo.addons.app_builder_base.tools import (
+    catalogue,
     modelspec,
     pycodegen,
     scaffold,
     xml_writer,
 )
+
+from ..tools import view_options
 
 _logger = logging.getLogger(__name__)
 
@@ -669,7 +672,7 @@ class StudioViewEditor(models.AbstractModel):
         field = self.env[model_name]._fields.get(node.get("name"))
         if not field:
             return None
-        return {
+        info = {
             "name": field.name,
             "type": field.type,
             "string": field.string or field.name,
@@ -677,6 +680,12 @@ class StudioViewEditor(models.AbstractModel):
             "required": bool(field.required),
             "readonly": bool(field.readonly),
         }
+        # A relational field's options can name a field on the *other* model --
+        # a tag's colour lives on the tag -- so the panel needs that list too.
+        comodel = getattr(field, "comodel_name", None)
+        if comodel and comodel in self.env:
+            info["comodel_fields"] = self._model_fields(comodel)
+        return info
 
     @api.model
     def editing_context(self, view_id=None, model=None, view_type=None):
@@ -724,6 +733,13 @@ class StudioViewEditor(models.AbstractModel):
             # type a name that breaks the view on open.
             "fields": self._model_fields(view.model),
             "preview": self._preview_for(view),
+            # What can be changed about anything in this view, and the widget
+            # vocabulary shared with the model composer. Sent here rather than
+            # from an endpoint of its own because the editor already makes this
+            # call and the answer never changes mid-session.
+            "options": view_options.groups_json(view.type, self.env._),
+            "catalogue": catalogue.catalogue_json(self.env._),
+            "groups": self._selectable_groups(),
             # Whether an edit rewrites this view or emits a patch against it.
             # The preview shows the combined result either way, so saying which
             # is the difference between understanding the output and not.
@@ -944,6 +960,27 @@ class StudioViewEditor(models.AbstractModel):
             # works -- the sidebar is the editor for a search view anyway.
             "unavailable": not host,
         }
+
+    @api.model
+    def _selectable_groups(self):
+        """Groups a ``groups=""`` attribute can name.
+
+        Only ones with an external id: the attribute takes xmlids, and a group
+        without one cannot be referred to from an arch at all -- so offering it
+        would produce a view that silently shows the field to everybody.
+        """
+        groups = self.env["res.groups"].sudo().search([])
+        external = groups.get_external_id()
+        out = [
+            {
+                "id": group.id,
+                "xmlid": external.get(group.id),
+                "name": group.display_name,
+            }
+            for group in groups
+            if external.get(group.id)
+        ]
+        return sorted(out, key=lambda entry: entry["name"])
 
     @api.model
     def _model_fields(self, model_name):

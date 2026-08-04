@@ -6,4 +6,5 @@ from . import (
     test_undo,
     test_view_editor,
     test_view_editor_tour,
+    test_view_options,
 )

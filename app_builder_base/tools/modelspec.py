@@ -27,8 +27,11 @@ field that relies on a default.
 
 import ast
 import io
+import keyword
 import tokenize
 from dataclasses import asdict, dataclass, replace
+
+from . import catalogue
 
 
 def canonical_source(text):
@@ -125,9 +128,10 @@ MIXIN_FIELDS = {
     ),
 }
 
-PYTHON_KEYWORDS = frozenset(
-    ["False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield", "match", "case"]
-)
+# Straight from the interpreter rather than transcribed: a hand-copied list
+# silently rots when Python gains a keyword, and the failure mode is a generated
+# class that will not import.
+PYTHON_KEYWORDS = frozenset(keyword.kwlist) | frozenset(keyword.softkwlist)
 
 RELATIONAL = ("many2one", "one2many", "many2many")
 
@@ -228,7 +232,7 @@ SUPPORTED_TTYPES = tuple(e.ttype for e in FIELD_TYPES if e.supported)
 UNSUPPORTED_TTYPES = {e.ttype: e.unsupported for e in FIELD_TYPES if not e.supported}
 
 
-def available_field_types(spec=None):
+def available_field_types(spec=None, translate=catalogue.identity):
     """The picker's contents, with each entry's availability decided here.
 
     Shown-but-disabled beats hidden: a manager who wants an amount field and
@@ -259,6 +263,13 @@ def available_field_types(spec=None):
                 "enabled": enabled,
                 "tooltip": tooltip,
                 "placement": default_placement(entry.ttype),
+                # The same widget table the view editor reads. The point of
+                # sharing it is that a type cannot offer a widget here that the
+                # view editor would refuse to set, or the other way round --
+                # which is what two tables would eventually produce.
+                "widgets": [
+                    w.to_json(translate) for w in catalogue.widgets_for(entry.ttype)
+                ],
             }
         )
     return out

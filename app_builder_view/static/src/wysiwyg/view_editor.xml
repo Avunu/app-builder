@@ -126,7 +126,7 @@
 
                     <t t-foreach="panels" t-as="panel" t-key="panel.id">
                         <div class="fw-bold px-1 mb-1" t-esc="panel.title"/>
-                        <div t-foreach="panel.rows" t-as="row" t-key="row.name"
+                        <div t-foreach="panel.rows" t-as="row" t-key="row.key"
                              class="mb-2 px-1">
 
                             <t t-if="row.type === 'toggle'">
@@ -149,6 +149,26 @@
                                             t-att-selected="choice[0] === row.value"
                                             t-esc="choice[1]"/>
                                 </select>
+                                <!-- Group visibility is a list of xmlids, because
+                                     that is what the arch carries and what still
+                                     resolves in the next database. -->
+                                <select t-elif="row.type === 'groups'" multiple="multiple"
+                                        class="form-select form-select-sm"
+                                        size="6"
+                                        t-on-change="(ev) => this.onMultiSelect(row, ev)">
+                                    <option t-foreach="groupChoices" t-as="group"
+                                            t-key="group.xmlid" t-att-value="group.xmlid"
+                                            t-att-selected="row.value.includes(group.xmlid)"
+                                            t-esc="group.name"/>
+                                </select>
+                                <!-- A Python expression over the record, not a
+                                     domain: `attrs` went away in 17.0 and these
+                                     attributes are evaluated, not matched. -->
+                                <input t-elif="row.type === 'condition'" type="text"
+                                       class="form-control form-control-sm font-monospace"
+                                       t-att-value="row.value"
+                                       placeholder="state == 'draft'"
+                                       t-on-change="(ev) => this.onInput(row, ev)"/>
                                 <input t-else="" type="text"
                                        class="form-control form-control-sm"
                                        t-att-value="row.value"
