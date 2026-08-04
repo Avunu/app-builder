@@ -128,7 +128,7 @@ commits alone do not.
 | P2 fields & widgets | done — presets, related fields, computed fields |
 | P4 feature packs | done — registry, six new features, two finished |
 | P3 view types | done — discovery from `get_view_info`, plus pivot/graph/activity/timeline |
-| P5 automations | next |
+| P5 automations | surface done; code graduation (§X2) designed, not built |
 | P6 PDF reports | after P5 |
 | P7 approval rules | last |
 
