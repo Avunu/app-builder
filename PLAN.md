@@ -114,6 +114,38 @@ Six of nine, plus one Studio cannot do. Three consequences to design for rather 
 
 **The genuine mismatch**, and therefore the actual work in P7: Studio attaches an approval to a **button** and blocks that button's method. Tier validation attaches to the record and blocks **writes and state transitions** (`_tier_validation_check_state_on_write`, `_check_allow_write_under_validation`). The mixin already injects its review UI at a configurable `_tier_validation_buttons_xpath`, and `base_tier_validation_server_action` covers _after_ approval; a pre-approval gate on a named button or server action is the piece that does not exist.
 
+## Progress
+
+Six phases are in, each tested and committed. What follows describes the rest;
+the sections for completed phases are kept because they record *why*, which the
+commits alone do not.
+
+| Phase | State |
+| --- | --- |
+| P0 correctness debt | done — plus five defects the audit had not predicted |
+| P2m one catalogue | done — widgets, option rows and field types share one table |
+| P1 view editor | done — adds and removes fields, buttons, tabs, groups |
+| P2 fields & widgets | done — presets, related fields, computed fields |
+| P4 feature packs | done — registry, six new features, two finished |
+| P3 view types | done — discovery from `get_view_info`, plus pivot/graph/activity/timeline |
+| P5 automations | next |
+| P6 PDF reports | after P5 |
+| P7 approval rules | last |
+
+Two things the work changed about the plan itself:
+
+- **Raw ids turned out to be recoverable.** `fields.Reference` needed nothing at
+  all (core's importer resolves a plain `ref=`), and `many2one_reference`
+  declares a companion field naming its model, so the record can be found and
+  emitted as an xmlid. What still raises is the case with nothing to resolve
+  through. The composer still cannot *build* one, which is a different and much
+  smaller limit than the one recorded here originally.
+- **Tags and Lines need a second model.** They are listed under P4 as features,
+  and both need a companion model — a tag model with its own access rule, a line
+  model with a many2one back — where the app builder makes one. That is a
+  capability rather than another registry entry, and it is the honest reason
+  they are not done.
+
 ## Sequencing
 
 ```
