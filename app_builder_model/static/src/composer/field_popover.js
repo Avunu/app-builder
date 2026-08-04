@@ -18,6 +18,7 @@ import { Component, useState, useRef, onMounted } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 import { CheckBox } from "@web/core/checkbox/checkbox";
 import { ModelSelector } from "@web/core/model_selector/model_selector";
+import { ModelFieldSelector } from "@web/core/model_field_selector/model_field_selector";
 import { SelectMenu } from "@web/core/select_menu/select_menu";
 
 const ONDELETE_CHOICES = [
@@ -28,7 +29,7 @@ const ONDELETE_CHOICES = [
 
 export class FieldPopover extends Component {
     static template = "app_builder_model.FieldPopover";
-    static components = { CheckBox, ModelSelector, SelectMenu };
+    static components = { CheckBox, ModelSelector, ModelFieldSelector, SelectMenu };
     static props = {
         field: { type: [Object, { value: null }], optional: true },
         fieldTypes: Array,
@@ -37,6 +38,7 @@ export class FieldPopover extends Component {
         onSave: Function,
         onDelete: { type: [Function, { value: null }], optional: true },
         inverseOptions: Function,
+        resolveRelated: Function,
         close: Function,
     };
 
@@ -172,6 +174,48 @@ export class FieldPopover extends Component {
         }
     }
 
+    // -- related ----------------------------------------------------------
+
+    /**
+     * A related field has no type of its own: `partner_id.email` is a char
+     * because `email` is. So the chain is what the user picks, and the type
+     * comes back from the server -- asking them to state it as well would be
+     * asking them to be right about something the model already knows, where
+     * being wrong is a registry error at load time rather than a message.
+     */
+    async onRelatedChange(path) {
+        this.state.related = path;
+        this.state.relatedInfo = await this.props.resolveRelated(path);
+        if (this.state.relatedInfo.ok) {
+            this.state.error = "";
+            if (!this.state.string || this.state.string === _t("New field")) {
+                this.state.string = this.state.relatedInfo.string;
+                this.state.name = this.suggestName(this.state.string);
+            }
+        }
+    }
+
+    get relatedInfo() {
+        return this.state.relatedInfo || null;
+    }
+
+    // -- computed ---------------------------------------------------------
+
+    get computeOpen() {
+        return Boolean(this.state.showCompute || this.state.compute_body);
+    }
+
+    toggleCompute() {
+        this.state.showCompute = !this.computeOpen;
+        if (!this.state.showCompute) {
+            // Clearing the body is what clears the compute: a spec that keeps
+            // the method name would declare one the generator has nothing to
+            // write.
+            this.state.compute_body = "";
+            this.state.depends = "";
+        }
+    }
+
     // -- placement --------------------------------------------------------
 
     /**
@@ -266,6 +310,20 @@ export class FieldPopover extends Component {
         ) {
             return _t("A selection needs at least one value.");
         }
+        if (this.shows("related")) {
+            if (!this.state.related) {
+                return _t("Choose the field this one follows.");
+            }
+            if (this.relatedInfo && !this.relatedInfo.ok) {
+                return this.relatedInfo.reason;
+            }
+        }
+        if (this.state.compute_body && !this.state.depends) {
+            // Odoo will not recompute without it, and a stored computed field
+            // that never recomputes is the worst thing this can produce:
+            // correct on creation and quietly wrong from then on.
+            return _t("A computed field needs the fields it reads, so Odoo knows when to recompute.");
+        }
         return "";
     }
 
@@ -281,6 +339,14 @@ export class FieldPopover extends Component {
         // Picker state, not field definition: the server re-derives what it
         // needs from create_inverse and would reject the rest.
         delete values.inverse;
+        delete values.showCompute;
+        // The resolved chain, not the panel's copy of it: `ttype` is whatever
+        // the related field turned out to be.
+        if (this.relatedInfo && this.relatedInfo.ok) {
+            values.ttype = this.relatedInfo.ttype;
+            values.comodel = this.relatedInfo.comodel || undefined;
+        }
+        delete values.relatedInfo;
         values.placement = { ...this.placement };
         if (values.selection) {
             values.selection = this.selectionRows.filter((r) => r.value);

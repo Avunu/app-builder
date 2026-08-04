@@ -168,6 +168,7 @@ export class StudioComposer extends Component {
             existingNames: this.fields.map((f) => f.name),
             modelName: this.data.model,
             inverseOptions: (comodel) => this.inverseOptions(comodel),
+            resolveRelated: (path) => this.resolveRelated(path),
             onSave: (values) => this.saveField(existing, values),
             onDelete: existing ? () => this.removeField(existing.name) : null,
         });
@@ -182,6 +183,18 @@ export class StudioComposer extends Component {
         return this.orm.call("studio.model.draft", "inverse_options", [
             [this.draftId],
             comodel,
+        ]);
+    }
+
+    /**
+     * Also the server's answer, and for a stronger reason: a related field's
+     * type is whatever the chain ends at, and getting it wrong is a registry
+     * error when the class loads rather than a message anybody can act on.
+     */
+    resolveRelated(path) {
+        return this.orm.call("studio.model.draft", "resolve_related", [
+            [this.draftId],
+            path,
         ]);
     }
 

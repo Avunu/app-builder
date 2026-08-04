@@ -235,6 +235,7 @@ class StudioModelDraft(models.TransientModel):
         # with placement, where view intent belongs.
         picker_key = (values or {}).get("ttype")
         values, widget = modelspec.apply_preset(values)
+        values = self._resolve_computed(values)
         spec_field = modelspec.field_spec_from_json(values)
         spec = self._spec()
         if spec.field(spec_field.name):
@@ -250,6 +251,94 @@ class StudioModelDraft(models.TransientModel):
         if create_inverse and spec_field.ttype == "one2many":
             self._stage_inverse(spec_field)
         return True
+
+    @api.model
+    def _resolve_computed(self, values):
+        """Give a compute body the method name and dependencies it needs.
+
+        The composer asks for the body, because that is the part somebody has an
+        opinion about. The method name is derived -- ``pycodegen`` already owns
+        the convention and generating two different answers to "what is this
+        method called" is how a graduated field stops being found.
+
+        ``depends`` is split from the comma-separated string the panel offers.
+        Odoo will not recompute without it, and a stored computed field that
+        never recomputes is the most confusing thing this can produce: correct
+        on creation and quietly wrong forever after.
+        """
+        values = dict(values or {})
+        body = (values.get("compute_body") or "").strip()
+        if not body:
+            # Clearing the body clears the whole compute, or the spec would
+            # declare a method the generator has nothing to write.
+            if "compute_body" in values:
+                values["compute"] = None
+                values["compute_body"] = None
+                values["depends"] = ()
+            return values
+        values["compute"] = pycodegen.compute_method_name(values["name"])
+        depends = values.get("depends") or ()
+        if isinstance(depends, str):
+            depends = [part.strip() for part in depends.split(",") if part.strip()]
+        values["depends"] = tuple(depends)
+        # A computed field is not stored unless somebody says so, and an
+        # unstored one cannot be searched or grouped -- so the panel's answer is
+        # taken literally rather than defaulted behind their back.
+        values.setdefault("store", False)
+        return values
+
+    def resolve_related(self, path):
+        """What a related path points at, so the picker can fill in the rest.
+
+        A related field has no type of its own: ``partner_id.email`` is a char
+        because ``email`` is, and asking the user to say so as well is asking
+        them to know something the model already knows -- and to be right about
+        it, since a mismatch is a registry error at load time rather than a
+        message they can act on.
+
+        Walks the chain rather than trusting it, and reports where it broke, so
+        a typo in the middle names the step that failed instead of failing the
+        whole Apply later.
+        """
+        self._assert_studio_user()
+        self.ensure_one()
+        steps = [part for part in (path or "").split(".") if part]
+        if not steps:
+            return {"ok": False, "reason": _("Choose a field to follow.")}
+        model_name = self.model
+        field = None
+        for index, step in enumerate(steps):
+            if model_name not in self.env:
+                return {
+                    "ok": False,
+                    "reason": _("%s is not a model this database has.", model_name),
+                }
+            field = self.env[model_name]._fields.get(step)
+            if field is None:
+                return {
+                    "ok": False,
+                    "reason": _(
+                        "%(step)s is not a field of %(model)s.",
+                        step=step,
+                        model=model_name,
+                    ),
+                }
+            if index < len(steps) - 1:
+                model_name = getattr(field, "comodel_name", None)
+                if not model_name:
+                    return {
+                        "ok": False,
+                        "reason": _(
+                            "%s is not a relation, so nothing can follow it.", step
+                        ),
+                    }
+        return {
+            "ok": True,
+            "ttype": field.type,
+            "comodel": getattr(field, "comodel_name", None) or "",
+            "string": field.string or steps[-1],
+            "stored": bool(field.store),
+        }
 
     # -- relationships ----------------------------------------------------
 
@@ -410,6 +499,7 @@ class StudioModelDraft(models.TransientModel):
             raise UserError(_("There is no field called '%s' to change.", name))
         picker_key = (values or {}).get("ttype", existing.ttype)
         values, widget = modelspec.apply_preset(values)
+        values = self._resolve_computed({**values, "name": name})
         if placement is not None:
             placement = dict(placement)
             # Only when the entry brings one and the user has not chosen: a

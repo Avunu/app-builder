@@ -126,6 +126,22 @@
             <small class="text-muted">Python: a literal, or a lambda.</small>
         </div>
 
+        <!-- A related field has no type of its own, so the chain is all the
+             user picks and the type comes back from the server. -->
+        <div t-if="shows('related')" class="mb-2">
+            <label class="form-label small text-muted mb-0">Follows</label>
+            <ModelFieldSelector resModel="props.modelName"
+                                path="state.related or ''"
+                                update="(path) => this.onRelatedChange(path)"
+                                readonly="false"
+                                followRelations="true"/>
+            <small t-if="relatedInfo and relatedInfo.ok" class="text-success d-block">
+                Comes back as <t t-esc="relatedInfo.ttype"/><t t-if="!relatedInfo.stored"> — not stored, so it cannot be searched or grouped</t>
+            </small>
+            <small t-if="relatedInfo and !relatedInfo.ok" class="text-danger d-block"
+                   t-esc="relatedInfo.reason"/>
+        </div>
+
         <div class="d-flex flex-wrap gap-3 mb-2">
             <CheckBox value="!!state.required"
                       onChange="(v) => this.state.required = v || null">Required</CheckBox>
@@ -135,6 +151,36 @@
                       onChange="(v) => this.state.index = v || null">Indexed</CheckBox>
             <CheckBox t-if="shows('translate')" value="!!state.translate"
                       onChange="(v) => this.state.translate = v || null">Translatable</CheckBox>
+        </div>
+
+        <!-- A computed field is *data* in Odoo: the body is stored on the
+             field, so one added here works with no code file and no restart.
+             The method name is derived rather than asked for, because pycodegen
+             owns that convention: two answers to "what is this method called"
+             is how a graduated field stops being found. -->
+        <div class="mb-2">
+            <button class="btn btn-link btn-sm p-0"
+                    t-on-click="() => this.toggleCompute()">
+                <t t-if="computeOpen">− Computed value</t>
+                <t t-else="">+ Computed value</t>
+            </button>
+            <div t-if="computeOpen" class="mt-1">
+                <textarea class="form-control form-control-sm font-monospace" rows="3"
+                          t-att-value="state.compute_body"
+                          t-on-input="(ev) => this.state.compute_body = ev.target.value"
+                          placeholder="for rec in self:&#10;    rec.total = rec.price * rec.qty"/>
+                <label class="form-label small text-muted mb-0 mt-1">Recomputes when these change</label>
+                <input type="text" class="form-control form-control-sm font-monospace"
+                       t-att-value="state.depends"
+                       t-on-input="(ev) => this.state.depends = ev.target.value"
+                       placeholder="price, qty"/>
+                <CheckBox value="!!state.store"
+                          onChange="(v) => this.state.store = v || null">Store it</CheckBox>
+                <small class="text-muted d-block">
+                    Stored values can be searched and grouped; unstored ones are
+                    worked out on every read.
+                </small>
+            </div>
         </div>
 
         <div class="mb-2">

@@ -194,3 +194,67 @@ class TestModelBuilder(StudioCase):
         ) as handle:
             source = handle.read()
         self.assertIn("x_extra", source)
+
+
+@tagged("post_install", "-at_install")
+class TestRelatedAndComputed(StudioCase):
+    """Two things the spec could always express and the composer could not.
+
+    `FieldSpec` has carried `related`, `compute`, `compute_body` and `depends`
+    since the beginning, and `pycodegen` renders all four — including promoting
+    a compute body to a real method with a real `@api.depends`. The gap was
+    entirely in the picker, which is why `app_builder_model/readme` claimed
+    coverage the composer did not have.
+    """
+
+    def _draft_for_demo(self):
+        """A draft over the demo model, or a skip when it is not managed here."""
+        package = self.make_package()
+        self.build_demo_content(package)
+        entry = self.env["studio.package.model"].search(
+            [("model", "=", "x_studio_project")], limit=1
+        )
+        if not entry:
+            self.skipTest("the demo model is not package-managed here")
+        return self.env["studio.model.draft"].open_for(entry)
+
+    def test_a_related_path_reports_the_type_it_lands_on(self):
+        draft = self._draft_for_demo()
+        found = draft.resolve_related("x_partner_id.email")
+        self.assertTrue(found["ok"])
+        self.assertEqual(found["ttype"], "char")
+
+    def test_a_broken_path_names_the_step_that_failed(self):
+        draft = self._draft_for_demo()
+        found = draft.resolve_related("x_partner_id.nope")
+        self.assertFalse(found["ok"])
+        self.assertIn("nope", found["reason"])
+
+    def test_following_a_non_relation_is_refused(self):
+        draft = self._draft_for_demo()
+        found = draft.resolve_related("x_name.anything")
+        self.assertFalse(found["ok"])
+        self.assertIn("not a relation", found["reason"])
+
+    def test_a_compute_body_gets_its_method_name(self):
+        """Derived, not asked for: two answers to "what is this method called"
+        is how a graduated field stops being found."""
+        values = self.env["studio.model.draft"]._resolve_computed(
+            {
+                "name": "x_total",
+                "ttype": "float",
+                "compute_body": "for rec in self:\n    rec.x_total = 1",
+                "depends": "x_budget, x_name",
+            }
+        )
+        self.assertEqual(values["compute"], "_compute_x_total")
+        self.assertEqual(values["depends"], ("x_budget", "x_name"))
+
+    def test_clearing_the_body_clears_the_compute(self):
+        """A spec keeping the method name would declare one the generator has
+        nothing to write."""
+        values = self.env["studio.model.draft"]._resolve_computed(
+            {"name": "x_total", "ttype": "float", "compute_body": "  "}
+        )
+        self.assertIsNone(values["compute"])
+        self.assertEqual(values["depends"], ())

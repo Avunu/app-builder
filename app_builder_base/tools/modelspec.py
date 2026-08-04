@@ -258,6 +258,18 @@ FIELD_TYPES = (
     ),
     FieldType("reference", "Reference", "advanced", ("selection",)),
     FieldType(
+        # The ttype is a placeholder: a related field has no type of its own,
+        # and `resolve_related` replaces this with whatever the chain ends at
+        # before the spec is stored. Declaring one here anyway keeps the entry
+        # a `FieldType` like every other, rather than a special case the picker
+        # has to know about.
+        "char",
+        "Related field",
+        "advanced",
+        ("related",),
+        key="related",
+    ),
+    FieldType(
         "properties",
         "Properties",
         "advanced",
