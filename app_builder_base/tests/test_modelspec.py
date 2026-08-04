@@ -302,18 +302,16 @@ class TestParserIsConservative(BaseCase):
 
     def assert_block_refused(self, body):
         """``body`` is class-body source that will sit inside the markers."""
-        source = "\n".join(
-            [
-                "from odoo import api, fields, models",
-                "",
-                "",
-                "class P(models.Model):",
-                pycodegen.BEGIN_MARKER,
-                body,
-                pycodegen.END_MARKER,
-                "",
-            ]
-        )
+        # Written out rather than joined from a list: the shape of the file is
+        # the point of the fixture, and a reader should be able to see it.
+        source = f"""from odoo import api, fields, models
+
+
+class P(models.Model):
+{pycodegen.BEGIN_MARKER}
+{body}
+{pycodegen.END_MARKER}
+"""
         with self.assertRaises(pyparse.UnsupportedConstruct):
             pyparse.parse_model(source)
 

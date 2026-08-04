@@ -364,9 +364,12 @@ def _parse_sequence_create(node):
                 codes.append(_literal(sub.args[0]))
             except UnsupportedConstruct:
                 return None
-        if isinstance(sub, ast.Subscript) and isinstance(sub.slice, ast.Constant):
-            if isinstance(sub.slice.value, str):
-                fields_.append(sub.slice.value)
+        if (
+            isinstance(sub, ast.Subscript)
+            and isinstance(sub.slice, ast.Constant)
+            and isinstance(sub.slice.value, str)
+        ):
+            fields_.append(sub.slice.value)
     if len(set(codes)) != 1 or not fields_:
         return None
     return fields_[0], codes[0]

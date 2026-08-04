@@ -156,7 +156,9 @@ def main():
                 env[model_name].check_access("read")
                 readable = True
                 detail = ""
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
+                # A probe asks "can this user do it"; any failure is a No, and
+                # narrowing the catch would report an unexpected error as a Yes.
                 readable = False
                 detail = str(err).splitlines()[0]
             results.append(
@@ -167,7 +169,7 @@ def main():
                 record = env[model_name].create({"name": "First job"})
                 created = bool(record)
                 detail = ""
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001 - see above
                 created = False
                 detail = str(err).splitlines()[0]
             results.append(
@@ -203,7 +205,8 @@ def main():
             )
             results.append(check("the model file exists", os.path.isfile(model_file)))
             if os.path.isfile(model_file):
-                source = open(model_file).read()
+                with open(model_file) as handle:
+                    source = handle.read()
                 results.append(
                     check("no x_ prefix in the generated class", "x_" not in source)
                 )

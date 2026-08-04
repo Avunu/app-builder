@@ -256,7 +256,11 @@ class StudioAppBuilder(models.AbstractModel):
             try:
                 self.env[model_name].with_user(user).check_access("read")
                 ok, detail = True, ""
-            except Exception as err:  # AccessError, and anything else
+            except Exception as err:  # noqa: BLE001 - see below
+                # Deliberately blind. The question being asked is "can this
+                # group read the model", and *any* failure is a No worth
+                # reporting -- narrowing to AccessError would let a different
+                # error through as an apparent success.
                 ok, detail = False, str(err).splitlines()[0]
             results.append({"group": group.display_name, "ok": ok, "detail": detail})
         return results
