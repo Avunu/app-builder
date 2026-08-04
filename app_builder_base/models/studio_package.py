@@ -283,10 +283,29 @@ class StudioPackage(models.Model):
             package.python_models = ", ".join(sorted(package._python_model_set()))
 
     def _python_model_set(self):
-        """Models this package defines in Python, frozen ones included.
+        """Models this package *declares* in Python, frozen ones included.
 
         A frozen model is still ours -- we simply must not rewrite its file --
         so it counts here, where the question is "does XML own this?".
+
+        An extension does not, and that is the whole distinction: it adds to a
+        model another module declares, so XML still owns that model's metadata
+        and a manual field on it still belongs in a data file.
+        """
+        self.ensure_one()
+        return {
+            m.model
+            for m in self.model_ids
+            if m.source in ("python", "frozen") and m.model and not m.extends
+        }
+
+    def _python_module_set(self):
+        """Models with a Python *file*, which is a different question.
+
+        `models/__init__.py` has to import every file the package renders, and
+        an extension renders one. Asking `_python_model_set` instead would leave
+        the class unimported and the extension silently inert -- the worst
+        failure mode available, because everything still loads.
         """
         self.ensure_one()
         return {
@@ -498,7 +517,7 @@ class StudioPackage(models.Model):
         self.ensure_one()
         self._assert_writable()
         relative = "models/%s" % pycodegen.module_file_for(model_name)
-        emitted = sorted(self._python_model_set() | {model_name})
+        emitted = sorted(self._python_module_set() | {model_name})
         self._write_files(
             {
                 relative: pycodegen.render_model(spec),
@@ -597,7 +616,12 @@ class StudioPackage(models.Model):
             spec = entry._current_spec()
             if spec is None:
                 continue
-            for inherited in spec.inherit:
+            # An extension's own `name` is a model somebody else declares, so
+            # it is a dependency exactly as its mixins are -- and missing it
+            # means the package installs here and fails on a database without
+            # that module, which is design finding 4 all over again.
+            inherited_models = spec.inherit + ((spec.name,) if spec.extends else ())
+            for inherited in inherited_models:
                 record = IrModel.search([("model", "=", inherited)], limit=1)
                 if not record:
                     continue
@@ -869,7 +893,7 @@ class StudioPackage(models.Model):
         env = self._source_env()
         root = self.root_path
         os.makedirs(os.path.join(root, "models"), exist_ok=True)
-        emitted = sorted(self._python_model_set() | set(model_names))
+        emitted = sorted(self._python_module_set() | set(model_names))
 
         for model_name in sorted(model_names):
             relative = "models/%s" % pycodegen.module_file_for(model_name)
@@ -1159,7 +1183,12 @@ class StudioPackage(models.Model):
         self.ensure_one()
         dropped = {}
         owned_field_ids = self._owned_field_ids()
-        for entry in self.model_ids.filtered(lambda m: m.source == "python"):
+        # Extensions excluded: one declares no fields of its own, so its empty
+        # field list is not "every column removed" -- it is "this class is not
+        # where the columns are declared".
+        for entry in self.model_ids.filtered(
+            lambda m: m.source == "python" and not m.extends
+        ):
             source = files.get(entry.python_path)
             if source is None:
                 continue

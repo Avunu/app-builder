@@ -22,5 +22,15 @@ Adds guided wizards for:
 Record rules (`ir.rule`) assigned to a package are written to
 `security/<model>_security.xml`.
 
+**Promote to source.** An automation's Python lives in a text column evaluated
+by `safe_eval`. That is the right trade for getting started and the wrong place
+for it to stay: nothing imports it, so no linter reads it, no test covers it and
+no reviewer sees it in a diff — and `safe_eval` forbids enough of Python that
+what survives there is written around the sandbox rather than for the problem.
+
+One button moves the body into a real method on a class in your package and
+leaves the action calling it. The sandboxed string that remains is one line
+long. Odoo Studio's answer is that this is simply how automations are.
+
 Secrets are never committed: an automation's `webhook_uuid` differs per database
 and is deliberately excluded from the generated files.

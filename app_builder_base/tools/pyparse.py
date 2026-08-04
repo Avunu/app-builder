@@ -18,8 +18,14 @@ import ast
 import re
 import textwrap
 
-from . import pycodegen
-from .modelspec import ConstraintSpec, FieldSpec, ModelSpec, SelectionSpec
+from . import modelspec, pycodegen
+from .modelspec import (
+    ConstraintSpec,
+    FieldSpec,
+    MethodSpec,
+    ModelSpec,
+    SelectionSpec,
+)
 
 # Kwargs that map straight onto a FieldSpec attribute of the same shape.
 _STR_KWARGS = {
@@ -148,6 +154,7 @@ def _parse_class(source, node, _unused=()):
     sql_constraints = []
     fields = []
     computes = {}
+    methods = []
     sequence_code = None
     sequence_field = None
 
@@ -173,7 +180,9 @@ def _parse_class(source, node, _unused=()):
             continue
 
         if isinstance(child, ast.FunctionDef):
-            if child.name.startswith("_compute_"):
+            if child.name.startswith(modelspec.STUDIO_METHOD_PREFIX):
+                methods.append(_parse_method(source, child))
+            elif child.name.startswith("_compute_"):
                 computes[child.name] = _parse_compute(source, child)
             elif child.name == "create":
                 found = _parse_sequence_create(child)
@@ -223,6 +232,7 @@ def _parse_class(source, node, _unused=()):
         active_name=attrs.get("active_name"),
         transient=transient,
         fields=fields,
+        methods=tuple(methods),
         sql_constraints=tuple(sql_constraints),
         sequence_code=sequence_code,
         sequence_field=sequence_field,
@@ -323,6 +333,28 @@ def _selection(node):
         SelectionSpec(value=value, label=label, sequence=(i + 1) * 10)
         for i, (value, label) in enumerate(pairs)
     )
+
+
+def _parse_method(source, node):
+    """A method the builder wrote, read back verbatim.
+
+    The prefix is the whole test. A developer's own method has no reason to
+    carry it, and one that does is claiming to be the builder's -- which is a
+    thing to be told about rather than to guess at, so a decorator here is
+    refused for the same reason it is on a compute.
+    """
+    if node.decorator_list:
+        raise UnsupportedConstruct(
+            "%s carries a decorator the builder does not model" % node.name
+        )
+    doc = ast.get_docstring(node) or ""
+    lines = source.splitlines()
+    first = node.body[1] if doc and len(node.body) > 1 else node.body[0]
+    if doc and len(node.body) == 1:
+        body = ""
+    else:
+        body = "\n".join(lines[first.lineno - 1 : node.end_lineno])
+    return MethodSpec(name=node.name, body=_dedent(body), doc=doc)
 
 
 def _parse_compute(source, node):

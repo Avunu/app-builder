@@ -228,6 +228,22 @@ def _render_compute(spec_field):
     return "\n".join(lines)
 
 
+def _render_method(method):
+    lines = ["    def %s(self):" % method.name]
+    if method.doc:
+        lines.append('        """%s"""' % method.doc)
+    body = (method.body or "").strip("\n")
+    lines.append(_indent(body, 8) if body.strip() else "        pass")
+    return "\n".join(lines)
+
+
+def method_name_for(slug):
+    """The name a graduated method gets, from whatever it was called."""
+    cleaned = "".join(c if c.isalnum() else "_" for c in (slug or "").lower())
+    cleaned = "_".join(part for part in cleaned.split("_") if part)
+    return "%s%s" % (modelspec.STUDIO_METHOD_PREFIX, cleaned or "action")
+
+
 # -- model ---------------------------------------------------------------
 
 
@@ -374,6 +390,13 @@ def render_block(spec):
         if spec_field.compute:
             lines.append("")
             lines.append(_render_compute(spec_field))
+
+    # After the computes, because a compute belongs to the field above it while
+    # these stand alone -- and before the sequence override, which is the one
+    # thing in the block that is not the user's text at all.
+    for method in spec.methods:
+        lines.append("")
+        lines.append(_render_method(method))
 
     lines.extend(_render_sequence_create(spec))
 

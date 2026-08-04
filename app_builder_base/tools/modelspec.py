@@ -474,6 +474,30 @@ class SelectionSpec:
     sequence: int = 10
 
 
+# Methods the builder owns carry this prefix. Not decoration: the parser reads
+# the block back, and it needs to tell a method the builder wrote from one a
+# developer added -- the latter belongs outside the block and is never touched.
+STUDIO_METHOD_PREFIX = "_studio_"
+
+
+@dataclass(frozen=True, slots=True)
+class MethodSpec:
+    """A method the builder owns, on the class it generates.
+
+    The precedent is a compute body, which is already stored in the block,
+    already round-tripped, and already the user's text rather than ours. What
+    makes a method the builder's is not that it is schema -- it plainly is not
+    -- but that the user wrote it *in the builder*. An automation's Python is
+    the case: they typed it into a box in Odoo, so keeping it in the block is
+    what lets them keep editing it there instead of it becoming a file they must
+    now maintain by hand.
+    """
+
+    name: str
+    body: str
+    doc: str = ""
+
+
 @dataclass(frozen=True, slots=True)
 class ConstraintSpec:
     name: str
@@ -575,6 +599,7 @@ class ModelSpec:
     active_name: str | None = None
     transient: bool = False
     fields: tuple[FieldSpec, ...] = ()
+    methods: tuple[MethodSpec, ...] = ()
     sql_constraints: tuple[ConstraintSpec, ...] = ()
     sequence_code: str | None = None
     sequence_field: str | None = None
@@ -633,6 +658,7 @@ def spec_from_json(data):
         for f in data.get("fields", ())
     )
     data["inherit"] = tuple(data.get("inherit", ()))
+    data["methods"] = tuple(MethodSpec(**m) for m in data.get("methods", ()))
     data["sql_constraints"] = tuple(
         ConstraintSpec(**c) for c in data.get("sql_constraints", ())
     )
@@ -672,6 +698,7 @@ MODEL_ATTRS = (
     "rec_name",
     "active_name",
     "transient",
+    "methods",
     "sql_constraints",
     "sequence_code",
     "sequence_field",

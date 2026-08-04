@@ -233,3 +233,125 @@ class TestAutomationSurface(StudioCase):
         )
         self.addCleanup(self.env["base.automation"]._unregister_hook)
         self.assertFalse(automation.studio_package_id)
+
+
+@tagged("post_install", "-at_install")
+class TestGraduateCode(StudioCase):
+    """`ir.actions.server.code` is a text column evaluated by safe_eval.
+
+    Nothing imports it, so no linter reads it, no test covers it and no reviewer
+    sees it in a diff. Odoo Studio's answer is that this is how automations are.
+    A studio whose output is source code should be able to hand it over.
+    """
+
+    def _action(self, package, model_name="x_studio_project", code="record.write({})"):
+        action = (
+            self.env["ir.actions.server"]
+            .with_context(studio_package_id=package.id)
+            .create(
+                {
+                    "name": "Escalate",
+                    "model_id": self.env["ir.model"]._get(model_name).id,
+                    "state": "code",
+                    "code": code,
+                }
+            )
+        )
+        return action
+
+    def test_the_body_becomes_a_method_and_the_action_calls_it(self):
+        package = self.make_package()
+        self.build_demo_content(package)
+        action = self._action(package, model_name="res.partner")
+        result = self.env["studio.graduate.code"].graduate(action.id, apply=False)
+        self.assertTrue(result["method"].startswith("_studio_"))
+        self.assertEqual(action.code, "(records or record).%s()" % result["method"])
+        entry = self.env["studio.package.model"].search(
+            [("package_id", "=", package.id), ("model", "=", "res.partner")],
+            limit=1,
+        )
+        source = package._read_source(entry.python_path)
+        self.assertIn("def %s(self):" % result["method"], source)
+        self.assertIn("record.write({})", source)
+
+    def test_a_model_the_package_does_not_own_gets_an_extension(self):
+        """Most automations run on sale.order and its neighbours, which is the
+        case that needed ModelSpec.extends before this could exist at all."""
+        package = self.make_package()
+        action = self._action(package, model_name="res.partner")
+        self.env["studio.graduate.code"].graduate(action.id, apply=False)
+        entry = self.env["studio.package.model"].search(
+            [("package_id", "=", package.id), ("model", "=", "res.partner")], limit=1
+        )
+        self.assertTrue(entry.extends)
+        source = package._read_source(entry.python_path)
+        self.assertIn('_inherit = "res.partner"', source)
+        self.assertNotIn("_name =", source)
+
+    def test_graduating_twice_is_refused_rather_than_nested(self):
+        package = self.make_package()
+        action = self._action(package, model_name="res.partner")
+        self.env["studio.graduate.code"].graduate(action.id, apply=False)
+        self.assertIn(
+            "already calls",
+            self.env["studio.graduate.code"].can_graduate(action),
+        )
+
+    def test_two_actions_with_one_name_get_two_methods(self):
+        package = self.make_package()
+        graduate = self.env["studio.graduate.code"].graduate
+
+        def promote():
+            action = self._action(package, model_name="res.partner")
+            return graduate(action.id, apply=False)
+
+        first, second = promote(), promote()
+        self.assertNotEqual(first["method"], second["method"])
+
+    def test_extending_a_model_pulls_in_the_module_that_declares_it(self):
+        """Otherwise the package installs here and fails on a database without
+        that module — design finding 4 all over again."""
+        package = self.make_package()
+        self.env["studio.graduate.code"].graduate(
+            self._action(package, model_name="res.partner").id, apply=False
+        )
+        import ast
+
+        manifest = ast.literal_eval(package._render_files()["__manifest__.py"])
+        self.assertIn("base", manifest["depends"])
+
+    def test_the_extension_file_is_imported(self):
+        """An unimported class is silently inert, which is the worst failure
+        available: everything still loads."""
+        package = self.make_package()
+        self.env["studio.graduate.code"].graduate(
+            self._action(package, model_name="res.partner").id, apply=False
+        )
+        init = package._read_source("models/__init__.py")
+        self.assertIn("res_partner", init)
+
+    def test_an_unowned_action_says_why_not(self):
+        package = self.make_package()
+        self.build_demo_content(package)
+        action = self.env["ir.actions.server"].create(
+            {
+                "name": "Loose",
+                "model_id": self.env["ir.model"]._get("x_studio_project").id,
+                "state": "code",
+                "code": "pass",
+            }
+        )
+        self.assertIn(
+            "studio package",
+            self.env["studio.graduate.code"].can_graduate(action),
+        )
+
+    def test_a_non_code_action_has_nothing_to_promote(self):
+        package = self.make_package()
+        self.build_demo_content(package)
+        action = self._action(package)
+        action.state = "object_write"
+        self.assertIn(
+            "Execute Code",
+            self.env["studio.graduate.code"].can_graduate(action),
+        )
