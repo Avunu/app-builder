@@ -269,20 +269,32 @@ def _docstring(text):
 
 def _render_class_header(spec):
     lines = []
-    # The docstring is not decoration. _reflect_model_params fills ir_model.info
-    # from the first docstring in the MRO, so a model without one inherits
-    # mail.thread's or models.Model's -- which makes `info` unpredictable and
-    # breaks the reflection-agreement invariant.
-    #
-    # Emitted verbatim, with no added punctuation: `info` is this string, so
-    # anything we tack on here shows up in the database and the prediction
-    # stops being exact.
-    lines.append(_docstring(spec.description))
-    lines.append("")
-    lines.append("    _name = %s" % _py(spec.name))
-    if spec.inherit:
-        lines.append("    _inherit = [%s]" % ", ".join(_py(i) for i in spec.inherit))
-    lines.append("    _description = %s" % _py(spec.description))
+    if spec.extends:
+        # No docstring and no `_description`: both are inherited from the model
+        # being extended, and stating them again would make `ir_model.info`
+        # disagree with what reflection writes -- the invariant I2 checks.
+        chain = (spec.name,) + tuple(spec.inherit)
+        if len(chain) == 1:
+            lines.append("    _inherit = %s" % _py(spec.name))
+        else:
+            lines.append("    _inherit = [%s]" % ", ".join(_py(i) for i in chain))
+    else:
+        # The docstring is not decoration. _reflect_model_params fills
+        # ir_model.info from the first docstring in the MRO, so a model without
+        # one inherits mail.thread's or models.Model's -- which makes `info`
+        # unpredictable and breaks the reflection-agreement invariant.
+        #
+        # Emitted verbatim, with no added punctuation: `info` is this string, so
+        # anything we tack on here shows up in the database and the prediction
+        # stops being exact.
+        lines.append(_docstring(spec.description))
+        lines.append("")
+        lines.append("    _name = %s" % _py(spec.name))
+        if spec.inherit:
+            lines.append(
+                "    _inherit = [%s]" % ", ".join(_py(i) for i in spec.inherit)
+            )
+        lines.append("    _description = %s" % _py(spec.description))
     if spec.order:
         lines.append("    _order = %s" % _py(spec.order))
     if spec.rec_name:

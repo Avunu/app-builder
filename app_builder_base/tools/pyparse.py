@@ -200,14 +200,24 @@ def _parse_class(source, node, _unused=()):
             "compute method(s) with no field: %s" % ", ".join(sorted(unclaimed))
         )
 
+    # `_inherit` with no `_name` is Odoo's own spelling for extending a model
+    # rather than declaring one, and the presence of `_name` is the whole
+    # discriminator: a new model with mixins has both, an extension has only
+    # the one. The first entry is what is being extended; anything after it is
+    # a mixin being added to it.
+    extends = "name" not in attrs and bool(inherit)
+    if extends:
+        attrs["name"] = inherit[0]
+        inherit = inherit[1:]
     if "name" not in attrs:
-        raise UnsupportedConstruct("class has no _name")
+        raise UnsupportedConstruct("class has neither _name nor _inherit")
 
     return ModelSpec(
         name=attrs["name"],
-        description=attrs.get("description") or attrs["name"],
+        description=attrs.get("description") or ("" if extends else attrs["name"]),
         class_name=node.name,
         inherit=inherit,
+        extends=extends,
         order=attrs.get("order"),
         rec_name=attrs.get("rec_name"),
         active_name=attrs.get("active_name"),

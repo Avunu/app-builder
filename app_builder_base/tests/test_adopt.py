@@ -14,6 +14,7 @@ from odoo.addons.base.models.ir_model import (
     selection_xmlid,
 )
 
+from ..tools import modelspec
 from .common import StudioCase
 
 
@@ -288,3 +289,67 @@ class TestPackageTeardown(StudioCase):
         self.load_rendered(package, rendered)
         self.assertIn("x_studio_project", self.env)
         self.assertEqual(package._render_files(), rendered)
+
+
+@tagged("post_install", "-at_install")
+class TestExtendingACoreModel(StudioCase):
+    """A package putting a class onto a model somebody else declares.
+
+    This is the capability two other things were waiting on: an automation's
+    Python graduating out of a sandboxed string needs somewhere to put the
+    method, and approval rules need `tier.validation` added to a core model.
+    Both are "a real method, or a mixin, on a model we do not own".
+    """
+
+    def test_an_extension_renders_as_inherit_without_name(self):
+        package = self.make_package()
+        entry = self.env["studio.package.model"]._adopt(
+            package, "res.partner", extends=True
+        )
+        self.assertTrue(entry.extends)
+        spec = modelspec.ModelSpec(
+            name="res.partner",
+            description="",
+            class_name="ResPartner",
+            extends=True,
+            fields=(modelspec.FieldSpec(name="x_studio_ref", ttype="char"),),
+        )
+        package._seed_source_for("res.partner", spec)
+        source = package._read_source(entry.python_path)
+        self.assertIn('_inherit = "res.partner"', source)
+        self.assertNotIn("_name =", source)
+
+    def test_an_extension_does_not_claim_the_model_it_extends(self):
+        """`_is_python_owned` means declares, not touches.
+
+        Counting an extension would suppress the XML for a manual `x_` field on
+        that model, and lose it.
+        """
+        package = self.make_package()
+        self.env["studio.package.model"]._adopt(package, "res.partner", extends=True)
+        self.assertFalse(
+            self.env["studio.package.model"]._is_python_owned("res.partner")
+        )
+
+    def test_a_declaration_still_claims_its_model(self):
+        package = self.make_package()
+        self.env["studio.package.model"]._adopt(package, "x_studio_thing")
+        self.assertTrue(
+            self.env["studio.package.model"]._is_python_owned("x_studio_thing")
+        )
+
+    def test_a_manual_field_on_an_extended_model_still_reaches_xml(self):
+        """The regression the extends flag exists to prevent."""
+        package = self.make_package()
+        self.env["studio.package.model"]._adopt(package, "res.partner", extends=True)
+        field = self.env["ir.model.fields"].create(
+            {
+                "name": "x_studio_note",
+                "field_description": "Note",
+                "ttype": "char",
+                "model_id": self.env["ir.model"]._get("res.partner").id,
+            }
+        )
+        package._assign(field)
+        emitted = "".join(package._render_files().values())
+        self.assertIn("x_studio_note", emitted)

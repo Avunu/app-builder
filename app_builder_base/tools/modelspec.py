@@ -561,6 +561,15 @@ class ModelSpec:
     description: str
     class_name: str
     inherit: tuple[str, ...] = ()
+    # Whether this class *extends* ``name`` rather than declaring it. An
+    # extension renders `_inherit = "sale.order"` with no `_name`, which is
+    # Odoo's own idiom and the difference between adding to a model and
+    # declaring a second one with the same name.
+    #
+    # It is what lets a package put a real method, or a mixin, onto a model
+    # somebody else owns -- which is how an automation's Python graduates out
+    # of a sandboxed string, and how approval rules reach a core model.
+    extends: bool = False
     order: str | None = None
     rec_name: str | None = None
     active_name: str | None = None
@@ -658,6 +667,7 @@ MODEL_ATTRS = (
     "description",
     "class_name",
     "inherit",
+    "extends",
     "order",
     "rec_name",
     "active_name",
@@ -731,6 +741,11 @@ def validate_spec(spec, taken_model_names=()):
     """
     errors = []
 
+    if spec.extends and spec.name in taken_model_names:
+        # Extending is the one case where the name existing is the *point*, so
+        # the "already exists" check below has to be skipped rather than
+        # tripped over.
+        taken_model_names = tuple(n for n in taken_model_names if n != spec.name)
     if not _valid_model_name(spec.name):
         errors.append(
             "'%s' is not a usable model name: lowercase letters, digits, "
@@ -738,7 +753,10 @@ def validate_spec(spec, taken_model_names=()):
         )
     if spec.name in taken_model_names:
         errors.append("A model named '%s' already exists." % spec.name)
-    if not spec.description:
+    if not spec.description and not spec.extends:
+        # An extension inherits `_description` from what it extends, so
+        # requiring one here would force a second answer to a question already
+        # answered -- and `_reflect_model_params` would then disagree with it.
         errors.append("The model needs a description; it becomes _description.")
     if not spec.class_name or not spec.class_name[0].isupper():
         errors.append("'%s' is not a usable class name." % spec.class_name)

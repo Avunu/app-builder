@@ -428,10 +428,17 @@ class StudioPackage(models.Model):
         double definition is unrecoverable: ``_add_manual_models`` builds a
         second class competing for the same ``_name``, and ``_process_end``
         then reaps the package's own xmlids. A raised error costs a retry.
+
+        An *extension* is not a double definition and must not be caught here.
+        Its class has no ``_name``, so there is nothing for a second class to
+        compete with -- and a manual ``x_`` field on the model it extends is
+        ordinary metadata that belongs in XML. Adding a method to
+        ``res.partner`` and adding a field to it is exactly the combination this
+        would otherwise make impossible.
         """
         self.ensure_one()
         for entry in self.model_ids:
-            if entry.python_path not in python_files:
+            if entry.extends or entry.python_path not in python_files:
                 continue
             clash = "models/%s.xml" % entry.model.replace(".", "_")
             if clash in data_files:

@@ -46,6 +46,11 @@ class StudioPackageModel(models.Model):
         index=True,
         help="Technical model name, e.g. workshop.project.",
     )
+    extends = fields.Boolean(
+        string="Extends an existing model",
+        help="The class adds to a model another module declares, rather than "
+        "declaring one. It renders as _inherit with no _name.",
+    )
     source = fields.Selection(
         [
             ("python", "Python class"),
@@ -126,24 +131,33 @@ class StudioPackageModel(models.Model):
 
     @api.model
     def _is_python_owned(self, model_name):
-        """Whether any package defines ``model_name`` as a Python class.
+        """Whether any package *declares* ``model_name`` as a Python class.
 
         Used by the serializers: a row still marked ``state='manual'`` for such
         a model is a reconciliation artefact, not a definition, and emitting it
         would produce the competing-definition state that ``_add_manual_models``
         turns into a reap.
+
+        Declares, not touches. An *extension* -- `_inherit` with no `_name` --
+        adds to a model somebody else owns, and a manual `x_` field on that
+        model is still ordinary metadata that belongs in XML. Counting an
+        extension here would suppress it and lose the field.
         """
         if not model_name:
             return False
         return bool(
             self.sudo().search_count(
-                [("model", "=", model_name), ("source", "in", ("python", "frozen"))],
+                [
+                    ("model", "=", model_name),
+                    ("source", "in", ("python", "frozen")),
+                    ("extends", "=", False),
+                ],
                 limit=1,
             )
         )
 
     @api.model
-    def _adopt(self, package, model_name, source="python"):
+    def _adopt(self, package, model_name, source="python", extends=False):
         """Record ownership, or return the existing row."""
         existing = self.search(
             [("package_id", "=", package.id), ("model", "=", model_name)], limit=1
@@ -151,7 +165,12 @@ class StudioPackageModel(models.Model):
         if existing:
             return existing
         return self.create(
-            {"package_id": package.id, "model": model_name, "source": source}
+            {
+                "package_id": package.id,
+                "model": model_name,
+                "source": source,
+                "extends": extends,
+            }
         )
 
     def unlink(self):

@@ -164,6 +164,94 @@ class TestCodegenFixedPoint(BaseCase):
             )
         )
 
+    def test_an_extension_round_trips(self):
+        """`_inherit` with no `_name` is Odoo's spelling for extending a model.
+
+        The presence of `_name` is the whole discriminator, which is what keeps
+        this unambiguous against a new model that happens to have mixins.
+        """
+        self.assert_fixed_point(
+            ModelSpec(
+                name="sale.order",
+                description="",
+                class_name="SaleOrder",
+                extends=True,
+                fields=(FieldSpec(name="x_ref", ttype="char", string="Ref"),),
+            )
+        )
+
+    def test_an_extension_can_add_a_mixin(self):
+        """The case approval rules need: `tier.validation` onto a core model."""
+        self.assert_fixed_point(
+            ModelSpec(
+                name="sale.order",
+                description="",
+                class_name="SaleOrder",
+                extends=True,
+                inherit=("tier.validation",),
+                fields=(FieldSpec(name="x_ref", ttype="char"),),
+            )
+        )
+
+    def test_an_extension_carries_a_compute_method(self):
+        """The case an automation's Python needs: a real method on a model
+        somebody else declares."""
+        self.assert_fixed_point(
+            ModelSpec(
+                name="sale.order",
+                description="",
+                class_name="SaleOrder",
+                extends=True,
+                fields=(
+                    FieldSpec(
+                        name="x_total",
+                        ttype="float",
+                        store=True,
+                        readonly=False,
+                        compute="_compute_x_total",
+                        compute_body="for rec in self:\n    rec.x_total = 1",
+                        depends=("amount_total",),
+                    ),
+                ),
+            )
+        )
+
+    def test_a_new_model_with_mixins_is_not_read_as_an_extension(self):
+        spec = spec_with(FieldSpec(name="name", ttype="char"), inherit=("mail.thread",))
+        parsed = pyparse.parse_model(pycodegen.render_model(spec))
+        self.assertFalse(parsed.extends)
+        self.assertEqual(parsed.name, "probe.model")
+
+    def test_an_extension_needs_no_description(self):
+        """It inherits `_description`, and stating it again would make
+        `ir_model.info` disagree with what reflection writes."""
+        spec = ModelSpec(
+            name="sale.order",
+            description="",
+            class_name="SaleOrder",
+            extends=True,
+            fields=(FieldSpec(name="x_ref", ttype="char"),),
+        )
+        self.assertFalse(modelspec.validate_spec(spec))
+
+    def test_extending_a_model_that_exists_is_the_point(self):
+        spec = ModelSpec(
+            name="sale.order",
+            description="",
+            class_name="SaleOrder",
+            extends=True,
+            fields=(FieldSpec(name="x_ref", ttype="char"),),
+        )
+        self.assertFalse(
+            modelspec.validate_spec(spec, taken_model_names=("sale.order",))
+        )
+
+    def test_declaring_a_model_that_exists_is_still_refused(self):
+        spec = spec_with(FieldSpec(name="name", ttype="char"))
+        self.assertTrue(
+            modelspec.validate_spec(spec, taken_model_names=("probe.model",))
+        )
+
     def test_transient_model_round_trips(self):
         self.assert_fixed_point(
             spec_with(FieldSpec(name="f_char", ttype="char"), transient=True)
