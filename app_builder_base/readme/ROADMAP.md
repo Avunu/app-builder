@@ -7,6 +7,14 @@
 - **A new field from inside the view editor.** Adding an *existing* field is
   there; creating one still means the composer, or the New Field wizard for a
   core model.
+- **Tags and Lines as features.** Both need a *second* model — a tag model with
+  its own access rule, a line model with a many2one back — and the app builder
+  makes one. The registry has a place for them; what is missing is building the
+  companion, which is a capability rather than another entry.
+- **A feature that asks for a view still only gets the ones the builder can
+  scaffold.** `Feature.views` records the intent — Date & Calendar wants a
+  calendar, Pipeline stages wants a kanban — and the app builder activates what
+  it has scaffolds for.
 - **Record rules and automations**, in the composer rather than in the technical
   menus, where they would have the context that makes them answerable.
 - **Richer filters.** Search filters are generated from a field and a condition

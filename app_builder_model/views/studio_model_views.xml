@@ -14,8 +14,16 @@
                     <field name="add_chatter"/>
                     <field name="add_stage"/>
                     <field name="add_user"/>
-                    <field name="add_reference"/>
+                    <field name="add_contact"/>
                     <field name="add_date"/>
+                    <field name="add_date_range"/>
+                    <field name="add_monetary"/>
+                    <field name="add_picture"/>
+                    <field name="add_company"/>
+                    <field name="add_reference"/>
+                    <field name="add_ordering"/>
+                    <field name="add_active"/>
+                    <field name="add_description"/>
                 </group>
                 <group string="Access">
                     <field name="groups_ids" widget="many2many_tags"

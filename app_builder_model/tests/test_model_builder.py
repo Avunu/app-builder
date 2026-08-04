@@ -258,3 +258,30 @@ class TestRelatedAndComputed(StudioCase):
         )
         self.assertIsNone(values["compute"])
         self.assertEqual(values["depends"], ())
+
+
+@tagged("post_install", "-at_install")
+class TestWizardCoversTheRegistry(StudioCase):
+    def test_the_wizard_offers_every_feature(self):
+        """A feature added to the registry and forgotten here is simply never
+        offered, which is the kind of gap nothing complains about."""
+        wizard = self.env["studio.model.wizard"]
+        missing = [
+            key
+            for key in scaffold.WIZARD_FEATURES
+            if "add_%s" % key not in wizard._fields
+        ]
+        self.assertFalse(
+            missing,
+            "the New Model wizard has no checkbox for: %s" % ", ".join(missing),
+        )
+
+    def test_the_wizard_offers_nothing_the_registry_lacks(self):
+        wizard = self.env["studio.model.wizard"]
+        stray = [
+            name[len("add_") :]
+            for name in wizard._fields
+            if name.startswith("add_")
+            and name[len("add_") :] not in scaffold.FEATURES_BY_KEY
+        ]
+        self.assertFalse(stray, "no such feature: %s" % ", ".join(stray))

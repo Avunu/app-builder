@@ -47,7 +47,41 @@ class StudioModelWizard(models.TransientModel):
         string="Reference numbers",
         help="A sequence-backed reference, filled in on create.",
     )
-    add_date = fields.Boolean(string="Date")
+    add_date = fields.Boolean(
+        string="Date & calendar", help="A date, and a calendar to see it on."
+    )
+    add_date_range = fields.Boolean(
+        string="Date range", help="A start and an end, shown as one field."
+    )
+    add_contact = fields.Boolean(
+        string="Contact details",
+        help="A customer, with their phone and e-mail alongside.",
+    )
+    add_picture = fields.Boolean(
+        string="Picture", help="An image in the top corner of the form."
+    )
+    add_monetary = fields.Boolean(
+        string="Monetary value",
+        help="An amount, and the currency it is counted in.",
+    )
+    add_company = fields.Boolean(
+        string="Company", help="Which company the record belongs to."
+    )
+    add_ordering = fields.Boolean(
+        string="Custom sorting",
+        default=True,
+        help="A drag handle in the list, so records can be put in a deliberate order.",
+    )
+    add_active = fields.Boolean(
+        string="Archiving",
+        default=True,
+        help="Records can be archived instead of deleted, and are hidden by default.",
+    )
+    add_description = fields.Boolean(
+        string="Notes",
+        default=True,
+        help="A rich-text field across the width of the form.",
+    )
 
     groups_ids = fields.Many2many(
         "res.groups",
@@ -81,13 +115,12 @@ class StudioModelWizard(models.TransientModel):
                     "a development environment and ship through git."
                 )
             )
-        options = scaffold.ScaffoldOptions(
-            chatter=self.add_chatter,
-            activities=self.add_chatter,
-            stage=self.add_stage,
-            user=self.add_user,
-            reference=self.add_reference,
-            date=self.add_date,
+        # Built from the registry rather than by naming each one: a feature
+        # added there and forgotten here would simply never be offered, which
+        # is the kind of gap nothing complains about. `test_wizard_offers_every_
+        # feature` is what makes it complain.
+        options = scaffold.ScaffoldOptions.from_keys(
+            key for key in scaffold.WIZARD_FEATURES if self["add_%s" % key]
         )
         groups = self.groups_ids or self.env.ref("base.group_user")
         built = self.env["studio.app.builder"].create_app(
