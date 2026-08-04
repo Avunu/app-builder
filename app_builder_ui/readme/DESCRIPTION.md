@@ -1,6 +1,15 @@
 Build the rest of an addon visually: menus, window actions, access rules, record
 rules and automations — all written to source.
 
+**Automations** and **Webhooks** are reachable from the Studio menu and from the
+cog menu of any screen, where they show the rules for *that* model rather than
+the whole database's list under Settings → Technical. What opens is Odoo's own
+automation form, not a copy of it: that form is trigger-aware in a way that took
+years to get right, and a second copy would drift from it on the first release
+and be wrong in ways nobody could see. What the studio adds is the part Odoo has
+no opinion about — a rule created from here belongs to a package, so it lands in
+source instead of only in this database.
+
 Adds guided wizards for:
 
 - **New Menu** — creates a window action and its menu item together.

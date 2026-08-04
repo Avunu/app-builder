@@ -167,3 +167,69 @@ class TestStudioUi(StudioCase):
         after = self.package._render_files()
         for path in sorted(set(before) | set(after)):
             self.assertEqual(before.get(path), after.get(path), "changed %s" % path)
+
+
+@tagged("post_install", "-at_install")
+class TestAutomationSurface(StudioCase):
+    """The studio's job here is scope, ownership and findability.
+
+    Not a better form: `base.automation`'s own is trigger-aware in a way that
+    took years to get right, and a second copy would drift from it on the first
+    release and be wrong in ways nobody could see.
+    """
+
+    def test_the_action_is_scoped_to_the_model(self):
+        self.make_package()
+        action = self.env["studio.automation"].action_open(model_name="res.partner")
+        model = self.env["ir.model"]._get("res.partner")
+        self.assertIn(("model_id", "=", model.id), action["domain"])
+        self.assertEqual(action["context"]["default_model_id"], model.id)
+
+    def test_the_webhook_action_defaults_the_trigger(self):
+        self.make_package()
+        action = self.env["studio.automation"].action_open(webhooks=True)
+        self.assertIn(("trigger", "=", "on_webhook"), action["domain"])
+        self.assertEqual(action["context"]["default_trigger"], "on_webhook")
+
+    def test_one_writable_package_is_not_worth_asking_about(self):
+        package = self.make_package()
+        action = self.env["studio.automation"].action_open()
+        self.assertEqual(action["context"]["studio_package_id"], package.id)
+
+    def test_a_real_choice_is_not_guessed(self):
+        """Two packages and picking one would put the rule in the wrong addon,
+        which is only discovered at review time."""
+        self.make_package(name="x_studio_one")
+        self.make_package(name="x_studio_two")
+        action = self.env["studio.automation"].action_open()
+        self.assertFalse(action["context"]["studio_package_id"])
+
+    def test_a_rule_created_in_context_lands_in_source(self):
+        package = self.make_package()
+        self.build_demo_content(package)
+        model = self.env["ir.model"]._get("x_studio_project")
+        automation = (
+            self.env["base.automation"]
+            .with_context(studio_package_id=package.id)
+            .create(
+                {
+                    "name": "Captured",
+                    "model_id": model.id,
+                    "trigger": "on_create",
+                }
+            )
+        )
+        self.addCleanup(self.env["base.automation"]._unregister_hook)
+        self.assertEqual(automation.studio_package_id, package)
+        self.assertIn("Captured", "".join(package._render_files().values()))
+
+    def test_nothing_is_captured_without_a_package_in_context(self):
+        """Ordinary use of Settings → Technical must be unaffected."""
+        package = self.make_package()
+        self.build_demo_content(package)
+        model = self.env["ir.model"]._get("x_studio_project")
+        automation = self.env["base.automation"].create(
+            {"name": "Untouched", "model_id": model.id, "trigger": "on_create"}
+        )
+        self.addCleanup(self.env["base.automation"]._unregister_hook)
+        self.assertFalse(automation.studio_package_id)

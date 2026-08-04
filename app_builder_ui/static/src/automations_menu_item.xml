@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_ui.StudioAutomations">
+    <DropdownItem class="'o_studio_automations'" onSelected.bind="onOpen">
+        <i class="fa fa-bolt me-1"/>Automations
+    </DropdownItem>
+</t>
+
+</templates>

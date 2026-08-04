@@ -94,4 +94,22 @@
         <field name="view_mode">form</field>
         <field name="target">new</field>
     </record>
+
+    <!-- Odoo's own automation list, opened through a method so the package to
+         record into can be worked out first. An act_window declared in XML has
+         no way to answer "which package", and guessing between two would put
+         somebody's rule in the wrong addon. -->
+    <record id="studio_automations_action" model="ir.actions.server">
+        <field name="name">Automations</field>
+        <field name="model_id" ref="model_studio_automation"/>
+        <field name="state">code</field>
+        <field name="code">action = env["studio.automation"].action_open()</field>
+    </record>
+
+    <record id="studio_webhooks_action" model="ir.actions.server">
+        <field name="name">Webhooks</field>
+        <field name="model_id" ref="model_studio_automation"/>
+        <field name="state">code</field>
+        <field name="code">action = env["studio.automation"].action_open(webhooks=True)</field>
+    </record>
 </odoo>

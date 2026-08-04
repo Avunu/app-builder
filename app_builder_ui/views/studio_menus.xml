@@ -12,6 +12,18 @@
               action="studio_access_wizard_action"
               sequence="80"/>
 
+    <menuitem id="menu_studio_automations"
+              name="Automations"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_automations_action"
+              sequence="85"/>
+
+    <menuitem id="menu_studio_webhooks"
+              name="Webhooks"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_webhooks_action"
+              sequence="86"/>
+
     <menuitem id="menu_studio_new_automation"
               name="New Automation"
               parent="app_builder_base.menu_studio_root"
