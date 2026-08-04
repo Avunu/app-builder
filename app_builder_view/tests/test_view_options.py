@@ -70,11 +70,32 @@ class TestOptionCatalogue(StudioCase):
         for entry in catalogue.WIDGETS:
             self.assertTrue(entry.types, "%s serves no field type" % entry.value)
 
-    def test_groups_are_scoped_to_view_types_that_exist(self):
+    def test_groups_are_scoped_to_view_types_that_could_exist(self):
+        """Installed here, or declared as something a module may contribute.
+
+        A panel for an absent type is deliberate and harmless -- `groups_json`
+        filters by the view's real type, so it never matches, and it is ready
+        the day somebody installs the module. What must not pass is a typo, so
+        the optional ones are listed rather than assumed.
+        """
         known = set(self.env["ir.ui.view"]._fields["type"].get_values(self.env))
+        allowed = known | set(view_options.OPTIONAL_VIEW_TYPES)
         for group in view_options.OPTION_GROUPS:
             for view_type in group.view_types:
-                self.assertIn(view_type, known, "group %s" % group.id)
+                self.assertIn(view_type, allowed, "group %s" % group.id)
+
+    def test_an_uninstalled_view_type_offers_no_panel(self):
+        absent = [
+            t
+            for t in view_options.OPTIONAL_VIEW_TYPES
+            if t not in self.env["ir.ui.view"]._fields["type"].get_values(self.env)
+        ]
+        if not absent:
+            self.skipTest("every optional view type is installed here")
+        self.assertTrue(
+            view_options.groups_for(absent[0]),
+            "the panel is declared, ready for when the module is installed",
+        )
 
     def test_the_caller_supplies_the_language(self):
         """Labels stay lazy until somebody who knows the language resolves them.

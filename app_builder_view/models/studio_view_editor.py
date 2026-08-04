@@ -556,7 +556,10 @@ class StudioViewEditor(models.AbstractModel):
         self._assert_studio_manager()
         if kind == "group":
             return self.apply_at(
-                view_id, package_id, anchor, {"type": "add_group", "string": string or ""}
+                view_id,
+                package_id,
+                anchor,
+                {"type": "add_group", "string": string or ""},
             )
         if kind != "page":
             raise UserError(_("The builder does not add '%s'.", kind))
@@ -583,9 +586,7 @@ class StudioViewEditor(models.AbstractModel):
             None,
         )
         if notebook is not None:
-            return self.apply_at(
-                view_id, package_id, {"kind": "notebook"}, operation
-            )
+            return self.apply_at(view_id, package_id, {"kind": "notebook"}, operation)
         operation["in_new_notebook"] = True
         return self.apply_at(view_id, package_id, anchor, operation)
 
@@ -956,21 +957,88 @@ class StudioViewEditor(models.AbstractModel):
         }
 
     # Types the builder can create from nothing, and what each one needs first.
-    ADDABLE_VIEW_TYPES = {
-        "kanban": (),
-        "calendar": ("date",),
-        "list": (),
-        "form": (),
-    }
+    # What the builder can create from nothing. Deliberately *not* the list of
+    # view types -- that comes from Odoo, via `ir.ui.view.get_view_info()`, which
+    # is the registry every module extends when it contributes one. Core seeds
+    # seven, `mail` adds activity, `web_timeline` adds timeline,
+    # `web_view_leaflet_map` adds leaflet_map.
+    #
+    # Deriving the list rather than declaring it buys three things: a site that
+    # installs an OCA view type sees it here as soon as somebody writes a
+    # scaffold, a site running enterprise sees gantt and cohort, and the engine
+    # depends on none of them.
+    VIEW_SCAFFOLDS = (
+        "list",
+        "form",
+        "kanban",
+        "calendar",
+        "pivot",
+        "graph",
+        "activity",
+        "timeline",
+    )
+
+    # Types that are never *added*: a search view furnishes another view's
+    # control panel rather than being one, and qweb is a template.
+    NOT_ADDABLE = ("search", "qweb")
+
+    @api.model
+    def _placeable_fields(self, model, types):
+        """Stored fields of ``types``, as the picker needs them.
+
+        `create_date` and `write_date` are dates too, and a calendar of when
+        records happened to be typed in is not a calendar anybody wants. They
+        also make every model look like it has a date, which would hide the
+        "add one first" answer the user actually needs.
+        """
+        return [
+            {"name": name, "string": field.string or name}
+            for name, field in sorted(model._fields.items())
+            if field.type in types
+            and field.store
+            and name not in modelspec.MAGIC_COLUMNS
+        ]
+
+    @api.model
+    def _view_prerequisites(self, model, view_type):
+        """What this view type needs from this model before it can exist.
+
+        Returns the reason it cannot, plus whatever the caller has to choose.
+        Reported rather than hidden: somebody looking for a calendar should
+        learn that the model has no date and what to do about it, instead of
+        concluding the builder cannot do calendars.
+        """
+        dates = self._placeable_fields(model, ("date", "datetime"))
+        groups = self._placeable_fields(model, ("many2one", "selection"))
+        if view_type == "calendar":
+            if not dates:
+                return _(
+                    "A calendar needs a date field to place records on, and "
+                    "this model has none. Add one first."
+                ), {"date_fields": dates}
+            return "", {"date_fields": dates}
+        if view_type == "timeline":
+            if not dates:
+                return _(
+                    "A timeline needs a date field to place records on, and "
+                    "this model has none. Add one first."
+                ), {}
+            if not groups:
+                return _(
+                    "A timeline needs something to make its rows from — a "
+                    "link or a selection. This model has neither."
+                ), {}
+            return "", {"date_fields": dates, "group_fields": groups}
+        if view_type == "activity" and "activity_ids" not in model._fields:
+            return _(
+                "An activity view shows scheduled activities, and this model "
+                "does not have them. Turn on Messaging & activities first."
+            ), {}
+        return "", {}
 
     @api.model
     def addable_view_types(self, model_name):
-        """Which views this model could have that it does not already.
-
-        Calendar is reported as unavailable rather than hidden when the model
-        has no date field: somebody looking for it learns why, and what to add
-        to get it, instead of concluding the builder cannot do calendars.
-        """
+        """Which views this model could have, and why not where it could not."""
         self._assert_studio_user()
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
@@ -980,41 +1048,45 @@ class StudioViewEditor(models.AbstractModel):
             .search([("model", "=", model_name), ("mode", "=", "primary")])
             .mapped("type")
         )
-        # create_date and write_date are dates too, and a calendar of when
-        # records happened to be typed in is not a calendar anybody wants. They
-        # also mean every model looks like it has a date, which would hide the
-        # "add one first" answer the user actually needs.
-        date_fields = [
-            {"name": name, "string": field.string or name}
-            for name, field in sorted(model._fields.items())
-            if field.type in ("date", "datetime")
-            and field.store
-            and name not in modelspec.MAGIC_COLUMNS
-        ]
+        known = self.env["ir.ui.view"].get_view_info()
         out = []
-        for view_type in self.ADDABLE_VIEW_TYPES:
-            enabled, reason = True, ""
+        for view_type, meta in known.items():
+            if view_type in self.NOT_ADDABLE:
+                continue
+            entry = {
+                "type": view_type,
+                "label": meta.get("display_name") or view_type,
+                "icon": meta.get("icon") or "",
+                "enabled": True,
+                "reason": "",
+                "date_fields": [],
+                "group_fields": [],
+            }
             if view_type in existing:
-                enabled = False
-                reason = _("This model already has a %s view.", view_type)
-            elif view_type == "calendar" and not date_fields:
-                enabled = False
-                reason = _(
-                    "A calendar needs a date field to place records on, and "
-                    "this model has none. Add one first."
+                entry["enabled"] = False
+                entry["reason"] = _("This model already has a %s view.", view_type)
+            elif view_type not in self.VIEW_SCAFFOLDS:
+                entry["enabled"] = False
+                # Named rather than hidden: the type is installed and Odoo can
+                # render it, so "the builder cannot make one yet" is the true
+                # answer and a different one from "this does not exist".
+                entry["reason"] = _(
+                    "The builder cannot create a %s view yet. One made by hand "
+                    "can still be edited here.",
+                    meta.get("display_name") or view_type,
                 )
-            out.append(
-                {
-                    "type": view_type,
-                    "enabled": enabled,
-                    "reason": reason,
-                    "date_fields": date_fields if view_type == "calendar" else [],
-                }
-            )
+            else:
+                reason, extra = self._view_prerequisites(model, view_type)
+                entry["reason"] = reason
+                entry["enabled"] = not reason
+                entry.update(extra)
+            out.append(entry)
         return out
 
     @api.model
-    def add_view(self, model_name, view_type, package_id, date_field=None):
+    def add_view(
+        self, model_name, view_type, package_id, date_field=None, group_field=None
+    ):
         """Create a view of ``view_type`` for ``model_name``, and make it
         reachable.
 
@@ -1024,7 +1096,7 @@ class StudioViewEditor(models.AbstractModel):
         report success and the user would never find what it built.
         """
         self._assert_studio_manager()
-        if view_type not in self.ADDABLE_VIEW_TYPES:
+        if view_type not in self.VIEW_SCAFFOLDS:
             raise UserError(_("The builder does not create %s views.", view_type))
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
@@ -1050,17 +1122,31 @@ class StudioViewEditor(models.AbstractModel):
                 )
             )
 
-        if view_type == "calendar" and (
+        if view_type in ("calendar", "timeline") and (
             not date_field or date_field not in model._fields
         ):
             raise UserError(
                 _(
-                    "A calendar has to know which date to place records on. "
-                    "Choose a date field on %s first.",
+                    "A %(type)s has to know which date to place records on. "
+                    "Choose a date field on %(model)s first.",
+                    type=view_type,
+                    model=model_name,
+                )
+            )
+        if view_type == "timeline" and (
+            not group_field or group_field not in model._fields
+        ):
+            # Unlike Gantt, where rows are optional, web_timeline requires
+            # default_group_by -- so this is the view refusing to open rather
+            # than a preference of ours.
+            raise UserError(
+                _(
+                    "A timeline has to know what to make its rows from. Choose "
+                    "a field on %s to group by.",
                     model_name,
                 )
             )
-        arch = self._scaffold_arch(model, view_type, date_field)
+        arch = self._scaffold_arch(model, view_type, date_field, group_field)
         view = self.env["ir.ui.view"].create(
             {
                 "name": "%s.%s" % (model_name, view_type),
@@ -1075,21 +1161,36 @@ class StudioViewEditor(models.AbstractModel):
         return {"view_id": view.id, "type": view_type}
 
     @api.model
-    def _scaffold_arch(self, model, view_type, date_field):
+    def _scaffold_arch(self, model, view_type, date_field=None, group_field=None):
         """The starting arch for a new view, built from the live model."""
         spec = self._spec_for(model)
-        options = scaffold.ScaffoldOptions(
-            stage="state" in model._fields,
-            user="user_id" in model._fields,
-            chatter="message_ids" in model._fields,
+        options = scaffold.ScaffoldOptions.from_keys(
+            key
+            for key, present in (
+                ("stage", "state" in model._fields),
+                ("user", "user_id" in model._fields),
+                ("chatter", "message_ids" in model._fields),
+            )
+            if present
         )
-        if view_type == "kanban":
-            return scaffold.scaffold_kanban_arch(model, spec, options)
-        if view_type == "calendar":
-            return scaffold.scaffold_calendar_arch(model, spec, date_field, options)
-        if view_type == "list":
-            return scaffold.scaffold_list_arch(model, spec, options)
-        return scaffold.scaffold_form_arch(model, spec, options)
+        builders = {
+            "kanban": lambda: scaffold.scaffold_kanban_arch(model, spec, options),
+            "calendar": lambda: scaffold.scaffold_calendar_arch(
+                model, spec, date_field, options
+            ),
+            "list": lambda: scaffold.scaffold_list_arch(model, spec, options),
+            "form": lambda: scaffold.scaffold_form_arch(model, spec, options),
+            "pivot": lambda: scaffold.scaffold_pivot_arch(model, spec, options),
+            "graph": lambda: scaffold.scaffold_graph_arch(model, spec, options),
+            "activity": lambda: scaffold.scaffold_activity_arch(model, spec, options),
+            "timeline": lambda: scaffold.scaffold_timeline_arch(
+                model, spec, date_field, group_field, options
+            ),
+        }
+        build = builders.get(view_type)
+        if build is None:
+            raise UserError(_("The builder does not create %s views.", view_type))
+        return build()
 
     @api.model
     def _spec_for(self, model):

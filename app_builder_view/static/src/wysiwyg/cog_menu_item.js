@@ -19,7 +19,21 @@ import { registry } from "@web/core/registry";
 import { user } from "@web/core/user";
 import { useService } from "@web/core/utils/hooks";
 
-const EDITABLE_TYPES = ["list", "form", "kanban", "calendar", "search"];
+// Types the editor can open. A settings-only view (pivot, graph, timeline)
+// belongs here as much as a clickable one: what it *is* lives in its root
+// attributes, and the panel edits those whether or not there is a node to aim
+// at. Anything not listed simply shows no menu item, which is the honest answer
+// for a view the editor has nothing to say about yet.
+const EDITABLE_TYPES = [
+    "list",
+    "form",
+    "kanban",
+    "calendar",
+    "search",
+    "pivot",
+    "graph",
+    "timeline",
+];
 
 export class EditThisView extends Component {
     static template = "app_builder_view.EditThisView";

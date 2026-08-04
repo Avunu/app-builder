@@ -633,12 +633,19 @@ export class StudioViewEditor extends Component {
         }
         // A calendar cannot be built without being told which date to place
         // records on -- date_start is mandatory and the view throws without it.
-        let dateField = null;
-        if (entry.type === "calendar") {
-            dateField = entry.date_fields.length && entry.date_fields[0].name;
-            if (!dateField) {
-                return;
-            }
+        // A timeline needs that *and* something to make its rows from, which
+        // web_timeline requires where Gantt leaves it optional.
+        const dateField = (entry.date_fields || []).length
+            ? entry.date_fields[0].name
+            : null;
+        const groupField = (entry.group_fields || []).length
+            ? entry.group_fields[0].name
+            : null;
+        if (entry.type === "calendar" && !dateField) {
+            return;
+        }
+        if (entry.type === "timeline" && (!dateField || !groupField)) {
+            return;
         }
         this.state.busy = true;
         try {
@@ -647,9 +654,13 @@ export class StudioViewEditor extends Component {
                 entry.type,
                 this.packageId,
                 dateField,
+                groupField,
             ]);
             this.notification.add(
-                _t("%s view created. It is now offered by this app's menu.", entry.type),
+                _t(
+                    "%s view created. It is now offered by this app's menu.",
+                    entry.label || entry.type
+                ),
                 { type: "success" }
             );
             await this.loadAddable();

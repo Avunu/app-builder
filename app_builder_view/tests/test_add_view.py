@@ -304,3 +304,93 @@ class TestActionButtonPortability(StudioCase):
         emitted = "".join(package._render_files().values())
         self.assertNotIn('name="%d"' % action.id, emitted)
         self.assertIn("ir_actions_server_legacy", emitted)
+
+
+@tagged("post_install", "-at_install")
+class TestViewTypeDiscovery(StudioCase):
+    """The list of view types comes from Odoo, not from us.
+
+    `ir.ui.view.get_view_info()` is the registry every module extends when it
+    contributes a view type — core seeds seven, `mail` adds activity,
+    `web_timeline` adds timeline. Deriving the list means a site that installs
+    one sees it as soon as somebody writes a scaffold, and a site running
+    enterprise sees gantt and cohort, without the engine depending on any of it.
+    """
+
+    def _offered(self):
+        package = self.make_package()
+        self.build_demo_content(package)
+        return {
+            entry["type"]: entry
+            for entry in self.env["studio.view.editor"].addable_view_types(
+                "x_studio_project"
+            )
+        }
+
+    def test_every_registered_type_is_accounted_for(self):
+        offered = self._offered()
+        known = set(self.env["ir.ui.view"].get_view_info())
+        expected = known - set(self.env["studio.view.editor"].NOT_ADDABLE)
+        self.assertEqual(set(offered), expected)
+
+    def test_a_type_without_a_scaffold_says_so_rather_than_vanishing(self):
+        """The type is installed and Odoo can render it, so "the builder cannot
+        make one yet" is the true answer and a different one from "no such
+        thing"."""
+        editor = self.env["studio.view.editor"]
+        unscaffolded = (
+            set(self.env["ir.ui.view"].get_view_info())
+            - set(editor.NOT_ADDABLE)
+            - set(editor.VIEW_SCAFFOLDS)
+        )
+        if not unscaffolded:
+            self.skipTest("every installed view type has a scaffold here")
+        offered = self._offered()
+        entry = offered[min(unscaffolded)]
+        self.assertFalse(entry["enabled"])
+        self.assertIn("cannot create", entry["reason"])
+
+    def test_pivot_and_graph_are_offered(self):
+        offered = self._offered()
+        for view_type in ("pivot", "graph"):
+            self.assertIn(view_type, offered)
+            self.assertTrue(offered[view_type]["enabled"], offered[view_type]["reason"])
+
+    def test_a_pivot_arrives_with_something_to_show(self):
+        """An empty pivot is valid and useless: it opens on one Count cell."""
+        package = self.make_package()
+        self.build_demo_content(package)
+        self.env["studio.view.editor"].add_view("x_studio_project", "pivot", package.id)
+        view = self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("type", "=", "pivot")], limit=1
+        )
+        self.assertTrue(view)
+        self.assertIn("type=", view.arch)
+
+    def test_a_graph_can_be_created(self):
+        package = self.make_package()
+        self.build_demo_content(package)
+        self.env["studio.view.editor"].add_view("x_studio_project", "graph", package.id)
+        view = self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("type", "=", "graph")], limit=1
+        )
+        self.assertTrue(view)
+
+    def test_activity_needs_the_activity_mixin(self):
+        offered = self._offered()
+        if "activity" not in offered:
+            self.skipTest("mail is not installed")
+        entry = offered["activity"]
+        self.assertFalse(entry["enabled"])
+        self.assertIn("Messaging", entry["reason"])
+
+    def test_a_timeline_reports_what_it_needs(self):
+        offered = self._offered()
+        if "timeline" not in offered:
+            self.skipTest("web_timeline is not installed")
+        entry = offered["timeline"]
+        if entry["enabled"]:
+            self.assertTrue(entry["date_fields"])
+            self.assertTrue(
+                entry["group_fields"], "web_timeline requires default_group_by"
+            )

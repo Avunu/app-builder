@@ -269,9 +269,10 @@
                              class="mb-1">
                             <button class="btn btn-light btn-sm w-100 text-start"
                                     t-att-disabled="!entry.enabled or !packageId"
-                                    t-att-title="entry.reason"
+                                    t-att-title="entry.reason || entry.label"
                                     t-on-click="() => this.onAddView(entry)">
-                                <i class="fa fa-plus me-1"/><t t-esc="entry.type"/>
+                                <i t-att-class="'me-1 ' + (entry.icon || 'fa fa-plus')"/>
+                                <t t-esc="entry.label || entry.type"/>
                             </button>
                             <small t-if="entry.reason" class="text-muted d-block"
                                    t-esc="entry.reason"/>

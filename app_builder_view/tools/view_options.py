@@ -40,6 +40,23 @@ _lt = LazyTranslate(__name__)
 
 NUMERIC = ("integer", "float", "monetary")
 
+# View types a group may target that this database might not have. Declaring a
+# panel for one is deliberate: `groups_json` filters by the view's actual type,
+# so a group for an absent type simply never matches, and the panel is ready the
+# day somebody installs the module. Listed rather than left implicit so that a
+# typo in `view_types` still fails the coverage test.
+OPTIONAL_VIEW_TYPES = (
+    # OCA
+    "timeline",
+    "leaflet_map",
+    "geoengine",
+    # Enterprise, if this is running against it
+    "gantt",
+    "cohort",
+    "map",
+    "dashboard",
+)
+
 # Types Odoo can colour or group by: a discrete value per record.
 GROUPABLE = ("many2one", "selection", "boolean")
 DATE_TYPES = ("date", "datetime")
@@ -517,3 +534,158 @@ def groups_json(view_type=None, translate=identity):
 
 
 __all__ = ["OPTION", "OPTION_GROUPS", "groups_for", "groups_json"]
+
+
+# -- reporting and timeline views ----------------------------------------
+#
+# Settings panels, like the calendar and for the same reason: a pivot draws
+# aggregates and a timeline draws bars, so there is no per-node DOM that maps
+# back to the arch. What each one *is* lives in its root attributes.
+
+OPTION_GROUPS += (
+    OptionGroup(
+        id="pivot_root",
+        title=_lt("This pivot"),
+        view_types=("pivot",),
+        kinds=("root",),
+        rows=(
+            Row(name="string", label=_lt("Title"), type="text"),
+            Row(
+                name="disable_linking",
+                label=_lt("Access records from a cell"),
+                type="toggle",
+                invert=True,
+            ),
+            Row(
+                name="display_quantity",
+                label=_lt("Show a count"),
+                type="toggle",
+                help=_lt("The number of records behind each aggregate."),
+            ),
+        ),
+    ),
+    OptionGroup(
+        id="graph_root",
+        title=_lt("This graph"),
+        view_types=("graph",),
+        kinds=("root",),
+        rows=(
+            Row(name="string", label=_lt("Title"), type="text"),
+            Row(
+                name="type",
+                label=_lt("Chart"),
+                type="select",
+                choices=(
+                    ("bar", _lt("Bar")),
+                    ("line", _lt("Line")),
+                    ("pie", _lt("Pie")),
+                ),
+            ),
+            Row(
+                name="stacked",
+                label=_lt("Stack the bars"),
+                type="toggle",
+                invert=True,
+                help=_lt("Bar charts with two groupings only."),
+            ),
+            Row(
+                name="order",
+                label=_lt("Sort by value"),
+                type="select",
+                choices=(
+                    ("", _lt("Not sorted")),
+                    ("ASC", _lt("Lowest first")),
+                    ("DESC", _lt("Highest first")),
+                ),
+                help=_lt("Bar and line charts only."),
+            ),
+            Row(
+                name="disable_linking",
+                label=_lt("Access records from the chart"),
+                type="toggle",
+                invert=True,
+            ),
+        ),
+    ),
+    OptionGroup(
+        id="timeline_root",
+        title=_lt("This timeline"),
+        view_types=("timeline",),
+        kinds=("root",),
+        rows=(
+            Row(name="string", label=_lt("Title"), type="text"),
+            Row(
+                name="date_start",
+                label=_lt("Starts on"),
+                type="select",
+                source="fields",
+                field_types=DATE_TYPES,
+                allow_empty=False,
+                help=_lt("Required — the timeline cannot open without it."),
+            ),
+            Row(
+                name="date_stop",
+                label=_lt("Ends on"),
+                type="select",
+                source="fields",
+                field_types=DATE_TYPES,
+            ),
+            Row(
+                name="date_delay",
+                label=_lt("Duration field"),
+                type="select",
+                source="fields",
+                field_types=("float", "integer"),
+                help=_lt("Hours the event lasts, when there is no end date."),
+            ),
+            Row(
+                name="default_group_by",
+                label=_lt("Rows"),
+                type="select",
+                source="fields",
+                field_types=GROUPABLE,
+                allow_empty=False,
+                help=_lt(
+                    "Required by web_timeline, unlike the enterprise Gantt "
+                    "where rows are optional."
+                ),
+            ),
+            Row(
+                name="mode",
+                label=_lt("Opens on"),
+                type="select",
+                choices=(
+                    ("", _lt("Everything, zoomed to fit")),
+                    ("day", _lt("Day")),
+                    ("week", _lt("Week")),
+                    ("month", _lt("Month")),
+                ),
+            ),
+            Row(
+                name="dependency_arrow",
+                label=_lt("Draw dependencies from"),
+                type="select",
+                source="fields",
+                field_types=("one2many", "many2many"),
+                help=_lt(
+                    "Arrows between records, which the enterprise Gantt has "
+                    "and Odoo Studio does not expose."
+                ),
+            ),
+            Row(
+                name="stack",
+                label=_lt("Stack overlapping bars"),
+                type="toggle",
+                invert=True,
+            ),
+            Row(
+                name="event_open_popup",
+                label=_lt("Open records in a popup"),
+                type="toggle",
+            ),
+            Row(name="create", label=_lt("Allow creating"), type="toggle", invert=True),
+            Row(name="edit", label=_lt("Allow editing"), type="toggle", invert=True),
+            Row(name="delete", label=_lt("Allow deleting"), type="toggle", invert=True),
+        ),
+    ),
+)

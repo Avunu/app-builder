@@ -644,3 +644,93 @@ def scaffold_search_arch(model, spec, options=None):
 
 def arch_to_string(node):
     return etree.tostring(node, encoding="unicode", pretty_print=True)
+
+
+def _measure_fields(model, spec):
+    """Numbers worth aggregating: what a pivot or a graph is *for*."""
+    return [
+        f
+        for f in _visible(model, spec)
+        if f.ttype in ("integer", "float", "monetary")
+        and f.name not in ("sequence", "color", "priority")
+    ]
+
+
+def _groupable_fields(model, spec):
+    return [
+        f
+        for f in _visible(model, spec)
+        if f.ttype in ("many2one", "selection", "date", "datetime", "boolean")
+        and f.name not in HIDDEN
+    ]
+
+
+def scaffold_pivot_arch(model, spec, options=None):
+    """A pivot with a row grouping and a measure, rather than an empty grid.
+
+    An empty pivot is valid and useless: it opens on a single Count cell and
+    the user has to discover the two menus that make it a report. Choosing the
+    obvious pair is the difference between a view and a demonstration of one.
+    """
+    root = etree.Element("pivot", string=spec.description)
+    groupable = _groupable_fields(model, spec)
+    if groupable:
+        etree.SubElement(root, "field", name=groupable[0].name, type="row")
+    for measure in _measure_fields(model, spec)[:1]:
+        etree.SubElement(root, "field", name=measure.name, type="measure")
+    return root
+
+
+def scaffold_graph_arch(model, spec, options=None):
+    root = etree.Element("graph", string=spec.description, type="bar")
+    groupable = _groupable_fields(model, spec)
+    if groupable:
+        etree.SubElement(root, "field", name=groupable[0].name)
+    for measure in _measure_fields(model, spec)[:1]:
+        etree.SubElement(root, "field", name=measure.name, type="measure")
+    return root
+
+
+def scaffold_activity_arch(model, spec, options=None):
+    """The activity view's card, which is a qweb template rather than a list.
+
+    ``t-name="activity-box"`` is not optional -- the renderer looks that name up
+    -- and the fields inside are real ``<field>`` nodes for the same reason the
+    kanban card uses them: only a field puts its name in the DOM, so anything
+    else cannot be selected by the builder later.
+    """
+    root = etree.Element("activity", string=spec.description)
+    templates = etree.SubElement(root, "templates")
+    box = etree.SubElement(templates, "div", {"t-name": "activity-box"})
+    etree.SubElement(box, "field", name=spec.rec_name or "name")
+    for spec_field in _visible(model, spec):
+        if spec_field.ttype == "many2one" and spec_field.name not in HIDDEN:
+            etree.SubElement(box, "field", name=spec_field.name, muted="1")
+            break
+    return root
+
+
+def scaffold_timeline_arch(model, spec, date_field, group_field, options=None):
+    """A timeline, which is OCA's answer to the enterprise Gantt.
+
+    Both attributes are mandatory in ``web_timeline`` -- ``default_group_by``
+    unlike Gantt, where rows are optional -- so the caller has to supply them
+    rather than the scaffold guessing and producing a view that throws on open.
+    """
+    options = options or ScaffoldOptions()
+    if not date_field or date_field not in model._fields:
+        raise ValueError("a timeline needs a date field that exists on the model")
+    if not group_field or group_field not in model._fields:
+        raise ValueError("a timeline needs a field to group its rows by")
+    root = etree.Element(
+        "timeline",
+        string=spec.description,
+        date_start=date_field,
+        default_group_by=group_field,
+    )
+    stop = "date_stop" if "date_stop" in model._fields else None
+    if stop and stop != date_field:
+        root.set("date_stop", stop)
+    root.set("event_open_popup", "true")
+    etree.SubElement(root, "field", name=spec.rec_name or "name")
+    return root
