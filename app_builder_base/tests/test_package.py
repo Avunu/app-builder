@@ -171,3 +171,40 @@ class TestPackage(StudioCase):
         self.build_demo_content(package)
         package.invalidate_recordset(["record_count"])
         self.assertGreater(package.record_count, 5)
+
+    def test_ownership_is_searchable(self):
+        """A domain on studio_package_id has to actually filter.
+
+        Regression, and a quiet one. A non-stored field with no search method
+        does not make the domain fail -- the ORM logs an error and *drops the
+        leaf* (`expression.py:1179-1187`). So `[("studio_package_id", "=", id)]`
+        degraded from "records this package owns" to "every record", and
+        `studio.model.draft._owned_views` is built on exactly that domain: field
+        placement would have edited a primary view belonging to another module
+        in place, which is the one thing this project exists not to do.
+        """
+        package = self.make_package()
+        self.build_demo_content(package)
+        foreign = self.env["ir.ui.view"].create(
+            {
+                "name": "not ours",
+                "model": "x_studio_project",
+                "arch": "<form><sheet><field name='x_name'/></sheet></form>",
+            }
+        )
+
+        ours = self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("studio_package_id", "=", package.id)]
+        )
+        self.assertTrue(ours, "the package's own views must be found")
+        self.assertNotIn(
+            foreign,
+            ours,
+            "an unowned view must not answer to a package's domain",
+        )
+
+        unowned = self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("studio_package_id", "=", False)]
+        )
+        self.assertIn(foreign, unowned)
+        self.assertFalse(ours & unowned, "owned and unowned must not overlap")

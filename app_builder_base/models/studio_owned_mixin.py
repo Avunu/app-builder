@@ -25,9 +25,49 @@ class StudioOwnedMixin(models.AbstractModel):
         string="Studio Package",
         compute="_compute_studio_package_id",
         inverse="_inverse_studio_package_id",
+        search="_search_studio_package_id",
         store=False,
         help="The package whose source files this record is written into.",
     )
+
+    @api.model
+    def _search_studio_package_id(self, operator, value):
+        """Resolve ownership through ir.model.data, where it actually lives.
+
+        Not optional, and not merely an optimisation. A non-stored field with
+        no search method does not make a domain fail -- the ORM logs an error
+        and **drops the leaf** (``expression.py:1179-1187``), so
+        ``[("studio_package_id", "=", pkg.id)]`` silently degrades from "views
+        this package owns" to "every view". ``studio_model_draft._owned_views``
+        is built on exactly that domain, which means field placement would have
+        rewritten a *primary view belonging to another module* in place: the
+        single thing this project exists not to do.
+        """
+        if operator not in ("=", "!=", "in", "not in"):
+            raise UserError(_("Studio Package cannot be searched with '%s'.", operator))
+        negate = operator in ("!=", "not in")
+        Package = self.env["studio.package"]
+        if not value:
+            # "owned by nobody" is the complement of "owned by anybody", so it
+            # is answered against every package rather than against none.
+            owned = self._studio_owned_ids(Package.search([]))
+            return [("id", "in" if negate else "not in", owned)]
+        if isinstance(value, str):
+            packages = Package.search([("name", "=", value)])
+        else:
+            packages = Package.browse(value if isinstance(value, list) else [value])
+        owned = self._studio_owned_ids(packages.exists())
+        return [("id", "not in" if negate else "in", owned)]
+
+    @api.model
+    def _studio_owned_ids(self, packages):
+        """Ids of this model's records carried by any of ``packages``."""
+        if not packages:
+            return []
+        entries = self.env["ir.model.data"].search(
+            [("model", "=", self._name), ("module", "in", packages.mapped("name"))]
+        )
+        return entries.mapped("res_id")
 
     def _compute_studio_package_id(self):
         Data = self.env["ir.model.data"]
