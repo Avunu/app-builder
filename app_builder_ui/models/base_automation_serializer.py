@@ -24,6 +24,7 @@ class BaseAutomationSerializer(models.AbstractModel):
         "name",
         "model_id",
         "active",
+        "description",
         "trigger",
         "trigger_field_ids",
         "on_change_field_ids",
@@ -32,11 +33,22 @@ class BaseAutomationSerializer(models.AbstractModel):
         "trg_date_id",
         "trg_date_range",
         "trg_date_range_type",
+        "trg_date_calendar_id",
         "trg_selection_field_id",
         "trg_field_ref",
         "action_server_ids",
         "record_getter",
         "log_webhook_calls",
+    )
+    _studio_ignored = (
+        # A per-database secret. Committing it would both leak the URL that
+        # can drive this automation and make the file differ between
+        # databases; base.automation regenerates it on create.
+        "webhook_uuid",
+        # When the scheduled action last swept this rule. Runtime state, and
+        # pinning it in source would make a reload replay or skip work
+        # depending on when the file was written.
+        "last_run",
     )
 
     @api.model
@@ -47,8 +59,4 @@ class BaseAutomationSerializer(models.AbstractModel):
     def _should_skip(self, record, fname):
         if fname == "active":
             return bool(record.active)
-        if fname == "webhook_uuid":
-            # Regenerated per environment; committing it would leak a secret
-            # and make the file differ between databases.
-            return True
         return super()._should_skip(record, fname)

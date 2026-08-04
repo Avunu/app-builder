@@ -37,6 +37,20 @@ class IrSequenceSerializer(models.AbstractModel):
         "number_increment",
         "use_date_range",
         "company_id",
+        "active",
+    )
+    _studio_ignored = (
+        # The counter itself, and the one place where emitting a real value
+        # would be worse than dropping it. It moves every time a record is
+        # created, so a package carrying it would report drifted -- and produce
+        # a git diff -- on every single save a user makes. Against that, what
+        # is lost is the starting number somebody chose once, which they can
+        # set again; the running count is state, and state belongs in the
+        # database that is running.
+        "number_next",
+        # Sub-sequences carry a counter each, for the same reason, and Odoo
+        # creates them on demand from use_date_range -- which is emitted.
+        "date_range_ids",
     )
 
     @api.model

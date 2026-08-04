@@ -101,9 +101,10 @@ The editor gates on `os.access(root_path, W_OK)`. Against a Nix-store build or a
 | addon | version | maintainers | summary |
 | --- | --- | --- | --- |
 | app_builder | 18.0.1.0.0 |  | Open-source visual builder whose output is real source code |
-| app_builder_base | 18.0.1.0.0 |  | Engine for visually built Odoo modules that live in source control |
+| app_builder_base | 18.0.1.2.0 |  | Engine for visually built Odoo modules that live in source control |
+| app_builder_mail | 18.0.1.0.0 |  | Write mail and SMS settings into source alongside the rest |
 | app_builder_model | 18.0.1.0.0 |  | Visually build models and fields that are written to source |
-| app_builder_ui | 18.0.1.0.0 |  | Build menus, actions, access rules and automations into source |
+| app_builder_ui | 18.0.1.1.0 |  | Build menus, actions, access rules and automations into source |
 | app_builder_view | 18.0.1.0.0 |  | Edit views visually; every change becomes an inheriting view in source |
 
 ## Development

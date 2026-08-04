@@ -208,8 +208,10 @@ FIELD_TYPES = (
         "Reference by id",
         "advanced",
         unsupported=(
-            "Its value is a raw database id, which cannot be written to source "
-            "in a form that survives a fresh install."
+            "It needs a companion field naming the model its id belongs to, "
+            "and there is no way to declare one here. An existing one is "
+            "written to source without trouble; what is missing is a way to "
+            "build a new one."
         ),
     ),
     FieldType(

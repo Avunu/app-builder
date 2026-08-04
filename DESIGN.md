@@ -389,7 +389,13 @@ ones that mattered, each now pinned by a test in `test_review_regressions.py`:
    bytes — a byte-stable fixed point over a corrupted database.
 
 10. **`many2one_reference` emitted a raw database id**, which cannot survive a
-    fresh install. It now raises rather than silently corrupting.
+    fresh install. It raised instead of corrupting — and later turned out to be
+    recoverable after all: the field declares a `model_field` companion naming
+    the model its id belongs to, so the record can be found and emitted as
+    `eval="ref('xmlid')"`. `fields.Reference` needed even less, because core's
+    own importer resolves a plain `ref=` into `"model,id"`
+    (`convert.py:405-407`). What still raises is the case with no companion to
+    resolve through, which is the one that genuinely has nothing to point at.
 
 11. **A field added to an already-graduated model was written to no file at
     all** — excluded from XML by a graduation flag and from Python by the
@@ -472,8 +478,10 @@ Remaining:
   OCA dependencies are not ported to 19.0 yet.
 - **Adopting two custom models that reference each other** in one operation is
   untested; adopt them one at a time.
-- **`many2one_reference`** cannot be serialized portably (its value is a raw
-  database id) and is refused rather than silently corrupted.
+- **`many2one_reference`** cannot be *built* by the composer, because the field
+  needs a `model_field` companion naming the model its id belongs to and there
+  is no way to declare one from the picker. Serializing an existing one is
+  fine: the companion is read and the id leaves as an xmlid.
 
 ## Reference reading
 

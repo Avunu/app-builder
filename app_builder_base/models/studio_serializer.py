@@ -56,6 +56,8 @@ class StudioSerializer(models.AbstractModel):
     _studio_model = None  # target model name
     _studio_sequence = 100  # emission order across serializers
     _studio_fields = ()  # ordered list of significant fields
+    _studio_ignored = ()  # stored fields knowingly *not* emitted
+    _studio_refused = {}  # {field: why setting it cannot be written to source}
     _studio_dir = "data"  # subdirectory under the package root
     _studio_suffix = ""  # filename suffix before '.xml'
     _studio_format = "xml"  # 'xml' or 'csv'
@@ -174,7 +176,29 @@ class StudioSerializer(models.AbstractModel):
                 # the value is the safe answer; letting the exception escape
                 # would fail the whole write over one unserialisable field.
                 return False
-        return value == default
+        if value == default:
+            return True
+
+        # Two ways a value can equal its default and not compare equal to it,
+        # both of which used to emit something worse than noise.
+
+        # An unset Selection or Char reads back as Python False while its
+        # declared default is the empty string. `False == ''` is False, so the
+        # comparison above let it through and the emitter wrote the *string*
+        # "False" into the column -- which reloads as a value the selection does
+        # not have. Emptiness is emptiness, whatever it is spelled as.
+        if field.type != "boolean" and not value and not default:
+            return True
+
+        # A default may be declared in a different type from the one the column
+        # stores: ir.actions.act_window.context declares `default={}` and stores
+        # the string "{}", so every action carried `<field name="context">{}` in
+        # its diff forever. Comparing through the field's own coercion is what
+        # makes the two spellings agree.
+        try:
+            return value == field.convert_to_cache(default, record, validate=False)
+        except (ValueError, TypeError):
+            return False
 
     @api.model
     def _field_node(self, record, fname):
@@ -207,21 +231,26 @@ class StudioSerializer(models.AbstractModel):
                 )
             )
             node.set("eval", "[(6, 0, [%s])]" % refs)
+        elif ftype == "reference":
+            # Stores "model,id" as a string, and core's importer resolves a
+            # plain ref= into exactly that (convert.py:405-407) -- so a
+            # Reference is as portable as a many2one and needs no special
+            # spelling. Worth stating because the neighbouring branch refuses
+            # many2one_reference, which sounds similar and is not: that one is
+            # a bare integer whose model lives in a separate column, with
+            # nothing for an xmlid to attach to.
+            node.set("ref", self._ref_of(value, source=self._studio_model))
         elif ftype == "many2one_reference":
-            # An integer holding another record's id, with a companion field
-            # naming its model. There is no portable way to express that as a
-            # ref, and emitting the integer would write one database's id into
-            # a file loaded into another. Fail loudly rather than corrupt.
-            raise UserError(
-                _(
-                    "Field %(field)s on %(model)s is a many2one_reference, whose "
-                    "value is a raw database id. App Builder cannot serialize it "
-                    "portably; set it per-environment instead of recording it in "
-                    "the package.",
-                    field=fname,
-                    model=self._studio_model,
-                )
-            )
+            # A bare integer id, with a companion field naming the model it
+            # belongs to. Emitting the integer would write one database's id
+            # into a file loaded into another -- but the companion field is
+            # exactly what makes the pair resolvable, so the record can be
+            # found and emitted as an xmlid after all. ``ref()`` returns the id
+            # on load (convert.py:217), which is what the column wants.
+            #
+            # Without a companion field there is genuinely nothing to look the
+            # id up in, and that is the case worth refusing.
+            node.set("eval", "ref(%r)" % self._reference_xmlid(record, fname))
         elif ftype in ("date", "datetime"):
             node.text = str(value)
         elif ftype == "binary":
@@ -229,6 +258,51 @@ class StudioSerializer(models.AbstractModel):
         else:
             node.text = value if isinstance(value, str) else str(value)
         return node
+
+    @api.model
+    def _reference_xmlid(self, record, fname, comodel=None):
+        """The xmlid behind a bare-integer reference.
+
+        Resolving one needs the model it points at. Usually that is the field's
+        declared ``model_field`` companion -- ``base.automation.trg_field_ref``
+        reads its model from ``trg_field_ref_model_name`` -- and a caller that
+        knows better passes ``comodel`` outright, which is how
+        ``ir.actions.act_window.res_id`` resolves through its own ``res_model``
+        despite being a plain Integer with no companion declared.
+
+        The companion is often computed and unstored. That is fine: it is read
+        here rather than emitted, because the model and the id travel together
+        inside the xmlid.
+        """
+        if comodel is None:
+            field = record._fields[fname]
+            model_field = getattr(field, "model_field", None)
+            comodel = record[model_field] if model_field else None
+        if not comodel or comodel not in self.env:
+            raise UserError(
+                _(
+                    "Field %(field)s on %(model)s holds a raw database id and "
+                    "does not say which model it points at, so App Builder "
+                    "cannot write it to source in a form that survives a fresh "
+                    "install. Set it per environment instead of recording it "
+                    "in the package.",
+                    field=fname,
+                    model=self._studio_model,
+                )
+            )
+        target = self.env[comodel].browse(record[fname]).exists()
+        if not target:
+            raise UserError(
+                _(
+                    "Field %(field)s on %(model)s points at %(comodel)s record "
+                    "#%(res_id)s, which no longer exists.",
+                    field=fname,
+                    model=self._studio_model,
+                    comodel=comodel,
+                    res_id=record[fname],
+                )
+            )
+        return self._ref_of(target, source=self._studio_model)
 
     # -- record emission --------------------------------------------------
 
@@ -242,14 +316,138 @@ class StudioSerializer(models.AbstractModel):
     @api.model
     def _serialize(self, record, xmlid):
         """Build the ``<record>`` node for ``record``."""
+        self._assert_complete(record)
         node = etree.Element("record")
         node.set("id", self._record_id(record, xmlid))
         node.set("model", self._studio_model)
-        for fname in self._studio_fields:
+        for fname in self._emitted_field_names():
             child = self._field_node(record, fname)
             if child is not None:
                 node.append(child)
         return node
+
+    # -- the completeness guard -------------------------------------------
+    #
+    # ``_studio_fields`` is an allowlist, which is what keeps the output small
+    # enough to review -- but nothing checked that what it leaves out was
+    # actually safe to leave out. A field omitted from the list is dropped from
+    # the generated source *silently*, and the package still reports clean, so
+    # I3 (load_from_files(serialize(db)) == db) breaks in the one way no test
+    # would notice. Everything below exists to turn that into a loud failure.
+    #
+    # Two exemptions are mechanical rather than judgements, and are applied
+    # automatically so that ``_studio_ignored`` stays short enough to read:
+    #
+    #   * ``field.automatic`` -- the magic columns Odoo adds to every model
+    #     (``models.py:278``): id, display_name, create_uid/date, write_uid/date.
+    #   * ``not field.store`` -- a value derived on read. It has no independent
+    #     existence to lose, and *reading* one here would trigger arbitrary
+    #     compute code on the write path.
+    #
+    # What remains is a stored field carrying a user-settable value, so leaving
+    # it out is a decision somebody has to make and write down.
+
+    @api.model
+    def _emitted_field_names(self):
+        """Ordered field names this serializer writes out.
+
+        A method rather than the tuple directly, for two reasons. A CSV
+        serializer emits by column and answers differently. And a bridge addon
+        for an optional module -- mail contributing ``template_id`` to
+        ``ir.actions.server`` -- has to *add* to the list: setting the class
+        attribute from a second module replaces it instead, so two bridges
+        would silently clobber each other, while a ``super()`` chain composes.
+        """
+        return tuple(self._studio_fields)
+
+    @api.model
+    def _emitted_fields(self):
+        return set(self._emitted_field_names())
+
+    @api.model
+    def _ignored_fields(self):
+        """Stored fields knowingly not emitted. Extended the same way."""
+        return set(self._studio_ignored)
+
+    @api.model
+    def _accountable_fields(self, record):
+        """Stored, non-magic fields -- the ones an omission could actually lose."""
+        return {
+            name
+            for name, field in record._fields.items()
+            if field.store and not field.automatic
+        }
+
+    @api.model
+    def _classified_fields(self):
+        """Every field name this serializer has an answer for.
+
+        Three answers, and every stored field must have one: emit it, ignore it
+        because it cannot carry intent, or refuse it because it can but has no
+        portable form. The static coverage test asserts the union is total,
+        which is what catches a *newly installed module* contributing a field
+        nobody has classified -- long before a user happens to set it.
+        """
+        return (
+            self._emitted_fields() | self._ignored_fields() | set(self._studio_refused)
+        )
+
+    @api.model
+    def _unclassified_fields(self, record):
+        """Stored fields nobody has decided about."""
+        return self._accountable_fields(record) - self._classified_fields()
+
+    @api.model
+    def _assert_complete(self, record):
+        """Refuse to emit a record whose source would be missing something.
+
+        Only fires when a value actually differs from its default. An
+        unclassified field nobody ever set is a gap in our bookkeeping rather
+        than data loss, and failing somebody's write over it would be
+        obstructive -- reporting that case is the static test's job, not this
+        one's.
+        """
+        # Read as superuser. The guard's whole job is to look at fields nobody
+        # classified, and some of those are group-restricted --
+        # ir.ui.view.visibility_password carries groups='base.group_system' and
+        # raises AccessError on read. Failing somebody's write because the check
+        # itself was not allowed to look would be absurd, and this reads data to
+        # count it rather than to show it.
+        record = record.sudo()
+        for fname, why in sorted(self._studio_refused.items()):
+            if fname in record._fields and not self._should_skip(record, fname):
+                raise UserError(
+                    _(
+                        "%(model)s record %(name)s sets %(field)s, which OCA "
+                        "Studio cannot write to source: %(why)s",
+                        model=self._studio_model,
+                        name=record.display_name or record.id,
+                        field=fname,
+                        why=why,
+                    )
+                )
+        lost = sorted(
+            name
+            for name in self._unclassified_fields(record)
+            if not self._should_skip(record, name)
+        )
+        if not lost:
+            return True
+        raise UserError(
+            _(
+                "Cannot serialize %(model)s record %(name)s without losing "
+                "data: %(fields)s %(verb)s a value the generated source would "
+                "not carry, so reloading the package would not reproduce this "
+                "record.\n\nThis is a gap in App Builder rather than a mistake "
+                "you made. The field needs adding to the serializer's "
+                "_studio_fields, or to _studio_ignored with the reason it "
+                "cannot matter.",
+                model=self._studio_model,
+                name=record.display_name or record.id,
+                fields=", ".join(lost),
+                verb=_("has") if len(lost) == 1 else _("have"),
+            )
+        )
 
     # -- file placement ---------------------------------------------------
 

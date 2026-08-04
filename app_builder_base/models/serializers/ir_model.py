@@ -15,9 +15,18 @@ class IrModelSerializer(models.AbstractModel):
     _studio_model = "ir.model"
     _studio_sequence = SEQ_MODEL
     _studio_dir = "models"
-    # 'state' is deliberately omitted: it defaults to 'manual', which is what we
-    # always want, and emitting a readonly field would be noise in every diff.
     _studio_fields = ("name", "model", "info", "order", "transient")
+    _studio_ignored = (
+        # Defaults to 'manual', which is what _ownable already requires, and
+        # emitting a readonly field would be noise in every diff.
+        "state",
+        # Fields, ACLs and record rules each have a serializer of their own and
+        # are emitted as their own records; writing the inverse side as well
+        # would define every one of them twice.
+        "field_id",
+        "access_ids",
+        "rule_ids",
+    )
 
     @api.model
     def _group_model(self, record):
@@ -97,6 +106,29 @@ class IrModelFieldsSerializer(models.AbstractModel):
         "sanitize_form",
         "strip_style",
         "strip_classes",
+        # Definitional rather than decorative: _instanciate_attrs passes it
+        # straight to the field, and a company-dependent column stores a value
+        # per company. Readonly in the UI, but reachable through create() --
+        # and losing it would change what the column *is*, silently.
+        "company_dependent",
+    )
+    _studio_ignored = (
+        # Always 'manual' here -- _ownable refuses anything else.
+        "state",
+        # Derived in create() from model_id (ir_model.py:1044), so emitting it
+        # would restate what model_id already says.
+        "model",
+        # The selection values have a serializer of their own.
+        "selection_ids",
+        # Computed from `related` / `relation_field`, both of which are emitted.
+        "related_field_id",
+        "relation_field_id",
+        # Vestigial in core: `groups` is marked "CLEANME unimplemented field
+        # (empty table)" at ir_model.py:588, and `complete_name` has no writer
+        # anywhere in base. Neither can carry a decision because nothing can
+        # set them.
+        "groups",
+        "complete_name",
     )
 
     @api.model

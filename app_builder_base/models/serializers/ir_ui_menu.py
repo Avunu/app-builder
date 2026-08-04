@@ -25,6 +25,15 @@ class IrUiMenuSerializer(models.AbstractModel):
         "sequence",
         "groups_id",
         "web_icon",
+        "active",
+    )
+    _studio_ignored = (
+        # The other end of parent_id, which each child emits itself.
+        "child_id",
+        # Internal hierarchy cache, maintained by the ORM from parent_id.
+        "parent_path",
+        # Decoded from web_icon on write, so it follows the field we do emit.
+        "web_icon_data",
     )
 
     @api.model

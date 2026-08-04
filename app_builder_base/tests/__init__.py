@@ -10,5 +10,6 @@ from . import (
     test_review_regressions,
     test_roundtrip,
     test_serializer,
+    test_serializer_coverage,
     test_xml_writer,
 )

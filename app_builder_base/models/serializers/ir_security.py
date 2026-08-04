@@ -21,6 +21,13 @@ ACCESS_COLUMNS = (
     "perm_unlink",
 )
 
+# Appended only when some row needs it. An archived ACL is rare, but dropping
+# the fact would hand back a *granted* permission on reload -- a security
+# change, silently, in the direction nobody wants. Emitting the column
+# unconditionally would instead put a constant "1" in every package's diff
+# forever, so it appears exactly when it carries information.
+ACCESS_OPTIONAL_COLUMNS = ("active",)
+
 
 class IrModelAccessSerializer(models.AbstractModel):
     _name = "studio.serializer.ir.model.access"
@@ -43,8 +50,25 @@ class IrModelAccessSerializer(models.AbstractModel):
         return "security/ir.model.access.csv"
 
     @api.model
+    def _emitted_field_names(self):
+        """Derived from the CSV columns rather than from ``_studio_fields``.
+
+        A CSV serializer emits by column, so ACCESS_COLUMNS is the allowlist
+        here. Deriving it keeps one declaration of what gets written, which is
+        why the completeness guard asks this question through a method instead
+        of reading the tuple directly.
+        """
+        return tuple(
+            column.partition(":")[0]
+            for column in ACCESS_COLUMNS + ACCESS_OPTIONAL_COLUMNS
+            if column != "id"
+        )
+
+    @api.model
     def _csv_row(self, record, xmlid):
+        self._assert_complete(record)
         return {
+            "active": "1" if record.active else "0",
             "id": self._record_id(record, xmlid),
             "name": record.name,
             "model_id:id": self._ref_of(record.model_id, source=self._studio_model),
@@ -62,9 +86,20 @@ class IrModelAccessSerializer(models.AbstractModel):
     @api.model
     def _render_csv(self, rows):
         """Render sorted rows with LF endings, so diffs stay platform-stable."""
+        columns = list(ACCESS_COLUMNS)
+        for column in ACCESS_OPTIONAL_COLUMNS:
+            # Present only when some row disagrees with the field's default, so
+            # the ordinary file keeps Odoo's conventional shape. The decision
+            # reads off the data alone, which is what keeps the output
+            # reproducible.
+            if any(row.get(column) == "0" for row in rows):
+                columns.append(column)
         buffer = io.StringIO()
         writer = csv.DictWriter(
-            buffer, fieldnames=list(ACCESS_COLUMNS), lineterminator="\n"
+            buffer,
+            fieldnames=columns,
+            extrasaction="ignore",
+            lineterminator="\n",
         )
         writer.writeheader()
         for row in sorted(rows, key=lambda r: r["id"]):
@@ -91,6 +126,11 @@ class IrRuleSerializer(models.AbstractModel):
         "perm_write",
         "perm_create",
         "perm_unlink",
+    )
+    _studio_ignored = (
+        # Computed from `groups`: a rule with no group is global. Emitting it
+        # would state a conclusion the groups already carry.
+        "global",
     )
 
     @api.model

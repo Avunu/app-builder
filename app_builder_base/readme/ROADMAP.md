@@ -11,6 +11,27 @@
 
 ## Known limits
 
+- **Translated fields carry only their source term.** `name`, `help` and
+  `field_description` are `translate=True` jsonb columns, and the emitter writes
+  the one string. The fields are in the allowlist, so the completeness guard
+  reports clean while every non-source translation is dropped. Closing it needs
+  the `ir.translation`-shaped half of the round trip, not another allowlist
+  entry.
+- **A field default set through the field editor is not written.** Odoo stores
+  it in `ir.default`, keyed by `field_id`, and there is no serializer for that
+  model — so the default survives on the `.py` path (`FieldSpec.default`) and is
+  lost on the XML one.
+- **The static coverage test is honest about modules it has never seen.** It
+  fails when an installed addon contributes a stored field to a serialized
+  model that nobody has classified — `website` alone adds about a dozen. That is
+  the intended behaviour rather than a bug: the failure names each field and the
+  fix is one line in `_studio_fields` or `_studio_ignored`. It is worth knowing
+  before installing something broad.
+- **Serializing under `--dev=xml` can read the arch off disk.** `_compute_arch`
+  prefers the file whenever `arch_updated` is False, so a view whose file and
+  database have diverged serializes the file's version. The reload path is what
+  makes that divergence detectable; drift detection is the answer to it, not the
+  emitter.
 - **A new column needs the class re-imported**, so edits batch behind an explicit
   Apply — one reload per changeset rather than one per field. This is not a
   preference: a `state='manual'` field cannot have a clean name (a Postgres CHECK
@@ -29,9 +50,11 @@
   aims back; the picker lists the candidates and says so when there are none.
 - **Adopting two custom models that reference each other** in the same operation
   is untested; adopt them one at a time.
-- **`many2one_reference` cannot be serialized portably** — its value is a raw
-  database id — and is refused rather than silently corrupted. `properties` and
-  `json` are refused too, each with the reason shown in the field picker.
+- **`many2one_reference` cannot be built here**, because the field needs a
+  `model_field` companion naming the model its id belongs to and the picker has
+  no way to declare one. An existing one serializes fine — the companion is
+  read, and the id leaves as an xmlid rather than a raw number. `properties` and
+  `json` are refused outright, each with the reason shown in the field picker.
 - **The view editor picks nodes from a server-computed tree.** Locators are minted
   server-side against the combined arch, never in the browser: the arch a client
   receives is a per-user projection, with nodes removed by group rights and whole
