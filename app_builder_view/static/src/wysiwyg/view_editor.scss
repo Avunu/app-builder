@@ -33,3 +33,11 @@
         }
     }
 }
+
+// The field palette can be long on a real model, and the panel it lives in
+// already scrolls -- nesting a second scroll region keeps the controls below it
+// (buttons, tabs) reachable without hunting for them.
+.app-builder-palette {
+    max-height: 14rem;
+    overflow-y: auto;
+}

@@ -161,3 +161,146 @@ class TestAddView(StudioCase):
             self.editor.with_user(outsider).sudo(False).add_view(
                 self.demo, "kanban", self.package.id
             )
+
+
+@tagged("post_install", "-at_install")
+class TestAddAndRemove(StudioCase):
+    """The gap that made the editor a viewer for anything it did not own.
+
+    A field could be created on any model and then placed only into views the
+    package owned outright, which excluded every core screen. The server could
+    always emit the inheriting <xpath>; nothing asked it to.
+    """
+
+    def _package_and_view(self):
+        package = self.make_package()
+        self.build_demo_content(package)
+        view = self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+        )
+        return package, view
+
+    def test_a_field_can_be_added_to_a_view_the_package_owns(self):
+        package, view = self._package_and_view()
+        self.env["studio.view.editor"].add_field_at(
+            view.id, package.id, {"kind": "root"}, "x_active_flag"
+        )
+        arch = self.env["ir.ui.view"].browse(view.id).get_combined_arch()
+        self.assertIn('name="x_active_flag"', arch)
+
+    def test_a_field_can_be_added_to_a_core_view_as_a_patch(self):
+        """The headline case: a core form is patched, never rewritten."""
+        package = self.make_package()
+        self.build_demo_content(package)
+        core = self.env.ref("base.view_partner_form")
+        before = core.arch
+        self.env["studio.view.editor"].add_field_at(
+            core.id, package.id, {"kind": "root"}, "ref"
+        )
+        self.assertEqual(
+            self.env.ref("base.view_partner_form").arch,
+            before,
+            "a core view must never be rewritten in place",
+        )
+        extension = self.env["ir.ui.view"].search(
+            [("inherit_id", "=", core.id), ("studio_package_id", "=", package.id)]
+        )
+        self.assertTrue(extension, "the edit must land in an inheriting view")
+        self.assertIn('name="ref"', extension.arch)
+
+    def test_a_field_can_be_removed_again(self):
+        package, view = self._package_and_view()
+        editor = self.env["studio.view.editor"]
+        editor.remove_at(view.id, package.id, {"kind": "field", "name": "x_budget"})
+        arch = self.env["ir.ui.view"].browse(view.id).get_combined_arch()
+        self.assertNotIn('name="x_budget"', arch)
+
+    def test_a_tab_and_a_group_can_be_added(self):
+        package, view = self._package_and_view()
+        editor = self.env["studio.view.editor"]
+        editor.add_container_at(view.id, package.id, {"kind": "sheet"}, "group")
+        editor.add_container_at(view.id, package.id, {"kind": "sheet"}, "page")
+        arch = self.env["ir.ui.view"].browse(view.id).get_combined_arch()
+        self.assertIn("<page", arch)
+
+    def test_an_unnamed_singleton_container_resolves_by_its_tag(self):
+        """A form has one <sheet> and it has nothing else to be named by."""
+        _package, view = self._package_and_view()
+        root = etree.fromstring(view.get_combined_arch().encode())
+        node = self.env["studio.view.editor"]._find_descriptor(root, {"kind": "sheet"})
+        self.assertIsNotNone(node)
+        self.assertEqual(node.tag, "sheet")
+
+    def test_an_ambiguous_container_is_refused_rather_than_guessed(self):
+        """Two groups and no name is a question, not an answer."""
+        package, view = self._package_and_view()
+        self.env["studio.view.editor"].add_container_at(
+            view.id, package.id, {"kind": "sheet"}, "group"
+        )
+        root = etree.fromstring(
+            self.env["ir.ui.view"].browse(view.id).get_combined_arch().encode()
+        )
+        self.assertGreater(len(root.findall(".//group")), 1, "sanity: two groups now")
+        node = self.env["studio.view.editor"]._find_descriptor(root, {"kind": "group"})
+        self.assertIsNone(node)
+
+
+@tagged("post_install", "-at_install")
+class TestActionButtonPortability(StudioCase):
+    def test_a_button_action_is_written_as_an_xmlid(self):
+        """convert.py resolves %(xmlid)d to an integer when loading an arch, so
+        the database really does hold a raw id -- and writing it straight back
+        out would put one database's primary key into a file meant for another.
+        """
+        package = self.make_package()
+        self.build_demo_content(package)
+        model = self.env["ir.model"]._get("x_studio_project")
+        action = self.env["ir.actions.server"].create(
+            {
+                "name": "Do the thing",
+                "model_id": model.id,
+                "state": "code",
+                "code": "pass",
+            }
+        )
+        package._assign(action)
+        view = self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+        )
+        self.env["studio.view.editor"].add_button_at(
+            view.id, package.id, {"kind": "sheet"}, {"action_id": action.id}
+        )
+        # Odoo's validator takes an integer or an xmlid in a stored arch, but
+        # refuses `%(xmlid)d` -- convert.py resolves that while *loading*, and a
+        # view written live has nothing to resolve it. So the xmlid goes in as
+        # itself, which needs no rewriting on the way out either.
+        arch = self.env["ir.ui.view"].browse(view.id).get_combined_arch()
+        self.assertIn("x_studio_demo.", arch)
+        self.assertNotIn('name="%d"' % action.id, arch)
+        emitted = "".join(package._render_files().values())
+        self.assertNotIn('name="%d"' % action.id, emitted)
+
+    def test_a_numeric_action_button_is_rewritten_on_the_way_out(self):
+        """An arch that arrived with a raw id still must not reach a file."""
+        package = self.make_package()
+        self.build_demo_content(package)
+        model = self.env["ir.model"]._get("x_studio_project")
+        action = self.env["ir.actions.server"].create(
+            {
+                "name": "Legacy",
+                "model_id": model.id,
+                "state": "code",
+                "code": "pass",
+            }
+        )
+        package._assign(action)
+        view = self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+        )
+        view.arch = view.arch.replace(
+            "</sheet>",
+            '<button name="%d" type="action" string="Legacy"/></sheet>' % action.id,
+        )
+        emitted = "".join(package._render_files().values())
+        self.assertNotIn('name="%d"' % action.id, emitted)
+        self.assertIn("ir_actions_server_legacy", emitted)

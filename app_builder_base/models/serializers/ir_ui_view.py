@@ -4,7 +4,8 @@
 
 from lxml import etree
 
-from odoo import api, models
+from odoo import _, api, models
+from odoo.exceptions import UserError
 
 from ...tools import xml_writer
 from ..studio_serializer import SEQ_VIEW
@@ -101,8 +102,74 @@ class IrUiViewSerializer(models.AbstractModel):
     @api.model
     def _field_node(self, record, fname):
         if fname == "arch":
-            return self._arch_node(record.arch)
+            node = self._arch_node(record.arch)
+            self._portable_action_buttons(node)
+            return node
         return super()._field_node(record, fname)
+
+    @api.model
+    def _concrete_action(self, action_id):
+        """The action as its own model, not as ``ir.actions.actions``.
+
+        ``ir.actions.actions`` is the shared table, and an xmlid is registered
+        against the *concrete* model -- ``ir.model.data`` says
+        ``ir.actions.server``, never ``ir.actions.actions``. Browsing the base
+        model therefore finds the record and then reports it has no external ID,
+        which is both wrong and hard to read as a message. ``type`` is Odoo's own
+        discriminator and names the model to browse instead.
+        """
+        base = self.env["ir.actions.actions"].browse(action_id).exists()
+        if not base:
+            return base
+        return self.env[base.type].browse(base.id) if base.type in self.env else base
+
+    @api.model
+    def _portable_action_buttons(self, node):
+        """Turn ``<button type="action" name="42">`` into the action's xmlid.
+
+        A raw primary key in an arch is the same mistake the emitter refuses
+        everywhere else, hiding somewhere the field-level rules never look: the
+        arch is one opaque string to them.
+
+        The builder writes the xmlid in the first place, so this is for arches
+        that arrived another way -- a hand-written view, or one from a database
+        where ``convert.py:107`` resolved a data file's ``%(xmlid)d`` into an
+        integer on the way in. Odoo's validator accepts either spelling
+        (``ir_ui_view.py:3089-3096``), and only one of them still means the same
+        action after a fresh install.
+        """
+        for button in node.iter("button"):
+            if button.get("type") != "action":
+                continue
+            name = (button.get("name") or "").strip()
+            if not name.isdigit():
+                continue  # already an xmlid, which is what we want
+            action = self._concrete_action(int(name))
+            if not action:
+                raise UserError(
+                    _(
+                        "A button in %(model)s runs action #%(res_id)s, which no "
+                        "longer exists.",
+                        model=self._studio_model,
+                        res_id=name,
+                    )
+                )
+            # Deliberately the fully-qualified xmlid rather than the shortened
+            # same-module form `_ref_of` produces: an arch is read by Odoo's own
+            # validator, which has no notion of "the module this file belongs
+            # to" and resolves the string exactly as written.
+            xmlid = self._xmlid_of(action)
+            if not xmlid:
+                raise UserError(
+                    _(
+                        "A button in %(model)s runs %(action)s, which has no "
+                        "external ID and so cannot be named portably.",
+                        model=self._studio_model,
+                        action=action.display_name,
+                    )
+                )
+            button.set("name", xmlid)
+        return node
 
     @api.model
     def _sort_key(self, record, xmlid):

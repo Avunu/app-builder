@@ -359,6 +359,24 @@ class StudioViewEditor(models.AbstractModel):
             group.set("string", operation["string"])
         return node
 
+    def _op_add_page(self, root, operation):
+        """Add a notebook tab, creating the notebook when there is none.
+
+        Same reasoning as the group a filter lands in: a tab with nowhere to
+        live is not a second operation the user should have to understand.
+        """
+        node = self._new_xpath(
+            root, operation["xpath"], operation.get("position", "inside")
+        )
+        container = node
+        if operation.get("in_new_notebook"):
+            container = etree.SubElement(node, "notebook")
+        page = etree.SubElement(container, "page")
+        page.set("string", operation.get("string") or "New tab")
+        if operation.get("name"):
+            page.set("name", operation["name"])
+        return node
+
     def _op_add_button(self, root, operation):
         node = self._new_xpath(
             root, operation["xpath"], operation.get("position", "inside")
@@ -409,6 +427,167 @@ class StudioViewEditor(models.AbstractModel):
         if name and occurrences[(node.tag, name)] == 1:
             return "//%s[@name='%s']" % (node.tag, name)
         return node.getroottree().getpath(node)
+
+    @api.model
+    def apply_at(self, view_id, package_id, anchor, operation):
+        """Apply an operation relative to a node the client picked by descriptor.
+
+        The one entry point for every structural edit -- adding a field, a
+        button, a tab, a group, or removing any of them. It exists so the client
+        keeps its side of the bargain: it says *what was selected*, and the
+        xpath is minted here against the combined arch. A browser that computed
+        its own locator would produce one derived from a per-user projection,
+        which is right for that user and wrong for the next.
+
+        ``position`` is decided here too, from what kind of thing was selected:
+        a container takes a child, a leaf takes a sibling. Letting the caller
+        choose would mean the same gesture behaved differently depending on
+        which button sent it.
+        """
+        self._assert_studio_manager()
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view:
+            raise UserError(_("The view being edited no longer exists."))
+        root = etree.fromstring(view.get_combined_arch().encode())
+        node = self._find_descriptor(root, anchor)
+        if node is None:
+            raise UserError(
+                _("That is not a place in the view the builder can address.")
+            )
+        operation = dict(operation)
+        operation["xpath"] = self._locator_for(node, self._occurrences(root))
+        operation.setdefault("position", self._insert_position(anchor))
+        return self.apply_operation(view_id, package_id, operation)
+
+    @api.model
+    def add_field_at(self, view_id, package_id, anchor, field_name):
+        """Put an existing field of the model into the view.
+
+        The gap this closes is the largest one the builder had: a field could be
+        *created* on any model and then placed only into views the package owned
+        outright, which excluded every core screen -- so adding a field to the
+        quotation form, the most ordinary Studio gesture there is, had no path
+        through the UI at all. The server could always emit the inheriting
+        ``<xpath>`` for it; nothing asked.
+        """
+        self._assert_studio_manager()
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view:
+            raise UserError(_("The view being edited no longer exists."))
+        if field_name not in self.env[view.model]._fields:
+            raise UserError(
+                _(
+                    "%(field)s is not a field of %(model)s.",
+                    field=field_name,
+                    model=view.model,
+                )
+            )
+        operation = {"type": "add_field", "name": field_name}
+        if view.type == "list":
+            # A list has no containers: every field is a column of the root, so
+            # "inside the list" and "after that column" are the only readings
+            # and the anchor decides which.
+            operation["position"] = self._insert_position(anchor)
+        return self.apply_at(view_id, package_id, anchor, operation)
+
+    @api.model
+    def remove_at(self, view_id, package_id, anchor):
+        """Take the selected node out of the view.
+
+        Emitted as ``position="replace"`` with nothing in it, which is how a
+        view drops a node it inherits without touching the view that declares
+        it. Distinct from hiding: an invisible field is still there and still
+        loads, which is usually what somebody actually wants -- so the UI offers
+        both and says which is which.
+        """
+        return self.apply_at(
+            view_id, package_id, anchor, {"type": "remove_node", "position": "replace"}
+        )
+
+    @api.model
+    def add_button_at(self, view_id, package_id, anchor, values):
+        """Add a button that runs a server action.
+
+        Restricted to server actions on purpose. The alternative Odoo Studio
+        offers -- name any Python method -- writes a call to something that may
+        not exist, and the view happily saves: the failure arrives later, for
+        whoever presses it. A server action is a record, so the reference is
+        checked when it is chosen and travels with the package.
+        """
+        self._assert_studio_manager()
+        action = (
+            self.env["ir.actions.server"].browse(values.get("action_id") or 0).exists()
+        )
+        if not action:
+            raise UserError(_("Choose the server action this button should run."))
+        # The xmlid, not the id, and not the `%(xmlid)d` form a data file uses.
+        # The validator tries `int(name)` and falls back to resolving an xmlid
+        # (`ir_ui_view.py:3089-3096`), so a stored arch takes either -- but only
+        # one of them still means the same action in the next database. The
+        # `%(...)d` spelling is refused outright here, because convert.py
+        # resolves it while *loading* and there is nothing to resolve it in a
+        # view being written live.
+        xmlid = action.get_external_id().get(action.id)
+        if not xmlid:
+            raise UserError(
+                _(
+                    "%(name)s has no external ID, so a button naming it could "
+                    "not survive being loaded into another database. Assign the "
+                    "action to a studio package first.",
+                    name=action.display_name,
+                )
+            )
+        return self.apply_at(
+            view_id,
+            package_id,
+            anchor,
+            {
+                "type": "add_button",
+                "name": xmlid,
+                "button_type": "action",
+                "string": values.get("string") or action.name,
+                "class": values.get("class") or "btn-secondary",
+            },
+        )
+
+    @api.model
+    def add_container_at(self, view_id, package_id, anchor, kind, string=None):
+        """Add a tab or a group -- the two structural pieces a form is made of."""
+        self._assert_studio_manager()
+        if kind == "group":
+            return self.apply_at(
+                view_id, package_id, anchor, {"type": "add_group", "string": string or ""}
+            )
+        if kind != "page":
+            raise UserError(_("The builder does not add '%s'.", kind))
+
+        # A page is only legal inside a notebook -- `_validate_tag_page` refuses
+        # anything else outright -- so "add a tab" has to mean "add a tab to the
+        # notebook", and provide the notebook when there is none. Making the
+        # user create the notebook first would be asking them to know a rule the
+        # builder already knows, and the failure if they did not would arrive as
+        # a validation error about ancestors.
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view:
+            raise UserError(_("The view being edited no longer exists."))
+        root = etree.fromstring(view.get_combined_arch().encode())
+        operation = {"type": "add_page", "string": string or _("New tab")}
+        if anchor.get("kind") == "notebook":
+            return self.apply_at(view_id, package_id, anchor, operation)
+        notebook = next(
+            (
+                node
+                for node in root.iter("notebook")
+                if not any(a.tag == "field" for a in node.iterancestors())
+            ),
+            None,
+        )
+        if notebook is not None:
+            return self.apply_at(
+                view_id, package_id, {"kind": "notebook"}, operation
+            )
+        operation["in_new_notebook"] = True
+        return self.apply_at(view_id, package_id, anchor, operation)
 
     @api.model
     def move_node(self, view_id, package_id, source, target, position="before"):
@@ -595,7 +774,21 @@ class StudioViewEditor(models.AbstractModel):
         "page": "page",
         "group": "group",
         "filter": "filter",
+        # Containers. These are what an *insertion* aims at -- "put it in this
+        # group" -- so they became addressable when the editor learnt to add
+        # rather than only to change.
+        "notebook": "notebook",
+        "sheet": "sheet",
+        "header": "header",
+        "form": "form",
+        "list": "list",
     }
+
+    # Where a new node goes, given what was selected. Insertion is the one
+    # gesture with two plausible readings -- "after this" or "inside this" --
+    # and guessing differently each time is what makes an editor feel arbitrary.
+    # A leaf takes a sibling; a container takes a child.
+    INSERT_INSIDE = ("group", "notebook", "sheet", "header", "form", "list", "root")
 
     @api.model
     def locate_target(self, view_id, descriptor):
@@ -657,7 +850,19 @@ class StudioViewEditor(models.AbstractModel):
         index = descriptor.get("index")
         if isinstance(index, int) and 0 <= index < len(candidates):
             return candidates[index]
+        # A singleton container -- a form's <sheet>, its <header> -- is named by
+        # its tag alone, because there is only one and it has nothing else to be
+        # named by. Ambiguity is refused rather than resolved to the first: two
+        # <group>s and no name is a question, not an answer.
+        if len(candidates) == 1:
+            return candidates[0]
         return None
+
+    @api.model
+    def _insert_position(self, descriptor):
+        """Whether a new node goes inside what was selected or after it."""
+        kind = descriptor.get("kind")
+        return "inside" if kind in self.INSERT_INSIDE else "after"
 
     @api.model
     def _field_info(self, model_name, node):

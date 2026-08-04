@@ -179,6 +179,88 @@
                             <small t-if="row.help" class="text-muted d-block"
                                    t-esc="row.help"/>
                         </div>
+
+                        <!-- Removing takes the node out of the rendered view via
+                             position="replace"; hiding leaves it there and still
+                             loading, which is usually what somebody means. Both
+                             are offered, side by side, so the difference is a
+                             choice rather than a discovery. -->
+                        <div t-if="canRemoveSelection" class="px-1 mb-3">
+                            <button class="btn btn-outline-danger btn-sm w-100"
+                                    t-att-disabled="state.busy or !packageId"
+                                    t-on-click="() => this.removeSelected()">
+                                Remove from view
+                            </button>
+                            <small class="text-muted d-block">
+                                Takes it off this screen only. To keep it loading
+                                but out of sight, use Hidden above.
+                            </small>
+                        </div>
+                    </t>
+
+                    <t t-if="!isSearch">
+                        <div class="mt-3 pt-2 border-top px-1">
+                            <div class="fw-bold mb-1">Add to this view</div>
+                            <div class="text-muted small mb-2" t-esc="anchorNote"/>
+
+                            <input type="search" class="form-control form-control-sm mb-1"
+                                   placeholder="Search fields…"
+                                   t-att-value="state.paletteFilter"
+                                   t-on-input="(ev) => this.state.paletteFilter = ev.target.value"/>
+                            <div class="app-builder-palette mb-2">
+                                <button t-foreach="paletteChoices" t-as="field"
+                                        t-key="field.name"
+                                        class="btn btn-light btn-sm w-100 text-start mb-1"
+                                        t-att-disabled="state.busy or !packageId"
+                                        t-att-title="field.name"
+                                        t-on-click="() => this.addField(field.name)">
+                                    <t t-esc="field.string"/>
+                                    <span class="text-muted small ms-1" t-esc="field.name"/>
+                                </button>
+                                <div t-if="!paletteChoices.length" class="text-muted small">
+                                    Every field of this model is already on the view.
+                                </div>
+                            </div>
+
+                            <t t-if="view.type === 'form'">
+                                <div class="d-flex gap-1 mb-2">
+                                    <button class="btn btn-light btn-sm flex-grow-1"
+                                            t-att-disabled="state.busy or !packageId"
+                                            t-on-click="() => this.addContainer('group')">
+                                        Add a group
+                                    </button>
+                                    <button class="btn btn-light btn-sm flex-grow-1"
+                                            t-att-disabled="state.busy or !packageId"
+                                            t-on-click="() => this.addContainer('page')">
+                                        Add a tab
+                                    </button>
+                                </div>
+                            </t>
+
+                            <!-- Server actions only. Naming a Python method, as
+                                 Odoo Studio allows, writes a call to something
+                                 that may not exist and saves happily; the failure
+                                 arrives later, for whoever presses the button. -->
+                            <div t-if="state.serverActions.length" class="mb-2">
+                                <label class="form-label small text-muted mb-0">Add a button</label>
+                                <input type="text" class="form-control form-control-sm mb-1"
+                                       placeholder="Label"
+                                       t-att-value="state.newButton.string"
+                                       t-on-input="(ev) => this.state.newButton.string = ev.target.value"/>
+                                <select class="form-select form-select-sm mb-1"
+                                        t-on-change="(ev) => this.state.newButton.action_id = ev.target.value">
+                                    <option value="">Runs which action?</option>
+                                    <option t-foreach="state.serverActions" t-as="action"
+                                            t-key="action.id" t-att-value="action.id"
+                                            t-esc="action.name"/>
+                                </select>
+                                <button class="btn btn-light btn-sm w-100"
+                                        t-att-disabled="state.busy or !packageId or !state.newButton.action_id"
+                                        t-on-click="() => this.addButton()">
+                                    Add the button
+                                </button>
+                            </div>
+                        </div>
                     </t>
 
                     <div t-if="state.addable.length" class="mt-3 pt-2 border-top px-1">

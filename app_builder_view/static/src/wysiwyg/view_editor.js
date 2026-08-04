@@ -55,6 +55,10 @@ export class StudioViewEditor extends Component {
             search: { fields: [], filters: [], group_bys: [] },
             filterField: "",
             filterCondition: "set",
+            palette: [],
+            paletteFilter: "",
+            newButton: { string: "", action_id: "" },
+            serverActions: [],
         });
 
         onWillStart(async () => {
@@ -71,6 +75,10 @@ export class StudioViewEditor extends Component {
             await this.loadAddable();
             await this.loadHistory();
             await this.loadSearch();
+            if (!this.isSearch) {
+                await this.loadPalette();
+                await this.loadServerActions();
+            }
         });
 
         // Capture phase, on the container rather than per element: the view
@@ -458,6 +466,155 @@ export class StudioViewEditor extends Component {
             descriptor,
         ]);
         this.state.target = { ...descriptor, ...found, descriptor };
+    }
+
+    // -- adding to the view ------------------------------------------------
+    //
+    // Click-to-add rather than drag-and-drop, and anchored on the selection.
+    // Where a dropped element lands is genuinely ambiguous in a rendered form --
+    // between two groups, inside the notebook, after the chatter -- and the
+    // server has to answer it anyway because the browser must not mint a
+    // locator. Saying "into the group you have selected" out loud is a smaller
+    // promise than a drop shadow, and it is one the editor can keep.
+
+    get anchor() {
+        return (this.state.target && this.state.target.descriptor) || { kind: "root" };
+    }
+
+    /** Only a leaf can be removed: taking out a container takes its contents. */
+    get canRemoveSelection() {
+        const target = this.state.target;
+        return Boolean(
+            target && target.found && ["field", "column", "button", "page"].includes(target.kind)
+        );
+    }
+
+    /** What the current selection means for something added now. */
+    get anchorNote() {
+        const kind = this.anchor.kind;
+        const inside = ["group", "notebook", "sheet", "header", "root"].includes(kind);
+        const what = this.state.target && this.state.target.name;
+        if (inside) {
+            return kind === "root"
+                ? _t("Added at the end of the view.")
+                : _t("Added inside the selected %s.", kind);
+        }
+        return what
+            ? _t("Added just after %s.", what)
+            : _t("Added just after the selection.");
+    }
+
+    async loadPalette() {
+        this.state.palette = await this.orm.call(
+            "studio.view.editor",
+            "get_addable_fields",
+            [this.view.model, this.viewId]
+        );
+    }
+
+    get paletteChoices() {
+        const needle = (this.state.paletteFilter || "").toLowerCase();
+        if (!needle) {
+            return this.state.palette;
+        }
+        return this.state.palette.filter(
+            (f) =>
+                f.string.toLowerCase().includes(needle) ||
+                f.name.toLowerCase().includes(needle)
+        );
+    }
+
+    async addField(name) {
+        await this.structuralEdit(() =>
+            this.orm.call("studio.view.editor", "add_field_at", [
+                this.viewId,
+                this.packageId,
+                this.anchor,
+                name,
+            ])
+        );
+    }
+
+    async removeSelected() {
+        if (!this.state.target || !this.state.target.found) {
+            return;
+        }
+        await this.structuralEdit(() =>
+            this.orm.call("studio.view.editor", "remove_at", [
+                this.viewId,
+                this.packageId,
+                this.anchor,
+            ])
+        );
+        this.state.target = null;
+    }
+
+    async addContainer(kind) {
+        await this.structuralEdit(() =>
+            this.orm.call("studio.view.editor", "add_container_at", [
+                this.viewId,
+                this.packageId,
+                this.anchor,
+                kind,
+            ])
+        );
+    }
+
+    async addButton() {
+        const values = { ...this.state.newButton };
+        if (!values.action_id) {
+            this.notification.add(_t("Choose the action this button should run."), {
+                type: "warning",
+            });
+            return;
+        }
+        values.action_id = Number(values.action_id);
+        await this.structuralEdit(() =>
+            this.orm.call("studio.view.editor", "add_button_at", [
+                this.viewId,
+                this.packageId,
+                this.anchor,
+                values,
+            ])
+        );
+        this.state.newButton = { string: "", action_id: "" };
+    }
+
+    async loadServerActions() {
+        this.state.serverActions = await this.orm.searchRead(
+            "ir.actions.server",
+            [["model_id.model", "=", this.view.model]],
+            ["id", "name"],
+            { limit: 200, order: "name" }
+        );
+    }
+
+    /**
+     * One wrapper for every edit that changes the view's *shape*.
+     *
+     * All of them invalidate the same three things, and forgetting one leaves
+     * the user looking at an unchanged view after a successful edit -- which
+     * reads as the editor being broken rather than as a stale cache.
+     */
+    async structuralEdit(run) {
+        if (!this.packageId) {
+            this.notification.add(
+                _t("Choose a studio package to record this change in first."),
+                { type: "warning" }
+            );
+            return;
+        }
+        this.state.busy = true;
+        try {
+            await run();
+            await this.loadPalette();
+            await this.loadHistory();
+            await this.refreshSelection();
+            this.env.bus.trigger("CLEAR-CACHES");
+            this.state.previewKey += 1;
+        } finally {
+            this.state.busy = false;
+        }
     }
 
     // -- adding a view -----------------------------------------------------
