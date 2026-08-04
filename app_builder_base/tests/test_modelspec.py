@@ -25,7 +25,7 @@ import itertools
 
 from odoo.tests import BaseCase, tagged
 
-from ..tools import modelspec, pycodegen, pyparse
+from ..tools import catalogue, modelspec, pycodegen, pyparse
 from ..tools.modelspec import ConstraintSpec, FieldSpec, ModelSpec, SelectionSpec
 
 
@@ -506,3 +506,73 @@ class TestSpecDiff(BaseCase):
         """The edit buffer holds specs as json; it must not quietly lose one."""
         spec = spec_with(*BY_TTYPE.values(), inherit=("mail.thread",), order="id")
         self.assertEqual(modelspec.spec_from_json(modelspec.spec_to_json(spec)), spec)
+
+
+@tagged("standard", "at_install")
+class TestFieldTypePresets(BaseCase):
+    """A picker entry is not an ORM type.
+
+    Odoo's own picker shows 21 entries over 15 types, because several are one
+    type dressed differently: Priority is a selection that arrives with four
+    values and a star, Image is a binary that arrives showing the image. The
+    entry key never reaches the spec -- resolving it early is what keeps the
+    code generator ignorant of picker affordances.
+    """
+
+    def test_a_preset_expands_to_a_real_type(self):
+        values, widget = modelspec.apply_preset({"name": "x_p", "ttype": "priority"})
+        self.assertEqual(values["ttype"], "selection")
+        self.assertEqual(widget, "priority")
+        self.assertEqual(
+            [v["value"] for v in values["selection"]],
+            ["0", "1", "2", "3"],
+            "three stars means four values -- the first is no stars",
+        )
+
+    def test_a_preset_never_overrides_what_the_user_said(self):
+        values, _widget = modelspec.apply_preset(
+            {"ttype": "priority", "selection": [{"value": "a", "label": "A"}]}
+        )
+        self.assertEqual([v["value"] for v in values["selection"]], ["a"])
+
+    def test_a_plain_type_is_its_own_entry(self):
+        values, widget = modelspec.apply_preset({"ttype": "char"})
+        self.assertEqual(values["ttype"], "char")
+        self.assertEqual(widget, "")
+
+    def test_every_entry_key_is_unique(self):
+        keys = [e.picker_key for e in modelspec.FIELD_TYPES]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_a_preset_widget_exists_in_the_catalogue(self):
+        """Offering a widget the view editor would refuse is the drift the
+        shared catalogue exists to prevent."""
+        for entry in modelspec.FIELD_TYPES:
+            if not entry.widget:
+                continue
+            known = {w.value for w in catalogue.widgets_for(entry.ttype)}
+            self.assertIn(
+                entry.widget,
+                known,
+                "%s offers '%s', which the catalogue does not list for %s"
+                % (entry.picker_key, entry.widget, entry.ttype),
+            )
+
+    def test_placement_carries_the_widget(self):
+        placement = modelspec.default_placement("image")
+        self.assertEqual(placement["widget"], "image")
+        self.assertTrue(placement["form"])
+
+    def test_a_date_range_is_not_offered_as_a_column(self):
+        self.assertFalse(modelspec.default_placement("daterange")["list"])
+        self.assertTrue(modelspec.default_placement("datetime")["list"])
+
+    def test_clean_placement_keeps_an_explicit_widget(self):
+        cleaned = modelspec.clean_placement({"widget": "priority"}, "selection")
+        self.assertEqual(cleaned["widget"], "priority")
+
+    def test_clean_placement_can_clear_a_widget(self):
+        cleaned = modelspec.clean_placement({"widget": ""}, "image")
+        self.assertEqual(
+            cleaned["widget"], "image", "an absent answer keeps the default"
+        )

@@ -146,6 +146,13 @@ class FieldType:
     so the editor can show exactly the right rows and no others. ``unsupported``
     carries the reason a type is offered but disabled, because a type that
     silently vanishes from the list teaches nobody anything.
+
+    An entry is *not* the same thing as an ORM type. Several are the same type
+    dressed differently -- Priority is a selection that arrives with four values
+    and a star widget, Image is a binary that arrives showing the image -- which
+    is why Odoo's own picker has 21 entries over 15 types. ``key`` identifies
+    the entry, ``ttype`` says what it builds, and ``preset`` is what the entry
+    fills in so the user does not have to.
     """
 
     ttype: str
@@ -153,10 +160,32 @@ class FieldType:
     group: str
     params: tuple[str, ...] = ()
     unsupported: str | None = None
+    # Defaults to the ttype: an ordinary type is its own entry.
+    key: str = ""
+    # The view attribute this entry implies. Not part of the field -- a widget
+    # is a fact about a screen -- so it travels with placement.
+    widget: str = ""
+    # Spec attributes the entry supplies up front, as JSON-shaped values.
+    preset: tuple[tuple[str, object], ...] = ()
+
+    @property
+    def picker_key(self):
+        return self.key or self.ttype
 
     @property
     def supported(self):
         return self.unsupported is None
+
+
+# The four values Odoo's own priority fields use. Three stars, because the
+# first value is "no stars" -- which is the part everybody gets wrong when
+# building one by hand.
+PRIORITY_VALUES = (
+    {"value": "0", "label": "Normal", "sequence": 10},
+    {"value": "1", "label": "Low", "sequence": 20},
+    {"value": "2", "label": "High", "sequence": 30},
+    {"value": "3", "label": "Very High", "sequence": 40},
+)
 
 
 # Ordered: this is the order the picker shows.
@@ -171,7 +200,26 @@ FIELD_TYPES = (
     FieldType("date", "Date", "basic", ("default",)),
     FieldType("datetime", "Date & Time", "basic", ("default",)),
     FieldType("selection", "Selection", "basic", ("selection", "default")),
+    FieldType(
+        "selection",
+        "Priority",
+        "basic",
+        ("selection", "default"),
+        key="priority",
+        widget="priority",
+        preset=(("selection", PRIORITY_VALUES),),
+    ),
     FieldType("binary", "File", "basic", ()),
+    FieldType("binary", "Image", "basic", (), key="image", widget="image"),
+    FieldType("binary", "Signature", "basic", (), key="sign", widget="signature"),
+    FieldType(
+        "datetime",
+        "Date range",
+        "basic",
+        ("default",),
+        key="daterange",
+        widget="daterange",
+    ),
     FieldType(
         "many2one",
         "Link to one record",
@@ -183,9 +231,30 @@ FIELD_TYPES = (
     ),
     FieldType(
         "many2many",
+        "Link to many records",
+        "relational",
+        ("comodel", "domain", "relation_table", "column1", "column2"),
+    ),
+    FieldType(
+        "many2many",
         "Tags",
         "relational",
         ("comodel", "domain", "relation_table", "column1", "column2"),
+        key="tags",
+        widget="many2many_tags",
+        # The base entry was *called* Tags and never set the widget, so it
+        # rendered as a table of rows. The name now belongs to the entry that
+        # actually produces tags.
+    ),
+    FieldType(
+        "one2many",
+        "Lines",
+        "relational",
+        ("comodel", "inverse_name", "domain"),
+        key="lines",
+        # No widget: what makes a Lines field is where it goes. A table of rows
+        # inside a two-column group is unreadable at any real row count, which
+        # is why placement gives it a page of its own.
     ),
     FieldType("reference", "Reference", "advanced", ("selection",)),
     FieldType(
@@ -226,10 +295,51 @@ FIELD_TYPES = (
     ),
 )
 
-FIELD_TYPES_BY_TTYPE = {entry.ttype: entry for entry in FIELD_TYPES}
+FIELD_TYPES_BY_KEY = {entry.picker_key: entry for entry in FIELD_TYPES}
 
-SUPPORTED_TTYPES = tuple(e.ttype for e in FIELD_TYPES if e.supported)
+# First entry wins, which is the plain one: a *field* of type selection is a
+# "Selection", even when it was built through the Priority entry. What the entry
+# added is a widget and some values, and neither changes what the field is.
+FIELD_TYPES_BY_TTYPE = {}
+for _entry in FIELD_TYPES:
+    FIELD_TYPES_BY_TTYPE.setdefault(_entry.ttype, _entry)
+
+# Deduplicated in declaration order rather than through a set: a set's iteration
+# order varies with PYTHONHASHSEED, and this project's whole claim is that
+# nothing it produces depends on run-to-run chance. Membership is all anyone
+# asks of it today, which is exactly how such a thing goes unnoticed.
+SUPPORTED_TTYPES = tuple(dict.fromkeys(e.ttype for e in FIELD_TYPES if e.supported))
 UNSUPPORTED_TTYPES = {e.ttype: e.unsupported for e in FIELD_TYPES if not e.supported}
+
+
+def field_type_for(key):
+    """The picker entry for ``key``, falling back to the plain type.
+
+    Both are accepted because a stored draft predates the presets and names a
+    ttype where a picker now sends an entry key.
+    """
+    return FIELD_TYPES_BY_KEY.get(key) or FIELD_TYPES_BY_TTYPE.get(key)
+
+
+def apply_preset(values):
+    """Expand a picker entry into the spec values it stands for.
+
+    The entry key never reaches the spec: a ``FieldSpec`` describes a field, and
+    "Priority" is not a field type -- it is a selection that arrives with four
+    values and a star. Resolving it here keeps that distinction where it can be
+    seen, rather than teaching the code generator about picker affordances.
+    """
+    values = dict(values or {})
+    entry = field_type_for(values.get("ttype"))
+    if entry is None:
+        return values, ""
+    values["ttype"] = entry.ttype
+    for name, preset in entry.preset:
+        # Only where the user has not already said something. A preset is a
+        # starting point, and re-editing a field must not undo their answer.
+        if not values.get(name):
+            values[name] = preset
+    return values, entry.widget
 
 
 def available_field_types(spec=None, translate=catalogue.identity):
@@ -256,13 +366,15 @@ def available_field_types(spec=None, translate=catalogue.identity):
             )
         out.append(
             {
-                "value": entry.ttype,
+                "value": entry.picker_key,
+                "ttype": entry.ttype,
+                "widget": entry.widget,
                 "label": entry.label,
                 "group": entry.group,
                 "params": list(entry.params),
                 "enabled": enabled,
                 "tooltip": tooltip,
-                "placement": default_placement(entry.ttype),
+                "placement": default_placement(entry.picker_key),
                 # The same widget table the view editor reads. The point of
                 # sharing it is that a type cannot offer a widget here that the
                 # view editor would refuse to set, or the other way round --
@@ -296,8 +408,12 @@ _LIST_BY_DEFAULT = frozenset(
 _SEARCH_BY_DEFAULT = frozenset({"char", "text", "many2one"})
 
 
-def default_placement(ttype):
-    """Which views a newly added field of ``ttype`` should appear in.
+def default_placement(key):
+    """Which views a newly added field should appear in.
+
+    Takes a picker key or a plain ttype, because a preset can want different
+    placement from the type it builds: an Image belongs on the form and nowhere
+    near a list column, whatever binary fields do in general.
 
     ``group_by`` is off even for the types that support it: a group-by the user
     did not ask for is clutter in the search panel, and it is one tick to turn
@@ -305,20 +421,38 @@ def default_placement(ttype):
     single most confusing thing the builder could produce -- which is exactly
     what it produced before placement existed.
     """
+    entry = field_type_for(key)
+    ttype = entry.ttype if entry else key
     return {
         "form": True,
-        "list": ttype in _LIST_BY_DEFAULT,
+        "list": ttype in _LIST_BY_DEFAULT and key not in _NEVER_A_COLUMN,
         "search": ttype in _SEARCH_BY_DEFAULT,
         "group_by": False,
+        # The widget the picker entry implies, if any. Placement is where view
+        # intent lives, and a widget is exactly that -- it says how a screen
+        # shows the field, not what the field is, so it has no business in the
+        # spec the code generator renders.
+        "widget": entry.widget if entry else "",
     }
 
 
-def clean_placement(values, ttype=None):
+# Entries whose type is list-worthy but which are not, as a column.
+_NEVER_A_COLUMN = frozenset({"daterange"})
+
+
+def clean_placement(values, key=None):
     """Coerce whatever the client sent into exactly the known slots."""
-    base = default_placement(ttype) if ttype else dict.fromkeys(PLACEMENT_SLOTS, False)
+    base = default_placement(key) if key else dict.fromkeys(PLACEMENT_SLOTS, False)
+    cleaned = {slot: bool(base.get(slot)) for slot in PLACEMENT_SLOTS}
+    cleaned["widget"] = base.get("widget", "")
     if not values:
-        return base
-    return {slot: bool(values.get(slot, base[slot])) for slot in PLACEMENT_SLOTS}
+        return cleaned
+    for slot in PLACEMENT_SLOTS:
+        if slot in values:
+            cleaned[slot] = bool(values[slot])
+    if values.get("widget"):
+        cleaned["widget"] = str(values["widget"])
+    return cleaned
 
 
 @dataclass(frozen=True, slots=True)

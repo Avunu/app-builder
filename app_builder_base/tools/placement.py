@@ -41,16 +41,29 @@ def wants_notebook(ttype):
 # -- insertion ------------------------------------------------------------
 
 
-def place_in_form(root, name, ttype, label=None):
+def place_in_form(root, name, ttype, label=None, widget=None):
     """Add a field to a form arch, in the slot its type deserves."""
     if _find_field(root, name) is not None:
         return False
     if wants_notebook(ttype):
-        return _place_in_notebook(root, name, label)
-    return _place_in_group(root, name)
+        return _place_in_notebook(root, name, label, widget)
+    return _place_in_group(root, name, widget)
 
 
-def _place_in_group(root, name):
+def _attrs(name, widget):
+    """A field node's attributes. The widget is why placement carries one.
+
+    A preset like Priority or Image *is* a widget plus some values: without
+    writing it here the field lands as a bare selection or a file input, which
+    is the type it really is and not the thing the user picked.
+    """
+    attrs = {"name": name}
+    if widget:
+        attrs["widget"] = widget
+    return attrs
+
+
+def _place_in_group(root, name, widget=None):
     sheet = root.find(".//sheet")
     host = sheet if sheet is not None else root
     columns = host.findall("./group/group")
@@ -65,11 +78,11 @@ def _place_in_group(root, name):
     # Balance the two columns rather than always appending to the first, so a
     # form built one field at a time ends up looking like a designed one.
     target = min(columns, key=lambda column: len(column.findall("field")))
-    etree.SubElement(target, "field", name=name)
+    etree.SubElement(target, "field", _attrs(name, widget))
     return True
 
 
-def _place_in_notebook(root, name, label=None):
+def _place_in_notebook(root, name, label=None, widget=None):
     sheet = root.find(".//sheet")
     host = sheet if sheet is not None else root
     notebook = host.find("./notebook")
@@ -78,14 +91,14 @@ def _place_in_notebook(root, name, label=None):
     page = etree.SubElement(
         notebook, "page", string=label or name, name="page_%s" % name
     )
-    etree.SubElement(page, "field", name=name)
+    etree.SubElement(page, "field", _attrs(name, widget))
     return True
 
 
-def place_in_list(root, name):
+def place_in_list(root, name, widget=None):
     if _find_field(root, name) is not None:
         return False
-    field = etree.Element("field", name=name)
+    field = etree.Element("field", _attrs(name, widget))
     # The state badge reads as a status column and belongs at the end.
     badge = next(
         (f for f in root.findall("field") if f.get("widget") == "badge"),

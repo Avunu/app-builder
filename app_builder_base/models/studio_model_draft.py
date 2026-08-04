@@ -229,14 +229,22 @@ class StudioModelDraft(models.TransientModel):
         create_inverse = (
             values.pop("create_inverse", False) if isinstance(values, dict) else False
         )
+        # The picker sends an entry key, which may be a preset -- "priority"
+        # rather than "selection". Expanding it here means the spec only ever
+        # holds real field types, and the widget the entry implies rides along
+        # with placement, where view intent belongs.
+        picker_key = (values or {}).get("ttype")
+        values, widget = modelspec.apply_preset(values)
         spec_field = modelspec.field_spec_from_json(values)
         spec = self._spec()
         if spec.field(spec_field.name):
             raise UserError(
                 _("This model already has a field called '%s'.", spec_field.name)
             )
+        placement = dict(placement or {})
+        placement.setdefault("widget", widget)
         self._set_placement(
-            spec_field.name, modelspec.clean_placement(placement, spec_field.ttype)
+            spec_field.name, modelspec.clean_placement(placement, picker_key)
         )
         self._store(modelspec.with_field(spec, spec_field))
         if create_inverse and spec_field.ttype == "one2many":
@@ -400,13 +408,16 @@ class StudioModelDraft(models.TransientModel):
         existing = spec.field(name)
         if not existing:
             raise UserError(_("There is no field called '%s' to change.", name))
+        picker_key = (values or {}).get("ttype", existing.ttype)
+        values, widget = modelspec.apply_preset(values)
         if placement is not None:
-            self._set_placement(
-                name,
-                modelspec.clean_placement(
-                    placement, values.get("ttype", existing.ttype)
-                ),
-            )
+            placement = dict(placement)
+            # Only when the entry brings one and the user has not chosen: a
+            # re-edit that changed nothing must not silently reinstate a widget
+            # somebody deliberately cleared.
+            if widget and "widget" not in placement:
+                placement["widget"] = widget
+            self._set_placement(name, modelspec.clean_placement(placement, picker_key))
         merged = {**modelspec.spec_to_json(existing), **values, "name": name}
         return self._store(
             modelspec.with_field(spec, modelspec.field_spec_from_json(merged))
@@ -696,12 +707,13 @@ class StudioModelDraft(models.TransientModel):
                     name, modelspec.default_placement(spec_field.ttype)
                 )
                 label = spec_field.string or name
+                widget = where.get("widget") or ""
                 if view_type == "form" and where.get("form"):
                     changed |= placement_tool.place_in_form(
-                        root, name, spec_field.ttype, label
+                        root, name, spec_field.ttype, label, widget
                     )
                 elif view_type == "list" and where.get("list"):
-                    changed |= placement_tool.place_in_list(root, name)
+                    changed |= placement_tool.place_in_list(root, name, widget)
                 elif view_type == "search":
                     if where.get("search"):
                         changed |= placement_tool.place_in_search(root, name)
