@@ -98,8 +98,6 @@ The editor gates on `os.access(root_path, W_OK)`. Against a Nix-store build or a
 
 ## Available addons
 
-## Available addons
-
 | addon | version | maintainers | summary |
 | --- | --- | --- | --- |
 | app_builder | 18.0.1.0.0 |  | Open-source visual builder whose output is real source code |
