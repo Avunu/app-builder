@@ -9,6 +9,8 @@ other — and core does exactly this: `sale_product_matrix` patches
 `sale.report_saleorder_document` with an xpath.
 """
 
+from lxml import etree
+
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -109,6 +111,74 @@ class TestCreateReport(StudioCase):
         self.assertIn(
             record.display_name, body, "the record the report was asked to print"
         )
+
+    def test_a_generated_report_can_be_extended_by_a_template(self):
+        """The silent failure: a `<template inherit_id=...>` that never applies.
+
+        `_tag_template` never emits a model field (`convert.py:488`), so every
+        extension written the ordinary XML way arrives with model NULL. If our
+        template carries a model, `_get_inheriting_views` drops the extension on
+        `coalesce(model,'') = coalesce(parent.model,'')` (`ir_ui_view.py:645`)
+        -- no exception, no warning, the patch simply is not there. A report
+        nobody but this studio can extend is not source code.
+        """
+        package = self.make_package()
+        self.build_demo_content(package)
+        made = self._make(package)
+        template = self.env["ir.ui.view"].browse(made["view_id"])
+        self.assertFalse(template.model, "a report template must leave `model` empty")
+        self.env["ir.ui.view"].create(
+            {
+                "name": "somebody else's patch",
+                "type": "qweb",
+                "inherit_id": template.id,
+                "mode": "extension",
+                "arch": """
+                    <data>
+                      <xpath expr="//div[hasclass('page')]" position="inside">
+                        <p>added from another addon</p>
+                      </xpath>
+                    </data>
+                """,
+            }
+        )
+        combined = template._get_combined_arch()
+        self.assertIn(
+            "added from another addon",
+            etree.tostring(combined, encoding="unicode"),
+            "an extension written the ordinary way must actually apply",
+        )
+
+    def test_every_layout_splits_one_body_per_record(self):
+        """`div.article` is what maps a PDF body back to a record.
+
+        `_prepare_html` splits on it and reads data-oe-model / data-oe-id off it
+        (`ir_actions_report.py:411-427`). Without one, any number of records
+        prints as a single undivided body -- and a report with `attachment` set
+        refuses outright. External and Internal inherit theirs from the layout
+        they call; Blank has to draw its own, because `web.basic_layout` calls
+        `web.html_container` itself and cannot go inside the loop.
+        """
+        package = self.make_package()
+        self.build_demo_content(package)
+        records = self.env["x_studio_project"].create(
+            [{"x_name": "First"}, {"x_name": "Second"}]
+        )
+        for layout in ("external", "internal", "blank"):
+            made = self._make(package, name="Sheet %s" % layout, layout=layout)
+            report = self.env["ir.actions.report"].browse(made["report_id"])
+            html = report._render_qweb_html(report.report_name, records.ids)[0]
+            bodies, res_ids = report._prepare_html(html, report_model=report.model)[:2]
+            self.assertEqual(
+                len(bodies),
+                2,
+                "%s produced %d bodies for 2 records" % (layout, len(bodies)),
+            )
+            self.assertEqual(
+                sorted(res_ids),
+                sorted(records.ids),
+                "%s lost the mapping from body back to record" % layout,
+            )
 
     def test_a_new_report_appears_in_the_print_menu(self):
         package = self.make_package()

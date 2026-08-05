@@ -802,6 +802,14 @@ def scaffold_report_arch(title, layout="external"):
     The visible content is deliberately thin: a heading and the record's name.
     A generated report that already contained a guessed table would be a
     template somebody has to delete before they can start.
+
+    **Every layout must end up with one `div.article` per record.** That div is
+    not decoration: `_prepare_html` splits the rendered HTML on it and reads
+    `data-oe-model` / `data-oe-id` off it to map each PDF body back to a record
+    (`ir_actions_report.py:411-427`). Without one, a hundred records print as a
+    single undivided body, and a report with `attachment` set refuses outright
+    (`ir_actions_report.py:867-873`). The two wrapped layouts get theirs from
+    `web.external_layout` / `web.internal_layout`; Blank has to draw its own.
     """
     if layout not in REPORT_LAYOUTS_BY_KEY:
         raise ValueError("unknown report layout %r" % layout)
@@ -811,9 +819,29 @@ def scaffold_report_arch(title, layout="external"):
     loop = etree.SubElement(root, "t", {"t-foreach": "docs", "t-as": "doc"})
     # `web.external_layout` reads company/address/logo from the record being
     # printed, so the body has to sit inside the t-call rather than beside it.
-    host = loop
+    # The loop variable has to be `doc`: both layouts do
+    # `<t t-if="not o" t-set="o" t-value="doc"/>` (`report_templates.xml:803`),
+    # so any other name leaves `o` unset and the header renders blank.
     if wrapper:
         host = etree.SubElement(loop, "t", {"t-call": wrapper})
+    else:
+        # `web.basic_layout` is the obvious thing to call here and cannot be
+        # used: it t-calls `web.html_container` itself
+        # (`report_templates.xml:862`), so inside a loop it would emit N whole
+        # documents. Core's own blank exemplar (hr_employee_badge) dodges that
+        # by hoisting basic_layout outside the loop, which is why a badge sheet
+        # prints as one undivided PDF. Drawing the same div it draws
+        # (`report_templates.xml:864`) keeps the chrome off and the splitting on.
+        host = etree.SubElement(
+            loop,
+            "div",
+            {
+                "class": "article",
+                "t-att-data-oe-model": "doc and doc._name",
+                "t-att-data-oe-id": "doc and doc.id",
+                "t-att-data-oe-lang": "doc and doc.env.context.get('lang')",
+            },
+        )
     page = etree.SubElement(host, "div", {"class": "page"})
     heading = etree.SubElement(page, "h2")
     heading.text = title
