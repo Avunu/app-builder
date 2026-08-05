@@ -86,6 +86,30 @@ class TestCreateReport(StudioCase):
         self.assertEqual(view.get_external_id()[view.id], made["report_name"])
         self.assertEqual(view.key, made["report_name"])
 
+    def test_the_generated_report_actually_renders(self):
+        """The failure this whole naming dance exists to prevent.
+
+        Every other test here compares strings. This one hands the report to
+        Odoo's own pipeline, which is the only thing that proves the three
+        names resolve: if any of them were wrong the action would still exist,
+        the template would still exist, and printing would produce nothing.
+
+        HTML rather than PDF on purpose -- the PDF step is wkhtmltopdf's, and
+        what is under test is the template lookup, not the renderer.
+        """
+        package = self.make_package()
+        self.build_demo_content(package)
+        made = self._make(package)
+        record = self.env["x_studio_project"].create({"x_name": "Bridge survey"})
+        report = self.env["ir.actions.report"].browse(made["report_id"])
+        html, kind = report._render_qweb_html(report.report_name, record.ids)
+        self.assertEqual(kind, "html")
+        body = html.decode() if isinstance(html, bytes) else html
+        self.assertIn("Job Sheet", body, "the heading the scaffold wrote")
+        self.assertIn(
+            record.display_name, body, "the record the report was asked to print"
+        )
+
     def test_a_new_report_appears_in_the_print_menu(self):
         package = self.make_package()
         self.build_demo_content(package)
