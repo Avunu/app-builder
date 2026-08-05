@@ -33,6 +33,12 @@
   it in `ir.default`, keyed by `field_id`, and there is no serializer for that
   model — so the default survives on the `.py` path (`FieldSpec.default`) and is
   lost on the XML one.
+- **A value that needs a module is only recorded where a bridge says so.**
+  `_value_depends` maps a field value to the module that contributes it, so a
+  rule using `review_type="expression"` pulls `base_tier_validation_formula`
+  into the manifest. Only the values a bridge declares are covered; a selection
+  value from an unbridged module still produces a file that loads elsewhere as
+  an invalid value.
 - **A module with no bridge loses its fields from generated source.** The static
   coverage test warns, naming each one — `website` alone adds about a dozen to
   `ir.ui.view` — and fails only for the modules the studio itself depends on,
