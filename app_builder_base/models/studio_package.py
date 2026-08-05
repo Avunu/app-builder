@@ -10,6 +10,7 @@ in agreement and to be honest when they are not.
 import logging
 import os
 import sys
+import tempfile
 
 from odoo import _, api, fields, models
 from odoo import models as models_module
@@ -181,7 +182,32 @@ class StudioPackage(models.Model):
                 package.writable = False
                 continue
             probe = path if os.path.isdir(path) else os.path.dirname(path)
-            package.writable = bool(probe) and os.access(probe, os.W_OK)
+            package.writable = bool(probe) and self._can_write_to(probe)
+
+    @api.model
+    def _can_write_to(self, directory):
+        """Try it, rather than asking ``os.access``.
+
+        This flag is the whole read-only-production guard, so it has to be
+        right for the case it exists for -- and ``os.access`` is not. It
+        answers for the *real* uid rather than the effective one, it cannot
+        see an ACL or an immutable flag, and **when Odoo runs as root it
+        answers True for a directory whose mode says 0500** -- which is how
+        most containers run it, and how this project's own CI runs its tests.
+        It also calls a regular file a writable directory, which is true only
+        in the sense that nothing has tried yet.
+
+        Creating a file and removing it is the only answer that is true by
+        construction. It costs an inode briefly, on a model with single-digit
+        row counts, read at builder speed rather than in a loop.
+        """
+        try:
+            with tempfile.NamedTemporaryFile(dir=directory, prefix=".studio-probe-"):
+                return True
+        except OSError:
+            # Permission, a read-only mount, a parent that is not a directory,
+            # a full disk. Each of them means the same thing here.
+            return False
 
     @api.model
     def _suggested(self):

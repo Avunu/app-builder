@@ -4,6 +4,7 @@
 
 import ast
 import io
+import os
 import tempfile
 
 from odoo import Command
@@ -71,6 +72,20 @@ class StudioCase(TransactionCase):
         if installed:
             self.register_module(package.name)
         return package
+
+    def unwritable_path(self):
+        """A path nothing can write to, whatever user the suite runs as.
+
+        Deliberately not `chmod 0500`. This suite runs as root in CI, and root
+        writes straight through mode bits -- which is how the read-only guard
+        came to be covered by an assertion that only held for unprivileged
+        developers, and stayed red in CI for days. A parent that is a regular
+        file is refused for everybody, root included.
+        """
+        blocker = os.path.join(tempfile.mkdtemp(prefix="studio-test-ro-"), "blocker")
+        with open(blocker, "w"):
+            pass
+        return os.path.join(blocker, "package")
 
     def register_module(self, name):
         """Register the package as an installed module.

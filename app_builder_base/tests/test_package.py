@@ -87,14 +87,12 @@ class TestPackage(StudioCase):
         """Production deployments are read-only by design, not by accident."""
         package = self.make_package()
         self.build_demo_content(package)
-        os.chmod(package.root_path, 0o500)
-        try:
-            package.invalidate_recordset(["writable"])
-            self.assertFalse(package.writable)
-            with self.assertRaises(UserError):
-                package.action_write_files()
-        finally:
-            os.chmod(package.root_path, 0o700)
+        package.action_write_files()
+        package.root_path = self.unwritable_path()
+        package.invalidate_recordset(["writable"])
+        self.assertFalse(package.writable)
+        with self.assertRaises(UserError):
+            package.action_write_files()
 
     def test_stale_generated_file_is_pruned(self):
         package = self.make_package()

@@ -68,7 +68,7 @@ class TestModelBuilder(StudioCase):
     def test_the_wizard_refuses_a_read_only_package(self):
         """Production runs read-only from the store; say so rather than
         failing somewhere deeper."""
-        package = self.make_package(name="x_ro_demo", root_path="/proc/nonwritable")
+        package = self.make_package(name="x_ro_demo", root_path=self.unwritable_path())
         wizard = self.env["studio.model.wizard"].create(
             {"package_id": package.id, "name": "Nope"}
         )
