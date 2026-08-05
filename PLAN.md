@@ -340,6 +340,23 @@ Three things this phase turned up that the plan had not:
   for a qweb view created without one, and the key is serialized — so every
   recreation of an extension produced a different diff. The extension now takes
   its xmlid as its key, which is what Odoo's own `<template>` loader does.
+- **A report template must not carry a `model`.** Setting it — for the sake of
+  which file the emitter writes the template into — silently makes the report
+  un-extensible by anyone but this studio. `_get_inheriting_views` joins on
+  `coalesce(model,'') = coalesce(parent.model,'')` (`ir_ui_view.py:645`) and
+  `_tag_template` never emits a model field (`convert.py:488`), so every
+  `<template inherit_id=...>` written the ordinary way arrives with model NULL
+  and is dropped with no exception and no warning. Core leaves it empty for this
+  reason. File grouping is the emitter's problem and is solved in `_group_model`,
+  which asks the report instead.
+- **`div.article` is what maps a PDF body back to a record.** `_prepare_html`
+  splits on it and reads `data-oe-model` / `data-oe-id` off it
+  (`ir_actions_report.py:411-427`). External and Internal inherit theirs from
+  the layout they call; Blank called nothing, so every record printed as one
+  undivided body. `web.basic_layout` cannot be used inside the loop — it
+  `t-call`s `web.html_container` itself — which is why core's own blank exemplar
+  (`hr_employee_badge`) prints as a single PDF. Blank now draws the same div
+  basic_layout draws.
 
 **What is left.** The WYSIWYG half, as scoped above: the powerbox, drag-in
 fields, dynamic tables, and the t-if / t-elif / t-else preview switch. The
