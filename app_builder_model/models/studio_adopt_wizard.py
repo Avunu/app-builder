@@ -48,9 +48,7 @@ class StudioAdoptWizard(models.TransientModel):
     @api.model
     def _default_package(self):
         """The obvious package, when there is only one to choose."""
-        packages = self.env["studio.package"].search([])
-        writable = packages.filtered("writable")
-        return writable[:1].id if len(writable) == 1 else False
+        return self.env["studio.package"]._suggested().id or False
 
     @api.depends("package_id")
     def _compute_available_model_ids(self):

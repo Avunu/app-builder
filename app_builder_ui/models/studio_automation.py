@@ -34,15 +34,7 @@ class StudioAutomation(models.AbstractModel):
 
     @api.model
     def _suggested_package(self):
-        """Where a rule created from the studio should be written.
-
-        The same rule the view editor uses: the one writable package when there
-        is exactly one, and nothing when the choice is real. Guessing between
-        two packages would put somebody's automation in the wrong addon, which
-        is only discovered at review time.
-        """
-        writable = self.env["studio.package"].search([]).filtered("writable")
-        return writable if len(writable) == 1 else writable.browse()
+        return self.env["studio.package"]._suggested()
 
     @api.model
     def action_open(self, model_name=None, webhooks=False):

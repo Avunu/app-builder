@@ -183,6 +183,17 @@ class StudioPackage(models.Model):
             probe = path if os.path.isdir(path) else os.path.dirname(path)
             package.writable = bool(probe) and os.access(probe, os.W_OK)
 
+    @api.model
+    def _suggested(self):
+        """Where something created from the studio should be written.
+
+        The one writable package when there is exactly one, and nothing when
+        the choice is real. Guessing between two would put somebody's work in
+        the wrong addon, which is only discovered at review time.
+        """
+        writable = self.search([]).filtered("writable")
+        return writable[:1] if len(writable) == 1 else self.browse()
+
     def _compute_record_count(self):
         for package in self:
             package.record_count = self.env["ir.model.data"].search_count(
