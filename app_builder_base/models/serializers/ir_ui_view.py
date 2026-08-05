@@ -54,7 +54,26 @@ class IrUiViewSerializer(models.AbstractModel):
         # Views inheriting a core view group under the *target* model, so an
         # extension of sale.order lands in views/sale_order_views.xml rather
         # than in a file named after the studio package.
-        return record.model or "misc"
+        return record.model or self._report_model(record) or "misc"
+
+    @api.model
+    def _report_model(self, record):
+        """The model a report template prints, for a view that cannot say so.
+
+        A qweb report template has to leave `model` empty -- setting it makes
+        `_get_inheriting_views` silently drop every `<template inherit_id=...>`
+        written against it (`ir_ui_view.py:645`, `convert.py:488`). So the model
+        is asked of the report instead, which names its template through
+        `report_name`. Without this the template files under "misc" while the
+        action it belongs to files under the model, and the two halves of one
+        feature end up in different files.
+        """
+        if record.type != "qweb" or not record.key:
+            return None
+        report = self.env["ir.actions.report"].search(
+            [("report_name", "=", record.key)], limit=1
+        )
+        return report.model or None
 
     @api.model
     def _should_skip(self, record, fname):

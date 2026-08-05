@@ -165,13 +165,23 @@ class StudioReport(models.AbstractModel):
         view = self.env["ir.ui.view"].create(
             {
                 "name": name,
+                # REQUIRED. Without it create() infers the type from the arch
+                # root tag and raises "Invalid view type: 't'"
+                # (`ir_ui_view.py:498`) -- and that is a ValidationError, so the
+                # `except (ParseError, ValueError, TypeError)` below it does not
+                # swallow it.
                 "type": "qweb",
-                # Core report templates leave `model` empty, but the emitter
-                # groups views by it -- so without this the template lands in
-                # views/misc_views.xml instead of beside the model it prints.
-                # A qweb view is exempt from field validation
-                # (`ir_ui_view.py:368`), so saying what it prints costs nothing.
-                "model": model_name,
+                # `model` is deliberately left empty, as core leaves it on every
+                # report template. Setting it looks harmless and quietly makes
+                # the report un-extensible by anyone but us:
+                # `_get_inheriting_views` joins on
+                # `coalesce(model,'') = coalesce(parent.model,'')`
+                # (`ir_ui_view.py:645`), and `_tag_template` never emits a model
+                # field (`convert.py:488`) -- so every
+                # `<template inherit_id="...">` a human or another addon writes
+                # arrives with model NULL, fails that join, and is dropped with
+                # no exception and no warning. Which file the template lands in
+                # is the emitter's problem, and is solved there.
                 "arch": arch,
             }
         )
