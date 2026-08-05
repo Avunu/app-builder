@@ -104,6 +104,13 @@ class StudioViewEditor(models.AbstractModel):
                 "arch": "<data/>",
             }
         )
+        if view.type == "qweb":
+            # Odoo mints `gen_key.<uuid>` for a qweb view created without a key
+            # (`ir_ui_view.py:519`), and the key is emitted -- so an extension of
+            # a report template would put a fresh random string in the generated
+            # source every time it is recreated. Odoo's own `<template>` loader
+            # sets the key to the xmlid; do the same, before anything is written.
+            view.key = package._assign(view)[0]
         package.studio_capture(view)
         return view
 
@@ -922,9 +929,8 @@ class StudioViewEditor(models.AbstractModel):
                 )
             )
         packages = self.env["studio.package"].search([])
-        writable = packages.filtered("writable")
         owner = view.studio_package_id
-        suggested = owner or (writable[:1] if len(writable) == 1 else packages.browse())
+        suggested = owner or packages._suggested()
         return {
             "view": {
                 "id": view.id,
