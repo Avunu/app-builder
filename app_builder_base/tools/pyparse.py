@@ -68,6 +68,18 @@ _MODEL_ATTRS = {
 }
 
 
+# Attributes that are still refused, because round-tripping the *source* is not
+# enough for these: they change what the model is at the level the builder's own
+# reasoning depends on. `_inherits` puts some of the model's fields on a parent
+# record, so the diff, the destructive-column check and placement would all be
+# working from a false picture; `_auto = False` means there is no table for a
+# column to be added to; `_table` points that column somewhere else.
+#
+# The distinction is not "understood" versus "not understood" -- it is whether
+# being ignorant of it makes the *rest* of the builder wrong.
+STRUCTURAL_ATTRS = frozenset({"_inherits", "_auto", "_table", "_abstract"})
+
+
 class UnsupportedConstruct(Exception):
     """The file contains something the builder must not rewrite."""
 
@@ -154,6 +166,7 @@ def _parse_class(source, node, _unused=()):
     sql_constraints = []
     fields = []
     computes = {}
+    class_attrs = []
     methods = []
     sequence_code = None
     sequence_field = None
@@ -174,13 +187,20 @@ def _parse_class(source, node, _unused=()):
                     ConstraintSpec(*row) for row in _literal(child.value)
                 ]
             elif target.startswith("_"):
-                raise UnsupportedConstruct("unmodelled class attribute %s" % target)
+                _assert_not_structural(target)
+                # Kept verbatim rather than refused. A mixin configures itself
+                # through class attributes -- `tier.validation` reads
+                # `_state_field`, `_state_from` and `_state_to` -- and refusing
+                # them froze the model for the crime of using a mixin, while
+                # round-tripping the source loses nothing and leaves it
+                # editable.
+                class_attrs.append((target, _verbatim(source, child.value)))
             else:
                 fields.append(_parse_field(target, child.value))
             continue
 
         if isinstance(child, ast.FunctionDef):
-            if child.name.startswith(modelspec.STUDIO_METHOD_PREFIX):
+            if modelspec.is_builder_method(child.name):
                 methods.append(_parse_method(source, child))
             elif child.name.startswith("_compute_"):
                 computes[child.name] = _parse_compute(source, child)
@@ -233,6 +253,7 @@ def _parse_class(source, node, _unused=()):
         transient=transient,
         fields=fields,
         methods=tuple(methods),
+        class_attrs=tuple(class_attrs),
         sql_constraints=tuple(sql_constraints),
         sequence_code=sequence_code,
         sequence_field=sequence_field,
@@ -333,6 +354,19 @@ def _selection(node):
         SelectionSpec(value=value, label=label, sequence=(i + 1) * 10)
         for i, (value, label) in enumerate(pairs)
     )
+
+
+def _assert_not_structural(target):
+    if target in STRUCTURAL_ATTRS:
+        raise UnsupportedConstruct(
+            "%s changes what the model is in a way the builder reasons about "
+            "elsewhere" % target
+        )
+
+
+def _verbatim(source, node):
+    """The source text of an expression, exactly as written."""
+    return ast.get_source_segment(source, node) or ast.unparse(node)
 
 
 def _parse_method(source, node):

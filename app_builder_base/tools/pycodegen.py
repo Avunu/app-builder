@@ -317,6 +317,11 @@ def _render_class_header(spec):
         lines.append("    _rec_name = %s" % _py(spec.rec_name))
     if spec.active_name:
         lines.append("    _active_name = %s" % _py(spec.active_name))
+    # Verbatim, and last: these configure a mixin the engine knows nothing
+    # about, so there is nothing sensible to say about where they belong except
+    # "after the attributes that are ours".
+    for name, value in spec.class_attrs:
+        lines.append("    %s = %s" % (name, value))
     return lines
 
 
@@ -409,7 +414,20 @@ def render_block(spec):
 
     lines.append("")
     lines.append(END_MARKER)
-    return "\n".join(lines)
+    # A block with no fields would otherwise end on two blank lines -- the one
+    # after the class header and the one before the marker. Idempotent, so the
+    # fixed point is unaffected, and it keeps the output the kind of file
+    # somebody would have written.
+    return "\n".join(_collapse_blank_runs(lines))
+
+
+def _collapse_blank_runs(lines):
+    out = []
+    for line in lines:
+        if not line.strip() and out and not out[-1].strip():
+            continue
+        out.append(line)
+    return out
 
 
 def render_model(spec):

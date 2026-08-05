@@ -216,6 +216,49 @@ class TestCodegenFixedPoint(BaseCase):
             )
         )
 
+    def test_a_mixins_class_attributes_round_trip(self):
+        """A mixin configures itself through class attributes.
+
+        `tier.validation` reads `_state_field`, `_state_from` and `_state_to`,
+        and modelling each attribute a mixin might invent would put knowledge of
+        that mixin in the engine. Verbatim round-tripping is the same bargain
+        `FieldSpec.extra` already makes.
+        """
+        self.assert_fixed_point(
+            ModelSpec(
+                name="sale.order",
+                description="",
+                class_name="SaleOrder",
+                extends=True,
+                inherit=("tier.validation",),
+                class_attrs=(
+                    ("_state_field", '"state"'),
+                    ("_state_from", '["draft"]'),
+                    ("_state_to", '["sale"]'),
+                ),
+            )
+        )
+
+    def test_class_attributes_are_ordered_however_they_arrive(self):
+        """Otherwise the fixed point would depend on the order a caller built
+        them in, which is not a property of the model."""
+        attrs = (("_b", "1"), ("_a", "2"))
+        spec = spec_with(FieldSpec(name="name", ttype="char"), class_attrs=attrs)
+        self.assertEqual([k for k, _v in spec.class_attrs], ["_a", "_b"])
+        self.assert_fixed_point(spec)
+
+    def test_a_configuration_attribute_no_longer_freezes_the_model(self):
+        """It used to raise, which froze the model for the crime of using a
+        mixin. Round-tripping the source loses nothing and keeps it editable."""
+        source = pycodegen.render_model(
+            spec_with(
+                FieldSpec(name="name", ttype="char"),
+                class_attrs=(("_state_from", '["draft"]'),),
+            )
+        )
+        parsed = pyparse.parse_model(source)
+        self.assertIn(("_state_from", '["draft"]'), parsed.class_attrs)
+
     def test_a_new_model_with_mixins_is_not_read_as_an_extension(self):
         spec = spec_with(FieldSpec(name="name", ttype="char"), inherit=("mail.thread",))
         parsed = pyparse.parse_model(pycodegen.render_model(spec))
@@ -403,10 +446,24 @@ class P(models.Model):
         with self.assertRaises(pyparse.UnsupportedConstruct):
             pyparse.parse_model(source)
 
-    def test_unknown_class_attribute_is_refused(self):
-        self.assert_block_refused(
-            '    _name = "p"\n    _inherits = {"res.partner": "partner_id"}'
-        )
+    def test_a_structurally_load_bearing_attribute_is_still_refused(self):
+        """Round-tripping the source is not enough for these.
+
+        `_inherits` puts some of the model's fields on a *parent record*, so the
+        diff, the destructive-column check and placement would all be working
+        from a false picture. The distinction is not "understood" versus "not
+        understood" -- it is whether being ignorant of it makes the rest of the
+        builder wrong.
+        """
+        for attr, value in (
+            ("_inherits", '{"res.partner": "partner_id"}'),
+            ("_auto", "False"),
+            ("_table", '"custom_table"'),
+        ):
+            with self.subTest(attr=attr):
+                self.assert_block_refused(
+                    '    _name = "p"\n    %s = %s' % (attr, value)
+                )
 
     def test_dynamically_generated_fields_are_refused(self):
         self.assert_block_refused(

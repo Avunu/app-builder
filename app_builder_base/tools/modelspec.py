@@ -479,6 +479,31 @@ class SelectionSpec:
 # developer added -- the latter belongs outside the block and is never touched.
 STUDIO_METHOD_PREFIX = "_studio_"
 
+# Methods the builder generates whose name is not its to choose, because they
+# override something a mixin declares. The prefix is the ownership marker
+# everywhere else; these are the exceptions, and they have to be listed rather
+# than inferred -- a developer's own method inside the block still gets the
+# "move it below the block" message, which is the protection that rule exists
+# for.
+#
+# Listed here rather than registered by the bridge that needs them: a package
+# carrying one of these must stay readable when that bridge is *not* installed,
+# and a name the parser did not recognise would freeze the model. The engine
+# already knows a little about specific mixins for the same kind of reason --
+# see MIXIN_FIELDS.
+GENERATED_OVERRIDES = frozenset(
+    {
+        # base_tier_validation returns [] here, so a model that adds the
+        # tier.validation mixin never appears in the approval rule's model
+        # picker until something appends it.
+        "_get_tier_validation_model_names",
+    }
+)
+
+
+def is_builder_method(name):
+    return name.startswith(STUDIO_METHOD_PREFIX) or name in GENERATED_OVERRIDES
+
 
 @dataclass(frozen=True, slots=True)
 class MethodSpec:
@@ -600,9 +625,30 @@ class ModelSpec:
     transient: bool = False
     fields: tuple[FieldSpec, ...] = ()
     methods: tuple[MethodSpec, ...] = ()
+    # Class attributes the builder round-trips without modelling, as verbatim
+    # Python source. The same bargain ``FieldSpec.extra`` makes, for the same
+    # reason: a mixin configures itself through class attributes --
+    # ``tier.validation`` reads ``_state_field``, ``_state_from`` and
+    # ``_state_to`` -- and modelling each one a mixin might invent would put
+    # knowledge of that mixin in the engine.
+    #
+    # Round-tripping is strictly safer than the alternative it replaces, which
+    # was to refuse the file outright: nothing is dropped either way, and the
+    # model stays editable.
+    class_attrs: tuple[tuple[str, str], ...] = ()
     sql_constraints: tuple[ConstraintSpec, ...] = ()
     sequence_code: str | None = None
     sequence_field: str | None = None
+
+    def __post_init__(self):
+        # Sorted, so `parse(render(spec)) == spec` cannot depend on the order a
+        # caller happened to build them in.
+        if self.class_attrs:
+            object.__setattr__(
+                self,
+                "class_attrs",
+                tuple(sorted((k, canonical_source(v)) for k, v in self.class_attrs)),
+            )
 
     def field(self, name):
         return next((f for f in self.fields if f.name == name), None)
@@ -659,6 +705,7 @@ def spec_from_json(data):
     )
     data["inherit"] = tuple(data.get("inherit", ()))
     data["methods"] = tuple(MethodSpec(**m) for m in data.get("methods", ()))
+    data["class_attrs"] = tuple(tuple(pair) for pair in data.get("class_attrs", ()))
     data["sql_constraints"] = tuple(
         ConstraintSpec(**c) for c in data.get("sql_constraints", ())
     )
@@ -699,6 +746,7 @@ MODEL_ATTRS = (
     "active_name",
     "transient",
     "methods",
+    "class_attrs",
     "sql_constraints",
     "sequence_code",
     "sequence_field",
