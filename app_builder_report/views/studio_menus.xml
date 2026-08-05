@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_studio_reports"
+              name="Reports"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_reports_action"
+              sequence="87"/>
+
+    <menuitem id="menu_studio_new_report"
+              name="New Report"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_report_wizard_action"
+              sequence="95"/>
+</odoo>

@@ -34,6 +34,7 @@ become live without restarting the server.
         "app_builder_model",
         "app_builder_view",
         "app_builder_ui",
+        "app_builder_report",
     ],
     "data": [],
 }

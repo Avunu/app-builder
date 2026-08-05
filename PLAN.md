@@ -116,9 +116,10 @@ Six of nine, plus one Studio cannot do. Three consequences to design for rather 
 
 ## Progress
 
-Six phases are in, each tested and committed. What follows describes the rest;
-the sections for completed phases are kept because they record *why*, which the
-commits alone do not.
+Every phase is in, each tested and committed. The sections below are kept
+because they record *why*, which the commits alone do not — and because each
+phase's own §"what is left" names the long tail that was deliberately deferred
+rather than dropped.
 
 | Phase | State |
 | --- | --- |
@@ -129,7 +130,7 @@ commits alone do not.
 | P4 feature packs | done — registry, six new features, two finished |
 | P3 view types | done — discovery from `get_view_info`, plus pivot/graph/activity/timeline |
 | P5 automations | done — surface, plus code graduation (§X2) |
-| P6 PDF reports | the only phase left |
+| P6 PDF reports | done — create, patch a core report, edit as source |
 | P7 approval rules | done — enabling, rule serialization, and the constraint stated |
 
 Three enabling capabilities were built that the plan did not anticipate, each
@@ -314,6 +315,37 @@ A qweb arch is XML, so `apply_operation`, the descriptor and locator layer, and 
 | Document layout | Company settings, not studio. Deep-link rather than reimplement |
 
 Build the create path, the inheriting-patch path and XML source editing first. That subset is already usable and is the part Odoo cannot match; the WYSIWYG powerbox is the long tail and can land incrementally behind it.
+
+**What was built** (`app_builder_report`). The create path, the patch path, and
+the entry points to both. `create_report` emits an `ir.actions.report` and a
+qweb `ir.ui.view` bound to the Print menu; `edit_action` opens the *existing*
+view editor on any report's template, and `apply_operation` needed no change to
+handle it — a report template is a view, so the extension-view mechanism
+already covered it. The differentiating claim is held by a test that patches a
+report shipped by core and asserts the original arch is untouched.
+
+Three things this phase turned up that the plan had not:
+
+- **The three names must be one name.** `report_name` is handed to qweb as a
+  template reference (`ir_actions_report.py:1103`), so it resolves through
+  `ir.ui.view`'s key-or-xmlid lookup. Setting the view's key, the view's xmlid
+  and `report_name` to the same string independently is three chances to
+  disagree; the xmlid is now assigned first and the other two derived from what
+  came back, because `_assign` is what resolves a collision.
+- **`_get_view_id` is not a lookup, it is an assertion.** It raises three
+  different ways for a reference that does not resolve. A report rendered from
+  a template built in Python is an ordinary thing to find, so `_template_of`
+  does the same two-step lookup itself and returns an empty recordset.
+- **A qweb extension was emitting a random key.** Odoo mints `gen_key.<uuid>`
+  for a qweb view created without one, and the key is serialized — so every
+  recreation of an extension produced a different diff. The extension now takes
+  its xmlid as its key, which is what Odoo's own `<template>` loader does.
+
+**What is left.** The WYSIWYG half, as scoped above: the powerbox, drag-in
+fields, dynamic tables, and the t-if / t-elif / t-else preview switch. The
+editor opens on a report template today and edits it the way it edits any other
+view — by clicking nodes and editing source — which is the usable subset the
+sequencing called for.
 
 * * *
 

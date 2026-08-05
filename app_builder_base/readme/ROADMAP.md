@@ -1,5 +1,12 @@
 ## Next
 
+- **A report is edited as a view, not as a document.** Creating one and patching
+  somebody else's both work, and the view editor opens on the template — but it
+  edits qweb the way it edits a form, by clicking nodes and editing source.
+  What is missing is the document half: a powerbox, fields dragged into running
+  text, and dynamic tables. Odoo's `html_editor` is present in community 18.0,
+  so the parts exist; what does not is the mapping from a rich-text edit back to
+  an `<xpath>` in an inheriting view, which is what keeps the edit reviewable.
 - **Drag-to-reorder beyond list columns** — form fields between groups, kanban
   card contents. The move operation and the gesture both exist now; what each
   case needs is a sensible answer to "what did you drop it *into*". Adding works

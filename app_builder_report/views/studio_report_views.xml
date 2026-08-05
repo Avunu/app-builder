@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="studio_report_wizard_view_form" model="ir.ui.view">
+        <field name="name">studio.report.wizard.form</field>
+        <field name="model">studio.report.wizard</field>
+        <field name="arch" type="xml">
+            <form string="New Report">
+                <group>
+                    <field name="package_id"/>
+                    <field name="name" placeholder="e.g. Job Sheet"/>
+                    <field name="model_id"/>
+                </group>
+                <group string="Layout">
+                    <field name="layout" widget="radio"/>
+                    <field name="layout_help" nolabel="1" colspan="2" readonly="1"/>
+                    <field name="paperformat_id"/>
+                </group>
+                <footer>
+                    <button name="action_create" type="object" string="Create"
+                            class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="studio_report_wizard_action" model="ir.actions.act_window">
+        <field name="name">New Report</field>
+        <field name="res_model">studio.report.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- Odoo's own report form has a "Qweb Views" stat button, which opens the
+         template as ir.ui.view records. That is the technical view of it; this
+         is the editing one. -->
+    <record id="act_report_xml_view_studio" model="ir.ui.view">
+        <field name="name">ir.actions.report.form.studio</field>
+        <field name="model">ir.actions.report</field>
+        <field name="inherit_id" ref="base.act_report_xml_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_studio_edit" type="object"
+                        icon="fa-pencil-square-o" class="oe_stat_button"
+                        invisible="report_type not in ['qweb-pdf', 'qweb-html']"
+                        groups="app_builder_base.group_studio_user">
+                    <div class="o_field_widget o_stat_info">
+                        <span class="o_stat_text">Edit Layout</span>
+                    </div>
+                </button>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="act_report_xml_view_tree_studio" model="ir.ui.view">
+        <field name="name">ir.actions.report.list.studio</field>
+        <field name="model">ir.actions.report</field>
+        <field name="inherit_id" ref="base.act_report_xml_view_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='attachment']" position="after">
+                <button name="action_studio_edit" type="object"
+                        string="Edit Layout" icon="fa-pencil-square-o"
+                        invisible="report_type not in ['qweb-pdf', 'qweb-html']"
+                        groups="app_builder_base.group_studio_user"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- A server action, like Automations, so the package to record into is
+         worked out when the menu is clicked rather than baked into a domain. -->
+    <record id="studio_reports_action" model="ir.actions.server">
+        <field name="name">Reports</field>
+        <field name="model_id" ref="model_studio_report"/>
+        <field name="state">code</field>
+        <field name="code">action = env["studio.report"].action_open()</field>
+    </record>
+</odoo>

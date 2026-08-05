@@ -734,3 +734,89 @@ def scaffold_timeline_arch(model, spec, date_field, group_field, options=None):
     root.set("event_open_popup", "true")
     etree.SubElement(root, "field", name=spec.rec_name or "name")
     return root
+
+
+# -- reports -------------------------------------------------------------
+#
+# What Odoo Studio calls External / Internal / Blank is a choice of *wrapper*:
+# the body is the same, and the wrapper decides whether a company header and
+# footer are drawn around it. `web.html_container` is not part of that choice --
+# it is what makes the output a document at all, and every report has it.
+
+
+@dataclass(frozen=True)
+class ReportLayout:
+    key: str
+    label: str
+    #: The qweb template wrapped around the body, or None for no wrapper.
+    template: str | None
+    help: str
+
+
+REPORT_LAYOUTS = (
+    ReportLayout(
+        "external",
+        "External",
+        "web.external_layout",
+        "Company header and footer, as on a quotation or an invoice. What a "
+        "customer should receive.",
+    ),
+    ReportLayout(
+        "internal",
+        "Internal",
+        "web.internal_layout",
+        "Header only, with the company name and the date. For something "
+        "printed and used in the building.",
+    ),
+    ReportLayout(
+        "blank",
+        "Blank",
+        None,
+        "Nothing around the body. For a label, a form somebody else's paper "
+        "is preprinted for, or a layout drawn from scratch.",
+    ),
+)
+
+REPORT_LAYOUTS_BY_KEY = {layout.key: layout for layout in REPORT_LAYOUTS}
+
+
+def report_layouts_json():
+    return [
+        {
+            "key": layout.key,
+            "label": layout.label,
+            "template": layout.template,
+            "help": layout.help,
+        }
+        for layout in REPORT_LAYOUTS
+    ]
+
+
+def scaffold_report_arch(title, layout="external"):
+    """The starting body of a PDF report.
+
+    Iterates ``docs``, which is what ``_render_qweb_html`` puts in the rendering
+    context for the records being printed -- so the template works for one
+    record or a hundred without the author thinking about it.
+
+    The visible content is deliberately thin: a heading and the record's name.
+    A generated report that already contained a guessed table would be a
+    template somebody has to delete before they can start.
+    """
+    if layout not in REPORT_LAYOUTS_BY_KEY:
+        raise ValueError("unknown report layout %r" % layout)
+    wrapper = REPORT_LAYOUTS_BY_KEY[layout].template
+
+    root = etree.Element("t", {"t-call": "web.html_container"})
+    loop = etree.SubElement(root, "t", {"t-foreach": "docs", "t-as": "doc"})
+    # `web.external_layout` reads company/address/logo from the record being
+    # printed, so the body has to sit inside the t-call rather than beside it.
+    host = loop
+    if wrapper:
+        host = etree.SubElement(loop, "t", {"t-call": wrapper})
+    page = etree.SubElement(host, "div", {"class": "page"})
+    heading = etree.SubElement(page, "h2")
+    heading.text = title
+    line = etree.SubElement(page, "div", {"class": "mb-3"})
+    etree.SubElement(line, "span", {"t-field": "doc.display_name"})
+    return root
