@@ -6,7 +6,7 @@
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",
     "license": "AGPL-3",
-    "development_status": "Alpha",
+    "development_status": "Beta",
     "installable": True,
     # web supplies the layouts a generated report calls: web.html_container,
     # web.external_layout, web.internal_layout.

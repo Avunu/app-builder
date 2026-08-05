@@ -1,1 +1,8 @@
-# No extra test dependencies: the suite uses only odoo.tests.
+# Addons this repo depends on that live in another OCA repository, so CI can
+# resolve them. Odoo dependencies, not Python ones -- but pip is how the OCA
+# CI image gets an addon onto the addons path.
+#
+# base_tier_validation is server-ux (18.0); it moves to its own repository for
+# 19.0. app_builder_approval and app_builder_approval_formula declare them.
+odoo-addon-base_tier_validation>=18.0dev,<18.1dev
+odoo-addon-base_tier_validation_formula>=18.0dev,<18.1dev

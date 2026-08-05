@@ -57,7 +57,7 @@ def _py(value):
 def _format_value(value, level=1):
     pad = "    " * level
     inner_pad = "    " * (level + 1)
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         if not value:
             return "[]"
         items = "".join(
