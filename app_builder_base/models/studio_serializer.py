@@ -201,12 +201,39 @@ class StudioSerializer(models.AbstractModel):
             return False
 
     @api.model
+    def _value_depends(self):
+        """``{field: {value: module}}`` -- values that need a module installed.
+
+        The manifest's ``depends`` is otherwise derived entirely from the
+        xmlids emitted (``_ref_of``), which covers every *reference* and misses
+        a whole class of dependency: a selection value contributed by another
+        module. ``review_type="expression"`` comes from
+        ``base_tier_validation_formula``, and a file carrying it loads into a
+        database without that module as an invalid selection value -- silently,
+        because nothing checks a selection on load.
+
+        This is the third time in this project that a package has installed
+        here and failed elsewhere for want of a derived dependency; see design
+        finding 4 in DESIGN.md. Extended through ``super()``, so a bridge for an
+        optional module can declare its own values.
+        """
+        return {}
+
+    @api.model
+    def _note_value_dependency(self, fname, value):
+        module = (self._value_depends().get(fname) or {}).get(value)
+        sink = self.env.context.get("studio_dep_sink")
+        if module and sink is not None:
+            sink.add(module)
+
+    @api.model
     def _field_node(self, record, fname):
         """Emit one ``<field>`` node, or ``None`` to omit it."""
         if fname not in record._fields:
             return None
         if self._should_skip(record, fname):
             return None
+        self._note_value_dependency(fname, record[fname])
 
         field = record._fields[fname]
         value = record[fname]
