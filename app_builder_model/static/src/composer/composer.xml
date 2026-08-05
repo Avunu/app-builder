@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <templates xml:space="preserve">
 
 <t t-name="app_builder_model.StudioComposer">
@@ -11,9 +11,9 @@
                 <t t-esc="changeCount"/> pending
             </span>
             <div class="flex-grow-1"/>
-            <button class="btn btn-secondary btn-sm" t-if="changeCount"
+            <button t-if="changeCount" class="btn btn-secondary btn-sm"
                     t-on-click="() => this.showDiff()">Review</button>
-            <button class="btn btn-secondary btn-sm" t-if="changeCount"
+            <button t-if="changeCount" class="btn btn-secondary btn-sm"
                     t-on-click="() => this.onDiscard()">Discard</button>
             <button class="btn btn-primary btn-sm" t-att-disabled="!canApply"
                     t-on-click="() => this.onApply()">
@@ -39,13 +39,13 @@
 
                     <ul class="nav nav-tabs px-2 pt-2">
                         <li class="nav-item">
-                            <a class="nav-link" href="#"
-                               t-att-class="{active: state.tab === 'fields'}"
+                            <a class="nav-link" t-att-class="{active: state.tab === 'fields'}"
+                               href="#"
                                t-on-click.prevent="() => this.state.tab = 'fields'">Fields</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#"
-                               t-att-class="{active: state.tab === 'pending'}"
+                            <a class="nav-link" t-att-class="{active: state.tab === 'pending'}"
+                               href="#"
                                t-on-click.prevent="() => this.state.tab = 'pending'">
                                 Pending
                                 <span t-if="changeCount" class="badge text-bg-secondary ms-1"
@@ -53,8 +53,8 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#"
-                               t-att-class="{active: state.tab === 'source'}"
+                            <a class="nav-link" t-att-class="{active: state.tab === 'source'}"
+                               href="#"
                                t-on-click.prevent="() => this.showDiff()">Source</a>
                         </li>
                     </ul>

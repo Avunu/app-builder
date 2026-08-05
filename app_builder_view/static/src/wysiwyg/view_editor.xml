@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.StudioViewEditor">
@@ -152,8 +152,8 @@
                                 <!-- Group visibility is a list of xmlids, because
                                      that is what the arch carries and what still
                                      resolves in the next database. -->
-                                <select t-elif="row.type === 'groups'" multiple="multiple"
-                                        class="form-select form-select-sm"
+                                <select t-elif="row.type === 'groups'" class="form-select form-select-sm"
+                                        multiple="multiple"
                                         size="6"
                                         t-on-change="(ev) => this.onMultiSelect(row, ev)">
                                     <option t-foreach="groupChoices" t-as="group"
@@ -164,13 +164,13 @@
                                 <!-- A Python expression over the record, not a
                                      domain: `attrs` went away in 17.0 and these
                                      attributes are evaluated, not matched. -->
-                                <input t-elif="row.type === 'condition'" type="text"
-                                       class="form-control form-control-sm font-monospace"
+                                <input t-elif="row.type === 'condition'" class="form-control form-control-sm font-monospace"
+                                       type="text"
                                        t-att-value="row.value"
                                        placeholder="state == 'draft'"
                                        t-on-change="(ev) => this.onInput(row, ev)"/>
-                                <input t-else="" type="text"
-                                       class="form-control form-control-sm"
+                                <input t-else="" class="form-control form-control-sm"
+                                       type="text"
                                        t-att-value="row.value"
                                        t-att-placeholder="row.placeholder"
                                        t-on-change="(ev) => this.onInput(row, ev)"/>

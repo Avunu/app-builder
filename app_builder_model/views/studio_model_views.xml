@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
     <record id="studio_model_wizard_view_form" model="ir.ui.view">
         <field name="name">studio.model.wizard.form</field>
