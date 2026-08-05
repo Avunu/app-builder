@@ -128,9 +128,20 @@ commits alone do not.
 | P2 fields & widgets | done — presets, related fields, computed fields |
 | P4 feature packs | done — registry, six new features, two finished |
 | P3 view types | done — discovery from `get_view_info`, plus pivot/graph/activity/timeline |
-| P5 automations | surface done; code graduation (§X2) designed, not built |
-| P6 PDF reports | after P5 |
-| P7 approval rules | last |
+| P5 automations | done — surface, plus code graduation (§X2) |
+| P6 PDF reports | the only phase left |
+| P7 approval rules | done — enabling, rule serialization, and the constraint stated |
+
+Three enabling capabilities were built that the plan did not anticipate, each
+because a phase turned out to need it:
+
+- **`ModelSpec.extends`** — a package can put a class on a model it does not
+  own. Both X2 and P7 need it, and neither could start without it.
+- **`ModelSpec.class_attrs`** — a mixin configures itself through class
+  attributes, and the parser refused every one it did not model, so using a
+  mixin froze the model.
+- **`MethodSpec`** — a method the builder owns, which is what an automation's
+  promoted body is.
 
 Two things the work changed about the plan itself:
 
