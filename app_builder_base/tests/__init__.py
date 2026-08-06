@@ -1,6 +1,7 @@
 from . import (
     common,
     test_adopt,
+    test_default_and_cron,
     test_manifest,
     test_model_draft,
     test_modelspec,
