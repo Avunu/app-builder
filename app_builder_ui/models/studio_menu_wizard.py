@@ -91,13 +91,40 @@ class StudioAutomationWizard(models.TransientModel):
         required=True,
         default="on_create",
     )
-    filter_domain = fields.Char(default="[]")
+    filter_domain = fields.Char(
+        string="Only when",
+        default="[]",
+        help="Which records the rule should fire for. Built from conditions, "
+        "or written by hand if it needs grouping.",
+    )
+    matches = fields.Char(readonly=True)
     code = fields.Text(
         required=True,
         default="# Available: env, model, record, records, log, UserError\n",
         help="Python evaluated in Odoo's sandbox. Stored as data on "
         "ir.actions.server, so no code file and no restart are needed.",
     )
+
+    @api.onchange("filter_domain", "model_id")
+    def _onchange_filter_domain(self):
+        """Say what it will fire for, before it starts firing.
+
+        An automation with a wrong condition is not silent like a record rule
+        -- it is worse. It runs on records nobody expected, and by the time
+        anybody notices it has already written to them.
+        """
+        for wizard in self:
+            if not wizard.model_id or not wizard.filter_domain:
+                wizard.matches = False
+                continue
+            checked = self.env["studio.domain"].check_domain(
+                wizard.model_id.model, wizard.filter_domain
+            )
+            wizard.matches = (
+                _("Would fire for %s of the records that exist now.", checked["count"])
+                if checked["valid"]
+                else _("This condition does not search: %s", checked["reason"])
+            )
 
     @api.constrains("code")
     def _check_code(self):
@@ -107,6 +134,17 @@ class StudioAutomationWizard(models.TransientModel):
 
     def action_create(self):
         self.ensure_one()
+        checked = self.env["studio.domain"].check_domain(
+            self.model_id.model, self.filter_domain or "[]"
+        )
+        if not checked["valid"]:
+            raise UserError(
+                _(
+                    "This condition does not search, so the automation would "
+                    "raise every time it was evaluated:\n\n%s",
+                    checked["reason"],
+                )
+            )
         server_action = self.env["ir.actions.server"].create(
             {
                 "name": self.name,

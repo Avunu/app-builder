@@ -205,3 +205,104 @@ class TestSearchView(StudioCase):
     def test_a_search_view_with_no_list_says_so(self):
         preview = self.editor.editing_context(self.view.id)["preview"]
         self.assertTrue(preview["unavailable"])
+
+
+@tagged("post_install", "-at_install")
+class TestBuiltFilters(StudioCase):
+    """A filter with a value, or more than one term, from the condition builder.
+
+    The four one-click conditions stay: naming "is set" takes no thought. What
+    they could not express is anything with a value in it, which is most of the
+    filters people actually want.
+    """
+
+    def _search_view(self):
+        return self.env["ir.ui.view"].browse(
+            self.env["ir.ui.view"].default_view("res.partner", "search")
+        )
+
+    def _add(self, package, **values):
+        return self.env["studio.view.editor"].add_search_element(
+            self._search_view().id, package.id, "filter", values
+        )
+
+    def test_a_built_filter_carries_its_value(self):
+        package = self.make_package()
+        self._add(
+            package,
+            condition="built",
+            string="Companies",
+            rows=[{"field": "is_company", "operator": "=", "value": True}],
+        )
+        patch = self.env["ir.ui.view"].search(
+            [
+                ("inherit_id", "=", self._search_view().id),
+                ("studio_package_id", "=", package.id),
+            ]
+        )
+        self.assertIn("is_company", patch.arch)
+        self.assertIn('string="Companies"', patch.arch)
+
+    def test_a_built_filter_can_test_two_things(self):
+        """The thing the four canned conditions could not do at all."""
+        package = self.make_package()
+        self._add(
+            package,
+            condition="built",
+            string="Active companies",
+            rows=[
+                {"field": "is_company", "operator": "=", "value": True},
+                {"field": "active", "operator": "=", "value": True},
+            ],
+        )
+        patch = self.env["ir.ui.view"].search(
+            [
+                ("inherit_id", "=", self._search_view().id),
+                ("studio_package_id", "=", package.id),
+            ]
+        )
+        self.assertIn("&amp;", patch.arch)
+
+    def test_a_condition_that_does_not_search_is_refused(self):
+        package = self.make_package()
+        with self.assertRaises(UserError) as caught:
+            self._add(
+                package,
+                condition="built",
+                string="Nonsense",
+                rows=[{"field": "nope", "operator": "=", "value": 1}],
+            )
+        self.assertIn("does not search", str(caught.exception))
+
+    def test_a_built_filter_needs_a_name(self):
+        """It becomes the menu entry, so an unnamed one is unfindable."""
+        package = self.make_package()
+        with self.assertRaises(UserError) as caught:
+            self._add(
+                package,
+                condition="built",
+                rows=[{"field": "is_company", "operator": "=", "value": True}],
+            )
+        self.assertIn("menu entry", str(caught.exception))
+
+    def test_a_built_filter_needs_no_single_field(self):
+        """Insisting on one is how "filter for two things" becomes "choose one
+        field first"."""
+        package = self.make_package()
+        self._add(
+            package,
+            condition="built",
+            string="Two things",
+            rows=[
+                {"field": "is_company", "operator": "=", "value": True},
+                {"field": "active", "operator": "=", "value": True},
+            ],
+        )
+        self.assertTrue(
+            self.env["ir.ui.view"].search_count(
+                [
+                    ("inherit_id", "=", self._search_view().id),
+                    ("studio_package_id", "=", package.id),
+                ]
+            )
+        )

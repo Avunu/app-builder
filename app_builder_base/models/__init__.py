@@ -10,3 +10,4 @@ from . import (
     studio_package_model,
     studio_serializer,
 )
+from . import studio_domain

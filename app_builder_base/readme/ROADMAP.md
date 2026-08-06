@@ -20,11 +20,12 @@
   `ir.actions.server` / `base.automation` pair, and `studio.automation.action_open`
   opens Odoo's own form scoped to the model in front of you with a package in
   context — a second copy of that form would drift from it on the first release.
-- **The condition builder reaches rules, not yet filters or automations.**
-  `studio.domain` builds a domain and checks it searches, and the record-rule
-  wizard uses it. Search filters are still generated from a field and one of
-  four conditions, and an automation's `filter_domain` is still typed — both
-  want the same panel, which is why they were one piece of work.
+- **Group-bys and the search view's own three lists are still one field each.**
+  A filter can now carry any condition the builder can express; a group-by is
+  still a field and a context, which is all a group-by is. What has no gesture
+  is a *second* level -- group by stage, then by salesperson -- and Odoo's own
+  search view expresses that by the order the user clicks them rather than in
+  the arch, so there may be nothing here to build.
 
 ## Known limits
 

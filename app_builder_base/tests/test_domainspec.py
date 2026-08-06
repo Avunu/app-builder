@@ -20,9 +20,7 @@ class TestDomainSpec(TransactionCase):
         self.assertEqual(domainspec.parse(""), ([], domainspec.ALL))
 
     def test_one_condition_needs_no_operator(self):
-        rendered = domainspec.render(
-            [domainspec.Condition("state", "=", "draft")]
-        )
+        rendered = domainspec.render([domainspec.Condition("state", "=", "draft")])
         self.assertEqual(rendered, "[['state', '=', 'draft']]")
 
     def test_several_conditions_are_prefixed(self):

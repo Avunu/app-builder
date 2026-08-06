@@ -16,7 +16,7 @@ import ast
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.app_builder_base.tools import domainspec
+from ..tools import domainspec
 
 # Operators worth offering, per family of field. Order is the order they are
 # shown, so the common one comes first.

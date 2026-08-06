@@ -5,5 +5,4 @@ from . import (
     studio_menu_wizard,
     studio_owned,
 )
-from . import studio_domain
 from . import studio_rule_wizard

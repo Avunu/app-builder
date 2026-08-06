@@ -652,9 +652,10 @@ class StudioViewEditor(models.AbstractModel):
     # while the preview shows a real list with this search view attached, so the
     # menus being edited are the menus on screen.
 
-    # Conditions offered per field, rather than a domain box. A free-text domain
-    # is the most powerful option and the least usable one; these cover what
-    # people actually add, and anything else belongs in the source.
+    # The four one-click conditions, kept because they are what most filters
+    # are and naming one takes no thought. Anything with a value, or more than
+    # one term, comes from the condition builder instead -- `condition="built"`
+    # with rows, which is the same panel the record-rule wizard uses.
     FILTER_CONDITIONS = {
         "set": ("%s is set", "[('%s', '!=', False)]"),
         "not_set": ("%s is not set", "[('%s', '=', False)]"),
@@ -706,9 +707,15 @@ class StudioViewEditor(models.AbstractModel):
         root = etree.fromstring(view.get_combined_arch().encode())
         occurrences = self._occurrences(root)
         field_name = values.get("field")
-        if not field_name or field_name not in self.env[view.model]._fields:
+        # A built condition names its fields in its rows, so there is no single
+        # field to insist on -- and insisting anyway is how "add a filter for
+        # two things" turns into "choose one field first".
+        built = kind == "filter" and values.get("condition") == "built"
+        if not built and (
+            not field_name or field_name not in self.env[view.model]._fields
+        ):
             raise UserError(_("Choose a field that exists on %s.", view.model))
-        field = self.env[view.model]._fields[field_name]
+        field = self.env[view.model]._fields.get(field_name)
 
         if kind == "field":
             anchor, position = self._search_anchor(root, "field")
@@ -720,17 +727,23 @@ class StudioViewEditor(models.AbstractModel):
             }
         elif kind == "filter":
             condition = values.get("condition", "set")
-            if condition not in self.FILTER_CONDITIONS:
-                raise UserError(_("Unknown filter condition '%s'.", condition))
-            label, domain = self.FILTER_CONDITIONS[condition]
             anchor, position = self._search_anchor(root, "filter")
+            if condition == "built":
+                name, string, domain = self._built_filter(view.model, values)
+            elif condition in self.FILTER_CONDITIONS:
+                label, template = self.FILTER_CONDITIONS[condition]
+                name = "filter_%s_%s" % (field_name, condition)
+                string = label % (field.string or field_name)
+                domain = template % field_name
+            else:
+                raise UserError(_("Unknown filter condition '%s'.", condition))
             operation = {
                 "type": "add_filter",
                 "xpath": self._locator_for(anchor, occurrences),
                 "position": position,
-                "name": "filter_%s_%s" % (field_name, condition),
-                "string": label % (field.string or field_name),
-                "domain": domain % field_name,
+                "name": name,
+                "string": string,
+                "domain": domain,
             }
         elif kind == "group_by":
             group = next(iter(root.iter("group")), None)
@@ -747,6 +760,28 @@ class StudioViewEditor(models.AbstractModel):
         else:
             raise UserError(_("A search view has no '%s' to add.", kind))
         return self.apply_operation(view_id, package_id, operation)
+
+    @api.model
+    def _built_filter(self, model_name, values):
+        """A filter from the condition builder: name, label and domain.
+
+        Checked before it is written, for the same reason a record rule is: a
+        filter whose domain does not search raises when somebody clicks it,
+        and by then it is in the source file and in the next database too.
+        """
+        domain = self.env["studio.domain"].write_domain(
+            values.get("rows") or [], values.get("joiner") or "all"
+        )
+        checked = self.env["studio.domain"].check_domain(model_name, domain)
+        if not checked["valid"]:
+            raise UserError(
+                _("This condition does not search:\n\n%s", checked["reason"])
+            )
+        label = (values.get("string") or "").strip()
+        if not label:
+            raise UserError(_("Give the filter a name — it becomes its menu entry."))
+        slug = "".join(c if c.isalnum() else "_" for c in label.lower())
+        return "filter_%s" % "_".join(p for p in slug.split("_") if p), label, domain
 
     @api.model
     def _search_anchor(self, root, tag):
