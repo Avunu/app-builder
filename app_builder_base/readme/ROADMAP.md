@@ -1,19 +1,22 @@
 ## Next
 
-- **The report editor has the operations, not a way to reach them.** Placing a
-  value and printing a table of child rows are operations — `add_report_field`
-  and `add_report_table`, tested, applied to the arch directly on a report the
-  package owns and emitted as `<xpath>` into an inheriting view on anybody
-  else's. Nothing calls either: no JS in the tree names them, and the editor
-  they would live in cannot draw a report anyway. `_preview_for` returns the
-  view's own type, the client mounts `<View type="qweb">`, and qweb is not a
-  client-side view type — a report is a template rendered by
-  `ir.actions.report`, not a view the web client knows how to lay out.
-  Previewing one means rendering it as HTML with `inherit_branding=True`, which
-  stamps `data-oe-id` and `data-oe-xpath` on every node — the same path the
-  locator already falls back to, so clicking into a report needs no new
-  discipline, only that branded path resolved against the combined arch before
-  it reaches `apply_operation`. The document half — a `/` powerbox, dragging a
+- **The report editor is server-complete and has no client.** Placing a value
+  and printing a table of child rows are operations — `add_report_field` and
+  `add_report_table` — and no JS in the tree names either. The pane they would
+  live in cannot draw a report: `_preview_for` returns the view's own type, the
+  client mounts `<View type="qweb">`, and qweb is not a client-side view type.
+  A report is a template, so the preview has to be its rendered *output*, and
+  clicking it resolves through `data-oe-expression` rather than a node path:
+  `inherit_branding` brands `t-field` and nothing else in community
+  (`ir_qweb_fields.py:101`), node branding of rendered output is a `website`
+  feature, and `ir.actions.report._render_template` forces branding off outright
+  (`ir_actions_report.py:765`) — so the template is rendered through `ir.qweb`
+  directly.
+  The server half of that is built: `preview_html` renders the report's own
+  output, `locate_expression` turns a clicked field back into a locator, and
+  `body_anchor` answers "where does this go" when nothing was clicked. What is
+  left is the client — showing that HTML in the preview pane, and offering the
+  two operations. The document half — a `/` powerbox, dragging a
   field into running text, editing the surrounding prose — comes after that,
   not before it.
 - **Conditional blocks in reports** — `t-if` / `t-elif` / `t-else` are editable

@@ -41,6 +41,13 @@ STUDIO_PRIORITY = 99
 
 VALID_POSITIONS = ("after", "before", "inside", "replace", "attributes")
 
+# What makes a node identifiable without counting its siblings. `name` is the
+# form and list answer; a report has none -- its spans are `<span t-field=...>`
+# -- and a positional path into a document shifts the moment anything is
+# inserted above it, which for a report is the ordinary edit. Order matters:
+# the first attribute that identifies the node uniquely wins.
+IDENTIFYING_ATTRS = ("name", "t-field")
+
 
 class StudioViewEditor(models.AbstractModel):
     _name = "studio.view.editor"
@@ -416,9 +423,11 @@ class StudioViewEditor(models.AbstractModel):
         sheet instead, for the wrong model.
         """
         return Counter(
-            (el.tag, el.get("name"))
+            (el.tag, attr, el.get(attr))
             for el in root.iter()
-            if isinstance(el.tag, str) and el.get("name")
+            if isinstance(el.tag, str)
+            for attr in IDENTIFYING_ATTRS
+            if el.get(attr)
         )
 
     @api.model
@@ -436,9 +445,10 @@ class StudioViewEditor(models.AbstractModel):
         at the document root and indexes every step, so it is unique by
         construction -- the same call core's own ``distribute_branding`` uses.
         """
-        name = node.get("name")
-        if name and occurrences[(node.tag, name)] == 1:
-            return "//%s[@name='%s']" % (node.tag, name)
+        for attr in IDENTIFYING_ATTRS:
+            value = node.get(attr)
+            if value and occurrences[(node.tag, attr, value)] == 1:
+                return "//%s[@%s='%s']" % (node.tag, attr, value)
         return node.getroottree().getpath(node)
 
     @api.model

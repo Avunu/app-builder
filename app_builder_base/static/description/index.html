@@ -458,23 +458,27 @@ immutably.</p>
 <div class="section" id="next">
 <h2><a class="toc-backref" href="#toc-entry-5">Next</a></h2>
 <ul class="simple">
-<li><strong>The report editor has the operations, not a way to reach them.</strong>
-Placing a value and printing a table of child rows are operations —
-<tt class="docutils literal">add_report_field</tt> and <tt class="docutils literal">add_report_table</tt>, tested, applied to the
-arch directly on a report the package owns and emitted as <tt class="docutils literal">&lt;xpath&gt;</tt>
-into an inheriting view on anybody else’s. Nothing calls either: no JS
-in the tree names them, and the editor they would live in cannot draw
-a report anyway. <tt class="docutils literal">_preview_for</tt> returns the view’s own type, the
-client mounts <tt class="docutils literal">&lt;View <span class="pre">type=&quot;qweb&quot;&gt;</span></tt>, and qweb is not a client-side
-view type — a report is a template rendered by <tt class="docutils literal">ir.actions.report</tt>,
-not a view the web client knows how to lay out. Previewing one means
-rendering it as HTML with <tt class="docutils literal">inherit_branding=True</tt>, which stamps
-<tt class="docutils literal"><span class="pre">data-oe-id</span></tt> and <tt class="docutils literal"><span class="pre">data-oe-xpath</span></tt> on every node — the same path the
-locator already falls back to, so clicking into a report needs no new
-discipline, only that branded path resolved against the combined arch
-before it reaches <tt class="docutils literal">apply_operation</tt>. The document half — a <tt class="docutils literal">/</tt>
-powerbox, dragging a field into running text, editing the surrounding
-prose — comes after that, not before it.</li>
+<li><strong>The report editor is server-complete and has no client.</strong> Placing a
+value and printing a table of child rows are operations —
+<tt class="docutils literal">add_report_field</tt> and <tt class="docutils literal">add_report_table</tt> — and no JS in the tree
+names either. The pane they would live in cannot draw a report:
+<tt class="docutils literal">_preview_for</tt> returns the view’s own type, the client mounts
+<tt class="docutils literal">&lt;View <span class="pre">type=&quot;qweb&quot;&gt;</span></tt>, and qweb is not a client-side view type. A
+report is a template, so the preview has to be its rendered <em>output</em>,
+and clicking it resolves through <tt class="docutils literal"><span class="pre">data-oe-expression</span></tt> rather than a
+node path: <tt class="docutils literal">inherit_branding</tt> brands <tt class="docutils literal"><span class="pre">t-field</span></tt> and nothing else in
+community (<tt class="docutils literal">ir_qweb_fields.py:101</tt>), node branding of rendered
+output is a <tt class="docutils literal">website</tt> feature, and
+<tt class="docutils literal">ir.actions.report._render_template</tt> forces branding off outright
+(<tt class="docutils literal">ir_actions_report.py:765</tt>) — so the template is rendered through
+<tt class="docutils literal">ir.qweb</tt> directly. The server half of that is built:
+<tt class="docutils literal">preview_html</tt> renders the report’s own output,
+<tt class="docutils literal">locate_expression</tt> turns a clicked field back into a locator, and
+<tt class="docutils literal">body_anchor</tt> answers “where does this go” when nothing was clicked.
+What is left is the client — showing that HTML in the preview pane,
+and offering the two operations. The document half — a <tt class="docutils literal">/</tt> powerbox,
+dragging a field into running text, editing the surrounding prose —
+comes after that, not before it.</li>
 <li><strong>Conditional blocks in reports</strong> — <tt class="docutils literal"><span class="pre">t-if</span></tt> / <tt class="docutils literal"><span class="pre">t-elif</span></tt> / <tt class="docutils literal"><span class="pre">t-else</span></tt>
 are editable as source but have no gesture and no preview switch,
 which is the same limit Odoo documents for its own editor.</li>
