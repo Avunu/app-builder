@@ -186,6 +186,12 @@ class StudioViewEditor(models.AbstractModel):
             target = base_view
             created = False
             spec = etree.Element("data")
+            # A handler dedupes against the spec it is building, which is
+            # enough on the extension path where the spec accumulates every
+            # edit. Here the spec is empty every time, so a handler that cares
+            # about "is this already there" has to be shown the arch it is
+            # about to be merged into.
+            operation = dict(operation, _current_arch=base_view.arch)
             handler(spec, operation)
             arch = apply_inheritance_specs(xml_writer.parse_arch(base_view.arch), spec)
         else:

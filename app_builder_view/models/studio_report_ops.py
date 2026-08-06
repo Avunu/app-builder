@@ -1,0 +1,177 @@
+# Copyright 2026 Avunu LLC
+# License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
+"""Report-shaped edits, emitted as xpath into an inheriting view.
+
+The report editor is the *same* editor: a report template is an ir.ui.view of
+type qweb, so `apply_operation` already routes an edit to an inheriting view and
+already mints locators server-side. What qweb needs that a form does not is
+operations that speak its vocabulary -- `t-field` rather than `<field>`, and
+`t-foreach` rather than a one2many widget.
+
+Deliberately server-side, like every other locator in this project. A report is
+the one place a rich-text editor is most tempting and least safe: what the
+browser holds is rendered output, and an xpath derived from rendered output
+points at whatever that user's language, company layout and access rights
+happened to produce.
+"""
+
+from lxml import etree
+
+from odoo import _, api, models
+from odoo.exceptions import UserError
+
+# Fields that cannot be printed as a bare span: a binary is not text, and a
+# relation needs a sub-expression naming which of its fields to show.
+UNPRINTABLE = {
+    "binary": "an image or a file needs an <img> or a widget, not a text span",
+    "one2many": "a list of records is a table -- use Add table instead",
+    "many2many": "a list of records is a table -- use Add table instead",
+}
+
+
+class StudioViewEditor(models.AbstractModel):
+    _inherit = "studio.view.editor"
+
+    @api.model
+    def _report_field_expression(self, model_name, name, loop_var="doc"):
+        """``doc.partner_id.name`` for a many2one, ``doc.x`` otherwise.
+
+        A many2one rendered bare prints the record's display name via
+        `t-field`, which is right often enough that Odoo does it -- but naming
+        the field explicitly is what makes the generated source say what it
+        prints.
+        """
+        model = self.env[model_name]
+        field = model._fields.get(name)
+        if field is None:
+            raise UserError(
+                _("%(model)s has no field %(name)s.", model=model_name, name=name)
+            )
+        if field.type in UNPRINTABLE:
+            raise UserError(
+                _(
+                    "%(label)s cannot be placed as text: %(why)s.",
+                    label=field.string or name,
+                    why=UNPRINTABLE[field.type],
+                )
+            )
+        return "%s.%s" % (loop_var, name)
+
+    @api.model
+    def _already_prints(self, arch, expression):
+        """Whether ``arch`` already has a span for this expression.
+
+        Only consulted for a view the package owns outright, where each edit is
+        applied to the arch itself rather than accumulated in a spec -- so the
+        spec-level dedup below cannot see what the previous click did.
+        """
+        if not arch:
+            return False
+        try:
+            root = etree.fromstring(arch.encode())
+        except etree.XMLSyntaxError:  # pragma: no cover - _check_xml guards this
+            return False
+        return any(node.get("t-field") == expression for node in root.iter())
+
+    def _op_add_report_field(self, root, operation):
+        """A `t-field` span, optionally with a label beside it.
+
+        Idempotent on (anchor, field) for the same reason `_op_add_field` is: a
+        double-click must not print the value twice.
+        """
+        name = operation.get("name")
+        model_name = operation.get("model")
+        if not name or not model_name:
+            raise UserError(_("Placing a field requires a model and a field name."))
+        expression = self._report_field_expression(
+            model_name, name, operation.get("loop_var") or "doc"
+        )
+        position = operation.get("position", "inside")
+        expr = operation["xpath"]
+
+        # On a view the package owns, each edit is merged into the arch itself
+        # and the spec below starts empty every time, so it cannot see what the
+        # previous click did. apply_operation hands us the arch for this.
+        if self._already_prints(operation.get("_current_arch"), expression):
+            return None
+
+        node = None
+        for candidate in root.findall("xpath"):
+            if candidate.get("expr") == expr and candidate.get("position") == position:
+                if any(
+                    span.get("t-field") == expression for span in candidate.iter("span")
+                ):
+                    return candidate
+                node = candidate
+                break
+        if node is None:
+            node = self._new_xpath(root, expr, position)
+
+        label = operation.get("label")
+        host = node
+        if label:
+            # A labelled value is one unit: wrapping them means a later edit
+            # moves or hides both, which is what somebody means by "the
+            # customer reference line".
+            host = etree.SubElement(node, "div", {"class": "mb-2"})
+            strong = etree.SubElement(host, "strong")
+            strong.text = label
+            strong.tail = " "
+        etree.SubElement(host, "span", {"t-field": expression})
+        return node
+
+    def _op_add_report_table(self, root, operation):
+        """A `t-foreach` table over a one2many, with chosen columns.
+
+        The second most common report edit after placing a field, and the one
+        hand-editing gets wrong most often: the loop variable has to be named,
+        the header and the body have to agree on column order, and the totals
+        row is a different expression from the cells.
+        """
+        name = operation.get("name")
+        model_name = operation.get("model")
+        columns = operation.get("columns") or []
+        if not name or not model_name:
+            raise UserError(_("A table needs a model and a one2many field."))
+        field = self.env[model_name]._fields.get(name)
+        if field is None or field.type not in ("one2many", "many2many"):
+            raise UserError(
+                _("%s is not a list of records, so it cannot be a table.", name)
+            )
+        if not columns:
+            raise UserError(_("Choose at least one column for the table."))
+
+        child = self.env[field.comodel_name]
+        unknown = [c for c in columns if c not in child._fields]
+        if unknown:
+            raise UserError(
+                _(
+                    "%(model)s has no field %(name)s.",
+                    model=field.comodel_name,
+                    name=", ".join(unknown),
+                )
+            )
+
+        expr = operation["xpath"]
+        position = operation.get("position", "inside")
+        node = self._new_xpath(root, expr, position)
+        loop_var = operation.get("loop_var") or "line"
+
+        table = etree.SubElement(node, "table", {"class": "table table-sm"})
+        head = etree.SubElement(etree.SubElement(table, "thead"), "tr")
+        for column in columns:
+            cell = etree.SubElement(head, "th")
+            cell.text = child._fields[column].string or column
+        body = etree.SubElement(table, "tbody")
+        row = etree.SubElement(
+            body,
+            "tr",
+            {
+                "t-foreach": "%s.%s" % (operation.get("parent_var") or "doc", name),
+                "t-as": loop_var,
+            },
+        )
+        for column in columns:
+            cell = etree.SubElement(row, "td")
+            etree.SubElement(cell, "span", {"t-field": "%s.%s" % (loop_var, column)})
+        return node
