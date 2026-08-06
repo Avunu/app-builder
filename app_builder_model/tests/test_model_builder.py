@@ -9,7 +9,7 @@ from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.tests.common import StudioCase
-from odoo.addons.app_builder_base.tools import scaffold
+from odoo.addons.app_builder_base.tools import modelspec, scaffold
 
 
 @tagged("post_install", "-at_install")
@@ -330,6 +330,31 @@ class TestCompanionModels(StudioCase):
         lines = next(f for f in parent.fields if f.name == "line_ids")
         self.assertEqual(lines.ttype, "one2many")
         self.assertEqual(lines.inverse_name, back.name)
+
+    def test_a_one_word_app_gets_a_valid_inverse_name(self):
+        """A generated model is named `<package>.<slug>`, so splitting the
+        inverse on "_" produced `pkg.job_id` -- a field name with a dot in it.
+        Two-word labels hid it, because their slug has an underscore to split
+        on, and every test and the e2e probe used one."""
+        for model_name in ("alpha_pkg.job", "studio.job", "studio_demo.workshop_job"):
+            specs = scaffold.companion_specs(
+                model_name, "Job", self._options(lines=True)
+            )
+            back = next(f for f in specs[0].fields if f.ttype == "many2one")
+            self.assertNotIn(".", back.name, "%s produced %s" % (model_name, back.name))
+            parent = scaffold.scaffold_spec(
+                model_name, "Job", self._options(lines=True)
+            )
+            lines = next(f for f in parent.fields if f.name == "line_ids")
+            self.assertEqual(lines.inverse_name, back.name, "both sides must agree")
+
+    def test_a_one_word_app_with_lines_validates(self):
+        spec = scaffold.scaffold_spec("alpha_pkg.job", "Job", self._options(lines=True))
+        companion = scaffold.companion_specs(
+            "alpha_pkg.job", "Job", self._options(lines=True)
+        )[0]
+        self.assertFalse(modelspec.validate_spec(companion, taken_model_names=set()))
+        self.assertFalse(modelspec.validate_spec(spec, taken_model_names=set()))
 
     def test_neither_feature_builds_a_companion_when_off(self):
         self.assertEqual(

@@ -102,6 +102,7 @@ class StudioAppBuilder(models.AbstractModel):
             self._build_access(
                 self.env["ir.model"].search([("model", "=", candidate.name)], limit=1),
                 groups or self.env.ref("base.group_user"),
+                unlink=True,
             )
             for candidate in companions
         ]
@@ -159,12 +160,20 @@ class StudioAppBuilder(models.AbstractModel):
         }
 
     @api.model
-    def _build_access(self, ir_model, groups):
+    def _build_access(self, ir_model, groups, unlink=False):
         """Real ACL rows for real groups, in the same transaction.
 
         A model with no ACL is invisible to every non-superuser and takes its
         menu with it -- and because env.su bypasses the check, it looks
         perfectly fine to whoever built it.
+
+        ``unlink`` is off for the app's own model, where deleting records is a
+        decision the builder should make deliberately. It is *on* for a line
+        companion, and that is not a policy difference: the line's link to its
+        parent cascades, so Odoo turns both x2many removal commands into
+        ``comodel.unlink()`` in the user's environment (`odoo/fields.py:4717`).
+        Without it, taking a row out of the table and saving raises AccessError
+        for exactly the group the app was built for.
         """
         rows = self.env["ir.model.access"]
         for group in groups:
@@ -176,7 +185,7 @@ class StudioAppBuilder(models.AbstractModel):
                     "perm_read": True,
                     "perm_write": True,
                     "perm_create": True,
-                    "perm_unlink": False,
+                    "perm_unlink": unlink,
                 }
             )
         return rows

@@ -238,6 +238,16 @@ class ScaffoldOptions:
         return tuple(out)
 
 
+def inverse_name_for(model_name):
+    """``studio_demo.workshop_job`` -> ``workshop_job_id``.
+
+    Kept beside the companions because both sides -- the child's many2one and
+    the parent's one2many ``inverse_name`` -- have to produce the same string,
+    and they are built in different functions.
+    """
+    return "%s_id" % model_name.rsplit(".", 1)[-1]
+
+
 def _companion_fields(model_name, options):
     """The parent's side of each companion model."""
     out = []
@@ -257,7 +267,7 @@ def _companion_fields(model_name, options):
                 ttype="one2many",
                 string="Lines",
                 comodel=companion_name(model_name, "line"),
-                inverse_name="%s_id" % model_name.rsplit("_", 1)[-1],
+                inverse_name=inverse_name_for(model_name),
             )
         )
     return out
@@ -312,7 +322,13 @@ def companion_specs(model_name, label, options=None):
             )
         )
     if options.lines:
-        parent_field = "%s_id" % model_name.rsplit("_", 1)[-1]
+        # On the dot, not the underscore. A generated model is named
+        # `<package>.<slug>` (`studio_app_builder.technical_name`), so splitting
+        # on "_" gives `pkg.job_id` for `alpha_pkg.job` -- a field name with a
+        # dot in it, which validate_spec refuses. The composer's
+        # `_suggest_inverse_name` already splits this way; the two have to agree
+        # or a line model built here cannot be built there.
+        parent_field = inverse_name_for(model_name)
         specs.append(
             ModelSpec(
                 name=companion_name(model_name, "line"),
