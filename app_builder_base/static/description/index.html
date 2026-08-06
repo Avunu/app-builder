@@ -486,16 +486,6 @@ the same reason.</li>
 <li><strong>A new field from inside the view editor.</strong> Adding an <em>existing</em>
 field is there; creating one still means the composer, or the New
 Field wizard for a core model.</li>
-<li><strong>A feature that asks for a view does not get one.</strong> <tt class="docutils literal">Feature.views</tt>
-records the intent — Date &amp; Calendar wants a calendar, Pipeline stages
-wants a kanban — and <tt class="docutils literal">ScaffoldOptions.view_types</tt> computes it, and
-nothing reads either: <tt class="docutils literal">_build_views</tt> creates list, form and search
-from a hardcoded dict, and the action it builds is
-<tt class="docutils literal"><span class="pre">view_mode=&quot;list,form&quot;</span></tt>. So the wizard’s own help text promises “a
-kanban to move records across” and delivers a <tt class="docutils literal">state</tt> field with no
-kanban. Both scaffolds exist and both are reachable from the view
-editor’s Add view afterwards; what is missing is <tt class="docutils literal">create_app</tt>
-calling them.</li>
 <li><strong>Record rules have no builder.</strong> <tt class="docutils literal">studio.access.wizard</tt> covers
 <tt class="docutils literal">ir.model.access</tt> only; an <tt class="docutils literal">ir.rule</tt> is captured into source once
 it exists and is never authored here. Automations are further along
@@ -514,6 +504,13 @@ the way to change that.</li>
 <div class="section" id="known-limits">
 <h2><a class="toc-backref" href="#toc-entry-6">Known limits</a></h2>
 <ul class="simple">
+<li><strong>A PO entry for a term this package emits is the database’s to
+state.</strong> <tt class="docutils literal">_render_translations</tt> reads the existing
+<tt class="docutils literal"><span class="pre">i18n/&lt;lang&gt;.po</span></tt> and keeps every entry it does not emit — a
+<tt class="docutils literal">.pot</tt>-derived string from code, a term another workflow put there —
+but a msgid it does emit is rewritten from the record on the next
+save. Translate those in Odoo; editing them in the file is work the
+next gesture discards.</li>
 <li><strong>The generated PO files apply on install, not on upgrade.</strong>
 <tt class="docutils literal">_update_translations</tt> runs with
 <tt class="docutils literal"><span class="pre">overwrite=config[&quot;overwrite_existing_translations&quot;]</span></tt>

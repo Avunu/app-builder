@@ -132,16 +132,6 @@ Next
 - **A new field from inside the view editor.** Adding an *existing*
   field is there; creating one still means the composer, or the New
   Field wizard for a core model.
-- **A feature that asks for a view does not get one.** ``Feature.views``
-  records the intent — Date & Calendar wants a calendar, Pipeline stages
-  wants a kanban — and ``ScaffoldOptions.view_types`` computes it, and
-  nothing reads either: ``_build_views`` creates list, form and search
-  from a hardcoded dict, and the action it builds is
-  ``view_mode="list,form"``. So the wizard's own help text promises "a
-  kanban to move records across" and delivers a ``state`` field with no
-  kanban. Both scaffolds exist and both are reachable from the view
-  editor's Add view afterwards; what is missing is ``create_app``
-  calling them.
 - **Record rules have no builder.** ``studio.access.wizard`` covers
   ``ir.model.access`` only; an ``ir.rule`` is captured into source once
   it exists and is never authored here. Automations are further along
@@ -159,6 +149,13 @@ Next
 Known limits
 ------------
 
+- **A PO entry for a term this package emits is the database's to
+  state.** ``_render_translations`` reads the existing
+  ``i18n/<lang>.po`` and keeps every entry it does not emit — a
+  ``.pot``-derived string from code, a term another workflow put there —
+  but a msgid it does emit is rewritten from the record on the next
+  save. Translate those in Odoo; editing them in the file is work the
+  next gesture discards.
 - **The generated PO files apply on install, not on upgrade.**
   ``_update_translations`` runs with
   ``overwrite=config["overwrite_existing_translations"]``

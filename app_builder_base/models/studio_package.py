@@ -496,9 +496,15 @@ class StudioPackage(models.Model):
 
         files = {}
         for lang in langs:
-            content = pogen.render_po(self.name, lang, pogen.merge_terms(rows[lang]))
+            relative = "i18n/%s.po" % lang
+            content = pogen.merge_po(
+                self._read_source(relative),
+                self.name,
+                lang,
+                pogen.merge_terms(rows[lang]),
+            )
             if content:
-                files["i18n/%s.po" % lang] = content
+                files[relative] = content
         return files
 
     def _render_python(self):

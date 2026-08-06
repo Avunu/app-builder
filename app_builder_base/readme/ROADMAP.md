@@ -40,6 +40,12 @@
 
 ## Known limits
 
+- **A PO entry for a term this package emits is the database's to state.**
+  `_render_translations` reads the existing `i18n/<lang>.po` and keeps every
+  entry it does not emit — a `.pot`-derived string from code, a term another
+  workflow put there — but a msgid it does emit is rewritten from the record on
+  the next save. Translate those in Odoo; editing them in the file is work the
+  next gesture discards.
 - **The generated PO files apply on install, not on upgrade.**
   `_update_translations` runs with `overwrite=config["overwrite_existing_translations"]`
   (`loading.py:236`), which is False unless the server was started with

@@ -9,6 +9,8 @@ an optimisation; if it does not, we have two competing sources of truth and the
 design works.
 """
 
+import os
+
 from odoo.tests import tagged
 
 from .common import StudioCase
@@ -220,6 +222,62 @@ class TestRoundTripKeepsTranslations(StudioCase):
         self.assertFalse(
             [p for p in files if p.startswith("i18n/")],
             "an empty PO file is a file somebody has to wonder about",
+        )
+
+    def _write_po(self, package, lang, body):
+        directory = os.path.join(package.root_path, "i18n")
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "%s.po" % lang)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(body)
+        return path
+
+    def test_an_entry_we_do_not_emit_survives_a_write(self):
+        """The PO is the one generated file an external workflow owns."""
+        package = self.make_package()
+        self.build_demo_content(package)
+        model = self.env["ir.model"].search([("model", "=", "x_studio_project")])
+        self._translate(model, "name", "Affaire de démonstration")
+        package.action_write_files()
+
+        external = (
+            "\n#. module: %(pkg)s\n"
+            "#: code:addons/%(pkg)s/models/thing.py:0\n"
+            'msgid "Something in code"\n'
+            'msgstr "Quelque chose"\n' % {"pkg": package.name}
+        )
+        self._write_po(
+            package, "fr_FR", package._render_files()["i18n/fr_FR.po"] + external
+        )
+        rendered = package._render_files()["i18n/fr_FR.po"]
+        self.assertIn("Quelque chose", rendered, "an entry we do not emit must survive")
+        self.assertIn("Affaire de démonstration", rendered)
+
+    def test_an_entry_we_do_emit_is_refreshed_from_the_database(self):
+        """For a term this package owns, the database is what states it."""
+        package = self.make_package()
+        self.build_demo_content(package)
+        model = self.env["ir.model"].search([("model", "=", "x_studio_project")])
+        self._translate(model, "name", "Affaire de démonstration")
+        package.action_write_files()
+
+        stale = package._render_files()["i18n/fr_FR.po"].replace(
+            "Affaire de démonstration", "Traduction périmée"
+        )
+        self._write_po(package, "fr_FR", stale)
+        rendered = package._render_files()["i18n/fr_FR.po"]
+        self.assertIn("Affaire de démonstration", rendered)
+        self.assertNotIn("Traduction périmée", rendered)
+
+    def test_merging_is_deterministic(self):
+        package = self.make_package()
+        self.build_demo_content(package)
+        model = self.env["ir.model"].search([("model", "=", "x_studio_project")])
+        self._translate(model, "name", "Affaire de démonstration")
+        package.action_write_files()
+        self.assertEqual(
+            package._render_files()["i18n/fr_FR.po"],
+            package._render_files()["i18n/fr_FR.po"],
         )
 
     def test_po_rendering_is_deterministic(self):
