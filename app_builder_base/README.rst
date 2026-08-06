@@ -122,9 +122,6 @@ Next
   now; what each case needs is a sensible answer to "what did you drop
   it *into*". Adding works by clicking, anchored on the selection, for
   the same reason.
-- **A new field from inside the view editor.** Adding an *existing*
-  field is there; creating one still means the composer, or the New
-  Field wizard for a core model.
 - **Record rules have no builder.** ``studio.access.wizard`` covers
   ``ir.model.access`` only; an ``ir.rule`` is captured into source once
   it exists and is never authored here. Automations are further along
@@ -142,6 +139,12 @@ Next
 Known limits
 ------------
 
+- **A field created from the view editor is one of the simple kinds.**
+  Text, a number, a date, a checkbox, a file, a link to a record — the
+  types whose whole definition is a name and a label. A selection needs
+  its values, a one2many an inverse that may not exist yet, and a
+  computed field a body; each is a conversation, and the composer is
+  where conversations happen.
 - **A PO entry for a term this package emits is the database's to
   state.** ``_render_translations`` reads the existing
   ``i18n/<lang>.po`` and keeps every entry it does not emit — a

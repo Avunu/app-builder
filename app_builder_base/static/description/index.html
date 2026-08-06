@@ -476,9 +476,6 @@ kanban card contents. The move operation and the gesture both exist
 now; what each case needs is a sensible answer to “what did you drop
 it <em>into</em>”. Adding works by clicking, anchored on the selection, for
 the same reason.</li>
-<li><strong>A new field from inside the view editor.</strong> Adding an <em>existing</em>
-field is there; creating one still means the composer, or the New
-Field wizard for a core model.</li>
 <li><strong>Record rules have no builder.</strong> <tt class="docutils literal">studio.access.wizard</tt> covers
 <tt class="docutils literal">ir.model.access</tt> only; an <tt class="docutils literal">ir.rule</tt> is captured into source once
 it exists and is never authored here. Automations are further along
@@ -497,6 +494,12 @@ the way to change that.</li>
 <div class="section" id="known-limits">
 <h2><a class="toc-backref" href="#toc-entry-6">Known limits</a></h2>
 <ul class="simple">
+<li><strong>A field created from the view editor is one of the simple kinds.</strong>
+Text, a number, a date, a checkbox, a file, a link to a record — the
+types whose whole definition is a name and a label. A selection needs
+its values, a one2many an inverse that may not exist yet, and a
+computed field a body; each is a conversation, and the composer is
+where conversations happen.</li>
 <li><strong>A PO entry for a term this package emits is the database’s to
 state.</strong> <tt class="docutils literal">_render_translations</tt> reads the existing
 <tt class="docutils literal"><span class="pre">i18n/&lt;lang&gt;.po</span></tt> and keeps every entry it does not emit — a

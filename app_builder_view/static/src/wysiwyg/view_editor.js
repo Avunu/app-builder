@@ -66,6 +66,9 @@ export class StudioViewEditor extends Component {
             reportLabel: "",
             reportList: "",
             reportColumns: [],
+            newField: { field_description: "", ttype: "char", relation: "" },
+            fieldPlan: null,
+            fieldTypes: [],
         });
 
         onWillStart(async () => {
@@ -87,6 +90,7 @@ export class StudioViewEditor extends Component {
             } else if (!this.isSearch) {
                 await this.loadPalette();
                 await this.loadServerActions();
+                await this.loadFieldPlan();
             }
         });
 
@@ -679,6 +683,54 @@ export class StudioViewEditor extends Component {
                 f.string.toLowerCase().includes(needle) ||
                 f.name.toLowerCase().includes(needle)
         );
+    }
+
+    async loadFieldPlan() {
+        // Asked before the form is shown, not after it is submitted: a panel
+        // that takes a name and a type and then explains it cannot use them is
+        // worse than one that says so first.
+        this.state.fieldPlan = await this.orm.call(
+            "studio.view.editor",
+            "new_field_plan",
+            [this.viewId]
+        );
+        if (this.state.fieldPlan.can_create && !this.state.fieldTypes.length) {
+            this.state.fieldTypes = await this.orm.call(
+                "studio.view.editor",
+                "quick_field_types",
+                []
+            );
+        }
+    }
+
+    async createField() {
+        const values = { ...this.state.newField };
+        if (!values.field_description) {
+            this.notification.add(_t("Give the new field a label."), {
+                type: "warning",
+            });
+            return;
+        }
+        await this.structuralEdit(() =>
+            this.orm.call("studio.view.editor", "create_field_at", [
+                this.viewId,
+                this.packageId,
+                this.anchor,
+                values,
+            ])
+        );
+        this.state.newField = { field_description: "", ttype: "char", relation: "" };
+    }
+
+    async openComposer() {
+        // The handoff. The composer is where a Python model's edits batch
+        // behind one Apply, which is why this is a different door rather than
+        // the same one with a longer wait.
+        await this.action.doAction({
+            type: "ir.actions.client",
+            tag: "app_builder_composer",
+            params: { model: this.state.fieldPlan.model },
+        });
     }
 
     async addField(name) {
