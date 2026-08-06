@@ -104,14 +104,19 @@ Known issues / Roadmap
 Next
 ----
 
-- **A report is edited as a view, not as a document.** Creating one and
-  patching somebody else's both work, and the view editor opens on the
-  template — but it edits qweb the way it edits a form, by clicking
-  nodes and editing source. What is missing is the document half: a
-  powerbox, fields dragged into running text, and dynamic tables. Odoo's
-  ``html_editor`` is present in community 18.0, so the parts exist; what
-  does not is the mapping from a rich-text edit back to an ``<xpath>``
-  in an inheriting view, which is what keeps the edit reviewable.
+- **The report editor has the gestures, not the rich text.** Placing a
+  value and printing a table of child rows are operations now, and both
+  emit ``<xpath>`` into an inheriting view like every other edit. What
+  is missing is the document half: a ``/`` powerbox, dragging a field
+  into running text, and editing the surrounding prose in place. Odoo's
+  ``html_editor`` is in community 18.0, so the parts exist; what does
+  not is the mapping from a rich-text edit back to an xpath, and that
+  mapping is the whole reason the edit stays reviewable — a locator
+  derived from rendered output points at whatever that reader's
+  language, company layout and access rights produced.
+- **Conditional blocks in reports** — ``t-if`` / ``t-elif`` / ``t-else``
+  are editable as source but have no gesture and no preview switch,
+  which is the same limit Odoo documents for its own editor.
 - **Drag-to-reorder beyond list columns** — form fields between groups,
   kanban card contents. The move operation and the gesture both exist
   now; what each case needs is a sensible answer to "what did you drop
@@ -120,11 +125,6 @@ Next
 - **A new field from inside the view editor.** Adding an *existing*
   field is there; creating one still means the composer, or the New
   Field wizard for a core model.
-- **Tags and Lines as features.** Both need a *second* model — a tag
-  model with its own access rule, a line model with a many2one back —
-  and the app builder makes one. The registry has a place for them; what
-  is missing is building the companion, which is a capability rather
-  than another entry.
 - **A feature that asks for a view still only gets the ones the builder
   can scaffold.** ``Feature.views`` records the intent — Date & Calendar
   wants a calendar, Pipeline stages wants a kanban — and the app builder
@@ -140,16 +140,6 @@ Next
 Known limits
 ------------
 
-- **Translated fields carry only their source term.** ``name``, ``help``
-  and ``field_description`` are ``translate=True`` jsonb columns, and
-  the emitter writes the one string. The fields are in the allowlist, so
-  the completeness guard reports clean while every non-source
-  translation is dropped. Closing it needs the ``ir.translation``-shaped
-  half of the round trip, not another allowlist entry.
-- **A field default set through the field editor is not written.** Odoo
-  stores it in ``ir.default``, keyed by ``field_id``, and there is no
-  serializer for that model — so the default survives on the ``.py``
-  path (``FieldSpec.default``) and is lost on the XML one.
 - **A value that needs a module is only recorded where a bridge says
   so.** ``_value_depends`` maps a field value to the module that
   contributes it, so a rule using ``review_type="expression"`` pulls
