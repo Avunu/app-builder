@@ -20,6 +20,8 @@
                     <field name="add_monetary"/>
                     <field name="add_picture"/>
                     <field name="add_company"/>
+                    <field name="add_tags"/>
+                    <field name="add_lines"/>
                     <field name="add_reference"/>
                     <field name="add_ordering"/>
                     <field name="add_active"/>

@@ -285,3 +285,59 @@ class TestWizardCoversTheRegistry(StudioCase):
             and name[len("add_") :] not in scaffold.FEATURES_BY_KEY
         ]
         self.assertFalse(stray, "no such feature: %s" % ", ".join(stray))
+
+
+@tagged("post_install", "-at_install")
+class TestCompanionModels(StudioCase):
+    """Tags and Lines -- the two documented features that are not a column.
+
+    A tag is a record shared across many parents; a line is a record owned by
+    one. Both need a model of their own, which is why they could not be added
+    to the registry as another boolean and were the last two missing.
+    """
+
+    def _options(self, **flags):
+        return scaffold.ScaffoldOptions.from_keys(flags.keys())
+
+    def test_tags_produce_a_tag_model_the_parent_points_at(self):
+        specs = scaffold.companion_specs("x_demo_job", "Job", self._options(tags=True))
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0].name, "x_demo_job_tag")
+        names = {f.name for f in specs[0].fields}
+        self.assertEqual(names, {"name", "color"})
+
+        parent = scaffold.scaffold_spec("x_demo_job", "Job", self._options(tags=True))
+        tag_field = next(f for f in parent.fields if f.name == "tag_ids")
+        self.assertEqual(tag_field.ttype, "many2many")
+        self.assertEqual(tag_field.comodel, "x_demo_job_tag")
+
+    def test_a_tag_name_is_unique(self):
+        """A tag's label is the whole record, so two with one name are a
+        duplicate rather than two things."""
+        specs = scaffold.companion_specs("x_demo_job", "Job", self._options(tags=True))
+        self.assertTrue(specs[0].sql_constraints)
+        self.assertIn("unique(name)", specs[0].sql_constraints[0].definition)
+
+    def test_lines_produce_a_child_model_that_points_back(self):
+        specs = scaffold.companion_specs("x_demo_job", "Job", self._options(lines=True))
+        self.assertEqual(specs[0].name, "x_demo_job_line")
+        back = next(f for f in specs[0].fields if f.ttype == "many2one")
+        self.assertEqual(back.comodel, "x_demo_job")
+        self.assertEqual(back.ondelete, "cascade", "a line without a parent is orphan")
+        self.assertTrue(back.required)
+
+        parent = scaffold.scaffold_spec("x_demo_job", "Job", self._options(lines=True))
+        lines = next(f for f in parent.fields if f.name == "line_ids")
+        self.assertEqual(lines.ttype, "one2many")
+        self.assertEqual(lines.inverse_name, back.name)
+
+    def test_neither_feature_builds_a_companion_when_off(self):
+        self.assertEqual(
+            scaffold.companion_specs("x_demo_job", "Job", self._options()), []
+        )
+
+    # Building one is an e2e probe, not a unit test: create_app installs a
+    # module and reloads Python, and `action_apply` commits -- both unreachable
+    # from a TransactionCase. See tests/e2e/probe_scaffold.py, which asserts
+    # both companions land in the registry, carry an access rule, and are
+    # written to source.

@@ -19,7 +19,13 @@ from dataclasses import dataclass
 
 from lxml import etree
 
-from .modelspec import PRIORITY_VALUES, FieldSpec, ModelSpec, SelectionSpec
+from .modelspec import (
+    PRIORITY_VALUES,
+    ConstraintSpec,
+    FieldSpec,
+    ModelSpec,
+    SelectionSpec,
+)
 from .pycodegen import class_name_for
 
 CHATTER_MIXINS = ("mail.thread", "mail.activity.mixin")
@@ -53,6 +59,9 @@ class Feature:
     implies: tuple[str, ...] = ()
     views: tuple[str, ...] = ()
     default: bool = False
+    #: A second model this feature needs, built alongside the first. "tag" and
+    #: "line" are the two shapes; see `companion_specs`.
+    companion: str | None = None
 
 
 FEATURES = (
@@ -124,6 +133,22 @@ FEATURES = (
         "An amount. Brings the currency it is counted in.",
     ),
     Feature("company", "Company", "Which company the record belongs to."),
+    # The two that need a second model. `companion` is what says so -- the
+    # difference between "add a column" and "build another model, with its own
+    # access rule, and point at it" is not something a boolean could carry,
+    # which is why these two were the last documented features missing.
+    Feature(
+        "tags",
+        "Tags",
+        "Free-form labels, shared across records and coloured.",
+        companion="tag",
+    ),
+    Feature(
+        "lines",
+        "Lines",
+        "A table of child rows on the form, like order lines.",
+        companion="line",
+    ),
 )
 
 FEATURES_BY_KEY = {feature.key: feature for feature in FEATURES}
@@ -211,6 +236,110 @@ class ScaffoldOptions:
             if feature.key in self.enabled:
                 out.extend(v for v in feature.views if v not in out)
         return tuple(out)
+
+
+def _companion_fields(model_name, options):
+    """The parent's side of each companion model."""
+    out = []
+    if options.tags:
+        out.append(
+            FieldSpec(
+                name="tag_ids",
+                ttype="many2many",
+                string="Tags",
+                comodel=companion_name(model_name, "tag"),
+            )
+        )
+    if options.lines:
+        out.append(
+            FieldSpec(
+                name="line_ids",
+                ttype="one2many",
+                string="Lines",
+                comodel=companion_name(model_name, "line"),
+                inverse_name="%s_id" % model_name.rsplit("_", 1)[-1],
+            )
+        )
+    return out
+
+
+def companion_name(model_name, kind):
+    """``x_studio_job`` + ``tag`` -> ``x_studio_job_tag``."""
+    return "%s_%s" % (model_name, kind)
+
+
+def companion_specs(model_name, label, options=None):
+    """The extra models the chosen features need, in load order.
+
+    Tags and Lines are the only two documented features that are not a column:
+    a tag is a record shared across many parents, a line is a record owned by
+    one. Both need a model of their own, and the parent's field points at it --
+    which is why they could not be added to the registry as another boolean.
+
+    Returned before the parent spec is built, because the parent's many2many and
+    one2many name these models.
+    """
+    options = options or ScaffoldOptions()
+    specs = []
+    if options.tags:
+        specs.append(
+            ModelSpec(
+                name=companion_name(model_name, "tag"),
+                description="%s Tag" % label,
+                class_name=class_name_for(companion_name(model_name, "tag")),
+                order="name",
+                fields=(
+                    FieldSpec(
+                        name="name",
+                        ttype="char",
+                        string="Tag",
+                        required=True,
+                        translate=True,
+                    ),
+                    # Odoo's many2many_tags widget reads `color` for the pill
+                    # colour, and shows a colour picker when it is present.
+                    FieldSpec(name="color", ttype="integer", string="Colour"),
+                ),
+                # A tag's label is the whole record, so two with the same name
+                # are a duplicate rather than two things.
+                sql_constraints=(
+                    ConstraintSpec(
+                        name="name_uniq",
+                        definition="unique(name)",
+                        message="That tag already exists.",
+                    ),
+                ),
+            )
+        )
+    if options.lines:
+        parent_field = "%s_id" % model_name.rsplit("_", 1)[-1]
+        specs.append(
+            ModelSpec(
+                name=companion_name(model_name, "line"),
+                description="%s Line" % label,
+                class_name=class_name_for(companion_name(model_name, "line")),
+                order="sequence, id",
+                fields=(
+                    FieldSpec(
+                        name=parent_field,
+                        ttype="many2one",
+                        string=label,
+                        comodel=model_name,
+                        required=True,
+                        # A line without its parent is orphaned data; Odoo's own
+                        # line models cascade for the same reason.
+                        ondelete="cascade",
+                        index=True,
+                    ),
+                    FieldSpec(
+                        name="name", ttype="char", string="Description", required=True
+                    ),
+                    FieldSpec(name="sequence", ttype="integer", string="Sequence"),
+                    FieldSpec(name="quantity", ttype="float", string="Quantity"),
+                ),
+            )
+        )
+    return specs
 
 
 def scaffold_spec(model_name, label, options=None):
@@ -391,6 +520,8 @@ def scaffold_spec(model_name, label, options=None):
     if options.chatter:
         inherit = CHATTER_MIXINS if options.activities else (CHATTER_MIXINS[0],)
 
+    fields.extend(_companion_fields(model_name, options))
+
     return ModelSpec(
         name=model_name,
         description=label,
@@ -422,12 +553,16 @@ HIDDEN = (
     # The daterange widget draws both ends from the start field, so placing the
     # stop field as well would show the same period twice.
     "date_stop",
+    # Lines are a table across the width of the form, placed by the form
+    # builder rather than as a row inside a group.
+    "line_ids",
 )
 
 # Fields the scaffold places with a widget rather than bare. Keeping this beside
 # HIDDEN says the same thing from the other side: what a field looks like on a
 # screen is a decision, and both lists are where those decisions live.
 SCAFFOLD_WIDGETS = {
+    "tag_ids": "many2many_tags",
     "priority": "priority",
     "kanban_state": "state_selection",
     "user_id": "many2one_avatar_user",
@@ -461,6 +596,32 @@ def scaffold_list_arch(model, spec, options=None):
     if options.stage and "state" in model._fields:
         etree.SubElement(root, "field", name="state", widget="badge")
     return root
+
+
+def _scaffold_notebook(sheet, model, options):
+    """Lines and Notes, in that order.
+
+    Lines first because the table is the record's substance and the note is a
+    remark about it. One notebook either way -- two would render as two rows of
+    tabs.
+    """
+    notebook = None
+    if options.lines and "line_ids" in model._fields:
+        notebook = etree.SubElement(sheet, "notebook")
+        page = etree.SubElement(notebook, "page", string="Lines", name="lines")
+        field = etree.SubElement(page, "field", name="line_ids")
+        # An inline list, so a line is edited where it is read. The child model
+        # is scaffolded with `sequence`, which is what the handle reorders.
+        inner = etree.SubElement(field, "list", editable="bottom")
+        etree.SubElement(inner, "field", name="sequence", widget="handle")
+        etree.SubElement(inner, "field", name="name")
+        etree.SubElement(inner, "field", name="quantity")
+
+    if "note" in model._fields:
+        if notebook is None:
+            notebook = etree.SubElement(sheet, "notebook")
+        page = etree.SubElement(notebook, "page", string="Notes", name="notes")
+        etree.SubElement(page, "field", name="note")
 
 
 def scaffold_form_arch(model, spec, options=None):
@@ -524,10 +685,7 @@ def scaffold_form_arch(model, spec, options=None):
         # An empty <group><group/><group/></group> renders as a stray gap.
         sheet.remove(outer)
 
-    if "note" in model._fields:
-        notebook = etree.SubElement(sheet, "notebook")
-        page = etree.SubElement(notebook, "page", string="Notes", name="notes")
-        etree.SubElement(page, "field", name="note")
+    _scaffold_notebook(sheet, model, options)
 
     if options.chatter:
         # Bare <chatter/> is the 18.0 form and has no server-side validator, so

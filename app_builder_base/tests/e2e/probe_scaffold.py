@@ -93,6 +93,11 @@ def main():
                     "add_stage": True,
                     "add_user": True,
                     "add_reference": True,
+                    # The two features that build a second model. They cannot
+                    # be exercised from a TransactionCase for the same reason
+                    # as everything else here: create_app commits.
+                    "add_tags": True,
+                    "add_lines": True,
                 }
             )
             wizard._onchange_name()
@@ -203,6 +208,43 @@ def main():
             model_file = os.path.join(
                 pkg_path, "models", "%s.py" % model_name.replace(".", "_")
             )
+            # --- the companions ------------------------------------------
+            for kind, ttype in (("tag", "many2many"), ("line", "one2many")):
+                companion = "%s_%s" % (model_name, kind)
+                results.append(
+                    check("companion %s is in the registry" % kind, companion in env)
+                )
+                field = "tag_ids" if kind == "tag" else "line_ids"
+                results.append(
+                    check(
+                        "the parent points at its %s model" % kind,
+                        field in model._fields
+                        and model._fields[field].type == ttype
+                        and model._fields[field].comodel_name == companion,
+                    )
+                )
+                # A companion with no ACL makes the *parent's* form fail to
+                # load, not merely hide the field -- which is the kind of bug
+                # that looks perfect to the administrator who built it.
+                readable = env["ir.model.access"].search_count(
+                    [("model_id.model", "=", companion)]
+                )
+                results.append(
+                    check("companion %s has an access rule" % kind, bool(readable))
+                )
+                results.append(
+                    check(
+                        "companion %s file exists" % kind,
+                        os.path.isfile(
+                            os.path.join(
+                                pkg_path,
+                                "models",
+                                "%s.py" % companion.replace(".", "_"),
+                            )
+                        ),
+                    )
+                )
+
             results.append(check("the model file exists", os.path.isfile(model_file)))
             if os.path.isfile(model_file):
                 with open(model_file) as handle:

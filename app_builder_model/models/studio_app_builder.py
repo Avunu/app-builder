@@ -58,15 +58,29 @@ class StudioAppBuilder(models.AbstractModel):
         options = options or scaffold.ScaffoldOptions()
         model_name = model_name or self.technical_name(label, package)
 
+        # Companions first: Tags and Lines are models of their own, and the
+        # parent's many2many/one2many name them. Seeded before the parent and
+        # applied with it, in one reload rather than one per model -- a class
+        # body only names its comodel as a string, so there is no import order
+        # to satisfy, only a registry that has to end up holding both.
+        companions = scaffold.companion_specs(model_name, label, options)
         spec = scaffold.scaffold_spec(model_name, label, options)
+
         taken = set(self.env["ir.model"].sudo().search([]).mapped("model"))
-        errors = modelspec.validate_spec(spec, taken_model_names=taken)
-        if errors:
-            raise UserError(_("This model cannot be built:\n\n%s", "\n".join(errors)))
+        for candidate in [*companions, spec]:
+            errors = modelspec.validate_spec(candidate, taken_model_names=taken)
+            if errors:
+                raise UserError(
+                    _("This model cannot be built:\n\n%s", "\n".join(errors))
+                )
+            taken.add(candidate.name)
 
         self._ensure_module_installed(package)
-        self.env["studio.package.model"]._adopt(package, model_name, source="python")
-        package._seed_source_for(model_name, spec)
+        for candidate in [*companions, spec]:
+            self.env["studio.package.model"]._adopt(
+                package, candidate.name, source="python"
+            )
+            package._seed_source_for(candidate.name, candidate)
         package.action_apply(reason=_("create %s", model_name))
 
         if model_name not in self.env:
@@ -79,6 +93,20 @@ class StudioAppBuilder(models.AbstractModel):
             )
 
         built = self._build_ui(package, spec, options, groups)
+        # A companion needs an access rule or nobody can read it -- and a tag
+        # model with no ACL makes the parent's form fail to load rather than
+        # merely hiding the tags. No menu and no views: a tag is edited through
+        # the parent's widget and a line inside the parent's list, which is
+        # what makes them companions rather than apps.
+        built["companions"] = [
+            self._build_access(
+                self.env["ir.model"].search([("model", "=", candidate.name)], limit=1),
+                groups or self.env.ref("base.group_user"),
+            )
+            for candidate in companions
+        ]
+        if built["companions"]:
+            package.studio_capture(built["companions"])
         package.action_apply(reason=_("scaffold %s", model_name))
         return built
 

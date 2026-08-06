@@ -67,6 +67,16 @@ class StudioModelWizard(models.TransientModel):
     add_company = fields.Boolean(
         string="Company", help="Which company the record belongs to."
     )
+    add_tags = fields.Boolean(
+        string="Tags",
+        help="Free-form labels, shared across records. Builds a tag model "
+        "alongside this one.",
+    )
+    add_lines = fields.Boolean(
+        string="Lines",
+        help="A table of child rows on the form, like order lines. Builds a "
+        "line model alongside this one.",
+    )
     add_ordering = fields.Boolean(
         string="Custom sorting",
         default=True,
