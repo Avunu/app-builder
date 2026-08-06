@@ -10,6 +10,12 @@ import tempfile
 from odoo import Command
 from odoo.tests import TransactionCase
 from odoo.tools.convert import convert_csv_import, convert_xml_import
+from odoo.tools.translate import TranslationImporter
+
+# The one the package itself uses. A second copy here had already drifted:
+# it predated base.automation and ir.cron, and a wipe that deletes a server
+# action while a cron still references it fails on the foreign key.
+from odoo.addons.app_builder_base.models.studio_package import UNLINK_ORDER
 
 
 # Reverse dependency order for teardown: dependants before their dependencies,
@@ -20,21 +26,6 @@ class _NamedBytesIO(io.BytesIO):
     def __init__(self, content, name):
         super().__init__(content)
         self.name = name
-
-
-UNLINK_ORDER = (
-    "ir.ui.menu",
-    "ir.actions.act_window.view",
-    "ir.actions.act_window",
-    "ir.actions.server",
-    "ir.actions.report",
-    "ir.ui.view",
-    "ir.model.access",
-    "ir.rule",
-    "ir.model.fields.selection",
-    "ir.model.fields",
-    "ir.model",
-)
 
 
 class StudioCase(TransactionCase):
@@ -251,6 +242,35 @@ class StudioCase(TransactionCase):
                 env[model].browse(res_ids).exists().unlink()
         data.exists().unlink()
         self.env.flush_all()
+
+    def load_translations(self, package, files):
+        """Load the generated PO files the way a module install would.
+
+        `load_rendered` walks the manifest's `data`, and PO files are not in it
+        -- Odoo discovers `i18n/*.po` by directory rather than by declaration
+        (`ir_module.py:983`). So the round trip has to load them separately or
+        it silently proves nothing about translations.
+        """
+        # `load` rather than `load_file`: the latter goes through `file_open`,
+        # which refuses any path outside the addons root -- and swallows the
+        # refusal with `suppress(FileNotFoundError)`, so a temp file loads
+        # nothing and reports success.
+        importer = TranslationImporter(self.env.cr, verbose=False)
+        loaded = []
+        for relative, content in files.items():
+            if not relative.startswith("i18n/") or not relative.endswith(".po"):
+                continue
+            lang = relative[len("i18n/") : -len(".po")]
+            buffer = io.BytesIO(content.encode("utf-8"))
+            # PoFileReader reads `.name` to look for a sibling .pot
+            # (translate.py:816) and a bare BytesIO has none.
+            buffer.name = relative
+            importer.load(buffer, "po", lang)
+            loaded.append(lang)
+        if loaded:
+            importer.save(overwrite=True)
+            self.env.flush_all()
+        return loaded
 
     def load_rendered(self, package, files):
         """Feed rendered content back through Odoo's own XML/CSV importer.

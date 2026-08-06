@@ -50,6 +50,15 @@ class IrUiViewSerializer(models.AbstractModel):
     )
 
     @api.model
+    def _translatable_fields(self, record):
+        # The arch is emitted through `arch`, but its translatable terms are
+        # stored on `arch_db` -- which is in _studio_ignored, so the generic
+        # derivation cannot see it. Odoo's own PO files reference
+        # `model_terms:ir.ui.view,arch_db:...` for exactly this reason: a label
+        # a builder typed into a form is a term inside the arch, not a field.
+        return super()._translatable_fields(record) + ["arch_db"]
+
+    @api.model
     def _group_model(self, record):
         # Views inheriting a core view group under the *target* model, so an
         # extension of sale.order lands in views/sale_order_views.xml rather

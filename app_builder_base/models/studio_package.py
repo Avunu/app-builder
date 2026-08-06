@@ -28,6 +28,7 @@ from ..tools import (
     gitrepo,
     migrationgen,
     modelspec,
+    pogen,
     pycodegen,
     pyparse,
     xml_writer,
@@ -49,6 +50,9 @@ MENUS_FILE = "views/menus.xml"
 UNLINK_ORDER = (
     "ir.ui.menu",
     "base.automation",
+    # Before ir.actions.server: ir.cron delegates to it with ondelete='restrict'
+    # (ir_cron.py:68), so dropping the action first fails on the foreign key.
+    "ir.cron",
     "ir.actions.act_window.view",
     "ir.actions.act_window",
     "ir.actions.server",
@@ -421,8 +425,80 @@ class StudioPackage(models.Model):
         self._assert_no_double_definition(files, python_files)
         files.update(python_files)
 
+        # Everything above wrote the source term. This writes the rest.
+        files.update(self._render_translations(serializers))
+
         files["__manifest__.py"] = self._render_manifest(sorted(files), dep_sink)
         files["__init__.py"] = pycodegen.render_package_init(bool(python_files))
+        return files
+
+    def _render_translations(self, serializers):
+        """``{i18n/<lang>.po: text}`` for every language but the source one.
+
+        Mirrors ``TranslationModuleReader`` (``translate.py:1200-1216``) rather
+        than inventing an extraction: ``get_translation_dictionary`` handles the
+        whole-value and term-based cases uniformly, because ``get_trans_terms``
+        returns ``[value]`` for a plain char and the parsed terms for an html
+        body or a view arch. Doing it any other way would produce a PO file
+        Odoo's own importer disagrees with, which is the failure mode that is
+        invisible until somebody switches language.
+        """
+        self.ensure_one()
+        langs = [
+            code
+            for code, _name in self.env["res.lang"].get_installed()
+            if code != "en_US"
+        ]
+        if not langs:
+            return {}
+
+        rows = {lang: [] for lang in langs}
+        for model, entries in self._owned_records().items():
+            serializer = serializers._for_model(model)
+            if serializer is None:
+                continue
+            for xmlid, record in entries:
+                # Already `module.name` -- _owned_records qualifies it.
+                for fname in serializer._translatable_fields(record):
+                    field = record._fields.get(fname)
+                    if field is None:
+                        continue
+                    kind = "model_terms" if callable(field.translate) else "model"
+                    source = record.with_context(lang="en_US")[fname] or ""
+                    if not source:
+                        continue
+                    translated = {
+                        lang: record.with_context(lang=lang)[fname] or ""
+                        for lang in langs
+                    }
+                    try:
+                        dictionary = field.get_translation_dictionary(
+                            source, translated
+                        )
+                    except Exception:  # noqa: BLE001 - see below
+                        # Term extraction parses html, and a body a user
+                        # pasted in can be malformed in ways lxml objects to.
+                        # Losing one field's translations is bad; failing the
+                        # whole save is worse.
+                        _logger.warning(
+                            "Could not extract translatable terms from %s.%s of %s",
+                            model,
+                            fname,
+                            xmlid,
+                        )
+                        continue
+                    occurrence = pogen.Occurrence(kind, model, fname, xmlid)
+                    for term, per_lang in dictionary.items():
+                        for lang in langs:
+                            rows[lang].append(
+                                (term, per_lang.get(lang) or "", occurrence)
+                            )
+
+        files = {}
+        for lang in langs:
+            content = pogen.render_po(self.name, lang, pogen.merge_terms(rows[lang]))
+            if content:
+                files["i18n/%s.po" % lang] = content
         return files
 
     def _render_python(self):
@@ -1522,6 +1598,15 @@ class StudioPackage(models.Model):
         stale and delete them.
         """
         prefix = record._name.replace(".", "_")
+        # A serializer may name its own records. Consulted first so per-model
+        # knowledge lives with the serializer rather than accumulating here;
+        # the branches below stay because they reuse Odoo's *own* reflection
+        # helpers, which is what makes graduation safe.
+        serializer = self._serializer_env()._for_model(record._name)
+        if serializer is not None:
+            suggested = serializer._suggest_xmlid(record)
+            if suggested:
+                return suggested
         if record._name == "ir.model":
             return model_xmlid("", record.model).lstrip(".")
         if record._name == "ir.model.fields":

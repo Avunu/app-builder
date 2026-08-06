@@ -46,6 +46,10 @@ SEQ_ACCESS = 95
 # Sequences are referenced by a create() override, not by an xmlid ref, so
 # they only need to exist before records are made -- not before the views.
 SEQ_SEQUENCE = 15
+# After the field it defaults (SEQ_FIELD), since field_id refs it.
+SEQ_DEFAULT = 25
+# After the server action it delegates to (SEQ_SERVER_ACTION), which it refs.
+SEQ_CRON = 47
 
 
 class StudioSerializer(models.AbstractModel):
@@ -69,6 +73,11 @@ class StudioSerializer(models.AbstractModel):
     def _for_model(self, model_name):
         """Return the serializer for ``model_name``, or ``None``."""
         return self.env.get("studio.serializer.%s" % model_name)
+
+    @api.model
+    def _suggest_xmlid(self, record):
+        """An xmlid stem for ``record``, or None to let the package decide."""
+        return
 
     @api.model
     def _ownable(self, record):
@@ -225,6 +234,26 @@ class StudioSerializer(models.AbstractModel):
         sink = self.env.context.get("studio_dep_sink")
         if module and sink is not None:
             sink.add(module)
+
+    @api.model
+    def _translatable_fields(self, record):
+        """Emitted fields whose value carries more than the source term.
+
+        A ``translate=True`` column is jsonb and the XML file has room for one
+        string, so what is emitted is always ``en_US`` and the rest belongs in
+        ``i18n/<lang>.po``. This says which fields that applies to; the package
+        does the gathering.
+
+        Derived from ``_studio_fields`` rather than listed, so a field added to
+        an allowlist is covered the day it is added rather than the day someone
+        notices. Overridden where the translated value lives somewhere other
+        than the field emitted -- see the view serializer and ``arch_db``.
+        """
+        return [
+            fname
+            for fname in self._studio_fields
+            if getattr(record._fields.get(fname), "translate", False)
+        ]
 
     @api.model
     def _field_node(self, record, fname):
