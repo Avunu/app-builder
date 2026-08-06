@@ -16,20 +16,24 @@
   card contents. The move operation and the gesture both exist now; what each
   case needs is a sensible answer to "what did you drop it *into*". Adding works
   by clicking, anchored on the selection, for the same reason.
-- **Record rules have no builder.** `studio.access.wizard` covers
-  `ir.model.access` only; an `ir.rule` is captured into source once it exists
-  and is never authored here. Automations are further along and deliberately
-  stop short: the wizard creates the pair, and `studio.automation.action_open`
+- **Automations stop short of the composer on purpose.** The wizard creates the
+  `ir.actions.server` / `base.automation` pair, and `studio.automation.action_open`
   opens Odoo's own form scoped to the model in front of you with a package in
-  context, because a second copy of that form would drift from it on the first
-  release. A domain on a rule is the same problem as a domain on a filter,
-  which is why the two are one piece of work.
-- **Richer filters.** Search filters are generated from a field and a condition
-  (is set, is not set, is true, is false). A domain with several terms still
-  belongs in the source; a domain *builder* would be the way to change that.
+  context — a second copy of that form would drift from it on the first release.
+- **The condition builder reaches rules, not yet filters or automations.**
+  `studio.domain` builds a domain and checks it searches, and the record-rule
+  wizard uses it. Search filters are still generated from a field and one of
+  four conditions, and an automation's `filter_domain` is still typed — both
+  want the same panel, which is why they were one piece of work.
 
 ## Known limits
 
+- **A condition is a flat list or it is source.** `studio.domain` shows a domain
+  as rows joined by all-of or any-of, and refuses anything that groups its terms
+  or negates one — `['|', '&', a, b, c]` binds differently from a flat list, so
+  there is no honest flat rendering of it. The refusal is the feature: a builder
+  that flattened it would rewrite the rule the moment somebody touched an
+  unrelated row, and the rewrite would look like an ordinary edit.
 - **A field created from the view editor is one of the simple kinds.** Text, a
   number, a date, a checkbox, a file, a link to a record — the types whose whole
   definition is a name and a label. A selection needs its values, a one2many an

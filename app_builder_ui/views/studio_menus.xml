@@ -12,6 +12,12 @@
               action="studio_access_wizard_action"
               sequence="80"/>
 
+    <menuitem id="menu_studio_new_rule"
+              name="New Record Rule"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_rule_wizard_action"
+              sequence="82"/>
+
     <menuitem id="menu_studio_automations"
               name="Automations"
               parent="app_builder_base.menu_studio_root"

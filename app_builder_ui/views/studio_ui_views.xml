@@ -30,6 +30,44 @@
         <field name="target">new</field>
     </record>
 
+    <record id="studio_rule_wizard_view_form" model="ir.ui.view">
+        <field name="name">studio.rule.wizard.form</field>
+        <field name="model">studio.rule.wizard</field>
+        <field name="arch" type="xml">
+            <form string="New Record Rule">
+                <group>
+                    <field name="package_id"/>
+                    <field name="name" placeholder="e.g. Own documents only"/>
+                    <field name="model_id"/>
+                    <field name="group_ids" widget="many2many_tags"/>
+                </group>
+                <group string="Condition">
+                    <field name="domain" nolabel="1" colspan="2"
+                           widget="domain" options="{'model': 'model_id.model'}"/>
+                    <field name="matches" nolabel="1" colspan="2" readonly="1"/>
+                </group>
+                <group string="Applies to">
+                    <field name="perm_read"/>
+                    <field name="perm_write"/>
+                    <field name="perm_create"/>
+                    <field name="perm_unlink"/>
+                </group>
+                <footer>
+                    <button name="action_create" type="object" string="Create"
+                            class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="studio_rule_wizard_action" model="ir.actions.act_window">
+        <field name="name">New Record Rule</field>
+        <field name="res_model">studio.rule.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
     <record id="studio_access_wizard_view_form" model="ir.ui.view">
         <field name="name">studio.access.wizard.form</field>
         <field name="model">studio.access.wizard</field>
