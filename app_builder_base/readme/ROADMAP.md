@@ -26,14 +26,6 @@
 - **A new field from inside the view editor.** Adding an *existing* field is
   there; creating one still means the composer, or the New Field wizard for a
   core model.
-- **A feature that asks for a view does not get one.** `Feature.views` records
-  the intent — Date & Calendar wants a calendar, Pipeline stages wants a kanban
-  — and `ScaffoldOptions.view_types` computes it, and nothing reads either:
-  `_build_views` creates list, form and search from a hardcoded dict, and the
-  action it builds is `view_mode="list,form"`. So the wizard's own help text
-  promises "a kanban to move records across" and delivers a `state` field with
-  no kanban. Both scaffolds exist and both are reachable from the view editor's
-  Add view afterwards; what is missing is `create_app` calling them.
 - **Record rules have no builder.** `studio.access.wizard` covers
   `ir.model.access` only; an `ir.rule` is captured into source once it exists
   and is never authored here. Automations are further along and deliberately

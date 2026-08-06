@@ -261,6 +261,39 @@ class TestRelatedAndComputed(StudioCase):
 
 
 @tagged("post_install", "-at_install")
+class TestFeatureViews(StudioCase):
+    """A feature that asks for a view has to be able to get one."""
+
+    def test_every_feature_view_has_a_scaffold(self):
+        """`Feature.views` is a promise. Nothing else checks it can be kept."""
+        missing = sorted(
+            {
+                view_type
+                for feature in scaffold.FEATURES
+                for view_type in feature.views
+                if view_type not in scaffold.SCAFFOLD_BUILDERS
+            }
+        )
+        self.assertFalse(
+            missing, "features ask for views the builder cannot make: %s" % missing
+        )
+
+    def test_the_editors_list_and_the_builders_agree(self):
+        """These were two lists and they had drifted -- eight against three."""
+        editor = set(self.env["studio.view.editor"].VIEW_SCAFFOLDS)
+        registry = set(scaffold.SCAFFOLD_BUILDERS) - {"search"}
+        self.assertEqual(editor, registry)
+
+    def test_pipeline_stages_asks_for_a_kanban(self):
+        options = scaffold.ScaffoldOptions.from_keys(["stage"])
+        self.assertIn("kanban", options.view_types)
+
+    def test_date_and_calendar_asks_for_a_calendar(self):
+        options = scaffold.ScaffoldOptions.from_keys(["date"])
+        self.assertIn("calendar", options.view_types)
+
+
+@tagged("post_install", "-at_install")
 class TestWizardCoversTheRegistry(StudioCase):
     def test_the_wizard_offers_every_feature(self):
         """A feature added to the registry and forgotten here is simply never

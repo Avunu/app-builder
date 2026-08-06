@@ -966,6 +966,70 @@ def report_layouts_json():
     ]
 
 
+# Which view types the builder can start from nothing, and how each one is
+# built. One registry, because two places need it and they were drifting: the
+# view editor offered eight and `create_app` built three, so a feature that
+# asked for a kanban got a `state` field and no kanban.
+#
+# `date_field` and `group_field` are passed to every builder and ignored by the
+# ones that do not need them, so a caller never has to know which is which.
+SCAFFOLD_BUILDERS = {
+    "list": lambda model, spec, options, **_kw: scaffold_list_arch(
+        model, spec, options
+    ),
+    "form": lambda model, spec, options, **_kw: scaffold_form_arch(
+        model, spec, options
+    ),
+    "search": lambda model, spec, options, **_kw: scaffold_search_arch(
+        model, spec, options
+    ),
+    "kanban": lambda model, spec, options, **_kw: scaffold_kanban_arch(
+        model, spec, options
+    ),
+    "pivot": lambda model, spec, options, **_kw: scaffold_pivot_arch(
+        model, spec, options
+    ),
+    "graph": lambda model, spec, options, **_kw: scaffold_graph_arch(
+        model, spec, options
+    ),
+    "activity": lambda model, spec, options, **_kw: scaffold_activity_arch(
+        model, spec, options
+    ),
+    "calendar": lambda model, spec, options, date_field=None, **_kw: (
+        scaffold_calendar_arch(model, spec, date_field, options)
+    ),
+    "timeline": lambda model, spec, options, date_field=None, group_field=None: (
+        scaffold_timeline_arch(model, spec, date_field, group_field, options)
+    ),
+}
+
+# What a view of this type needs before it can be built at all.
+SCAFFOLD_REQUIRES = {
+    "calendar": ("date_field",),
+    # Unlike Gantt, where rows are optional, web_timeline requires
+    # default_group_by -- so this is the view refusing to open, not a
+    # preference of ours.
+    "timeline": ("date_field", "group_field"),
+}
+
+
+def first_field_of(model, ttypes, prefer=()):
+    """A field on ``model`` of one of ``ttypes``, preferring ``prefer`` by name.
+
+    Used to answer "which date should this calendar place records on" without
+    asking, when the feature that wanted the view is also the feature that
+    created the field.
+    """
+    for name in prefer:
+        field = model._fields.get(name)
+        if field is not None and field.type in ttypes:
+            return name
+    for name, field in model._fields.items():
+        if field.type in ttypes and field.store and not name.startswith("create_"):
+            return name
+    return None
+
+
 def scaffold_report_arch(title, layout="external"):
     """The starting body of a PDF report.
 

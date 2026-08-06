@@ -192,12 +192,37 @@ class StudioAppBuilder(models.AbstractModel):
 
     @api.model
     def _build_views(self, model, spec, options):
+        """The three every model gets, plus the ones its features asked for.
+
+        `Feature.views` records that Date & Calendar wants a calendar and
+        Pipeline stages wants a kanban. That intent was computed by
+        `ScaffoldOptions.view_types` and read by nothing, so the wizard's own
+        help text promised "a kanban to move records across" and delivered a
+        `state` field. Both scaffolds existed the whole time.
+        """
         View = self.env["ir.ui.view"]
         arches = {
             "list": scaffold.scaffold_list_arch(model, spec, options),
             "form": scaffold.scaffold_form_arch(model, spec, options),
             "search": scaffold.scaffold_search_arch(model, spec, options),
         }
+        for view_type in options.view_types:
+            builder = scaffold.SCAFFOLD_BUILDERS.get(view_type)
+            if builder is None or view_type in arches:
+                continue
+            extra = self._scaffold_arguments(model, view_type)
+            if extra is None:
+                # The view needs something this model does not have. Skipping
+                # beats raising: the feature that asked for it is one of
+                # several the user ticked, and losing the whole app over a
+                # missing date field would be absurd.
+                _logger.info(
+                    "%s wanted a %s view and has nothing to build it from",
+                    model._name,
+                    view_type,
+                )
+                continue
+            arches[view_type] = builder(model, spec, options, **extra)
         views = {}
         for view_type, arch in arches.items():
             views[view_type] = View.create(
@@ -211,12 +236,40 @@ class StudioAppBuilder(models.AbstractModel):
         return views
 
     @api.model
+    def _scaffold_arguments(self, model, view_type):
+        """What a view type needs beyond the model, or None if it cannot be had."""
+        needed = scaffold.SCAFFOLD_REQUIRES.get(view_type, ())
+        out = {}
+        for requirement in needed:
+            if requirement == "date_field":
+                # `date` is what the Date & Calendar feature creates, and
+                # `date_start` what Date range creates; either will do.
+                found = scaffold.first_field_of(
+                    model, ("date", "datetime"), prefer=("date", "date_start")
+                )
+            else:
+                found = scaffold.first_field_of(
+                    model, ("selection", "many2one"), prefer=("state", "user_id")
+                )
+            if not found:
+                return None
+            out[requirement] = found
+        return out
+
+    @api.model
     def _build_action(self, spec, views):
+        # A view no action offers is a view nobody can open, so the extra types
+        # go into view_mode -- kanban first, because a model with one is
+        # usually meant to be seen that way. `search` is not a mode: it is
+        # attached through search_view_id.
+        order = ("kanban", "list", "form", "calendar", "activity", "pivot", "graph")
+        modes = [t for t in order if t in views]
+        modes += sorted(set(views) - set(order) - {"search"})
         return self.env["ir.actions.act_window"].create(
             {
                 "name": spec.description,
                 "res_model": spec.name,
-                "view_mode": "list,form",
+                "view_mode": ",".join(modes),
                 "search_view_id": views["search"].id,
                 "help": (
                     "<p class='o_view_nocontent_smiling_face'>%s</p>"

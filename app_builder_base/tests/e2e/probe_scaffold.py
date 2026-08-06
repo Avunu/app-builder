@@ -134,6 +134,28 @@ def main():
                 )
             )
 
+            # The wizard ticked Pipeline stages, whose help text promises "a
+            # kanban to move records across". That promise was computed and
+            # read by nothing until now, so assert it rather than let a
+            # superset check pass either way.
+            results.append(
+                check(
+                    "the kanban Pipeline stages asked for was built",
+                    "kanban" in kinds,
+                    "got %s" % sorted(kinds),
+                )
+            )
+            action = env["ir.actions.act_window"].search(
+                [("res_model", "=", model_name)], limit=1
+            )
+            results.append(
+                check(
+                    "and the action offers it -- unoffered views are unreachable",
+                    "kanban" in (action.view_mode or ""),
+                    "view_mode: %s" % action.view_mode,
+                )
+            )
+
             menu = env["ir.ui.menu"].search(
                 [("name", "=", LABEL), ("parent_id", "=", False)], limit=1
             )

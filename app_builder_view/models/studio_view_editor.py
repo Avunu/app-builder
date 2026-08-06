@@ -979,16 +979,11 @@ class StudioViewEditor(models.AbstractModel):
     # installs an OCA view type sees it here as soon as somebody writes a
     # scaffold, a site running enterprise sees gantt and cohort, and the engine
     # depends on none of them.
-    VIEW_SCAFFOLDS = (
-        "list",
-        "form",
-        "kanban",
-        "calendar",
-        "pivot",
-        "graph",
-        "activity",
-        "timeline",
-    )
+    # Derived, not repeated. This list and the app builder's were separate and
+    # had drifted: the editor offered eight types and `create_app` built three.
+    # `search` is excluded because it is not something Add view creates -- it
+    # comes with the model and is edited as three lists.
+    VIEW_SCAFFOLDS = tuple(t for t in scaffold.SCAFFOLD_BUILDERS if t != "search")
 
     # Types that are never *added*: a search view furnishes another view's
     # control panel rather than being one, and qweb is a template.
