@@ -458,16 +458,23 @@ immutably.</p>
 <div class="section" id="next">
 <h2><a class="toc-backref" href="#toc-entry-5">Next</a></h2>
 <ul class="simple">
-<li><strong>The report editor has the gestures, not the rich text.</strong> Placing a
-value and printing a table of child rows are operations now, and both
-emit <tt class="docutils literal">&lt;xpath&gt;</tt> into an inheriting view like every other edit. What
-is missing is the document half: a <tt class="docutils literal">/</tt> powerbox, dragging a field
-into running text, and editing the surrounding prose in place. Odoo’s
-<tt class="docutils literal">html_editor</tt> is in community 18.0, so the parts exist; what does
-not is the mapping from a rich-text edit back to an xpath, and that
-mapping is the whole reason the edit stays reviewable — a locator
-derived from rendered output points at whatever that reader’s
-language, company layout and access rights produced.</li>
+<li><strong>The report editor has the operations, not a way to reach them.</strong>
+Placing a value and printing a table of child rows are operations —
+<tt class="docutils literal">add_report_field</tt> and <tt class="docutils literal">add_report_table</tt>, tested, applied to the
+arch directly on a report the package owns and emitted as <tt class="docutils literal">&lt;xpath&gt;</tt>
+into an inheriting view on anybody else’s. Nothing calls either: no JS
+in the tree names them, and the editor they would live in cannot draw
+a report anyway. <tt class="docutils literal">_preview_for</tt> returns the view’s own type, the
+client mounts <tt class="docutils literal">&lt;View <span class="pre">type=&quot;qweb&quot;&gt;</span></tt>, and qweb is not a client-side
+view type — a report is a template rendered by <tt class="docutils literal">ir.actions.report</tt>,
+not a view the web client knows how to lay out. Previewing one means
+rendering it as HTML with <tt class="docutils literal">inherit_branding=True</tt>, which stamps
+<tt class="docutils literal"><span class="pre">data-oe-id</span></tt> and <tt class="docutils literal"><span class="pre">data-oe-xpath</span></tt> on every node — the same path the
+locator already falls back to, so clicking into a report needs no new
+discipline, only that branded path resolved against the combined arch
+before it reaches <tt class="docutils literal">apply_operation</tt>. The document half — a <tt class="docutils literal">/</tt>
+powerbox, dragging a field into running text, editing the surrounding
+prose — comes after that, not before it.</li>
 <li><strong>Conditional blocks in reports</strong> — <tt class="docutils literal"><span class="pre">t-if</span></tt> / <tt class="docutils literal"><span class="pre">t-elif</span></tt> / <tt class="docutils literal"><span class="pre">t-else</span></tt>
 are editable as source but have no gesture and no preview switch,
 which is the same limit Odoo documents for its own editor.</li>
@@ -479,13 +486,25 @@ the same reason.</li>
 <li><strong>A new field from inside the view editor.</strong> Adding an <em>existing</em>
 field is there; creating one still means the composer, or the New
 Field wizard for a core model.</li>
-<li><strong>A feature that asks for a view still only gets the ones the builder
-can scaffold.</strong> <tt class="docutils literal">Feature.views</tt> records the intent — Date &amp; Calendar
-wants a calendar, Pipeline stages wants a kanban — and the app builder
-activates what it has scaffolds for.</li>
-<li><strong>Record rules and automations</strong>, in the composer rather than in the
-technical menus, where they would have the context that makes them
-answerable.</li>
+<li><strong>A feature that asks for a view does not get one.</strong> <tt class="docutils literal">Feature.views</tt>
+records the intent — Date &amp; Calendar wants a calendar, Pipeline stages
+wants a kanban — and <tt class="docutils literal">ScaffoldOptions.view_types</tt> computes it, and
+nothing reads either: <tt class="docutils literal">_build_views</tt> creates list, form and search
+from a hardcoded dict, and the action it builds is
+<tt class="docutils literal"><span class="pre">view_mode=&quot;list,form&quot;</span></tt>. So the wizard’s own help text promises “a
+kanban to move records across” and delivers a <tt class="docutils literal">state</tt> field with no
+kanban. Both scaffolds exist and both are reachable from the view
+editor’s Add view afterwards; what is missing is <tt class="docutils literal">create_app</tt>
+calling them.</li>
+<li><strong>Record rules have no builder.</strong> <tt class="docutils literal">studio.access.wizard</tt> covers
+<tt class="docutils literal">ir.model.access</tt> only; an <tt class="docutils literal">ir.rule</tt> is captured into source once
+it exists and is never authored here. Automations are further along
+and deliberately stop short: the wizard creates the pair, and
+<tt class="docutils literal">studio.automation.action_open</tt> opens Odoo’s own form scoped to the
+model in front of you with a package in context, because a second copy
+of that form would drift from it on the first release. A domain on a
+rule is the same problem as a domain on a filter, which is why the two
+are one piece of work.</li>
 <li><strong>Richer filters.</strong> Search filters are generated from a field and a
 condition (is set, is not set, is true, is false). A domain with
 several terms still belongs in the source; a domain <em>builder</em> would be
@@ -495,6 +514,42 @@ the way to change that.</li>
 <div class="section" id="known-limits">
 <h2><a class="toc-backref" href="#toc-entry-6">Known limits</a></h2>
 <ul class="simple">
+<li><strong>The generated PO files apply on install, not on upgrade.</strong>
+<tt class="docutils literal">_update_translations</tt> runs with
+<tt class="docutils literal"><span class="pre">overwrite=config[&quot;overwrite_existing_translations&quot;]</span></tt>
+(<tt class="docutils literal">loading.py:236</tt>), which is False unless the server was started
+with <tt class="docutils literal"><span class="pre">--i18n-overwrite</span></tt>, and the importer then lets an existing
+database value win. So a fresh install of the package picks the
+translations up — there is nothing to lose to — and editing
+<tt class="docutils literal">i18n/fr_FR.po</tt> in an existing database changes nothing until you
+say so. This is how Odoo treats every addon’s translations, not
+something this emitter chose, but it means the file is authoritative
+in exactly one direction.</li>
+<li><strong>A record id inside a string is written literally.</strong> The emitter
+treats a domain, a context and a JSON default as opaque text, because
+they are Char columns — so <tt class="docutils literal"><span class="pre">[('partner_id',</span> <span class="pre">'=',</span> 7)]</tt> on an
+<tt class="docutils literal">ir.rule</tt>, a <tt class="docutils literal">{'default_partner_id': 7}</tt> context on an action, or
+an <tt class="docutils literal">ir.default</tt> whose <tt class="docutils literal">json_value</tt> is a bare many2one id all leave
+as that number. <tt class="docutils literal">_ref_of</tt> refuses to emit a raw id where a <em>field</em>
+points at a record, and none of that machinery reaches inside a
+string. In the next database the number means a different record or
+none, and the package reports clean.</li>
+<li><strong>Read-only is a filesystem fact, not a production check.</strong>
+<tt class="docutils literal">writable</tt> is decided by creating and removing a file in the package
+directory rather than by <tt class="docutils literal">os.access</tt>, which answers True for root
+against a <tt class="docutils literal">0500</tt> directory — the container default, and this
+project’s own CI. Every write path asserts it first. But nothing
+detects a <em>production</em> deployment: an addons volume that happens to be
+writable reports <tt class="docutils literal">writable = True</tt> and is not stopped. Building in
+development and shipping through git is a convention the studio
+supports, not one it enforces.</li>
+<li><strong>Tags and Lines are decided when the app is created.</strong> Both are
+offered by the New Model wizard only, because a companion is a second
+model and <tt class="docutils literal">create_app</tt> is the only thing that builds one — so adding
+Lines to an app that already exists means building a second app.
+Removing them is not offered either: taking <tt class="docutils literal">line_ids</tt> off the
+parent would leave the line model, its table, its access rule and its
+file in place.</li>
 <li><strong>A value that needs a module is only recorded where a bridge says
 so.</strong> <tt class="docutils literal">_value_depends</tt> maps a field value to the module that
 contributes it, so a rule using <tt class="docutils literal"><span class="pre">review_type=&quot;expression&quot;</span></tt> pulls

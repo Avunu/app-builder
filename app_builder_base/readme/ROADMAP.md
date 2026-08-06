@@ -1,14 +1,21 @@
 ## Next
 
-- **The report editor has the gestures, not the rich text.** Placing a value
-  and printing a table of child rows are operations now, and both emit
-  `<xpath>` into an inheriting view like every other edit. What is missing is
-  the document half: a `/` powerbox, dragging a field into running text, and
-  editing the surrounding prose in place. Odoo's `html_editor` is in community
-  18.0, so the parts exist; what does not is the mapping from a rich-text edit
-  back to an xpath, and that mapping is the whole reason the edit stays
-  reviewable — a locator derived from rendered output points at whatever that
-  reader's language, company layout and access rights produced.
+- **The report editor has the operations, not a way to reach them.** Placing a
+  value and printing a table of child rows are operations — `add_report_field`
+  and `add_report_table`, tested, applied to the arch directly on a report the
+  package owns and emitted as `<xpath>` into an inheriting view on anybody
+  else's. Nothing calls either: no JS in the tree names them, and the editor
+  they would live in cannot draw a report anyway. `_preview_for` returns the
+  view's own type, the client mounts `<View type="qweb">`, and qweb is not a
+  client-side view type — a report is a template rendered by
+  `ir.actions.report`, not a view the web client knows how to lay out.
+  Previewing one means rendering it as HTML with `inherit_branding=True`, which
+  stamps `data-oe-id` and `data-oe-xpath` on every node — the same path the
+  locator already falls back to, so clicking into a report needs no new
+  discipline, only that branded path resolved against the combined arch before
+  it reaches `apply_operation`. The document half — a `/` powerbox, dragging a
+  field into running text, editing the surrounding prose — comes after that,
+  not before it.
 - **Conditional blocks in reports** — `t-if` / `t-elif` / `t-else` are editable
   as source but have no gesture and no preview switch, which is the same limit
   Odoo documents for its own editor.
@@ -19,18 +26,59 @@
 - **A new field from inside the view editor.** Adding an *existing* field is
   there; creating one still means the composer, or the New Field wizard for a
   core model.
-- **A feature that asks for a view still only gets the ones the builder can
-  scaffold.** `Feature.views` records the intent — Date & Calendar wants a
-  calendar, Pipeline stages wants a kanban — and the app builder activates what
-  it has scaffolds for.
-- **Record rules and automations**, in the composer rather than in the technical
-  menus, where they would have the context that makes them answerable.
+- **A feature that asks for a view does not get one.** `Feature.views` records
+  the intent — Date & Calendar wants a calendar, Pipeline stages wants a kanban
+  — and `ScaffoldOptions.view_types` computes it, and nothing reads either:
+  `_build_views` creates list, form and search from a hardcoded dict, and the
+  action it builds is `view_mode="list,form"`. So the wizard's own help text
+  promises "a kanban to move records across" and delivers a `state` field with
+  no kanban. Both scaffolds exist and both are reachable from the view editor's
+  Add view afterwards; what is missing is `create_app` calling them.
+- **Record rules have no builder.** `studio.access.wizard` covers
+  `ir.model.access` only; an `ir.rule` is captured into source once it exists
+  and is never authored here. Automations are further along and deliberately
+  stop short: the wizard creates the pair, and `studio.automation.action_open`
+  opens Odoo's own form scoped to the model in front of you with a package in
+  context, because a second copy of that form would drift from it on the first
+  release. A domain on a rule is the same problem as a domain on a filter,
+  which is why the two are one piece of work.
 - **Richer filters.** Search filters are generated from a field and a condition
   (is set, is not set, is true, is false). A domain with several terms still
   belongs in the source; a domain *builder* would be the way to change that.
 
 ## Known limits
 
+- **The generated PO files apply on install, not on upgrade.**
+  `_update_translations` runs with `overwrite=config["overwrite_existing_translations"]`
+  (`loading.py:236`), which is False unless the server was started with
+  `--i18n-overwrite`, and the importer then lets an existing database value win.
+  So a fresh install of the package picks the translations up — there is nothing
+  to lose to — and editing `i18n/fr_FR.po` in an existing database changes
+  nothing until you say so. This is how Odoo treats every addon's translations,
+  not something this emitter chose, but it means the file is authoritative in
+  exactly one direction.
+- **A record id inside a string is written literally.** The emitter treats a
+  domain, a context and a JSON default as opaque text, because they are Char
+  columns — so `[('partner_id', '=', 7)]` on an `ir.rule`, a
+  `{'default_partner_id': 7}` context on an action, or an `ir.default` whose
+  `json_value` is a bare many2one id all leave as that number. `_ref_of` refuses
+  to emit a raw id where a *field* points at a record, and none of that
+  machinery reaches inside a string. In the next database the number means a
+  different record or none, and the package reports clean.
+- **Read-only is a filesystem fact, not a production check.** `writable` is
+  decided by creating and removing a file in the package directory rather than
+  by `os.access`, which answers True for root against a `0500` directory — the
+  container default, and this project's own CI. Every write path asserts it
+  first. But nothing detects a *production* deployment: an addons volume that
+  happens to be writable reports `writable = True` and is not stopped. Building
+  in development and shipping through git is a convention the studio supports,
+  not one it enforces.
+- **Tags and Lines are decided when the app is created.** Both are offered by
+  the New Model wizard only, because a companion is a second model and
+  `create_app` is the only thing that builds one — so adding Lines to an app
+  that already exists means building a second app. Removing them is not offered
+  either: taking `line_ids` off the parent would leave the line model, its
+  table, its access rule and its file in place.
 - **A value that needs a module is only recorded where a bridge says so.**
   `_value_depends` maps a field value to the module that contributes it, so a
   rule using `review_type="expression"` pulls `base_tier_validation_formula`
