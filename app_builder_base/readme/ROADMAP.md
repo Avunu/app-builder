@@ -1,24 +1,14 @@
 ## Next
 
-- **The report editor is server-complete and has no client.** Placing a value
-  and printing a table of child rows are operations — `add_report_field` and
-  `add_report_table` — and no JS in the tree names either. The pane they would
-  live in cannot draw a report: `_preview_for` returns the view's own type, the
-  client mounts `<View type="qweb">`, and qweb is not a client-side view type.
-  A report is a template, so the preview has to be its rendered *output*, and
-  clicking it resolves through `data-oe-expression` rather than a node path:
-  `inherit_branding` brands `t-field` and nothing else in community
-  (`ir_qweb_fields.py:101`), node branding of rendered output is a `website`
-  feature, and `ir.actions.report._render_template` forces branding off outright
-  (`ir_actions_report.py:765`) — so the template is rendered through `ir.qweb`
-  directly.
-  The server half of that is built: `preview_html` renders the report's own
-  output, `locate_expression` turns a clicked field back into a locator, and
-  `body_anchor` answers "where does this go" when nothing was clicked. What is
-  left is the client — showing that HTML in the preview pane, and offering the
-  two operations. The document half — a `/` powerbox, dragging a
-  field into running text, editing the surrounding prose — comes after that,
-  not before it.
+- **A report is edited by clicking a value, not by writing prose.** Placing a
+  value and printing a table of child rows are gestures now, reachable from the
+  Reports list through Edit Layout, and a tour drives the whole path. What a
+  click can reach is what qweb branded, which in community is `t-field` and
+  nothing else (`ir_qweb_fields.py:101`) — so a value is selectable and the
+  prose around it is not, because that prose is not a node the builder put
+  there. Editing the prose, a `/` powerbox and dragging a field into running
+  text are the document half, and they need the mapping from a rich-text edit
+  back to an xpath that nothing here has yet.
 - **Conditional blocks in reports** — `t-if` / `t-elif` / `t-else` are editable
   as source but have no gesture and no preview switch, which is the same limit
   Odoo documents for its own editor.

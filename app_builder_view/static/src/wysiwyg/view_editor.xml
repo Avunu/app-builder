@@ -35,7 +35,75 @@
 
                     <div class="alert alert-light small" role="alert" t-esc="ownershipNote"/>
 
-                    <div t-if="!state.target and !isSearch" class="text-muted p-2">
+                    <t t-if="isReport">
+                        <div class="text-muted small mb-2">
+                            Click a value in the document to select it. The prose
+                            around it is not something the builder put there, so
+                            it is edited as source.
+                        </div>
+                        <div t-if="state.target and state.target.found"
+                             class="alert alert-light small" role="alert">
+                            Selected <code t-esc="state.target.expression"/> —
+                            what you add next goes just after it.
+                        </div>
+                        <div t-if="state.report.anchorReason and !state.target"
+                             class="alert alert-warning small" role="alert"
+                             t-esc="state.report.anchorReason"/>
+
+                        <div class="mt-3 pt-2 border-top px-1">
+                            <div class="fw-bold mb-1">Place a value</div>
+                            <select class="form-select form-select-sm mb-1"
+                                    name="report_field"
+                                    t-on-change="(ev) => state.reportField = ev.target.value">
+                                <option value="">Choose a field…</option>
+                                <option t-foreach="state.report.values or []" t-as="f"
+                                        t-key="f.name" t-att-value="f.name"
+                                        t-esc="f.string"/>
+                            </select>
+                            <input type="text" class="form-control form-control-sm mb-1"
+                                   name="report_label" placeholder="Label (optional)"
+                                   t-att-value="state.reportLabel"
+                                   t-on-input="(ev) => state.reportLabel = ev.target.value"/>
+                            <button class="btn btn-sm btn-primary w-100"
+                                    name="place_report_field"
+                                    t-att-disabled="state.busy or !state.reportField"
+                                    t-on-click="() => this.placeReportField()">
+                                Place
+                            </button>
+                        </div>
+
+                        <div class="mt-3 pt-2 border-top px-1">
+                            <div class="fw-bold mb-1">Print a table</div>
+                            <select class="form-select form-select-sm mb-1"
+                                    name="report_list"
+                                    t-on-change="(ev) => { state.reportList = ev.target.value; state.reportColumns = []; }">
+                                <option value="">Choose a list…</option>
+                                <option t-foreach="state.report.lists or []" t-as="f"
+                                        t-key="f.name" t-att-value="f.name"
+                                        t-esc="f.string"/>
+                            </select>
+                            <div t-if="state.reportList" class="mb-1">
+                                <div class="text-muted small">Columns, in order:</div>
+                                <div t-foreach="reportColumnChoices" t-as="col"
+                                     t-key="col.name" class="form-check form-check-sm">
+                                    <input t-att-id="'rc_' + col.name" class="form-check-input"
+                                           type="checkbox"
+                                           t-att-checked="state.reportColumns.includes(col.name)"
+                                           t-on-change="() => this.toggleReportColumn(col.name)"/>
+                                    <label class="form-check-label small"
+                                           t-att-for="'rc_' + col.name" t-esc="col.string"/>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-primary w-100"
+                                    name="place_report_table"
+                                    t-att-disabled="state.busy or !state.reportColumns.length"
+                                    t-on-click="() => this.placeReportTable()">
+                                Add table
+                            </button>
+                        </div>
+                    </t>
+
+                    <div t-if="!state.target and !isSearch and !isReport" class="text-muted p-2">
                         Click anything in the view to edit it — a column heading,
                         a value, or empty space for the view's own settings.
                     </div>
@@ -198,7 +266,7 @@
                         </div>
                     </t>
 
-                    <t t-if="!isSearch">
+                    <t t-if="!isSearch and !isReport">
                         <div class="mt-3 pt-2 border-top px-1">
                             <div class="fw-bold mb-1">Add to this view</div>
                             <div class="text-muted small mb-2" t-esc="anchorNote"/>
@@ -295,11 +363,18 @@
 
             <div class="flex-grow-1 overflow-auto o_studio_view_editor_preview"
                  t-ref="preview">
-                <View t-if="preview.view_id" t-key="state.previewKey"
+                <!-- A report is a template: the client has no qweb view type,
+                     so the preview is the report's own rendered output. -->
+                <div t-if="isReport" class="o_studio_report_preview p-3">
+                    <div t-if="state.report.reason" class="alert alert-info"
+                         role="alert" t-esc="state.report.reason"/>
+                    <div t-else="" t-out="state.report.html"/>
+                </div>
+                <View t-if="!isReport and preview.view_id" t-key="state.previewKey"
                       resModel="view.model" type="preview.type"
                       viewId="preview.view_id"
                       searchViewId="preview.search_view_id"/>
-                <div t-if="state.context and !preview.view_id"
+                <div t-if="state.context and !isReport and !preview.view_id"
                      class="alert alert-info m-3" role="alert">
                     This search view has no list to show it in, so there is
                     nothing to preview — the panel on the left is still the

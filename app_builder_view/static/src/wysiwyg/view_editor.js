@@ -22,7 +22,7 @@
  * `studio.view.editor.locate_target`.
  */
 
-import { Component, onWillStart, useRef, useState, useEffect } from "@odoo/owl";
+import { Component, markup, onWillStart, useRef, useState, useEffect } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { ResizablePanel } from "@web/core/resizable_panel/resizable_panel";
@@ -59,6 +59,13 @@ export class StudioViewEditor extends Component {
             paletteFilter: "",
             newButton: { string: "", action_id: "" },
             serverActions: [],
+            // A report is previewed as its own rendered output, because a
+            // report is a template and the web client has no qweb view type.
+            report: { html: "", reason: "", model: "", anchor: null },
+            reportField: "",
+            reportLabel: "",
+            reportList: "",
+            reportColumns: [],
         });
 
         onWillStart(async () => {
@@ -75,7 +82,9 @@ export class StudioViewEditor extends Component {
             await this.loadAddable();
             await this.loadHistory();
             await this.loadSearch();
-            if (!this.isSearch) {
+            if (this.isReport) {
+                await this.loadReport();
+            } else if (!this.isSearch) {
                 await this.loadPalette();
                 await this.loadServerActions();
             }
@@ -177,6 +186,10 @@ export class StudioViewEditor extends Component {
             ev.stopPropagation();
         }
 
+        if (this.isReport) {
+            return this.onReportClick(ev);
+        }
+
         const descriptor = describeTarget(ev.target, this.view.type);
         if (
             this.view.type === "kanban" &&
@@ -207,6 +220,33 @@ export class StudioViewEditor extends Component {
         // which is what the option registry matches on, and the server's answer
         // carries where it is and what it currently says.
         this.state.target = { ...descriptor, ...found, descriptor };
+        this.state.message = found.found ? "" : found.reason;
+    }
+
+    /**
+     * A click in a rendered report, resolved through what qweb branded.
+     *
+     * Community brands `t-field` and nothing else, with `data-oe-expression`
+     * -- node branding of rendered output is a `website` feature. So a value
+     * is selectable and the prose around it is not, which is honest: the prose
+     * is not in this template as a node the builder put there.
+     */
+    async onReportClick(ev) {
+        const node =
+            ev.target && ev.target.closest && ev.target.closest("[data-oe-expression]");
+        if (!node) {
+            this.state.target = null;
+            this.state.message = this.state.report.anchor
+                ? ""
+                : this.state.report.anchorReason || "";
+            return;
+        }
+        const expression = node.getAttribute("data-oe-expression");
+        const found = await this.orm.call("studio.report", "locate_expression", [
+            this.viewId,
+            expression,
+        ]);
+        this.state.target = { kind: "report_field", expression, ...found };
         this.state.message = found.found ? "" : found.reason;
     }
 
@@ -287,6 +327,109 @@ export class StudioViewEditor extends Component {
 
     get isSearch() {
         return this.view.type === "search";
+    }
+
+    get isReport() {
+        return this.view.type === "qweb";
+    }
+
+    async loadReport() {
+        const preview = await this.orm.call("studio.report", "preview_html", [
+            this.viewId,
+        ]);
+        const anchor = await this.orm.call("studio.report", "body_anchor", [
+            this.viewId,
+        ]);
+        const printable = await this.orm.call("studio.report", "printable_fields", [
+            preview.model || false,
+        ]);
+        Object.assign(this.state.report, {
+            html: markup(preview.html || ""),
+            reason: preview.reason || "",
+            model: preview.model || "",
+            anchor: anchor.found ? anchor : null,
+            anchorReason: anchor.found ? "" : anchor.reason,
+            values: printable.values,
+            lists: printable.lists,
+        });
+    }
+
+    get reportColumnChoices() {
+        const chosen = (this.state.report.lists || []).find(
+            (entry) => entry.name === this.state.reportList
+        );
+        return chosen ? chosen.columns : [];
+    }
+
+    /**
+     * Where an edit lands: beside the field that was clicked, or in the body.
+     *
+     * The two are different positions, not just different paths. Placing a
+     * value while one is selected means "next to this one"; placing with
+     * nothing selected means "in the document", and inside the page container
+     * is the only answer that does not depend on what the template happens to
+     * contain.
+     */
+    get reportTarget() {
+        if (this.state.target && this.state.target.found) {
+            return { xpath: this.state.target.xpath, position: "after" };
+        }
+        const anchor = this.state.report.anchor;
+        return anchor ? { xpath: anchor.xpath, position: anchor.position } : null;
+    }
+
+    async placeReportField() {
+        const target = this.reportTarget;
+        if (!this.state.reportField || !target) {
+            return;
+        }
+        await this.structuralEdit(() =>
+            this.orm.call("studio.view.editor", "apply_operation", [
+                this.viewId,
+                this.packageId,
+                {
+                    type: "add_report_field",
+                    xpath: target.xpath,
+                    position: target.position,
+                    model: this.state.report.model,
+                    name: this.state.reportField,
+                    label: this.state.reportLabel || false,
+                },
+            ])
+        );
+        this.state.reportLabel = "";
+    }
+
+    async placeReportTable() {
+        const target = this.reportTarget;
+        if (!this.state.reportList || !this.state.reportColumns.length || !target) {
+            return;
+        }
+        await this.structuralEdit(() =>
+            this.orm.call("studio.view.editor", "apply_operation", [
+                this.viewId,
+                this.packageId,
+                {
+                    type: "add_report_table",
+                    xpath: target.xpath,
+                    position: target.position,
+                    model: this.state.report.model,
+                    name: this.state.reportList,
+                    columns: [...this.state.reportColumns],
+                },
+            ])
+        );
+        this.state.reportColumns = [];
+    }
+
+    toggleReportColumn(name) {
+        const chosen = this.state.reportColumns;
+        const at = chosen.indexOf(name);
+        if (at === -1) {
+            chosen.push(name);
+        } else {
+            chosen.splice(at, 1);
+        }
     }
 
     get searchFieldChoices() {
@@ -457,6 +600,20 @@ export class StudioViewEditor extends Component {
 
     /** Re-read the selected node, so the panel shows what the arch now says. */
     async refreshSelection() {
+        if (this.isReport) {
+            // A report selection is an expression, not a descriptor, and its
+            // xpath can move when something is inserted above it.
+            if (this.state.target && this.state.target.expression) {
+                const expression = this.state.target.expression;
+                const found = await this.orm.call(
+                    "studio.report",
+                    "locate_expression",
+                    [this.viewId, expression]
+                );
+                this.state.target = { kind: "report_field", expression, ...found };
+            }
+            return;
+        }
         if (!this.state.target || !this.state.target.descriptor) {
             return;
         }
@@ -607,7 +764,13 @@ export class StudioViewEditor extends Component {
         this.state.busy = true;
         try {
             await run();
-            await this.loadPalette();
+            if (this.isReport) {
+                // The preview is rendered output, not a <View>, so bumping
+                // previewKey does nothing for it -- it has to be re-rendered.
+                await this.loadReport();
+            } else {
+                await this.loadPalette();
+            }
             await this.loadHistory();
             await this.refreshSelection();
             this.env.bus.trigger("CLEAR-CACHES");
@@ -620,6 +783,15 @@ export class StudioViewEditor extends Component {
     // -- adding a view -----------------------------------------------------
 
     async loadAddable() {
+        // A report template has no model -- it must not, or every
+        // `<template inherit_id=...>` written against it is dropped -- and
+        // "add a view" means nothing for one. Asking anyway raised
+        // "Unknown model 'False'" out of onWillStart, so the editor never
+        // mounted at all.
+        if (this.isReport || !this.view.model) {
+            this.state.addable = [];
+            return;
+        }
         this.state.addable = await this.orm.call(
             "studio.view.editor",
             "addable_view_types",

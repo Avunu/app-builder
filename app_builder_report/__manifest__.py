@@ -11,6 +11,11 @@
     # web supplies the layouts a generated report calls: web.html_container,
     # web.external_layout, web.internal_layout.
     "depends": ["app_builder_base", "app_builder_ui", "app_builder_view", "web"],
+    "assets": {
+        "web.assets_tests": [
+            "app_builder_report/static/tests/tours/report_editor_tour.js",
+        ],
+    },
     "data": [
         "security/ir.model.access.csv",
         "views/studio_report_views.xml",

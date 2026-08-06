@@ -61,6 +61,7 @@ class StudioReportPreview(models.AbstractModel):
         if record is None:
             return {
                 "html": "",
+                "model": model_name,
                 "reason": _(
                     "There is no %s to preview this on yet. Create one and the "
                     "report will draw it.",
@@ -79,7 +80,42 @@ class StudioReportPreview(models.AbstractModel):
                 "env": self.env,
             },
         )
-        return {"html": str(html), "reason": False, "res_id": record.id}
+        return {
+            "html": str(html),
+            "reason": False,
+            "res_id": record.id,
+            # The client needs this and cannot read it off the view: a report
+            # template leaves `model` empty on purpose, or every
+            # `<template inherit_id=...>` written against it is silently dropped.
+            "model": model_name,
+        }
+
+    @api.model
+    def printable_fields(self, model_name):
+        """What a report can print, split by how it prints it.
+
+        `values` are placed as a `t-field` span; `lists` become a table. The
+        split is the same one `add_report_field` refuses on, said before the
+        refusal rather than after it.
+        """
+        self._assert_studio_user()
+        if model_name not in self.env:
+            return {"values": [], "lists": []}
+        values, lists = [], []
+        for name, field in sorted(self.env[model_name]._fields.items()):
+            if not field.store and not field.related:
+                continue
+            entry = {"name": name, "string": field.string or name, "type": field.type}
+            if field.type in ("one2many", "many2many"):
+                entry["columns"] = [
+                    {"name": sub, "string": sf.string or sub}
+                    for sub, sf in sorted(self.env[field.comodel_name]._fields.items())
+                    if sf.store and sf.type not in ("one2many", "many2many", "binary")
+                ]
+                lists.append(entry)
+            elif field.type != "binary":
+                values.append(entry)
+        return {"values": values, "lists": lists}
 
     @api.model
     def locate_expression(self, view_id, expression):
