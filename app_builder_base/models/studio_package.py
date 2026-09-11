@@ -9,6 +9,7 @@ in agreement and to be honest when they are not.
 
 import logging
 import os
+import shutil
 import sys
 import tempfile
 
@@ -16,6 +17,7 @@ from odoo import _, api, fields, models
 from odoo import models as models_module
 from odoo.exceptions import UserError, ValidationError
 from odoo.tools import config as tools_config
+from odoo.tools import file_path
 
 from odoo.addons.base.models.ir_model import (
     field_xmlid,
@@ -44,6 +46,11 @@ RESERVED_NAMES = ("studio_customization",)
 
 # Every menu lands here; see IrUiMenuSerializer._target_file.
 MENUS_FILE = "views/menus.xml"
+
+# Where every hand-written addon keeps its app icon, and the file Odoo copies
+# it from: the tile the web client already shows for an app that has none.
+APP_ICON_FILE = "static/description/icon.png"
+DEFAULT_APP_ICON = "web/static/img/default_icon_app.png"
 
 # Teardown order: dependants before their dependencies, so no unlink hits a
 # restrict/cascade surprise.
@@ -645,6 +652,30 @@ class StudioPackage(models.Model):
             }
         )
         return relative
+
+    def _seed_app_icon(self):
+        """Put a real icon file in the package and return its ``web_icon``.
+
+        A seed in the same sense as ``_seed_source_for``: written only when
+        absent, never regenerated and never tracked, so a designer's
+        replacement survives every later write and prune. What gets copied is
+        Odoo's own placeholder tile, so the app looks exactly as it would with
+        no icon at all -- until somebody drops a better PNG on the same path.
+
+        The value returned is the two-part ``module,path`` form, the one every
+        hand-written app uses. Core also accepts a *built* icon
+        (``fa-class,color,background``) and renders it itself, but that form
+        carries no image data, and the apps menu OCA's ``web_responsive``
+        installs assumes there always is some -- it crashes the whole client
+        on the first built-icon app. A file is understood by both.
+        """
+        self.ensure_one()
+        self._assert_writable()
+        full = os.path.join(self.root_path, APP_ICON_FILE)
+        if not os.path.isfile(full):
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            shutil.copyfile(file_path(DEFAULT_APP_ICON), full)
+        return "%s,%s" % (self.name, APP_ICON_FILE)
 
     def _read_source(self, relative):
         """Return the on-disk content of a package file, or ``None``."""

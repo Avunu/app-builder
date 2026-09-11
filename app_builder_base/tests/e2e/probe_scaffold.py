@@ -167,8 +167,27 @@ def main():
                     "groups: %s" % menu.groups_id.mapped("name") if menu else "",
                 )
             )
+            # A file, in the two-part form: the built `fa-class,color,bg`
+            # form is core-legal but crashes web_responsive's apps menu.
+            icon = "%s,static/description/icon.png" % PKG
             results.append(
-                check("the root menu has an icon", bool(menu) and bool(menu.web_icon))
+                check(
+                    "the root menu's icon is a file in the package",
+                    bool(menu)
+                    and menu.web_icon == icon
+                    and os.path.isfile(
+                        os.path.join(pkg_path, "static", "description", "icon.png")
+                    ),
+                    "web_icon: %s" % (menu.web_icon if menu else ""),
+                )
+            )
+            # Only true if the file was on disk when the menu was created --
+            # ir.ui.menu decodes web_icon on create and never again.
+            results.append(
+                check(
+                    "and it decoded, so the tile has image data",
+                    bool(menu) and bool(menu.web_icon_data),
+                )
             )
 
         # --- the part that actually matters ------------------------------

@@ -286,13 +286,20 @@ class StudioAppBuilder(models.AbstractModel):
         two things go wrong: web_icon is only read for root menus, so there is
         no app tile; and nesting it under the Studio root hides the whole app
         behind the studio group, so the staff it was built for cannot see it.
+
+        The icon is a file in the package, seeded before the menu exists so
+        that ``ir.ui.menu`` finds it when it decodes ``web_icon`` on create.
+        Not a built ``fa-class,color,background`` icon: that form is core's,
+        but the apps menu ``web_responsive`` replaces cannot render it and
+        takes the whole web client down instead (``studio.package``
+        ``_seed_app_icon`` has the detail).
         """
         Menu = self.env["ir.ui.menu"]
         root = Menu.create(
             {
                 "name": spec.description,
                 "parent_id": False,
-                "web_icon": "fa fa-cube,#FFFFFF,#875A7B",
+                "web_icon": package._seed_app_icon(),
                 "sequence": 90,
             }
         )

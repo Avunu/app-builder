@@ -233,6 +233,10 @@ A five-lens review (round-trip, determinism, graduation, security, Odoo idiom), 
 
 Also fixed: `app_builder_ui` inherited a mixin from a module it did not depend on (aborting the registry if installed alone — the mixin now lives in the engine); `_assign` silently no-op'd for records another module owned; freshly written files were all reported as drifted; and several codegen fidelity bugs where a graduated computed field came back read-only, a stored related field came back unstored, and a valueless `Selection` produced un-importable Python.
 
+### What running beside the rest of OCA found
+
+15.  **A built app icon takes `web_responsive` down.** The app builder gave its root menu `web_icon = "fa fa-cube,#FFFFFF,#875A7B"` — the `icon_class,color,background` form core documents and its own apps menu renders. But that form carries no `web_icon_data`, and the apps menu `web_responsive` installs in its place assumes every app has some: its `getWebIconData` calls `.startsWith` on `false`, `AppMenuItem.setup` throws, and Owl destroys the root component — a white screen for the whole client, from one menu. Upstream `18.0` has the same code. The builder now seeds a real `static/description/icon.png` into the package (a copy of core's placeholder tile, written once and never regenerated, so a replacement survives) and points `web_icon` at it in the two-part `module,path` form every consumer reads. It is also simply what a hand-written app looks like.
+
 ## Status
 
 **198 unit tests** plus three end-to-end probes. CI runs ruff + pre-commit and the suite against both Odoo and OCB 18.0 in the OCA CI containers.

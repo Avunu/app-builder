@@ -141,6 +141,42 @@ class TestPackage(StudioCase):
             os.path.isfile(target), "a hand-edited file must never be deleted silently"
         )
 
+    def test_app_icon_is_seeded_as_a_file(self):
+        """The icon is a real PNG in the package and web_icon points at it in
+        the two-part form every consumer understands -- a built
+        ``fa-class,color,background`` icon crashes web_responsive's apps menu."""
+        package = self.make_package()
+        web_icon = package._seed_app_icon()
+        self.assertEqual(web_icon, "%s,static/description/icon.png" % package.name)
+        target = os.path.join(package.root_path, "static/description/icon.png")
+        self.assertTrue(os.path.isfile(target))
+        with open(target, "rb") as handle:
+            self.assertEqual(handle.read(8), b"\x89PNG\r\n\x1a\n")
+
+    def test_a_replaced_app_icon_survives_writes_and_prunes(self):
+        """A seed, not a render: the designer's PNG is never regenerated, and
+        it is not tracked, so the pruning pass has no reason to look at it."""
+        package = self.make_package()
+        package._seed_app_icon()
+        target = os.path.join(package.root_path, "static/description/icon.png")
+        with open(target, "wb") as handle:
+            handle.write(b"theirs")
+
+        package._seed_app_icon()
+        self.build_demo_content(package)
+        package.action_write_files()
+        # Same teardown as test_stale_generated_file_is_pruned: the next write
+        # runs the prune pass over everything tracked.
+        self.env["ir.ui.menu"].search([("name", "=", "Studio Demo Projects")]).unlink()
+        self.env["ir.actions.act_window"].search(
+            [("res_model", "=", "x_studio_project")]
+        ).unlink()
+        self.env["ir.ui.view"].search([("model", "=", "x_studio_project")]).unlink()
+        package.action_write_files()
+
+        with open(target, "rb") as handle:
+            self.assertEqual(handle.read(), b"theirs")
+
     def test_assign_allocates_stable_xmlids(self):
         package = self.make_package()
         model = self.env["ir.model"].create(

@@ -195,6 +195,31 @@ class TestModelBuilder(StudioCase):
             source = handle.read()
         self.assertIn("x_extra", source)
 
+    def test_the_app_menu_icon_is_a_file_not_a_built_icon(self):
+        """`web_responsive` replaces the apps menu with one that assumes every
+        app has image data, and Owl destroys the whole client when it does
+        not -- which is what a built ``fa-class,color,background`` icon gives
+        it. The generated app ships a real icon file instead, in the two-part
+        ``module,path`` form the stock client and web_responsive both read."""
+        package = self.make_package(name="x_icon_demo")
+        spec = scaffold.scaffold_spec(
+            "icon_demo.job", "Job", scaffold.ScaffoldOptions()
+        )
+        action = self.env["ir.actions.act_window"].create(
+            {"name": "Job", "res_model": "res.partner"}
+        )
+        menus = self.env["studio.app.builder"]._build_menu(spec, action, package)
+        root = menus["root"]
+        self.assertEqual(root.web_icon, "x_icon_demo,static/description/icon.png")
+        self.assertEqual(len(root.web_icon.split(",")), 2)
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(package.root_path, "static/description/icon.png")
+            )
+        )
+        self.assertFalse(root.parent_id)
+        self.assertEqual(menus["item"].parent_id, root)
+
 
 @tagged("post_install", "-at_install")
 class TestRelatedAndComputed(StudioCase):
