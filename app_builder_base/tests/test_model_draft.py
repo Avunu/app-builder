@@ -10,12 +10,14 @@ refuse rather than surprise.
 
 import json
 import os
+from unittest.mock import patch
 
 from odoo.exceptions import AccessError, UserError
 from odoo.fields import Command
 from odoo.tests import tagged
 
 from ..tools import modelspec
+from ..tools import placement as placement_tool
 from .common import StudioCase
 
 
@@ -430,6 +432,57 @@ class TestRelationships(StudioCase):
         draft.invalidate_recordset()
         self.assertEqual(draft.change_count, 0)
 
+    def test_reusing_a_clean_draft_sheds_its_stale_companions(self):
+        """After an Apply both drafts are rebased, so the draft is clean and
+        the companion is still attached -- holding the other model as it was
+        then. The console reuses a clean draft by name, and an Apply on it
+        would write every companion's file from that old spec, taking with
+        it anything applied to the other model since. Reuse has to drop them
+        the way discard does."""
+        Draft = self.env["studio.model.draft"]
+        draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
+        draft.add_field(
+            {
+                "name": "task_ids",
+                "ttype": "one2many",
+                "comodel": "x_studio_task",
+                "inverse_name": "x_studio_project_id",
+                "string": "Tasks",
+                "create_inverse": True,
+            }
+        )
+        companion = draft.companion_ids
+        self.assertEqual(companion.model, "x_studio_task", "sanity: staged")
+        # Rebased the way action_apply does at the end -- without calling it,
+        # since it reloads the registry.
+        for staged in draft | companion:
+            staged.base_spec_json = staged.spec_json
+        draft.invalidate_recordset()
+        self.assertFalse(draft.dirty, "sanity: clean, companion attached")
+
+        # The task model moves on through a draft of its own, and its file
+        # with it: this is what the stale companion would have overwritten.
+        other = Draft.open_for(self.task)
+        other.add_field({"name": "x_colour", "ttype": "char", "string": "Colour"})
+        self.task.package_id._write_files(
+            {self.task.python_path: other._rewritten_source(other._spec())}
+        )
+        other.base_spec_json = other.spec_json
+
+        again = Draft.open_for_model("x_studio_project")
+        self.assertEqual(again["id"], draft.id, "sanity: reused")
+        self.assertFalse(draft.companion_ids)
+        self.assertFalse(companion.exists())
+        self.assertFalse(
+            [entry for entry in again["pending"] if entry.get("model")],
+            "nothing about x_studio_task may still be pending",
+        )
+        self.assertEqual(draft.placement_json, "{}")
+        self.assertTrue(
+            draft._companion_for(self.task)._spec().field("x_colour"),
+            "a companion made now reads the task model as it is on disk",
+        )
+
     def test_an_inverse_on_a_model_we_do_not_own_is_refused(self):
         draft = self._draft()
         with self.assertRaises(UserError) as caught:
@@ -458,3 +511,190 @@ class TestRelationships(StudioCase):
             any(error.startswith("x_studio_task: ") for error in errors),
             "an error has to say which model it is about: %s" % errors,
         )
+
+
+@tagged("post_install", "-at_install")
+class TestConsoleHooks(StudioCase):
+    """What the drag-and-drop console leans on the draft for.
+
+    The console drops a field at a spot in a view before the column exists,
+    and needs three promises from the buffer: that it is still there when the
+    user comes back, that one model has one draft per user rather than one
+    per drop, and that the remembered spot is honoured on Apply -- through a
+    hook this addon only declares, since routing an insertion through the
+    view editor is ``app_builder_view``'s business.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.package = self.make_package(name="x_hook_pkg")
+        self.build_demo_content(self.package)
+        self.package.action_write_files()
+        self.package.action_adopt(["x_studio_project"])
+        self.package_model = self.package.model_ids.filtered(
+            lambda m: m.model == "x_studio_project"
+        )
+
+    def _draft(self):
+        return self.env["studio.model.draft"].open_for(self.package_model)
+
+    def _age(self, draft, days):
+        """Make a draft look idle for ``days``, the way the vacuum sees it."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE studio_model_draft SET write_date = "
+            "(now() AT TIME ZONE 'UTC') - interval '%s days' WHERE id = %s",
+            (days, draft.id),
+        )
+        draft.invalidate_recordset()
+
+    def _added(self, draft, name):
+        """A spec/diff pair claiming ``name`` was just added.
+
+        Built from a field the registry already has, so the arch the fallback
+        writes still validates without an Apply in the middle of the test.
+        """
+        spec = draft._spec()
+        return spec, modelspec.diff_specs(modelspec.without_field(spec, name), spec)
+
+    # -- lifetime ---------------------------------------------------------
+
+    def test_a_draft_survives_a_working_week_of_idleness(self):
+        """The server default is an hour, and the daily vacuum would take a
+        draft left open over lunch -- with the pending drops in it."""
+        Draft = self.env["studio.model.draft"]
+        self.assertEqual(Draft._transient_max_hours, 168)
+        kept, gone = self._draft(), self._draft()
+        self._age(kept, 2)
+        self._age(gone, 10)
+        Draft._transient_vacuum()
+        self.assertTrue(kept.exists(), "two idle days are not abandonment")
+        self.assertFalse(gone.exists(), "ten are")
+
+    # -- one draft per user and model ------------------------------------
+
+    def test_open_for_model_reuses_this_users_draft(self):
+        Draft = self.env["studio.model.draft"]
+        first = Draft.open_for_model("x_studio_project")
+        second = Draft.open_for_model("x_studio_project")
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(first["model"], "x_studio_project")
+        other = Draft.with_user(self.env.ref("base.user_admin"))
+        self.assertNotEqual(
+            other.open_for_model("x_studio_project")["id"],
+            first["id"],
+            "another builder's tray is their own",
+        )
+
+    def test_open_for_model_keeps_pending_edits(self):
+        """Finding the draft again is the whole point: the drop staged a
+        minute ago has to still be in it."""
+        Draft = self.env["studio.model.draft"]
+        draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
+        draft.add_field({"name": "x_colour", "ttype": "char", "string": "Colour"})
+        again = Draft.open_for_model("x_studio_project")
+        self.assertEqual(again["id"], draft.id)
+        self.assertIn("x_colour", [f["name"] for f in again["fields"]])
+
+    def test_open_for_model_refreshes_a_clean_draft_from_disk(self):
+        """A clean draft has nothing to lose and a baseline that may predate
+        an Apply; staging on the stale one would write the old block back."""
+        Draft = self.env["studio.model.draft"]
+        draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
+        stale = json.loads(draft.base_spec_json)
+        stale["description"] = "Stale"
+        draft.write(
+            {
+                "base_spec_json": json.dumps(stale, sort_keys=True),
+                "spec_json": json.dumps(stale, sort_keys=True),
+            }
+        )
+        again = Draft.open_for_model("x_studio_project")
+        self.assertEqual(again["id"], draft.id)
+        self.assertNotEqual(again["spec"]["description"], "Stale")
+
+    def test_open_for_model_refuses_a_model_no_package_defines(self):
+        """The live x_ path is the right door for those, and a draft that
+        could never be applied would only hide that."""
+        with self.assertRaises(UserError) as caught:
+            self.env["studio.model.draft"].open_for_model("res.partner")
+        self.assertIn("res.partner", str(caught.exception))
+
+    # -- the anchored placement hook -------------------------------------
+
+    def test_load_reports_no_anchors_in_base(self):
+        self.assertEqual(self._draft().load()["anchors"], {})
+
+    def test_an_anchor_is_offered_to_the_hook_first(self):
+        """When the hook takes it, the balanced placement stays out of it --
+        the arch is the hook's to write."""
+        draft = self._draft()
+        form = draft._owned_views()["form"]
+        anchor = {"view_id": form.id, "position": "after"}
+        before = form.arch
+        Draft = type(draft)
+        with (
+            patch.object(Draft, "_anchors", return_value={"x_active_flag": anchor}),
+            patch.object(
+                Draft, "_place_anchored", autospec=True, return_value=True
+            ) as hook,
+            patch.object(placement_tool, "place_in_form") as balanced,
+        ):
+            self.assertTrue(draft._place_in_views(*self._added(draft, "x_active_flag")))
+        hook.assert_called_once_with(draft, form, "x_active_flag", anchor, "")
+        balanced.assert_not_called()
+        self.assertEqual(form.arch, before)
+
+    def test_a_declined_anchor_falls_back_to_balanced_placement(self):
+        """``False`` is not a failure: the field still lands, just not at the
+        remembered spot -- which is exactly what this addon alone can do."""
+        draft = self._draft()
+        form = draft._owned_views()["form"]
+        anchor = {"view_id": form.id, "position": "after"}
+        Draft = type(draft)
+        with (
+            patch.object(Draft, "_anchors", return_value={"x_active_flag": anchor}),
+            patch.object(
+                Draft, "_place_anchored", autospec=True, return_value=False
+            ) as hook,
+        ):
+            self.assertTrue(draft._place_in_views(*self._added(draft, "x_active_flag")))
+        hook.assert_called_once_with(draft, form, "x_active_flag", anchor, "")
+        self.assertIn('<field name="x_active_flag"/>', form.arch)
+
+    def test_an_anchor_for_another_view_is_not_offered(self):
+        """Anchors are per view; the hook is only asked about its own."""
+        draft = self._draft()
+        form = draft._owned_views()["form"]
+        anchor = {"view_id": form.id + 1000, "position": "after"}
+        Draft = type(draft)
+        with (
+            patch.object(Draft, "_anchors", return_value={"x_active_flag": anchor}),
+            patch.object(
+                Draft, "_place_anchored", autospec=True, return_value=True
+            ) as hook,
+        ):
+            draft._place_in_views(*self._added(draft, "x_active_flag"))
+        hook.assert_not_called()
+        self.assertIn('<field name="x_active_flag"/>', form.arch)
+
+    def test_placement_is_idempotent(self):
+        """Under a restart reload the request can die mid-apply and the
+        console runs placement again; a field the arch already names must
+        not be rendered twice, anchored or not."""
+        draft = self._draft()
+        form = draft._owned_views()["form"]
+        Draft = type(draft)
+        draft._place_in_views(*self._added(draft, "x_active_flag"))
+        anchor = {"view_id": form.id, "position": "after"}
+        with (
+            patch.object(Draft, "_anchors", return_value={"x_active_flag": anchor}),
+            patch.object(
+                Draft, "_place_anchored", autospec=True, return_value=True
+            ) as hook,
+        ):
+            self.assertFalse(
+                draft._place_in_views(*self._added(draft, "x_active_flag"))
+            )
+        hook.assert_not_called()
+        self.assertEqual(form.arch.count('name="x_active_flag"'), 1)

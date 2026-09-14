@@ -1,11 +1,17 @@
 from . import (
     test_add_view,
+    test_anchor_placement,
+    test_canvas,
+    test_canvas_stamp,
+    test_console_tour,
+    test_drop_at,
+    test_edit_guards,
+    test_js,
     test_locate_target,
     test_move_node,
     test_new_field,
     test_search_view,
     test_undo,
     test_view_editor,
-    test_view_editor_tour,
     test_view_options,
 )

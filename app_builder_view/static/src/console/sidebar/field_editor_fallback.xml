@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.FieldEditorFallback">
+    <div class="o_studio_field_editor p-3" t-on-keydown="onKeydown">
+        <div class="d-flex align-items-center mb-2">
+            <strong t-if="isNew">New field</strong>
+            <strong t-else="" t-esc="props.field.name"/>
+            <div class="flex-grow-1"/>
+            <button t-if="props.onDelete" class="btn btn-link btn-sm text-danger p-1"
+                    type="button"
+                    title="Remove this field" t-on-click="() => this.props.onDelete()">
+                <i class="fa fa-trash"/>
+            </button>
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label small text-muted mb-0">Label</label>
+            <input type="text" class="form-control form-control-sm" t-ref="label"
+                   name="field_label"
+                   t-att-value="state.string"
+                   t-on-input="(ev) => state.string = ev.target.value"
+                   placeholder="Delivery date"/>
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label small text-muted mb-0">Type</label>
+            <select class="form-select form-select-sm" name="field_type"
+                    t-att-disabled="!isNew"
+                    t-on-change="(ev) => this.onTypeChange(ev.target.value)">
+                <option t-foreach="typeChoices" t-as="choice" t-key="choice.value"
+                        t-att-value="choice.value"
+                        t-att-selected="choice.value === state.ttype"
+                        t-esc="choice.label"/>
+            </select>
+        </div>
+
+        <div t-if="shows('comodel')" class="mb-2">
+            <label class="form-label small text-muted mb-0">Points at</label>
+            <ModelSelector value="state.comodel"
+                           onModelSelected="(m) => this.onComodelSelected(m)"/>
+        </div>
+
+        <div t-if="needsInverse" class="mb-2">
+            <label class="form-label small text-muted mb-0">Linked back by</label>
+            <select class="form-select form-select-sm" name="field_inverse"
+                    t-on-change="(ev) => this.onInverseChange(ev.target.value)">
+                <option t-foreach="inverse.candidates" t-as="candidate"
+                        t-key="candidate.name" t-att-value="candidate.name"
+                        t-att-selected="!state.create_inverse and candidate.name === state.inverse_name">
+                    <t t-esc="candidate.string"/> (<t t-esc="candidate.name"/>)
+                </option>
+                <option t-if="inverse.can_create" value="__new__"
+                        t-att-selected="state.create_inverse">
+                    Create a new link
+                </option>
+            </select>
+            <small t-if="inverse.reason" class="text-danger d-block" t-esc="inverse.reason"/>
+        </div>
+
+        <div t-if="shows('selection')" class="mb-2">
+            <label class="form-label small text-muted mb-0">Values</label>
+            <div t-foreach="selectionRows" t-as="row" t-key="row_index"
+                 class="d-flex gap-1 mb-1 o_studio_selection_row">
+                <input type="text" class="form-control form-control-sm"
+                       t-att-value="row.label" placeholder="Draft"
+                       t-on-input="(ev) => this.updateSelectionRow(row_index, 'label', ev.target.value)"/>
+                <input type="text" class="form-control form-control-sm font-monospace"
+                       t-att-value="row.value" placeholder="draft"
+                       t-on-input="(ev) => this.updateSelectionRow(row_index, 'value', ev.target.value)"/>
+                <button type="button" class="btn btn-link btn-sm text-danger p-1"
+                        t-on-click="() => this.removeSelectionRow(row_index)">
+                    <i class="fa fa-times"/>
+                </button>
+            </div>
+            <button type="button" class="btn btn-link btn-sm p-0" name="add_selection_value"
+                    t-on-click="() => this.addSelectionRow()">
+                <i class="fa fa-plus me-1"/>Add a value
+            </button>
+        </div>
+
+        <div t-if="shows('currency_field')" class="mb-2">
+            <label class="form-label small text-muted mb-0">Currency field</label>
+            <input type="text" class="form-control form-control-sm"
+                   t-att-value="state.currency_field"
+                   t-on-input="(ev) => state.currency_field = ev.target.value"
+                   placeholder="currency_id"/>
+        </div>
+
+        <!-- A related field has no type of its own, so the chain is all the
+             user picks and the type comes back from the server. -->
+        <div t-if="shows('related')" class="mb-2">
+            <label class="form-label small text-muted mb-0">Follows</label>
+            <ModelFieldSelector resModel="props.modelName"
+                                path="state.related or ''"
+                                update="(path) => this.onRelatedChange(path)"
+                                readonly="false"
+                                followRelations="true"/>
+            <small t-if="state.relatedInfo and state.relatedInfo.ok" class="text-success d-block">
+                Comes back as <t t-esc="state.relatedInfo.ttype"/>
+            </small>
+            <small t-if="state.relatedInfo and !state.relatedInfo.ok" class="text-danger d-block"
+                   t-esc="state.relatedInfo.reason"/>
+        </div>
+
+        <div class="d-flex flex-wrap gap-3 mb-2">
+            <label class="form-check-label small">
+                <input type="checkbox" class="form-check-input me-1"
+                       t-att-checked="state.required"
+                       t-on-change="(ev) => state.required = ev.target.checked || null"/>
+                Required
+            </label>
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label small text-muted mb-0">Help text</label>
+            <input type="text" class="form-control form-control-sm"
+                   t-att-value="state.help"
+                   t-on-input="(ev) => state.help = ev.target.value || null"/>
+        </div>
+
+        <div t-if="state.error" class="alert alert-danger py-1 px-2 small" t-esc="state.error"/>
+
+        <div class="d-flex justify-content-end gap-2 mt-2">
+            <button type="button" class="btn btn-secondary btn-sm" name="field_cancel"
+                    t-on-click="() => this.props.close()">
+                Cancel
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" name="field_done"
+                    t-on-click="() => this.onSave()">Done</button>
+        </div>
+
+        <div class="text-muted small mt-2">
+            <t t-if="props.mode === 'staged'">Staged only — nothing is written until you apply.</t>
+            <t t-else="">Created the moment you press Done.</t>
+        </div>
+    </div>
+</t>
+
+</templates>

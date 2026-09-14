@@ -6,24 +6,33 @@ The gesture has two answers, and choosing between them is most of the work.
 
 On a model this package **defines in Python**, a clean-named field is a class
 attribute, and a new column needs the class re-imported -- so the honest
-behaviour is to hand off to the composer, where edits batch behind one Apply,
-rather than pretend the field appeared. The anchor travels with the handoff, so
-placing it afterwards is still one click.
+behaviour is to stage it: the field goes on the user's draft with the drop
+location remembered as an anchor, a ghost stands in for it on the canvas,
+and one Apply writes and reloads the whole changeset and puts the real field
+exactly where the ghost was.
 
 On a **core or adopted** model there is no such wait: a manual field is an
 ``ir.model.fields`` row, it is live the moment it is written, and the ``x_``
 prefix Odoo requires there is expected anyway. So create-and-place is one
 gesture, and the field lands on the screen you were looking at as an inheriting
 view.
+
+Both answers take the same vocabulary -- the picker's entries, with their
+presets -- so one tile drops on either kind of model and means the same
+thing: Priority is four values and a star on both paths.
 """
 
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-# What the panel offers. Deliberately short: these are the types whose whole
-# definition is a name and a label. A selection needs its values, a one2many
-# needs an inverse that may not exist yet, and a computed field needs a body --
-# each is a conversation, and the composer is where conversations happen.
+from odoo.addons.app_builder_base.tools import modelspec
+
+from ..tools import manualfield
+
+# What the panel offered before the picker did. Kept because the answer to
+# ``quick_field_types`` is an RPC older clients still make; every entry of it
+# is a plain type whose whole definition is a name and a label, and each is
+# a subset of what ``create_field_at`` takes now.
 QUICK_TYPES = (
     ("char", "Text"),
     ("text", "Multiline text"),
@@ -36,6 +45,19 @@ QUICK_TYPES = (
     ("html", "Rich text"),
     ("binary", "File"),
     ("many2one", "Link to a record"),
+)
+
+# Keys a client may write on a manual field's definition. ``selection``
+# stands for its rows, synchronised by value. Not ``name`` or ``ttype``:
+# renaming a column or changing its type is a migration, not an edit.
+MANUAL_FIELD_WRITABLE = (
+    "field_description",
+    "help",
+    "required",
+    "readonly",
+    "index",
+    "translate",
+    "selection",
 )
 
 
@@ -85,12 +107,65 @@ class StudioViewEditor(models.AbstractModel):
         return {"can_create": True, "model": view.model, "prefix": "x_"}
 
     @api.model
-    def create_field_at(self, view_id, package_id, anchor, values):
+    def field_types_for(self, model_name):
+        """The picker's tiles for one model, with what each tile will do.
+
+        ``modelspec.available_field_types`` says what the type is and
+        whether the model can take it at all; two facts are added here that
+        only the model decides. ``live``: whether a drop creates the field
+        on the spot -- a manual row on a model no package defines in Python
+        -- or stages it on a draft. ``needs_dialog``: whether the tile has
+        to ask something before the first request can be made. A scalar is
+        created as "New Text" and the label row takes the cursor; a link
+        has to be told what it links to first.
+
+        ``live`` is a fact about the type, not a promise: a related list
+        still needs a link back on the other model, and an amount a
+        currency field, and both are asked for in the dialog and refused in
+        a sentence when they are missing.
+        """
+        self._assert_studio_user()
+        if model_name not in self.env:
+            raise UserError(_("Unknown model '%s'.", model_name))
+        owner = self._python_owner(model_name)
+        entries = modelspec.available_field_types(
+            self._python_spec(owner, model_name), self.env._
+        )
+        has_currency = bool(manualfield.default_currency_field(model_name, self.env))
+        for entry in entries:
+            key = entry["value"]
+            entry["live"] = (
+                not owner and entry["enabled"] and manualfield.creatable_live(key)
+            )
+            entry["needs_dialog"] = manualfield.needs_dialog(key, has_currency)
+        return entries
+
+    # -- the live path --------------------------------------------------------
+
+    @api.model
+    def create_field_at(
+        self,
+        view_id,
+        package_id,
+        anchor,
+        values,
+        position=None,
+        expected_arch_version=None,
+        write_files=True,
+    ):
         """Create a manual field and place it, in one gesture.
 
         Only on a model no package defines in Python: everywhere else this
         would write a row that the next Apply has to reconcile against a class,
         which is the drift the project exists to prevent.
+
+        ``values`` is the picker's vocabulary -- an entry key for ``ttype``,
+        ``comodel``, ``selection``, ``related`` and the rest -- expanded by
+        ``modelspec.apply_preset`` and translated to a row by
+        ``manualfield``. The order is disk after database: the row is
+        written, the view is patched, and the package goes to disk once at
+        the end, so a view operation that fails leaves no field on disk for
+        a row the transaction then rolls back.
         """
         self._assert_studio_manager()
         view = self.env["ir.ui.view"].browse(view_id).exists()
@@ -104,45 +179,336 @@ class StudioViewEditor(models.AbstractModel):
         if not package:
             raise UserError(_("Choose a studio package to record this field in."))
 
-        label = (values.get("field_description") or "").strip()
+        values = dict(values or {})
+        label = (values.get("field_description") or values.get("string") or "").strip()
         if not label:
             raise UserError(_("The field needs a label."))
-        name = values.get("name") or self._quick_field_name(label)
-        if not name.startswith("x_"):
-            raise UserError(_("A custom field name must start with 'x_'."))
-        if name in self.env[view.model]._fields:
-            raise UserError(_("%s already has a field called %s.", view.model, name))
-        ttype = values.get("ttype") or "char"
-        if ttype not in dict(QUICK_TYPES):
-            raise UserError(_("'%s' is not one of the quick field types.", ttype))
-
-        payload = {
-            "name": name,
-            "field_description": label,
-            "ttype": ttype,
-            "model_id": self.env["ir.model"]._get(view.model).id,
-        }
-        if ttype == "many2one":
-            relation = values.get("relation")
-            if not relation or relation not in self.env:
-                raise UserError(_("Choose the model this field should link to."))
-            payload["relation"] = relation
-            # Without this Odoo defaults to 'set null', which is right often
-            # enough, but saying it makes the generated source explicit.
-            payload["on_delete"] = "set null"
+        values, widget = modelspec.apply_preset(values)
+        values["field_description"] = label
+        if not values.get("name"):
+            values["name"] = self._quick_field_name(label, view.model)
+        payload = manualfield.ir_model_fields_vals(values, view.model, self.env)
+        name = payload["name"]
 
         field = (
             self.env["ir.model.fields"]
             .with_context(studio_skip_autocapture=True)
             .create(payload)
         )
-        package.studio_capture(field)
+        # Ownership now, files later. The selection rows are captured by
+        # hand: nothing autocaptures `ir.model.fields.selection`, and a
+        # Priority whose values stayed out of the package XML would come
+        # back from the next database as a selection with no values.
+        package._assign([field, field.selection_ids])
         # And onto the screen it was created from. Creating a field and leaving
         # the user to find it in a palette is two gestures for one intention.
-        self.add_field_at(view_id, package_id, anchor, name)
-        return {"name": name, "label": label}
+        operation = {"type": "add_field", "name": name}
+        if widget:
+            operation["attrs"] = {"widget": widget}
+        position = self._explicit_position(position)
+        if position:
+            operation["position"] = position
+        self.apply_at(
+            view_id,
+            package_id,
+            anchor,
+            operation,
+            expected_arch_version=expected_arch_version,
+            write_files=False,
+        )
+        if write_files and package.writable:
+            package.action_write_files()
+        return {"name": name, "label": label, "live": True}
 
     @api.model
-    def _quick_field_name(self, label):
-        slug = "".join(c if c.isalnum() else "_" for c in label.lower())
-        return "x_%s" % "_".join(part for part in slug.split("_") if part)
+    def _quick_field_name(self, label, model_name=None):
+        """The ``x_`` name a label implies, kept clear of what the model
+        has: a second Text tile dropped before the first was renamed is
+        ``x_new_text_2``, not a refusal."""
+        name = manualfield.field_name_for(label, prefix="x_")
+        taken = self.env[model_name]._fields if model_name in self.env else ()
+        return manualfield.unique_name(name, taken)
+
+    @api.model
+    def update_manual_field(self, model_name, name, values, package_id):
+        """Change the definition of a manual field, and write it to source.
+
+        Only a manual field: a core field's label is Python, and writing
+        the row behind it would put a value in the database that the next
+        upgrade overwrites without a word. The keys are the ones the
+        properties panel offers (``MANUAL_FIELD_WRITABLE``); the selection
+        rows are synchronised by value -- created, relabelled, removed --
+        rather than replaced, so a value records already hold keeps its
+        row and its id.
+
+        Captured once, field and rows together, and written once.
+        """
+        self._assert_studio_manager()
+        record = self.env["ir.model.fields"]._get(model_name, name)
+        if not record:
+            raise UserError(
+                _(
+                    "%(field)s is not a field of %(model)s.",
+                    field=name,
+                    model=model_name,
+                )
+            )
+        if record.state != "manual":
+            raise UserError(
+                _(
+                    "%(field)s is defined in Python; its definition can only "
+                    "be changed in the code that declares it.",
+                    field=name,
+                )
+            )
+        package = self.env["studio.package"].browse(package_id).exists()
+        if not package:
+            raise UserError(_("Choose a studio package to record this change in."))
+        values = dict(values or {})
+        unknown = set(values) - set(MANUAL_FIELD_WRITABLE)
+        if unknown:
+            raise UserError(
+                _(
+                    "Not something the builder changes on a field: %s",
+                    ", ".join(sorted(unknown)),
+                )
+            )
+        writes = {}
+        if "field_description" in values:
+            label = (values["field_description"] or "").strip()
+            if not label:
+                raise UserError(_("The field needs a label."))
+            writes["field_description"] = label
+        if "help" in values:
+            writes["help"] = values["help"] or False
+        for key in ("required", "readonly", "index"):
+            if key in values:
+                writes[key] = bool(values[key])
+        if "translate" in values:
+            if values["translate"] and record.ttype not in manualfield.TRANSLATABLE:
+                raise UserError(_("Only text fields can be translated."))
+            writes["translate"] = bool(values["translate"])
+        if writes:
+            record.write(writes)
+        if "selection" in values:
+            if record.ttype not in ("selection", "reference"):
+                raise UserError(_("%s is not a selection.", name))
+            self._sync_selection(record, values["selection"])
+        package.studio_capture([record, record.selection_ids], write_files=True)
+        return self._field_definition(model_name, {"name": name, "origin": "manual"})
+
+    @api.model
+    def _sync_selection(self, record, entries):
+        """Make the rows match ``entries`` by value."""
+        rows = manualfield.selection_rows(entries, self.env)
+        wanted = {row["value"]: row for row in rows}
+        existing = {line.value: line for line in record.selection_ids}
+        for value, line in existing.items():
+            if value not in wanted:
+                line.unlink()
+        Selection = self.env["ir.model.fields.selection"]
+        for row in rows:
+            line = existing.get(row["value"])
+            if line is None:
+                Selection.create({"field_id": record.id, **row})
+                continue
+            changes = {
+                key: row[key]
+                for key in ("name", "sequence")
+                if getattr(line, key) != row[key]
+            }
+            if changes:
+                line.write(changes)
+        return True
+
+    # -- the drop -------------------------------------------------------------
+
+    @api.model
+    def _drop_field_definition(
+        self, view, package, stamped, root, token, position, container, payload, options
+    ):
+        """A ``new_field`` or ``move_pending`` drop, on whichever path applies.
+
+        Called by ``drop_at`` once the target has passed the same checks
+        every drop passes. Which path is ``new_field_plan``'s answer: a
+        model no package defines in Python takes the field live, through
+        ``create_field_at`` with the disk gate closed; a Python-owned one
+        stages it on the user's draft and anchors it at the target. The
+        answer has the shape of every other drop's, plus ``created`` for a
+        live field or ``staged`` for a pending one and the draft's state
+        when there is a draft, so the tray and the canvas move together.
+        """
+        kind = payload.get("kind")
+        plan = self.new_field_plan(view.id)
+        if kind == "new_field" and plan.get("can_create"):
+            return self._drop_live_field(
+                view, package, token, position, container, payload, options
+            )
+        if not plan.get("handoff"):
+            if kind == "move_pending":
+                raise UserError(
+                    _(
+                        "Nothing is pending on %s; fields here are created live.",
+                        view.model,
+                    )
+                )
+            raise UserError(plan.get("reason") or _("A field cannot be created here."))
+        Draft = self.env["studio.model.draft"]
+        draft = Draft.browse(Draft.open_for_model(view.model)["id"])
+        anchor = self._mint_anchor(view, stamped, root, token, position)
+        if kind == "new_field":
+            values = dict(payload.get("values") or {})
+            label = (
+                values.get("field_description") or values.get("string") or ""
+            ).strip()
+            if not label:
+                raise UserError(_("The field needs a label."))
+            values["string"] = label
+            values.pop("field_description", None)
+            if not values.get("name"):
+                values["name"] = self._staged_field_name(label, view.model, draft)
+            name = values["name"]
+            if not name.isidentifier():
+                raise UserError(_("'%s' is not a usable field name.", name))
+            # The placement slots keep saying which views the field goes
+            # in, and carry the widget the entry implies; the anchor says
+            # where in this one. A field dropped on the form still gets
+            # its list column.
+            draft.add_field(values)
+        else:
+            name = payload.get("name")
+            if name not in draft._added_names():
+                raise UserError(
+                    _("There is no pending field called '%s' to place.", name)
+                )
+            if anchor.get("pending") == name:
+                raise UserError(_("A field cannot be placed beside itself."))
+        draft.set_anchor(name, anchor)
+        loaded = draft.load()
+        label = next((f["string"] for f in loaded["fields"] if f["name"] == name), name)
+        options = dict(options, draft_id=draft.id)
+        canvas = self.canvas(view.id, options)
+        return {
+            "stale": False,
+            "select": self.PENDING_TOKEN_PREFIX + name,
+            "created": None,
+            "staged": {"name": name, "label": label or name, "draft_id": draft.id},
+            "canvas": canvas,
+            "history": canvas["history"],
+            "draft": loaded,
+        }
+
+    @api.model
+    def _drop_live_field(
+        self, view, package, token, position, container, payload, options
+    ):
+        """The live half of a ``new_field`` drop."""
+        created = self.create_field_at(
+            view.id,
+            package.id,
+            {"kind": "node", "token": token},
+            payload.get("values") or {},
+            position=position,
+            write_files=False,
+        )
+        if package.writable:
+            package.action_write_files()
+        canvas = self.canvas(view.id, options)
+        return {
+            "stale": False,
+            "select": self._token_named(
+                canvas["nodes"],
+                created["name"],
+                "field",
+                within=(container["tag"], container["name"]),
+            ),
+            "created": created,
+            "staged": None,
+            "canvas": canvas,
+            "history": canvas["history"],
+            "draft": None,
+        }
+
+    @api.model
+    def _staged_field_name(self, label, model_name, draft):
+        """The clean name a label implies for a class attribute, kept clear
+        of what the model has and what the draft is already adding."""
+        name = manualfield.field_name_for(label, prefix="")
+        taken = set(self.env[model_name]._fields) | {
+            f.name for f in draft._spec().fields
+        }
+        return manualfield.unique_name(name, taken)
+
+    @api.model
+    def _mint_anchor(self, view, stamped, root, token, position):
+        """Everything a drop location is, minted now for a field that is not.
+
+        The xpath and the arch version it holds on, so Apply can use it as
+        it is while the view is unchanged; and the neighbour by what it is
+        -- a legacy descriptor, "the field called email" -- so it can be
+        found again when the view has moved on. The version is the
+        neutral one every edit is checked against, not the one this user's
+        language produced.
+
+        A ghost as the target has no place in the arch to mint from: the
+        anchor names the staged field instead, and is resolved wherever
+        that field turns out to be.
+        """
+        entry = stamped.nodes[token]
+        if entry["kind"] == "pending":
+            return {
+                "view_id": view.id,
+                "position": position,
+                "pending": entry["pending"]["name"],
+            }
+        node = stamped.elements[token]
+        return {
+            "view_id": view.id,
+            "xpath": self._locator_for(node, self._occurrences(root)),
+            "position": position,
+            "arch_version": self._version_of(
+                view.id, self._neutral_combined_arch(view)
+            ),
+            "descriptor": self._legacy_descriptor(stamped, root, token),
+        }
+
+    @api.model
+    def _legacy_descriptor(self, stamped, root, token):
+        """The ``{kind, name}`` descriptor for a node, or ``None``.
+
+        The vocabulary ``_find_descriptor`` resolves without a token: the
+        root; a named node of a kind the table knows, while nothing else
+        in the arch answers to that name; a tab by its index among the
+        tabs, since core pages seldom carry a name; a singleton container
+        -- the sheet, the header -- by its kind alone. A node with none of
+        these -- an unnamed group, a field whose name a header repeats --
+        has no name to be found by later, and ``None`` says so: the exact
+        xpath still serves while the arch is unchanged, and the balanced
+        fallback after that. A name shared with another node would be
+        found again as whichever comes first, which is a guess dressed as
+        an answer.
+        """
+        entry = stamped.nodes[token]
+        node = stamped.elements[token]
+        kind = entry["kind"]
+        if kind == "root":
+            return {"kind": "root"}
+        if kind not in self.DESCRIPTOR_TAGS:
+            return None
+        tag = self.DESCRIPTOR_TAGS[kind]
+        candidates = [
+            candidate
+            for candidate in root.iter(tag)
+            if not any(a.tag == "field" for a in candidate.iterancestors())
+        ]
+        name = node.get("name")
+        if name:
+            # Counted the way `_find_descriptor` will look: outside subviews.
+            if sum(1 for c in candidates if c.get("name") == name) == 1:
+                return {"kind": kind, "name": name}
+            return None
+        if tag == "page":
+            return {"kind": kind, "index": candidates.index(node)}
+        if len(candidates) == 1:
+            return {"kind": kind}
+        return None

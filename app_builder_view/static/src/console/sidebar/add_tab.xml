@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.AddTab">
+    <div class="o_studio_add" t-ref="root">
+        <div class="text-muted small mb-2 o_studio_anchor_note">
+            <span t-esc="anchorNote"/>
+            <span class="o_studio_drag_hint">Or drag a tile onto the view.</span>
+        </div>
+
+        <t t-if="components.length">
+            <div class="o_studio_section_title">Components</div>
+            <div class="o_studio_tiles">
+                <button class="o_studio_tile o_studio_draggable"
+                        t-att-class="{ active: entry.component === 'button' and state.newButton }"
+                        t-foreach="components" t-as="entry" t-key="entry.component"
+                        type="button"
+                        data-kind="component"
+                        t-att-data-key="entry.component"
+                        t-att-data-component="entry.component"
+                        t-att-data-label="entry.label"
+                        t-att-disabled="!canAdd"
+                        t-on-click="() => this.onComponent(entry)">
+                    <i t-att-class="entry.icon"/>
+                    <span t-esc="entry.label"/>
+                </button>
+            </div>
+            <!-- Server actions only. Naming a Python method, as Odoo Studio
+                 allows, writes a call to something that may not exist and
+                 saves happily; the failure arrives later, for whoever presses
+                 the button. -->
+            <div t-if="state.newButton" class="o_studio_inline_form mt-2">
+                <div t-if="model.buttonTarget" class="small text-muted mb-1 o_studio_button_target">
+                    The button goes where it was dropped.
+                </div>
+                <input type="text" class="form-control form-control-sm mb-1"
+                       name="new_button_label" placeholder="Label"
+                       t-att-value="state.newButton.string"
+                       t-on-input="(ev) => state.newButton.string = ev.target.value"/>
+                <select class="form-select form-select-sm mb-1" name="new_button_action"
+                        t-on-change="(ev) => state.newButton.action_id = ev.target.value">
+                    <option value="">Runs which action?</option>
+                    <option t-foreach="model.serverActions" t-as="action"
+                            t-key="action.id" t-att-value="action.id"
+                            t-esc="action.name"/>
+                </select>
+                <div t-if="!model.serverActions.length" class="small text-muted mb-1">
+                    No server action is defined on this model yet.
+                </div>
+                <button type="button" class="btn btn-primary btn-sm w-100" name="add_button"
+                        t-att-disabled="!canAdd or !state.newButton.action_id"
+                        t-on-click="() => this.addButton()">
+                    Add the button
+                </button>
+            </div>
+        </t>
+
+        <t t-if="fieldTypes.length">
+            <div class="o_studio_section_title">New fields</div>
+            <div t-if="fieldPlanNote" class="small text-muted mb-2 o_studio_field_plan_note"
+                 t-att-class="{ o_studio_staged_note: model.pythonOwned }">
+                <i t-if="model.pythonOwned" class="fa fa-clock-o me-1"/>
+                <span t-esc="fieldPlanNote"/>
+            </div>
+            <!-- A tile of a type a label suffices for creates at once, as
+                 "New Text"; one that needs more opens the editor first, so
+                 Cancel is no request. The same tiles stage on a Python-owned
+                 model, where the field is a class attribute waiting for
+                 Apply. -->
+            <div class="o_studio_tiles">
+                <button class="o_studio_tile o_studio_tile_new o_studio_draggable"
+                        t-foreach="fieldTypes"
+                        t-as="entry" t-key="entry.value"
+                        type="button"
+                        data-kind="new_field"
+                        t-att-data-key="entry.value"
+                        t-att-data-type="entry.value"
+                        t-att-data-label="entry.label"
+                        t-att-data-needs-dialog="entry.needs_dialog ? '1' : '0'"
+                        t-att-disabled="!entry.enabled or !canAdd"
+                        t-att-title="entry.tooltip"
+                        t-on-click="(ev) => this.onFieldType(entry, ev)">
+                    <i t-att-class="entry.icon"/>
+                    <span t-esc="entry.label"/>
+                </button>
+            </div>
+        </t>
+
+        <div class="o_studio_section_title">Existing fields</div>
+        <input type="search" class="form-control form-control-sm mb-2"
+               name="palette_search" placeholder="Search fields…"
+               t-att-value="state.search"
+               t-on-input="(ev) => state.search = ev.target.value"/>
+        <!-- A kanban's root-declared fields: loaded for the card, shown in
+             none, and dropped into one like any existing field. -->
+        <t t-if="declaredFields.length">
+            <div class="small text-muted mb-1 o_studio_declared_note">
+                Declared by the kanban, shown on no card. Drag one onto a card to show it.
+            </div>
+            <div class="o_studio_tiles o_studio_palette o_studio_declared mb-2">
+                <button t-foreach="declaredFields" t-as="field" t-key="field.name"
+                        type="button" class="o_studio_tile o_studio_tile_field o_studio_tile_declared o_studio_draggable"
+                        data-kind="existing_field"
+                        t-att-data-key="field.name"
+                        t-att-data-name="field.name"
+                        t-att-data-label="field.string"
+                        t-att-disabled="!canAdd"
+                        t-att-title="field.name"
+                        t-on-click="() => this.onExistingField(field)">
+                    <i t-att-class="iconFor(field)"/>
+                    <span t-esc="field.string"/>
+                </button>
+            </div>
+        </t>
+        <div class="o_studio_tiles o_studio_palette">
+            <button t-foreach="existingFields" t-as="field" t-key="field.name"
+                    type="button" class="o_studio_tile o_studio_tile_field o_studio_draggable"
+                    data-kind="existing_field"
+                    t-att-data-key="field.name"
+                    t-att-data-name="field.name"
+                    t-att-data-label="field.string"
+                    t-att-disabled="!canAdd"
+                    t-att-title="field.name"
+                    t-on-click="() => this.onExistingField(field)">
+                <i t-att-class="iconFor(field)"/>
+                <span t-esc="field.string"/>
+            </button>
+            <div t-if="!existingFields.length and !declaredFields.length" class="text-muted small">
+                Every field of this model is already on the view.
+            </div>
+        </div>
+    </div>
+</t>
+
+</templates>

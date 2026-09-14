@@ -23,8 +23,8 @@ registry.category("web_tour.tours").add("app_builder_report_editor_tour", {
             run: "click",
         },
         {
-            content: "the editor opened on the report template",
-            trigger: ".o_studio_view_editor .o_studio_report_preview",
+            content: "the console opened on the report template",
+            trigger: ".o_studio_console .o_studio_report_preview",
         },
         {
             content: "the report is rendered, not an arch dump",
@@ -32,7 +32,7 @@ registry.category("web_tour.tours").add("app_builder_report_editor_tour", {
         },
         {
             content: "the panel offers to place a value",
-            trigger: ".o_studio_view_editor_side:contains('Place a value')",
+            trigger: ".o_studio_report_tools:contains('Place a value')",
         },
         {
             content: "choose the field to print",
@@ -63,7 +63,7 @@ registry.category("web_tour.tours").add("app_builder_report_editor_tour", {
         },
         {
             content: "clicking it selects it rather than doing nothing",
-            trigger: ".o_studio_view_editor_side:contains('doc.x_budget')",
+            trigger: ".o_studio_report_tools:contains('doc.x_budget')",
         },
     ],
 });

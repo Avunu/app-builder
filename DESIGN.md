@@ -141,7 +141,7 @@ A view the editing package **owns** is edited directly instead. Emitting a patch
 -   `inherit_branding` is absent from `_get_view_cache_key` (\[ir\_ui\_view.py:2740-2758\]), so requesting it through `get_view` either returns the cached unbranded arch or poisons a shared cache. `loadViews` filters the client context down to `lang` + `*_view_ref` anyway.
 -   `data-oe-xpath` is relative to the **owning view's own arch**, not the combined arch that `apply_inheritance_specs` matches. Core's own `test_branding_inherit` shows a node that is `item[2]` in the combined tree carrying `/root[1]/item[1]`.
 
-Node identity does not survive `view_compiler.js` either: `copyAttributes` forwards only `class` and `style`, `Group` has a closed prop list, and `<page>` compiles to a slot with no element. Carry identity as a **class token** if it is ever needed on the canvas.
+Node identity does not survive `view_compiler.js` either: `copyAttributes` forwards only `class` and `style`, `Group` has a closed prop list, and `<page>` compiles to a slot with no element. Carry identity as a **class token** if it is ever needed on the canvas. (It is: the console below stamps one per node, server-side, on the combined arch.)
 
 What actually works is what the code does: mint locators **server-side** from `get_combined_arch()`, preferring `//tag[@name='x']` while exactly one node answers it and falling back to `getroottree().getpath()`, which is absolute and unique by construction — the same call `distribute_branding` itself uses.
 
@@ -189,15 +189,15 @@ Per-package `auto_commit` / `stage_only` / `off`, with `git status`/`git diff` s
 The design above survived contact with the code. Five things it did not anticipate, all found by tests or the end-to-end run:
 
 1.  **Magic columns are not ownable.** A model's `field_id` includes the reflected base columns (`id`, `create_uid`, `create_date`, …) with `state='base'`. Assigning them xmlids produced records a reload cannot reproduce, and Odoo refuses to unlink them at all (_"This column contains module data and cannot be removed!"_, `_prepare_update`). Fixed with a `_ownable()` guard on the serializer, enforced in both `_assign` and `_owned_records`.
-    
+
 2.  **Every scalar default is a callable.** Odoo wraps defaults as `lambda model: value` (`fields.py:511`), so a `callable(default)` check never fires and the first skip rule emitted `domain="[]"`, `store`, `selectable` and `on_delete` on every single field. Defaults must be _evaluated_.
-    
+
 3.  **`info` is a reflection artifact.** `_reflect_model_params` fills it from the first docstring in the class MRO (`ir_model.py:433`), so an undocumented custom model comes back carrying `models.Model`'s own docstring.
-    
+
 4.  **Manifest `depends` must be derived, not declared.** A menu parented under `app_builder_base.menu_studio_root` shipped with `depends=['base']` and failed to install into a fresh database. Serializers now record every foreign module they emit a ref to, and the manifest unions that with the declared list. This was invisible to unit tests and only surfaced in the real install path.
-    
+
 5.  **`base_automation` leaks patches past Odoo's leak detector.** It monkeypatches `create`/`write` with its own patcher, which `TransactionCase.check_attrs` does not recognise the way it does `mock.patch`. Tests that create an automation must `addCleanup(env['base.automation']._unregister_hook)`.
-    
+
 
 Confirmed working as designed: `<record model="ir.model">` in a data file does create a functioning custom model (no OCB or OCA precedent existed for this), and `_load_records` sets `install_mode=True` so the automatic `x_name` default is correctly skipped on reload.
 
@@ -206,9 +206,9 @@ Confirmed working as designed: `<record model="ir.model">` in a data file does c
 Two further discoveries, both found only by running a real restart rather than a test — worth recording because both were silent:
 
 6.  **Leaving `state='manual'` behind destroys the graduation.** With the rows still marked manual, `_add_manual_models` rebuilds a custom class competing with the Python one for the same `_name`, and `_process_end` then reaps the studio's xmlids outright — observed as `Deleting 411@ir.model (x_grad_demo.model_x_grad_task)`.
-    
+
 7.  **...but deleting those rows is worse.** The first fix deleted them, which passed a naive check and quietly destroyed the ACL: every `model_id` in Odoo is `ondelete='cascade'`, so removing the `ir.model` row takes `ir.model.access`, `ir.rule`, `ir.actions.server` and `base.automation` with it — and `ir.model.fields.unlink` calls `_drop_column`, which would have taken the user's data too. The correct operation is to _reclassify_ (`state` manual → base) and delete nothing. `test_demotion_does_not_cascade_into_dependent_records` pins this.
-    
+
 
 Also worth knowing: generated Python and manifests are emitted already-canonical under `ruff format`. Otherwise the project's own pre-commit rewrites them on the next commit and every package reports as drifted with nothing actually changed.
 
@@ -217,19 +217,19 @@ Also worth knowing: generated Python and manifests are emitted already-canonical
 A five-lens review (round-trip, determinism, graduation, security, Odoo idiom), each finding then independently attacked by a verifier that ran the scenario against a live database, raised 36 findings. After dedup, ~17 were real. The ones that mattered, each now pinned by a test in `test_review_regressions.py`:
 
 8.  **A generated package containing an `ir.rule` could not be installed.** A hand-written addon loads `security/` first, and the code copied that convention — but everything the studio emits under `security/` carries a `model_id` ref to an `ir.model` record that `models/` has not defined yet. Security now loads _after_ models. The same class of bug applied to menus, which is why they all now live in one `views/menus.xml` ranked after the view files that define their actions.
-    
+
 9.  **Serialization read records in the acting user's language.** Many emitted fields are `translate=True`, and `ir.ui.view.arch_db` uses `xml_translate`, so a French admin's save emitted French strings — and because Odoo's importer pins `lang=None` (`convert.py:630`), the next load wrote them into the `en_US` slot, destroying the source term _and_ the translation. Rendering now pins `lang=None`. Note this was invisible to the round-trip test: after the lossy reload the fr\_FR key is gone, so the second render reproduces the same bytes — a byte-stable fixed point over a corrupted database.
-    
+
 10.  **`many2one_reference` emitted a raw database id**, which cannot survive a fresh install. It raised instead of corrupting — and later turned out to be recoverable after all: the field declares a `model_field` companion naming the model its id belongs to, so the record can be found and emitted as `eval="ref('xmlid')"`. `fields.Reference` needed even less, because core's own importer resolves a plain `ref=` into `"model,id"` (`convert.py:405-407`). What still raises is the case with no companion to resolve through, which is the one that genuinely has nothing to point at.
-     
+
 11.  **A field added to an already-graduated model was written to no file at all** — excluded from XML by a graduation flag and from Python by the write-once handoff. The flag is gone: graduation demotes the metadata to `state='base'` and `_ownable` excludes that, so the XML stops as a consequence of the data. A new manual field on a graduated model is now correctly emitted as XML, exactly as Studio adds fields to core models.
-     
+
 12.  **Graduating a package Odoo had not installed orphaned the model** — the metadata was demoted while no module existed to load the replacement class. Now refused with an explanation.
-     
+
 13.  **"Delete records" then "Write to disk" erased the source it promised to keep**, because the prune pass removes tracked files that no longer have records behind them.
-     
+
 14.  **`indent()` deleted non-breaking spaces.** `str.strip()` treats U+00A0 as insignificant, so a `&nbsp;` separating two inline elements in a QWeb body vanished on every write. Only ASCII layout whitespace is stripped now.
-     
+
 
 Also fixed: `app_builder_ui` inherited a mixin from a module it did not depend on (aborting the registry if installed alone — the mixin now lives in the engine); `_assign` silently no-op'd for records another module owned; freshly written files were all reported as drifted; and several codegen fidelity bugs where a graduated computed field came back read-only, a stored related field came back unstored, and a valueless `Selection` produced un-importable Python.
 
@@ -237,13 +237,38 @@ Also fixed: `app_builder_ui` inherited a mixin from a module it did not depend o
 
 15.  **A built app icon takes `web_responsive` down.** The app builder gave its root menu `web_icon = "fa fa-cube,#FFFFFF,#875A7B"` — the `icon_class,color,background` form core documents and its own apps menu renders. But that form carries no `web_icon_data`, and the apps menu `web_responsive` installs in its place assumes every app has some: its `getWebIconData` calls `.startsWith` on `false`, `AppMenuItem.setup` throws, and Owl destroys the root component — a white screen for the whole client, from one menu. Upstream `18.0` has the same code. The builder now seeds a real `static/description/icon.png` into the package (a copy of core's placeholder tile, written once and never regenerated, so a replacement survives) and points `web_icon` at it in the two-part `module,path` form every consumer reads. It is also simply what a hand-written app looks like.
 
+### The console — what the drag-and-drop client turned out to be
+
+The composer client the first draft of this document left for last was built as a **studio console** (`app_builder_view/static/src/console/`): full-screen, a sidebar of Add | View | Properties, a canvas that renders the *real* view, and top-bar tabs the other addons register into (`app_builder.console_tabs`). Five decisions carry it:
+
+-   **Identity is minted by the server, on the tree it edits.** `studio.view.editor.canvas()` (`models/studio_view_canvas.py`) takes `get_combined_arch()` — the same tree `apply_at` and `move_node` read — and `tools/canvas_stamp.py` appends one class token per node, `o_studio_n_<ordinal>`, before the arch is postprocessed. The browser hands the token back as a descriptor `{kind: "node", token, arch_version}`, and the server re-stamps the current arch to find the node; a token is never an xpath and never survives an arch change. The `arch_version` is `sha1(view_id + combined arch)`, checked once in `apply_operation`, and a mismatch is `StudioStaleView` — reload silently, ask again.
+-   **The canvas is the real view, rendered under a controller that cannot save.** `<View>` is given `arch`, `fields` and `relatedModels` so it makes no `get_views` call and nothing is cached; `canvas_views.js` derives `app_builder_canvas__<type>` classes whose controllers no-op `beforeVisibilityChange`, `beforeUnload` and `beforeLeave` — a stock form autosaves on a hidden tab — and whose renderers cannot resequence.
+-   **Dragging is the website builder's own hook.** `useDragAndDrop` from `@html_editor/utils/drag_and_drop` (present in 18, 19 and master) matches a helper against zones by geometry; `zones.js` lays the zones out from the node table the moment a drag starts, as bars between children of every container whose `accepts` takes the payload's tag, and `drag.js` turns the drop into exactly one `drop_at` RPC.
+-   **A field a Python-owned model cannot have yet is a ghost.** The drop stages it on the model draft with an *anchor* — the view, a locator minted now, the position, the arch version — and `canvas()` splices a `<widget name="app_builder_pending">` at every anchor that still resolves, so the pending field sits in the form where it will land. Apply places it through the same operation path, history and files included; a `<widget>` was chosen because it renders in a form group, as a list column and in a kanban card, where a `<div>` would not.
+-   **Undo and redo are per base view, whole-arch snapshots** (`studio.view.edit` gained `arch_after`, `superseded`, `action_redo` and `stack_for`), and the extension view is recreated on redo rather than cascading the history away with it.
+
+What the console work discovered, in the same spirit as the list above:
+
+16.  **A generated label carries no token.** The form compiler gives a `<field>` in a group its label, and that label takes the *group's* classes, never the field's; its `for` names an input that only exists in edit mode. So a click on a label is resolved through the layout — the label's cell is followed by the widget's cell in 18, 19 and master (`compat.labelWidget`) — and a field's outline is its label cell and its input cell together (`compat.rowRect`). That pair is the same DOM in 18, 19 and master; what differs is the wrapper around it -- 18's `.o_wrap_field` wraps a whole grid *row*, so in a `<group col="4">` it holds two fields -- which is why the rect is built from the cells and never from the wrapper.
+
+17.  **The smart-button box renders in the control panel.** `form_controller.xml` puts the button box in a control-panel slot, not in the sheet, so a canvas that dropped the control panel to look clean lost every smart button. The panel stays mounted; the pager and the breadcrumb are hidden by stylesheet.
+
+18.  **Models that patch their own arch at read time are not shown.** `account.analytic.line` inserts plan columns in `_get_view()` unless `context.studio` is set — the same opt-out Enterprise takes — and stamping *that* tree would shift every ordinal against the one `apply_at` edits. The canvas stamps the combined arch and states the limit instead of working around it.
+
+19.  **`arch_version` is language-independent.** `arch_db` is a translated field, so two builders in two languages would have hashed two different trees of one view and refused each other's edits as stale. The version is taken from the combined arch read at `lang=None`.
+
+20.  **The owned path needs a locator guard.** A locator is minted on the combined arch but a view the package owns is edited by applying the spec to its *primary* arch, which has no foreign extensions in it — so a positional locator next to another module's insertion lands on the wrong node, or on none, with a raw `ValueError` from core. Every owned-path locator now has to select exactly one node in the primary arch, and one that matches what the minting step expected; anything else is refused with "that element comes from another module's extension of this view". Every container the studio creates is named (`studio_<kind>_<hex>`) so its locator is `//tag[@name]` and never positional.
+
+21.  **A draft is transient, and the default window is an hour.** `studio.model.draft` is a `TransientModel`; the server's `transient_age_limit` is one hour of idle time and the daily vacuum deletes what has aged out — with the anchors of every ghost on the canvas. `_transient_max_hours = 168`, and the console re-opens a vanished draft from its package model rather than crashing.
+
+
 ## Status
 
-**198 unit tests** plus three end-to-end probes. CI runs ruff + pre-commit and the suite against both Odoo and OCB 18.0 in the OCA CI containers.
+**768 unit tests** (750 across `app_builder_base`, `app_builder_model`, `app_builder_view`, `app_builder_ui` and `app_builder_report`, 18 in `app_builder_approval`), 66 hoot tests run from the `app_builder_view` suite, and five end-to-end probes. CI runs ruff + pre-commit and the suite against both Odoo and OCB 18.0 in the OCA CI containers.
 
 -   `app_builder_base` — packages, serializer framework, canonical writer, drift, the spec layer (`modelspec` / `pycodegen` / `pyparse`), apply + snapshot + rollback, reload modes, pre-migration generation, scaffold
 -   `app_builder_model` — model & field builder, app builder, adopt
--   `app_builder_view` — view editor: operation API, node picker, OWL client
+-   `app_builder_view` — view editor: operation API, server-minted canvas identity, the console (drag-and-drop, properties, undo/redo, staged fields)
 -   `app_builder_ui` — menus, actions, ACLs, record rules, automations
 
 ### The three invariants
@@ -260,7 +285,7 @@ The original one — `load_from_files(serialize(db)) == db`, byte-identical — 
 
 Remaining:
 
--   **The composer client** — an OWL client action with a `ResizablePanel` sidebar and a live `View` preview, a pending-changes tray, and the field popover modelled on core's `properties` field. Drag-and-drop lands on top of that, not before it.
+-   **The console's second version** — the console above is the client; what it does not do yet: inline x2many subviews are visible but not droppable, a kanban card written with `t-esc` has no addressable parts, master's `card` view type (a kanban whose card lives in another view) is reserved for by `nodes[].view_id` and not handled, and the model composer is still its own door rather than a console pane. Two consoles on one package are serialised only by the transaction and the arch-version check.
 -   **Relationships** — one2many with automatic inverse creation and notebook placement; then sub-models.
 -   **19.0** — the code is kept 19.0-clean but is only tested on 18.0. Several OCA dependencies are not ported to 19.0 yet.
 -   **Adopting two custom models that reference each other** in one operation is untested; adopt them one at a time.
@@ -278,8 +303,9 @@ Pattern references in OCA: `reporting-engine/bi_sql_editor` (materialising a mod
 # unit suite
 python odoo/odoo-bin -c odoo.conf -d studio_test -i app_builder \
   --test-enable \
-  --test-tags /app_builder_base,/app_builder_model,/app_builder_view,/app_builder_ui \
+  --test-tags /app_builder_base,/app_builder_model,/app_builder_view,/app_builder_ui,/app_builder_report \
   --stop-after-init
+# hoot unit tests, in a browser: /web/tests?filter=%22%40app_builder_view%2F%22
 
 # the paths a TransactionCase cannot reach: install, upgrade, reload
 app_builder_base/tests/e2e/run_probes.sh -c odoo.conf -t studio_test
@@ -299,3 +325,18 @@ End-to-end acceptance, in order:
 10.  **Read-only:** point at a read-only checkout -> editor disabled, no traceback
 
 Steps 2, 3, 6 and 7 are automated in `tests/e2e/`.
+
+And for the console, on a dev DB, in order:
+
+1.  Open a core contact form -> cog -> the console opens full-screen with Add / View / Properties; the real form renders with its smart buttons; no `get_views` request is made for the canvas; no record is created or saved while switching browser tabs away and back
+2.  Click a field -> Properties opens with the option rows; change Label -> "Saving…" then "Saved"; the written file is an inheriting `.studio` view at priority 99; Ctrl+Z / Ctrl+Shift+Z round-trip it
+3.  Drag "Email" from Existing Fields between two fields of a group -> it lands exactly there; drag it into an empty group -> appended; drag it to another tab (resting on the tab switches it) -> moved; drag "Columns" into the sheet -> one history entry
+4.  Drag "Text" onto the contact form -> an `x_` field exists, is placed, the Label input is focused; undo removes it from the view and it appears under Existing Fields; the package XML contains no `o_studio_` token
+5.  Build an app, open its form -> drag "Decimal" between two fields -> a pending ghost in place and "1 pending · Apply"; drag "Priority" -> a second ghost; Apply -> one reload, both fields real and exactly where they were dropped, files written, `git status` shows the model and the view
+6.  Open the kanban -> drop "Email" into the card's `main` -> every card shows it; the arch has one new `<field>` in the card template
+7.  Two browser sessions: A adds a field, B drops -> B sees "refreshed — try again" and nothing is written twice
+8.  Save again with nothing changed -> zero diff; `test_canvas_is_pure` holds against the same views
+9.  Point at a read-only checkout -> the console opens read-only, no traceback
+10.  Repeat 1–4 against the 19.0 checkout with only `compat.js` differences (see `FORWARD_COMPAT.md`; not yet run on a 19 server)
+
+Steps 1–6 are driven by the tours in `app_builder_view/tests/test_console_tour.py` and the hoot tests under `app_builder_view/static/tests/` (the staging half of 5 by tour, the reload half by `app_builder_base/tests/e2e/probe_console_apply.py`); step 7's refusal by `tests/test_drop_at.py` (a stale version writes nothing) and step 8 by `tests/test_canvas.py::test_canvas_is_pure`.

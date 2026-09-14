@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_report.ReportCanvas">
+    <div class="o_studio_report_canvas d-flex h-100 overflow-hidden">
+        <div class="o_studio_report_tools p-3 border-end overflow-auto">
+            <div class="text-muted small mb-2">
+                Click a value in the document to select it. The prose around
+                it is not something the builder put there, so it is edited as
+                source.
+            </div>
+            <div t-if="state.target and state.target.found"
+                 class="alert alert-light small" role="alert">
+                Selected <code t-esc="state.target.expression"/> — what you add
+                next goes just after it.
+            </div>
+            <div t-if="state.message" class="alert alert-info small" role="alert"
+                 t-esc="state.message"/>
+            <div t-if="state.report.anchorReason and !state.target"
+                 class="alert alert-warning small" role="alert"
+                 t-esc="state.report.anchorReason"/>
+
+            <div class="o_studio_section_title">Place a value</div>
+            <select class="form-select form-select-sm mb-1" name="report_field"
+                    t-on-change="(ev) => state.field = ev.target.value">
+                <option value="">Choose a field…</option>
+                <option t-foreach="state.report.values or []" t-as="f"
+                        t-key="f.name" t-att-value="f.name" t-esc="f.string"/>
+            </select>
+            <input type="text" class="form-control form-control-sm mb-1"
+                   name="report_label" placeholder="Label (optional)"
+                   t-att-value="state.label"
+                   t-on-input="(ev) => state.label = ev.target.value"/>
+            <button type="button" class="btn btn-sm btn-primary w-100 mb-3"
+                    name="place_report_field"
+                    t-att-disabled="model.busy or !state.field"
+                    t-on-click="() => this.placeField()">
+                Place
+            </button>
+
+            <div class="o_studio_section_title">Print a table</div>
+            <select class="form-select form-select-sm mb-1" name="report_list"
+                    t-on-change="(ev) => this.onListChange(ev)">
+                <option value="">Choose a list…</option>
+                <option t-foreach="state.report.lists or []" t-as="f"
+                        t-key="f.name" t-att-value="f.name" t-esc="f.string"/>
+            </select>
+            <div t-if="state.list" class="mb-1">
+                <div class="text-muted small">Columns, in order:</div>
+                <div t-foreach="columnChoices" t-as="col" t-key="col.name"
+                     class="form-check form-check-sm">
+                    <input t-att-id="'rc_' + col.name" class="form-check-input" type="checkbox"
+                           t-att-checked="state.columns.includes(col.name)"
+                           t-on-change="() => this.toggleColumn(col.name)"/>
+                    <label class="form-check-label small" t-att-for="'rc_' + col.name"
+                           t-esc="col.string"/>
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-primary w-100"
+                    name="place_report_table"
+                    t-att-disabled="model.busy or !state.columns.length"
+                    t-on-click="() => this.placeTable()">
+                Add table
+            </button>
+        </div>
+
+        <!-- A report is a template: the client has no qweb view type, so the
+             preview is the report's own rendered output. -->
+        <div class="o_studio_report_preview flex-grow-1 overflow-auto p-3" t-ref="preview">
+            <div t-if="state.report.reason" class="alert alert-info" role="alert"
+                 t-esc="state.report.reason"/>
+            <div t-else="" t-out="state.report.html"/>
+        </div>
+    </div>
+</t>
+
+</templates>

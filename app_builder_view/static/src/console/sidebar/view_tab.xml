@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.ViewTab">
+    <div class="o_studio_view_tab">
+        <div class="alert alert-light small py-1" role="alert" t-esc="ownershipNote"/>
+
+        <t t-foreach="panels" t-as="panel" t-key="panel.id">
+            <div class="o_studio_section_title" t-esc="panel.title"/>
+            <div t-foreach="panel.rows" t-as="row" t-key="row.key"
+                 class="o_studio_row" t-att-data-row="row.name">
+                <label class="o_studio_row_label" t-esc="row.label" t-att-title="row.help"/>
+                <div class="o_studio_row_content">
+                    <input t-if="row.type === 'toggle'" class="form-check-input mt-0"
+                           type="checkbox"
+                           t-att-checked="row.value"
+                           t-att-disabled="model.busy"
+                           t-on-change="(ev) => this.onToggle(row, ev)"/>
+                    <select t-elif="row.type === 'select'"
+                            class="form-select form-select-sm"
+                            t-att-disabled="model.busy"
+                            t-on-change="(ev) => this.onInput(row, ev)">
+                        <option t-foreach="row.choices" t-as="choice"
+                                t-key="choice[0]" t-att-value="choice[0]"
+                                t-att-selected="choice[0] === row.value"
+                                t-esc="choice[1]"/>
+                    </select>
+                    <input t-elif="row.type === 'condition'"
+                           class="form-control form-control-sm font-monospace"
+                           type="text" t-att-value="row.value"
+                           t-att-disabled="model.busy"
+                           t-on-change="(ev) => this.onInput(row, ev)"/>
+                    <input t-else="" class="form-control form-control-sm"
+                           type="text" t-att-value="row.value"
+                           t-att-placeholder="row.placeholder"
+                           t-att-disabled="model.busy"
+                           t-on-change="(ev) => this.onInput(row, ev)"/>
+                </div>
+            </div>
+        </t>
+
+        <div class="o_studio_section_title">Canvas</div>
+        <div class="o_studio_row">
+            <label class="o_studio_row_label" for="o_studio_show_invisible">Show invisible elements</label>
+            <div class="o_studio_row_content">
+                <input id="o_studio_show_invisible" class="form-check-input mt-0" type="checkbox"
+                       t-att-checked="model.showInvisible"
+                       t-att-disabled="model.busy"
+                       t-on-change="() => this.model.toggleInvisible()"/>
+            </div>
+        </div>
+
+        <t t-if="model.addable.length">
+            <div class="o_studio_section_title">Add a view</div>
+            <div class="o_studio_add_view mb-2">
+                <div t-foreach="model.addable" t-as="entry" t-key="entry.type" class="mb-1">
+                    <button class="btn btn-light btn-sm w-100 text-start"
+                            t-att-disabled="!entry.enabled or !model.packageId or model.busy"
+                            t-att-title="entry.reason || entry.label"
+                            t-on-click="() => this.model.addView(entry)">
+                        <i t-att-class="'me-1 ' + (entry.icon || 'fa fa-plus')"/>
+                        <t t-esc="entry.label || entry.type"/>
+                    </button>
+                    <small t-if="entry.reason" class="text-muted d-block" t-esc="entry.reason"/>
+                </div>
+            </div>
+        </t>
+
+        <div class="o_studio_section_title">Written so far</div>
+        <t t-if="source">
+            <div class="small text-muted mb-1">
+                <t t-if="source.owned">This view itself.</t>
+                <t t-else="">An inheriting view: <code t-esc="source.name"/></t>
+            </div>
+            <pre class="o_studio_source small" t-esc="source.arch"/>
+        </t>
+        <div t-else="" class="small text-muted mb-2">
+            Nothing yet — the first change writes an inheriting view.
+        </div>
+
+        <t t-if="recentChanges.length">
+            <div class="o_studio_section_title">Recent changes</div>
+            <div t-foreach="recentChanges" t-as="entry" t-key="entry.id"
+                 class="small text-muted o_studio_history_entry">
+                <t t-esc="entry.summary"/>
+                <span class="ms-1 opacity-75">· <t t-esc="entry.author"/></span>
+            </div>
+        </t>
+
+        <div class="text-muted small mt-3">
+            Changes are saved as you make them and are visible to everyone
+            straight away — a view is data, so there is nothing to reload.
+        </div>
+    </div>
+</t>
+
+</templates>

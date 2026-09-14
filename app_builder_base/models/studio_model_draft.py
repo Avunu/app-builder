@@ -34,6 +34,14 @@ class StudioModelDraft(models.TransientModel):
     _inherit = ["studio.security.mixin"]
     _description = "Studio Model Draft"
 
+    # Scratch paper, but not confetti. The server default is one hour of idle
+    # time (``transient_age_limit``), measured on ``write_date``, and the daily
+    # autovacuum then deletes whatever has aged out -- so a draft left open
+    # over lunch could be gone by the afternoon, taking the drops the user
+    # placed on the canvas with it. Pending placements have to survive a
+    # working week; a week of idleness is long enough to mean "abandoned".
+    _transient_max_hours = 168
+
     package_model_id = fields.Many2one(
         "studio.package.model", required=True, ondelete="cascade"
     )
@@ -72,6 +80,18 @@ class StudioModelDraft(models.TransientModel):
     def open_for(self, package_model):
         """A draft holding whatever is on disk right now."""
         self._assert_studio_manager()
+        payload = self._payload_for(package_model)
+        return self.create(
+            {
+                "package_model_id": package_model.id,
+                "base_spec_json": payload,
+                "spec_json": payload,
+            }
+        )
+
+    @api.model
+    def _payload_for(self, package_model):
+        """The on-disk spec as the JSON a draft stores, or why there is none."""
         spec = package_model._current_spec()
         if spec is None:
             raise UserError(
@@ -82,14 +102,74 @@ class StudioModelDraft(models.TransientModel):
                     or _("its source is missing or code-owned."),
                 )
             )
-        payload = json.dumps(modelspec.spec_to_json(spec), sort_keys=True)
-        return self.create(
-            {
-                "package_model_id": package_model.id,
-                "base_spec_json": payload,
-                "spec_json": payload,
-            }
+        return json.dumps(modelspec.spec_to_json(spec), sort_keys=True)
+
+    @api.model
+    def open_for_model(self, model_name):
+        """This user's draft for a model, found or made, as ``load()`` returns it.
+
+        The view editor knows a model name and a drop location, not a draft
+        id; opening a fresh draft on every drop would scatter one changeset
+        across many buffers and many Applies. So the newest draft this user
+        already has for the model is reused, whatever its state -- a dirty
+        one holds work that must not be lost, and a clean one keeps its id so
+        the console can address it -- with one refinement: a clean draft is
+        re-read from disk on the way out. It has nothing to lose, and its
+        baseline may predate an Apply that happened since it was opened;
+        staging on a stale baseline would later splice the old block over the
+        new one. Its companions and placements go the way they do on
+        discard: a companion exists only to serve an edit the clean draft no
+        longer has, and one that lingered would be written back by the next
+        Apply from *its* baseline -- the other model as it was then, minus
+        whatever has been applied to it since. A dirty draft cannot be
+        refreshed the same way without discarding edits, which is the user's
+        call and not this method's.
+
+        Drafts are per user (``create_uid``; the model has no owner field
+        because the composer never needed one), so two people building the
+        same model do not see each other's tray. Companions are not
+        candidates: they exist to serve another draft's edit.
+
+        Only a model this package defines in Python can be staged; a live
+        ``x_`` field belongs to the view editor's own path, and reaching here
+        with one of those is a caller bug worth naming rather than a draft
+        that could never be applied.
+        """
+        self._assert_studio_manager()
+        package_model = self.env["studio.package.model"].search(
+            [("model", "=", model_name), ("source", "in", ("python", "frozen"))],
+            limit=1,
         )
+        if not package_model:
+            raise UserError(
+                _(
+                    "%s is not a model any package defines in Python, so there "
+                    "is nothing to stage: add the field directly instead.",
+                    model_name,
+                )
+            )
+        draft = self.search(
+            [
+                ("package_model_id", "=", package_model.id),
+                ("create_uid", "=", self.env.uid),
+                ("parent_draft_id", "=", False),
+            ],
+            order="id desc",
+            limit=1,
+        )
+        if not draft:
+            draft = self.open_for(package_model)
+        elif not draft.dirty:
+            payload = self._payload_for(package_model)
+            draft.companion_ids.unlink()
+            draft.write(
+                {
+                    "base_spec_json": payload,
+                    "spec_json": payload,
+                    "placement_json": "{}",
+                }
+            )
+        return draft.load()
 
     @api.model
     def open_action(self, package_model_id):
@@ -136,6 +216,7 @@ class StudioModelDraft(models.TransientModel):
             "field_types": modelspec.available_field_types(spec),
             "errors": self.validate(),
             "view": self._preview_view(self.package_model_id),
+            "anchors": self._anchors(),
         }
 
     @api.model
@@ -780,15 +861,52 @@ class StudioModelDraft(models.TransientModel):
         # package anyway, and these arches are part of what it renders.
         return bool(touched)
 
+    def _anchors(self):
+        """Where each staged field was dropped, keyed by field name.
+
+        Nothing here: the slots in ``placement_json`` say *which* views show a
+        field, never where in them. A drop location is a fact about one arch
+        -- a view id and a position inside it -- and minting or resolving one
+        is the view editor's business, so ``app_builder_view`` stores the
+        anchors and overrides this to return them. Every entry carries the
+        ``view_id`` it belongs to; the rest of its shape is the overrider's.
+        """
+        self.ensure_one()
+        return {}
+
+    def _place_anchored(self, view, name, anchor, widget):
+        """Put one field exactly where it was dropped, or say it could not.
+
+        The hook ``_place_in_views`` tries before the balanced placement.
+        Returning ``False`` here is not a failure: this addon cannot route an
+        insertion through the view editor, because it must not depend on
+        ``app_builder_view``, and the balanced slot is the honest fallback --
+        the field still appears, just not at the remembered spot. The
+        override is expected to write the view itself, so a ``True`` means
+        "done, and the arch has changed underneath you".
+        """
+        self.ensure_one()
+        return False
+
     def _place_in_views(self, spec, diff):
-        """Put added fields on screen, now that the columns exist."""
+        """Put added fields on screen, now that the columns exist.
+
+        Safe to run twice. Under a ``restart`` reload the request can die
+        between the reload and this step, and the console re-runs placement
+        once it reconnects; a field the arch already names is left where it
+        is rather than rendered a second time.
+        """
         if not diff.added:
             return False
         placement = self._placement()
+        anchors = self._anchors()
         touched = self.env["ir.ui.view"].browse()
+        anchored = False
         for view_type, view in self._owned_views().items():
-            root = xml_writer.parse_arch(view.arch)
-            changed = False
+            # Anchored fields go first and through the hook, which writes the
+            # view on its own. The arch the balanced fallback edits is parsed
+            # only afterwards, so writing it back cannot clobber the hook's.
+            fallback = []
             for name in diff.added:
                 spec_field = spec.field(name)
                 if not spec_field or spec_field.name in placement_tool.NEVER_PLACE:
@@ -796,8 +914,23 @@ class StudioModelDraft(models.TransientModel):
                 where = placement.get(
                     name, modelspec.default_placement(spec_field.ttype)
                 )
-                label = spec_field.string or name
                 widget = where.get("widget") or ""
+                anchor = anchors.get(name)
+                if (
+                    anchor
+                    and anchor.get("view_id") == view.id
+                    and not self._arch_names(view, name)
+                    and self._place_anchored(view, name, anchor, widget)
+                ):
+                    anchored = True
+                    continue
+                fallback.append((name, spec_field, where, widget))
+            if not fallback:
+                continue
+            root = xml_writer.parse_arch(view.arch)
+            changed = False
+            for name, spec_field, where, widget in fallback:
+                label = spec_field.string or name
                 if view_type == "form" and where.get("form"):
                     changed |= placement_tool.place_in_form(
                         root, name, spec_field.ttype, label, widget
@@ -814,10 +947,22 @@ class StudioModelDraft(models.TransientModel):
                 touched |= view
         if touched:
             self.package_id.studio_capture(touched)
+        if touched or anchored:
             # Views are data: they take effect immediately and need no reload,
             # so writing the files here keeps git in step without a second one.
             self.package_id.action_write_files()
-        return bool(touched)
+        return bool(touched or anchored)
+
+    @api.model
+    def _arch_names(self, view, name):
+        """Whether a view's own arch already shows ``name`` anywhere.
+
+        Anywhere, subviews included: a field rendered twice in one form is the
+        bug users report as "it saved my value in the wrong box".
+        """
+        return bool(
+            xml_writer.parse_arch(view.arch).xpath(".//field[@name='%s']" % name)
+        )
 
     def _write_arch(self, view, root):
         xml_writer.canonicalize_attributes(root)

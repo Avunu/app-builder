@@ -8,7 +8,8 @@ tolerable if it can be taken back.
 
 Restoring the previous arch wholesale, rather than inverting the operation, is
 the point worth testing: it is exact for every operation the editor has and
-every one it grows, including the ones whose inverse is ambiguous.
+every one it grows, including the ones whose inverse is ambiguous. Redo is
+held to the same standard: it puts back the bytes the edit produced.
 """
 
 from odoo import Command
@@ -16,6 +17,7 @@ from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.app_builder_view.exceptions import StudioStaleView
 
 LIST_ARCH = """
 <list string="Demo">
@@ -141,6 +143,139 @@ class TestUndo(StudioCase):
         self.assertFalse(
             self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)])
         )
+
+    def test_undo_against_a_stale_version_is_refused(self):
+        """An undo aimed at a view somebody else has since edited would take
+        back their change, not the one on the button."""
+        self._set({"editable": "top"})
+        entry = self.history.browse(self.history.history_for(self.view.id)[0]["id"])
+        # Not `assertRaises`: Odoo's wraps the block in a savepoint that is
+        # rolled back on the exception, so "nothing was undone" would hold
+        # whatever the undo had done before refusing.
+        try:
+            entry.action_undo(expected_arch_version="not-what-the-server-has")
+        except StudioStaleView:
+            pass
+        else:
+            self.fail("a stale version has to be refused")
+        self.assertFalse(entry.undone)
+        patch = self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)])
+        self.assertIn("editable", patch.arch, "nothing was undone")
+
+    def test_undo_with_the_current_version_goes_through(self):
+        self._set({"editable": "top"})
+        entry = self.history.browse(self.history.history_for(self.view.id)[0]["id"])
+        version = self.editor.arch_version(self.view.id)
+        entry.action_undo(expected_arch_version=version)
+        self.assertTrue(entry.undone)
+
+    # -- redoing -----------------------------------------------------------
+
+    def _patch(self):
+        return self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)])
+
+    def _latest(self):
+        return self.history.browse(self.history.history_for(self.view.id)[0]["id"])
+
+    def test_undo_then_redo_restores_the_arch_byte_for_byte(self):
+        self._set({"editable": "top"})
+        self._set({"multi_edit": "1"})
+        after = self._patch().arch
+        entry = self._latest()
+        entry.action_undo()
+        self._patch().invalidate_recordset()
+        self.assertNotIn("multi_edit", self._patch().arch, "sanity: undone")
+
+        entry.action_redo()
+
+        self._patch().invalidate_recordset()
+        self.assertEqual(self._patch().arch, after)
+        self.assertFalse(entry.undone)
+        self.assertEqual(len(self.history.history_for(self.view.id)), 2)
+
+    def test_redo_after_undoing_the_creating_edit_recreates_the_patch(self):
+        """Undoing the first edit removes the patch entirely, which used to
+        cascade this row away and make redo impossible. Now the row survives
+        with no view, and redo brings the extension back with the same arch.
+        """
+        self._set({"editable": "top"})
+        old_patch = self._patch()
+        old_id, after = old_patch.id, old_patch.arch
+        entry = self._latest()
+        entry.action_undo()
+        self.assertFalse(self._patch(), "sanity: the patch is gone")
+        self.assertTrue(entry.exists(), "the row must outlive the patch")
+        self.assertFalse(entry.view_id)
+
+        entry.action_redo()
+
+        patch = self._patch()
+        self.assertTrue(patch, "the extension is back")
+        self.assertNotEqual(patch.id, old_id)
+        self.assertEqual(patch.arch, after)
+        self.assertEqual(entry.view_id, patch)
+        self.assertEqual(patch.studio_package_id, self.package)
+        self.assertIn("editable", self.view.get_combined_arch())
+
+    def test_a_new_edit_after_an_undo_supersedes_the_redo_tail(self):
+        """Redo over the top of a newer edit would silently discard it, which
+        is the same thing undo refuses to do."""
+        self._set({"editable": "top"})
+        self._set({"multi_edit": "1"})
+        undone = self._latest()
+        undone.action_undo()
+        self.assertEqual(
+            [e["id"] for e in self.history.stack_for(self.view.id)["redo"]],
+            [undone.id],
+            "sanity: redoable before the new edit",
+        )
+
+        self._set({"limit": "40"})
+
+        self.assertEqual(self.history.stack_for(self.view.id)["redo"], [])
+        self.assertTrue(undone.superseded)
+        with self.assertRaises(UserError) as caught:
+            undone.action_redo()
+        self.assertIn("newer change", str(caught.exception))
+
+    def test_redo_puts_back_the_most_recently_undone_first(self):
+        self._set({"editable": "top"})
+        self._set({"multi_edit": "1"})
+        second = self._latest()
+        second.action_undo()
+        first = self._latest()
+        first.action_undo()
+
+        stack = self.history.stack_for(self.view.id)
+        self.assertEqual([e["id"] for e in stack["redo"]], [first.id, second.id])
+        with self.assertRaises(UserError):
+            second.action_redo()
+        first.action_redo()
+        second.action_redo()
+        self.assertEqual(len(self.history.history_for(self.view.id)), 2)
+
+    def test_redo_against_a_stale_version_is_refused(self):
+        self._set({"editable": "top"})
+        entry = self._latest()
+        entry.action_undo()
+        try:
+            entry.action_redo(expected_arch_version="stale")
+        except StudioStaleView:
+            pass
+        else:
+            self.fail("a stale version has to be refused")
+        self.assertTrue(entry.undone)
+        self.assertFalse(self._patch(), "nothing was redone")
+
+    def test_the_stack_names_who_made_each_change(self):
+        """The stack is per view, not per user: undoing somebody else's edit
+        should be a decision, not a surprise."""
+        self._set({"editable": "top"})
+        stack = self.history.stack_for(self.view.id)
+        self.assertEqual(len(stack["undo"]), 1)
+        self.assertEqual(stack["undo"][0]["author"], self.env.user.display_name)
+        self.assertIn("editable", stack["undo"][0]["summary"])
+        self.assertEqual(stack["arch_version"], self.editor.arch_version(self.view.id))
 
     # -- guarded like everything else --------------------------------------
 

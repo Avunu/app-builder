@@ -16,16 +16,22 @@ them. A type the builder has no scaffold for is listed and disabled with that as
 the reason, because "we cannot make one yet" is true and different from "no such
 thing".
 
-Fields, buttons, tabs and groups can be added and removed, not only configured —
-and because every edit becomes a patch, that works on core screens as readily as
-on your own. Where a new node lands is decided from what you have selected: a
-container takes a child, anything else takes a sibling, and the panel says which
-before you click.
+Editing happens in a **console**: full-screen, the real view rendered on a
+canvas with a real record in it, and a sidebar of Add, View and Properties.
+Fields, buttons, tabs, groups and columns are dragged from the sidebar onto the
+view and land exactly where they are dropped; what is already there is dragged
+to move it, between groups, across tabs, into a kanban card. Because every edit
+becomes a patch, that works on core screens as readily as on your own. Undo
+and redo walk the edits back and forward, and every change is on disk before
+the status pill says so.
 
-The editor never asks you to type an xpath: the target is picked from a tree of
-the view's nodes computed on the server, preferring identifying predicates
-(`//field[@name='x']`) over positional ones (`//div[3]`) so a picked target
-survives another module extending the same view.
+The console never asks you for an xpath and never computes one in the browser.
+The server names every node of the view before it is rendered and edits the
+node you pointed at, preferring identifying locators (`//field[@name='x']`)
+over positional ones (`//div[3]`) so an edit survives another module
+extending the same view — and if the view changed under you, the drop is
+refused, the canvas refreshed, and you are asked to try again rather than have
+it land somewhere else.
 
 Invalid edits are rejected by Odoo's own view validator before anything is
 written, and its message is shown verbatim.

@@ -1,0 +1,28 @@
+// The Studio toggle in the navbar: a plain systray button, in the navbar's
+// own colours, so it reads as part of the bar and not as a call to action.
+// The fullscreen console hides the whole navbar, so it never has to look
+// pressed.
+
+.o_studio_systray_item {
+    display: flex;
+    align-items: center;
+    height: 100%;
+}
+
+.o_studio_systray_toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+    padding: 0 10px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+        background: rgba(0, 0, 0, 0.08);
+        outline: none;
+    }
+}

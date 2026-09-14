@@ -42,7 +42,7 @@ else
 fi
 
 rc=0
-for probe in probe_reimport probe_reflection probe_scaffold probe_compose; do
+for probe in probe_reimport probe_reflection probe_scaffold probe_compose probe_console_apply; do
     echo "==> probe: $probe"
     "$PYTHON" "$HERE/$probe.py" -c "$CONF" -d "$DB" \
         --http-port 8298 --gevent-port 8297 2>&1 \

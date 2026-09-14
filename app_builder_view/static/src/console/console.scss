@@ -1,0 +1,440 @@
+// The console: a dark bar across the top, the sidebar on the left, the canvas
+// filling the rest. Sizes are the ones the design fixed -- a 46px bar, a 360px
+// sidebar that will not go under 300 -- and everything else is flex.
+
+$o-studio-bar-height: 46px;
+$o-studio-brand: var(--o-color-primary, #714b67);
+
+.o_studio_console {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    background: var(--o-webclient-background-color, #f8f9fa);
+}
+
+.o_studio_console_body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.o_studio_console_canvas {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+
+    > * {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+}
+
+// -- top bar ------------------------------------------------------------------
+
+.o_studio_top_bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: $o-studio-bar-height;
+    flex: 0 0 $o-studio-bar-height;
+    padding: 0 12px;
+    color: #fff;
+    background: #2d2d3a;
+    font-size: 13px;
+
+    .o_studio_crumb_bar {
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 28%;
+
+        .o_studio_crumb_model {
+            font-weight: 600;
+        }
+    }
+
+    .o_studio_tabs {
+        display: flex;
+        align-items: stretch;
+        align-self: stretch;
+        gap: 2px;
+        overflow-x: auto;
+    }
+
+    .o_studio_top_tab {
+        border: 0;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.7);
+        padding: 0 10px;
+        white-space: nowrap;
+        border-bottom: 2px solid transparent;
+
+        &:hover {
+            color: #fff;
+        }
+
+        &.active {
+            color: #fff;
+            border-bottom-color: #fff;
+        }
+    }
+
+    .o_studio_switcher {
+        display: flex;
+        gap: 2px;
+        margin-left: auto;
+    }
+
+    .o_studio_switch {
+        position: relative;
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.75);
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.18);
+            color: #fff;
+        }
+
+        &.active {
+            background: $o-studio-brand;
+            color: #fff;
+        }
+
+        &.add {
+            opacity: 0.7;
+        }
+
+        .o_studio_switch_plus {
+            position: absolute;
+            right: 1px;
+            bottom: 1px;
+            font-size: 8px;
+        }
+    }
+
+    .o_studio_top_actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .o_studio_top_button {
+        border: 0;
+        border-radius: 4px;
+        padding: 4px 10px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+
+        &:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        &:disabled {
+            opacity: 0.4;
+        }
+    }
+
+    .o_studio_status {
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        white-space: nowrap;
+
+        &.o_studio_status_saved {
+            background: rgba(40, 167, 69, 0.25);
+        }
+
+        &.o_studio_status_saving {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        &.o_studio_status_error {
+            background: rgba(220, 53, 69, 0.4);
+        }
+
+        &.o_studio_status_pending {
+            background: rgba(255, 193, 7, 0.35);
+            cursor: pointer;
+
+            &:hover {
+                background: rgba(255, 193, 7, 0.55);
+            }
+        }
+
+        &.o_studio_status_dragging {
+            background: rgba(255, 255, 255, 0.22);
+        }
+    }
+}
+
+// -- sidebar ------------------------------------------------------------------
+
+// The sidebar must not be squeezed by what is beside it. `.o_resizable_panel`
+// sets `flex-grow: 0` but leaves `flex-shrink` at its default of 1, so in a
+// flex row whose other child is a wide list table the panel is compressed
+// below the width it just set. The resize handle is position-absolute and
+// anchors to the nearest positioned ancestor, which has to be the panel.
+.o_studio_sidebar {
+    flex: 0 0 auto;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-right: 1px solid rgba(0, 0, 0, 0.1);
+    min-height: 0;
+}
+
+.o_studio_sidebar_inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.o_studio_sidebar_tabs {
+    display: flex;
+    flex: 0 0 auto;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+
+    .o_studio_sidebar_tab {
+        flex: 1 1 0;
+        border: 0;
+        background: transparent;
+        padding: 10px 4px;
+        font-weight: 500;
+        color: rgba(0, 0, 0, 0.6);
+        border-bottom: 2px solid transparent;
+
+        &:hover {
+            color: rgba(0, 0, 0, 0.9);
+        }
+
+        &.active {
+            color: $o-studio-brand;
+            border-bottom-color: $o-studio-brand;
+        }
+    }
+}
+
+.o_studio_sidebar_pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+}
+
+.o_studio_section_title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgba(0, 0, 0, 0.55);
+    margin: 14px 0 6px;
+
+    &:first-child {
+        margin-top: 0;
+    }
+}
+
+// label | control rows, the shape every option takes.
+.o_studio_row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+    margin-bottom: 4px;
+
+    .o_studio_row_label {
+        flex: 0 0 40%;
+        margin: 0;
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.7);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .o_studio_row_content {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+}
+
+// Tiles: what can be put into the view. Wide enough to read and to grab.
+.o_studio_tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 6px;
+}
+
+.o_studio_tile {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 150px;
+    padding: 7px 10px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 4px;
+    background: #fff;
+    color: inherit;
+    text-align: left;
+    font-size: 12px;
+    cursor: grab;
+    overflow: hidden;
+
+    > i {
+        flex: 0 0 auto;
+        width: 16px;
+        text-align: center;
+        color: $o-studio-brand;
+    }
+
+    > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &:hover:not(:disabled),
+    &:focus-visible {
+        border-color: $o-studio-brand;
+        background: rgba(113, 75, 103, 0.06);
+    }
+
+    &.active {
+        border-color: $o-studio-brand;
+        background: rgba(113, 75, 103, 0.12);
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+.o_studio_palette {
+    max-height: 40vh;
+    overflow-y: auto;
+}
+
+.o_studio_inline_form {
+    padding: 8px;
+    border: 1px dashed rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.o_studio_source {
+    max-height: 40vh;
+    overflow: auto;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 4px;
+    white-space: pre;
+}
+
+.o_studio_crumb {
+    color: inherit;
+    text-decoration: underline dotted;
+}
+
+// -- the search canvas --------------------------------------------------------
+// (The report canvas, and its stylesheet, live in `app_builder_report`.)
+
+.o_studio_search_lists {
+    flex: 0 0 320px;
+    background: #fff;
+}
+
+// The pending ghost: in the flow of the form, where the field will be.
+// Dashed, since it is a promise rather than a field; a grab cursor, since
+// dragging it is how its place is changed.
+.o_studio_pending {
+    display: flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 4px 10px;
+    border: 1px dashed $o-studio-brand;
+    border-radius: 4px;
+    background: rgba(113, 75, 103, 0.06);
+    color: rgba(0, 0, 0, 0.75);
+    cursor: grab;
+
+    .o_studio_pending_icon {
+        color: $o-studio-brand;
+    }
+
+    .o_studio_pending_label {
+        font-weight: 500;
+    }
+
+    .o_studio_pending_note {
+        font-size: 11px;
+        white-space: nowrap;
+    }
+
+    &.o_studio_pending_unresolved {
+        border-color: rgba(0, 0, 0, 0.3);
+    }
+}
+
+// A ghost in a list column has no room for its note.
+.o_list_view .o_studio_pending {
+    .o_studio_pending_note {
+        display: none;
+    }
+}
+
+.o_studio_pending_card {
+    padding: 8px;
+    border: 1px dashed $o-studio-brand;
+    border-radius: 4px;
+    background: rgba(113, 75, 103, 0.04);
+}
+
+.o_studio_staged_note {
+    color: $o-studio-brand !important;
+}
+
+.o_studio_row_hint {
+    font-size: 11px;
+    margin-top: 2px;
+}
+
+// -- the field editor and the Apply dialog ------------------------------------
+
+.o_studio_field_editor_popover {
+    // Wide enough for a model picker row, short enough to stay beside the
+    // tile it belongs to rather than covering the canvas.
+    max-width: 420px;
+    min-width: 340px;
+}
+
+.o_studio_apply_dialog {
+    .o_studio_diff {
+        max-height: 40vh;
+        overflow: auto;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.04);
+        border-radius: 4px;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .o_studio_change_destructive {
+        background: rgba(220, 53, 69, 0.06);
+        border-radius: 4px;
+    }
+
+    .modal-footer {
+        flex-wrap: wrap;
+    }
+}

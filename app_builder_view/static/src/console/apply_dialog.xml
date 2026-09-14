@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.ApplyDialog">
+    <Dialog title="title" size="'md'" contentClass="'o_studio_apply_dialog'">
+        <!-- While applying, the dialog is what covers the canvas: the
+             package is being rebuilt underneath, and nothing on it should
+             be touched meanwhile. -->
+        <div t-if="applying" class="o_studio_applying text-center py-4">
+            <i class="fa fa-circle-o-notch fa-spin fa-2x mb-3 d-block"/>
+            <div class="fw-bold">Applying… reloading the package</div>
+            <small class="text-muted">
+                <t t-if="reloadMode === 'restart'">The server is restarting; this waits for it to come back.</t>
+                <t t-else="">This takes a moment.</t>
+            </small>
+        </div>
+        <t t-else="">
+            <div t-if="!changes.length" class="text-muted">
+                Nothing is pending.
+            </div>
+            <ul t-else="" class="list-unstyled o_studio_apply_changes mb-3">
+                <li t-foreach="changes" t-as="change" t-key="change_index"
+                    class="d-flex align-items-start gap-2 py-1"
+                    t-att-class="{ o_studio_change_destructive: change.destructive }">
+                    <span class="badge"
+                          t-att-class="{
+                            'text-bg-success': change.kind === 'added',
+                            'text-bg-info': change.kind === 'changed',
+                            'text-bg-danger': change.kind === 'removed',
+                            'text-bg-secondary': change.kind === 'model'}"
+                          t-esc="change.kind"/>
+                    <div>
+                        <div>
+                            <t t-esc="change.name"/>
+                            <span t-if="change.model" class="badge text-bg-light ms-1" t-esc="change.model"/>
+                        </div>
+                        <small class="text-muted" t-esc="change.detail"/>
+                        <small t-if="whereabouts(change)" class="text-muted d-block o_studio_change_whereabouts">
+                            <i class="fa fa-map-marker me-1"/><t t-esc="whereabouts(change)"/>
+                        </small>
+                        <small t-if="change.destructive" class="text-danger d-block">
+                            <i class="fa fa-exclamation-triangle me-1"/>Its column would be dropped; the data is kept aside, not deleted.
+                        </small>
+                    </div>
+                </li>
+            </ul>
+
+            <div t-if="errors.length" class="alert alert-danger small py-2" role="alert">
+                <div t-foreach="errors" t-as="error" t-key="error_index" t-esc="error"/>
+            </div>
+
+            <div class="alert alert-light small py-2 o_studio_reload_notice" role="status">
+                <i class="fa fa-refresh me-1"/><t t-esc="reloadNotice"/>
+            </div>
+
+            <div t-if="hasDestructive" class="form-check mb-2">
+                <input type="checkbox" class="form-check-input" id="o_studio_apply_anyway"
+                       t-att-checked="state.allowDestructive"
+                       t-on-change="(ev) => state.allowDestructive = ev.target.checked"/>
+                <label class="form-check-label" for="o_studio_apply_anyway">
+                    Apply anyway — I understand a column with data in it goes.
+                </label>
+            </div>
+
+            <button type="button" class="btn btn-link btn-sm p-0 o_studio_show_diff"
+                    t-on-click="() => this.toggleDiff()">
+                <i t-att-class="state.showDiff ? 'fa fa-caret-down me-1' : 'fa fa-caret-right me-1'"/>
+                <t t-if="state.showDiff">Hide diff</t>
+                <t t-else="">Show diff</t>
+            </button>
+            <div t-if="state.showDiff" class="mt-2">
+                <div t-if="state.loadingDiff" class="text-muted small">
+                    <i class="fa fa-circle-o-notch fa-spin me-1"/>Loading…
+                </div>
+                <div t-elif="!state.diff" class="text-muted small">
+                    No difference: the file already says this.
+                </div>
+                <pre t-else="" class="o_studio_diff small mb-0" t-esc="state.diff"/>
+            </div>
+
+            <div t-if="state.error" class="alert alert-warning small py-2 mt-3 mb-0 o_studio_apply_error"
+                 role="alert" t-esc="state.error"/>
+        </t>
+
+        <t t-set-slot="footer">
+            <button type="button" class="btn btn-primary o_studio_apply_confirm"
+                    t-att-disabled="!canApply"
+                    t-att-title="blocker"
+                    t-on-click="() => this.onApply()">
+                <i t-if="applying" class="fa fa-circle-o-notch fa-spin me-1"/>
+                Apply
+            </button>
+            <button type="button" class="btn btn-secondary o_studio_apply_discard"
+                    t-att-disabled="applying or !changes.length"
+                    t-on-click="() => this.onDiscard()">
+                Discard all
+            </button>
+            <button type="button" class="btn btn-link ms-auto"
+                    t-att-disabled="applying"
+                    t-on-click="() => this.props.close()">
+                Close
+            </button>
+            <small t-if="blocker and !applying" class="text-muted d-block w-100 mt-1 o_studio_apply_blocker"
+                   t-esc="blocker"/>
+        </t>
+    </Dialog>
+</t>
+
+</templates>

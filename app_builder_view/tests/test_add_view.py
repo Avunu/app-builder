@@ -244,6 +244,385 @@ class TestAddAndRemove(StudioCase):
         node = self.env["studio.view.editor"]._find_descriptor(root, {"kind": "group"})
         self.assertIsNone(node)
 
+    # -- where exactly, when the gesture says ------------------------------
+
+    def _fields_in_group(self, view):
+        root = etree.fromstring(
+            self.env["ir.ui.view"].browse(view.id).get_combined_arch().encode()
+        )
+        return [f.get("name") for f in root.find(".//group").findall("field")]
+
+    def test_a_named_position_wins_over_the_guess(self):
+        """A click can only guess "after"; a drop knows it was before."""
+        package, view = self._package_and_view()
+        self.env["studio.view.editor"].add_field_at(
+            view.id,
+            package.id,
+            {"kind": "field", "name": "x_budget"},
+            "x_active_flag",
+            position="before",
+        )
+        names = self._fields_in_group(view)
+        self.assertLess(names.index("x_active_flag"), names.index("x_budget"))
+
+    def test_a_field_arrives_with_its_widget_in_one_change(self):
+        """A preset that comes with a widget is one thing to the user, so it
+        is one history entry -- not "added" followed by "changed widget"."""
+        package, view = self._package_and_view()
+        editor = self.env["studio.view.editor"]
+        editor.add_field_at(
+            view.id,
+            package.id,
+            {"kind": "field", "name": "x_budget"},
+            "x_active_flag",
+            attrs={"widget": "boolean_toggle"},
+        )
+        arch = self.env["ir.ui.view"].browse(view.id).arch
+        self.assertIn('<field name="x_active_flag" widget="boolean_toggle"/>', arch)
+        self.assertEqual(len(self.env["studio.view.edit"].history_for(view.id)), 1)
+
+    def test_a_position_that_is_not_a_place_is_refused(self):
+        package, view = self._package_and_view()
+        with self.assertRaises(UserError):
+            self.env["studio.view.editor"].add_field_at(
+                view.id,
+                package.id,
+                {"kind": "field", "name": "x_budget"},
+                "x_active_flag",
+                position="replace",
+            )
+
+    def test_a_tab_can_be_placed_beside_another_tab(self):
+        package, view = self._package_and_view()
+        editor = self.env["studio.view.editor"]
+        editor.add_container_at(view.id, package.id, {"kind": "sheet"}, "page", "One")
+        editor.add_container_at(
+            view.id,
+            package.id,
+            {"kind": "page", "index": 0},
+            "page",
+            "Zero",
+            position="before",
+        )
+        root = etree.fromstring(
+            self.env["ir.ui.view"].browse(view.id).get_combined_arch().encode()
+        )
+        self.assertEqual(
+            [p.get("string") for p in root.iter("page")],
+            ["Zero", "One"],
+            "before the first tab, not appended to the notebook",
+        )
+
+
+OWNED_FORM_WITH_A_TAB = """
+<form>
+    <sheet>
+        <group>
+            <field name="x_name"/>
+            <field name="x_budget"/>
+        </group>
+        <notebook>
+            <page string="Notes"><field name="x_stage"/></page>
+        </notebook>
+    </sheet>
+</form>
+"""
+
+
+@tagged("post_install", "-at_install")
+class TestOwnedViewWithForeignExtension(StudioCase):
+    """The hole between the tree a locator is minted on and the one it edits.
+
+    A locator is minted on the *combined* arch -- other modules' extensions
+    included -- but an owned view is edited by applying the spec to its
+    *primary* arch, which has none of them. A named locator means the same
+    node in both. A positional one does not once another module has inserted
+    a sibling above the target: the same path then names a different node, or
+    none, and core's apply_inheritance_specs either edits the wrong node
+    silently or raises a bare ValueError.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.editor = self.env["studio.view.editor"]
+        self.package = self.make_package()
+        self.build_demo_content(self.package)
+        self.view = self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+        )
+        self.view.arch = OWNED_FORM_WITH_A_TAB
+        # Another module's extension: no package, a name of its own, and it
+        # puts a tab *before* ours, so every positional path into the
+        # notebook is off by one between the two trees.
+        self.env["ir.ui.view"].create(
+            {
+                "name": "x_studio_project.form.other_module",
+                "model": "x_studio_project",
+                "inherit_id": self.view.id,
+                "mode": "extension",
+                "arch": """
+                    <data>
+                        <xpath expr="//notebook" position="inside">
+                            <page string="Foreign"><field name="x_partner_id"/></page>
+                        </xpath>
+                        <xpath expr="//page[1]" position="before">
+                            <page string="Theirs"><field name="x_active_flag"/></page>
+                        </xpath>
+                    </data>
+                """,
+            }
+        )
+        self.before = self.view.arch
+
+    def _refused(self, anchor, needle):
+        """Ask for x_budget inside ``anchor`` and expect a refusal saying
+        ``needle``, then check the primary arch was left alone.
+
+        Not ``assertRaises``: Odoo's wraps the block in a savepoint that is
+        rolled back on the exception, so "arch unchanged" would hold whatever
+        the editor had written before refusing.
+        """
+        try:
+            self.editor.add_field_at(
+                self.view.id,
+                self.package.id,
+                anchor,
+                "x_budget",
+                position="inside",
+            )
+        except UserError as caught:
+            self.assertIn(needle, str(caught))
+        else:
+            self.fail("the locator has to be refused on the owned path")
+        self.view.invalidate_recordset()
+        self.assertEqual(self.view.arch, self.before)
+        self.assertEqual(self.env["studio.view.edit"].history_for(self.view.id), [])
+
+    def test_a_positional_locator_past_the_foreign_tab_is_refused(self):
+        """Our tab is page[2] in the combined arch and page[1] in ours: the
+        minted path finds nothing in the primary arch, and the refusal says
+        so rather than blaming a node that was never found."""
+        self._refused({"kind": "page", "index": 1}, "does not locate anything")
+
+    def test_the_foreign_tab_itself_is_refused_rather_than_editing_ours(self):
+        """page[1] in the combined arch is theirs; in ours it is Notes. The
+        path resolves, to the wrong node -- which is the case that would have
+        edited silently."""
+        self._refused({"kind": "page", "index": 0}, "another module's extension")
+
+    def test_a_named_locator_still_edits_in_place(self):
+        self.editor.add_field_at(
+            self.view.id,
+            self.package.id,
+            {"kind": "field", "name": "x_budget"},
+            "x_active_flag",
+        )
+        self.view.invalidate_recordset()
+        self.assertIn('name="x_active_flag"', self.view.arch)
+        self.assertFalse(
+            self.env["ir.ui.view"].search(
+                [
+                    ("inherit_id", "=", self.view.id),
+                    ("studio_package_id", "=", self.package.id),
+                ]
+            ),
+            "an owned view is edited outright, not patched",
+        )
+
+    def test_a_raw_locator_that_is_not_an_xpath_is_refused_readably(self):
+        """Core's apply_inheritance_specs answers a bad expression with a
+        bare lxml error on the owned path; the user gets a sentence."""
+        with self.assertRaises(UserError):
+            self.editor.apply_operation(
+                self.view.id,
+                self.package.id,
+                {
+                    "type": "add_field",
+                    "name": "x_active_flag",
+                    "xpath": "//field[@name=",
+                    "position": "after",
+                },
+            )
+
+
+OWNED_FORM_WITH_BARE_GROUPS = """
+<form>
+    <sheet>
+        <group>
+            <field name="x_name"/>
+        </group>
+        <group>
+            <field name="x_budget"/>
+        </group>
+        <notebook>
+            <page string="Notes"><field name="x_stage"/></page>
+        </notebook>
+    </sheet>
+</form>
+"""
+
+
+OWNED_FORM_WITH_WRAPPED_PAGES = """
+<form>
+    <sheet>
+        <notebook>
+            <page string="Notes"><group><field name="x_stage"/></group></page>
+            <page string="Budget"><group><field name="x_budget"/></group></page>
+        </notebook>
+    </sheet>
+</form>
+"""
+
+
+@tagged("post_install", "-at_install")
+class TestOwnedContainersWithoutNames(StudioCase):
+    """What tells one unnamed container from another, once a foreign
+    extension has shifted every positional path by one.
+
+    Two bare groups have no name and usually no label, so tag and label
+    cannot tell them apart -- but the fields in them are named, and those
+    are the fingerprint. The label is a second signal because a foreign
+    ``position="attributes"`` can change it on a page that is still ours.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.editor = self.env["studio.view.editor"]
+        self.package = self.make_package()
+        self.build_demo_content(self.package)
+        self.view = self.env["ir.ui.view"].search(
+            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+        )
+        self.view.arch = OWNED_FORM_WITH_BARE_GROUPS
+        self.env["ir.ui.view"].create(
+            {
+                "name": "x_studio_project.form.other_module",
+                "model": "x_studio_project",
+                "inherit_id": self.view.id,
+                "mode": "extension",
+                "arch": """
+                    <data>
+                        <xpath expr="//group[1]" position="before">
+                            <group><field name="x_partner_id"/></group>
+                        </xpath>
+                        <xpath expr="//page[1]" position="attributes">
+                            <attribute name="string">Their Notes</attribute>
+                        </xpath>
+                    </data>
+                """,
+            }
+        )
+        self.before = self.view.arch
+
+    def test_a_shifted_locator_onto_a_look_alike_sibling_is_refused(self):
+        """The group holding x_name is group[2] in the combined arch and
+        group[1] in ours, so the minted path lands on the group holding
+        x_budget: same tag, no name, no label on either. The named children
+        are what give it away."""
+        try:
+            self.editor.add_field_at(
+                self.view.id,
+                self.package.id,
+                {"kind": "group", "index": 1},
+                "x_active_flag",
+                position="inside",
+            )
+        except UserError as caught:
+            self.assertIn("another module's extension", str(caught))
+        else:
+            self.fail("the shifted locator has to be refused")
+        self.view.invalidate_recordset()
+        self.assertEqual(self.view.arch, self.before, "the wrong group was not edited")
+
+    def test_a_page_whose_label_a_foreign_module_overrides_is_still_ours(self):
+        """The combined arch says "Their Notes" and ours says "Notes"; the
+        fields under it are the same, so it is the same page, and it is
+        edited in place."""
+        self.editor.add_field_at(
+            self.view.id,
+            self.package.id,
+            {"kind": "page", "index": 0},
+            "x_active_flag",
+            position="inside",
+        )
+        self.view.invalidate_recordset()
+        root = etree.fromstring(self.view.arch.encode())
+        page = root.find(".//page")
+        self.assertEqual(
+            [f.get("name") for f in page.findall("field")], ["x_stage", "x_active_flag"]
+        )
+        self.assertFalse(
+            self.env["ir.ui.view"].search(
+                [
+                    ("inherit_id", "=", self.view.id),
+                    ("studio_package_id", "=", self.package.id),
+                ]
+            ),
+            "an owned view is edited outright, not patched",
+        )
+
+    def test_pages_with_no_signal_at_all_are_refused_rather_than_guessed(self):
+        """Two pages that each wrap their fields in an unnamed group have no
+        named children and, once a foreign tab has been inserted above them,
+        a positional path lands on the wrong one. Their labels differ -- but
+        an empty fingerprint must not count as a match either, or the
+        "Budget" page would be edited when "Notes" was pointed at."""
+        self.view.arch = OWNED_FORM_WITH_WRAPPED_PAGES
+        self.env["ir.ui.view"].create(
+            {
+                "name": "x_studio_project.form.other_tab",
+                "model": "x_studio_project",
+                "inherit_id": self.view.id,
+                "mode": "extension",
+                "arch": """
+                    <data>
+                        <xpath expr="//page[1]" position="before">
+                            <page string="Theirs">
+                                <group><field name="x_partner_id"/></group>
+                            </page>
+                        </xpath>
+                    </data>
+                """,
+            }
+        )
+        before = self.view.arch
+        try:
+            self.editor.add_field_at(
+                self.view.id,
+                self.package.id,
+                {"kind": "page", "index": 1},
+                "x_active_flag",
+                position="inside",
+            )
+        except UserError as caught:
+            self.assertIn("another module's extension", str(caught))
+        else:
+            self.fail("a page with no identifying signal has to be refused")
+        self.view.invalidate_recordset()
+        self.assertEqual(self.view.arch, before, "the wrong page was not edited")
+
+    def test_a_view_nothing_extends_is_edited_by_position_without_a_signal(self):
+        """With no foreign extension the combined arch is the primary arch,
+        so a positional path is exact and a page with no signal is still
+        editable -- the guard only has something to check when another view
+        has changed the shape."""
+        self.view.arch = OWNED_FORM_WITH_WRAPPED_PAGES
+        self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)]).unlink()
+        self.editor.add_field_at(
+            self.view.id,
+            self.package.id,
+            {"kind": "page", "index": 1},
+            "x_active_flag",
+            position="inside",
+        )
+        self.view.invalidate_recordset()
+        root = etree.fromstring(self.view.arch.encode())
+        pages = root.findall(".//page")
+        self.assertEqual(
+            [f.get("name") for f in pages[1].iter("field")],
+            ["x_budget", "x_active_flag"],
+        )
+
 
 @tagged("post_install", "-at_install")
 class TestActionButtonPortability(StudioCase):

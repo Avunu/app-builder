@@ -1,0 +1,55 @@
+Open any list, form or kanban and click **Studio** in the top bar, or pick
+**Edit this view** from the cog menu: the console opens full-screen on the view
+you were looking at, with the record you were looking at in it. **Studio →
+Console** opens it with nothing in hand, on the form of the first model your
+package owns, and the view switcher takes it from there.
+
+## The sidebar
+
+- **Add** holds three groups of tiles: **Components** (Tabs, Columns, Group,
+  Separator, Button), **New Fields** (one per field type the package can make;
+  a type it cannot is shown disabled with the reason) and **Existing Fields**
+  (every field of the model not yet on the view, searchable). Drag a tile onto
+  the canvas: bars appear between the elements that can take it, the chip
+  names the spot under the pointer — "after Email", "into Notes", "at the end
+  of the sheet" — and dropping on nothing does nothing. Resting on a notebook
+  tab while dragging switches to it.
+- **View** edits the view's own settings, shows invisible elements when asked,
+  and shows the source of what this package has written for the view together
+  with its recent changes.
+- **Properties** opens when you click something. It lists the element's options
+  as label / control rows — the same rows for a core field and one you added —
+  and, for a field, its definition: label, help, required, the values of a
+  selection. A field the package owns is edited in place; a core field shows
+  what it is. **Remove from view** is at the bottom, and removing a group asks
+  first, with the number of fields it would take.
+
+Moving is a drag too: pick up a field, a button or a tab and drop it where it
+should be; a group or a notebook is picked up by the grip on its selection
+frame, so that a click on it still selects what it holds. List columns reorder
+by dragging their headings, and take a dropped field between them. In a kanban
+the drop zones are laid out on one card, outlined as the template's stand-in,
+and a drop into any card edits the template — every card follows.
+
+## Saving, undoing, applying
+
+Every edit is written when it is made: **Saved** in the status pill means the
+inheriting view is on disk. **Undo** and **Redo** (Ctrl+Z, Ctrl+Shift+Z) walk
+the view's own history, whoever made the edits.
+
+A **new field** on a model the package owns as Python is the one thing that
+cannot be immediate: a real column needs the class re-imported. So the drop
+stages the field and shows it *in place* as a pending ghost, the pill reads
+"N pending · Apply", and **Apply** places everything staged in one reload.
+Until then the ghost can be moved, re-anchored or discarded like anything
+else. On a core model, or on an `x_` model, a new field is created and placed
+at once.
+
+## Around the view
+
+The top bar's tabs — Views, Reports, Automations, Webhooks, Access Control,
+Filter Rules, Approvals, Edit Menu, New Model — are the studio's other
+surfaces scoped to the model in front of you; the ones that are their own
+screen open with the breadcrumb leading back. The view switcher lists the
+model's other views and offers to add the types the package can scaffold.
+**Close** returns to where you came from, with the edits already showing.

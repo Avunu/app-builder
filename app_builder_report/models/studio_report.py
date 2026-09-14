@@ -87,6 +87,9 @@ class StudioReport(models.AbstractModel):
             "name": _("Reports"),
             "res_model": "ir.actions.report",
             "view_mode": "list,form",
+            # Spelled out because the dict is also returned over plain RPC,
+            # and the client derives nothing from view_mode on that path.
+            "views": [(False, "list"), (False, "form")],
             "domain": domain,
             "context": context,
             "help": self._empty_state(),

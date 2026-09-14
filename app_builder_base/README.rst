@@ -117,11 +117,14 @@ Next
 - **Conditional blocks in reports** — ``t-if`` / ``t-elif`` / ``t-else``
   are editable as source but have no gesture and no preview switch,
   which is the same limit Odoo documents for its own editor.
-- **Drag-to-reorder beyond list columns** — form fields between groups,
-  kanban card contents. The move operation and the gesture both exist
-  now; what each case needs is a sensible answer to "what did you drop
-  it *into*". Adding works by clicking, anchored on the selection, for
-  the same reason.
+- **Drag-and-drop reaches form, list and kanban; not yet an inline
+  sub-view.** The console drops fields, components and moves in place on
+  all three, with the server naming every node of the combined arch so
+  "what did you drop it into" is answered by construction. What it does
+  not do is drop into an embedded one2many list or form: those nodes
+  belong to another model, and the palette would have to offer that
+  model's fields. They are shown, and a click inside one selects the
+  field that holds it.
 - **Automations stop short of the composer on purpose.** The wizard
   creates the ``ir.actions.server`` / ``base.automation`` pair, and
   ``studio.automation.action_open`` opens Odoo's own form scoped to the
@@ -146,12 +149,14 @@ Known limits
   builder that flattened it would rewrite the rule the moment somebody
   touched an unrelated row, and the rewrite would look like an ordinary
   edit.
-- **A field created from the view editor is one of the simple kinds.**
-  Text, a number, a date, a checkbox, a file, a link to a record — the
-  types whose whole definition is a name and a label. A selection needs
-  its values, a one2many an inverse that may not exist yet, and a
-  computed field a body; each is a conversation, and the composer is
-  where conversations happen.
+- **A field dropped on a core model is a live ``x_`` field; on a model
+  this package defines in Python it is staged.** The first is created
+  the moment it lands, with its widget, for every type the picker
+  offers; a type that needs a conversation — a selection's values, a
+  one2many's inverse, a related path — has it before anything is
+  created. The second appears as a pending ghost exactly where it was
+  dropped and becomes real on Apply, because a clean-named field is a
+  class attribute and needs the class re-imported.
 - **A PO entry for a term this package emits is the database's to
   state.** ``_render_translations`` reads the existing
   ``i18n/<lang>.po`` and keeps every entry it does not emit — a
@@ -220,9 +225,11 @@ Known limits
   ``BaseModel._add_field``), so a clean-named field has to be a class
   attribute. Adding a field to a *core* model stays instant, because
   there the ``x_`` prefix is expected anyway.
-- **The preview shows the applied state, not the pending one.** A form
-  cannot render a field the registry does not have, so the tray carries
-  the difference rather than the preview pretending to.
+- **A pending field is a ghost, not a field.** The canvas cannot render
+  a column the registry does not have, so a staged field is drawn as an
+  in-flow placeholder at its anchor -- selectable, draggable, honest
+  about being pending -- and the tray carries the rest of the difference
+  until Apply.
 - **Multi-worker deployments cannot reload in place** and are told so
   rather than served badly: the other workers rebuild their registry
   from Python they still hold in ``sys.modules``, so they would rebuild
@@ -251,14 +258,16 @@ Known limits
   screen, as an inheriting view, on purpose.
 - **View edits are live and shared.** A view is data, so there is no
   reload to batch behind and no Apply — an edit is visible to everyone
-  immediately. Undo is the counterweight, and it walks back one edit at
-  a time; undoing something older would silently discard everything done
-  since, so it is refused.
+  immediately. Undo and redo are the counterweight, one edit at a time
+  per view; undoing something older would silently discard everything
+  done since, so it is refused, and a new edit discards the redo tail.
+  The stack is per view, not per person, which is why every entry names
+  its author.
 - **A kanban card written with ``t-esc`` cannot be selected part by
   part.** Only a ``<field>`` puts its name in the DOM. Cards the builder
   generates use real fields for exactly this reason; existing ones are
-  edited as source, and the editor says so rather than absorbing the
-  click.
+  edited as source, and a click on such a part selects the card that
+  holds it.
 - **A search view is edited as three lists, not by clicking.** It has no
   rendering of its own — it furnishes another view's control panel — so
   it is edited as searchable fields, filters and group-bys, and

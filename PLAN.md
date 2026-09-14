@@ -125,13 +125,14 @@ rather than dropped.
 | --- | --- |
 | P0 correctness debt | done — plus five defects the audit had not predicted |
 | P2m one catalogue | done — widgets, option rows and field types share one table |
-| P1 view editor | done — adds and removes fields, buttons, tabs, groups |
+| P1 view editor | done — adds and removes fields, buttons, tabs, groups; then done again as a drag-and-drop console (see §P1, "what changed") |
 | P2 fields & widgets | done — presets, related fields, computed fields |
 | P4 feature packs | done — registry, six new features, two finished |
 | P3 view types | done — discovery from `get_view_info`, plus pivot/graph/activity/timeline |
 | P5 automations | done — surface, plus code graduation (§X2) |
 | P6 PDF reports | done — create, patch a core report, edit as source |
 | P7 approval rules | done — enabling, rule serialization, and the constraint stated |
+| X3 studio shell | done — the console: one full-screen surface, tabs registered by every addon |
 
 Three enabling capabilities were built that the plan did not anticipate, each
 because a phase turned out to need it:
@@ -239,6 +240,16 @@ One gesture and one component, with the tray appearing only in the first case. H
 **1.8 Groups visibility.** _Allow_ and _Forbid visibility to groups_ map to the `groups` attribute, which is already xmlid-based and therefore serializes correctly with no new machinery.
 
 **1.9 Conditional invisible / required / readonly.** In 18.0 these attributes take a **Python expression**, not a domain — `attrs` was removed in 17.0. So the editor must emit an expression. Build it on core's `DomainSelector`, translating the condition tree to an expression, with a raw-expression escape hatch and server-side validation before write. Verify the round trip (expression → tree → expression) is stable before shipping; where it is not for some operator, fall back to raw-with-validation for that case rather than silently rewriting what the user typed.
+
+**What changed.** The editor above was click-driven — a palette anchored on the selection, `move_node` for list columns only, no redo, no full-screen — and it was rebuilt as the **studio console** (`app_builder_view/static/src/console/`) once the rest of the plan had landed. The parts of this phase that were a click are a gesture now:
+
+-   **1.1 became a token.** The descriptor a client sends is `{kind: "node", token, arch_version}`, minted by `studio.view.editor.canvas()` on the combined arch and resolved by re-stamping it (`tools/canvas_stamp.py`). The invariant held: the browser never holds an xpath, and `locate_target`'s legacy `{kind, name|index}` descriptors still work.
+-   **1.2 and 1.6 are drags.** Existing fields, new field types, and Tabs, Columns, Group, Separator and Button are tiles dragged onto the real view; a leaf of the view is dragged directly and a container by the grip on its selection frame; list headings reorder and take drops between them; a kanban card's `main`/`aside`/`footer` take drops and every card follows. One `drop_at` RPC per drop, one transaction, files written once.
+-   **1.4 is a ghost.** A new field dropped on a Python-owned model is staged on the draft with an anchor, and the canvas shows a pending widget *in place* — "N pending · Apply" is the tray. On a live model the full picker vocabulary creates the field and places it in one call, disk written after the database. Relational, selection and related tiles open the field editor first.
+-   **1.3 confirms by count**: removing a container comes back as `StudioConfirmRequired` with what it would take, and the client asks with that number.
+-   **Undo got a redo**, per base view, and the extension view survives its own creation being undone.
+
+Still open here: inline x2many subviews are shown but not droppable; a `t-esc` kanban card has no parts to aim at; and the console is not yet tested against a 19 server (`FORWARD_COMPAT.md`).
 
 * * *
 
@@ -391,7 +402,7 @@ It is still last in the ordering, because nothing else in the plan depends on it
 
 **X2 — Code graduation.** `ir.actions.server.code` is a sandboxed string in Odoo, permanently. We already promote a compute string to a real `@api.depends` method when a model graduates to Python; do the same for automation code — a real method in the package, reviewable, testable, breakpoint-able, with the server action calling it. The machinery exists, so this is cheap, and it is the clearest instance in the plan of the thing the whole project claims.
 
-**X3 — A studio shell.** The way in today is the Studio root menu plus a cog item. Once reports, automations, webhooks and approvals exist, they need one surface scoped to _the model in view_ — otherwise they are discoverable only by people who already read the technical menu. Not a feature; the thing that makes the features findable. Worth doing after P5, when there are three surfaces to unify and the shape is obvious.
+**X3 — A studio shell.** _Done, as the console._ The way in was the Studio root menu plus a cog item; once reports, automations, webhooks and approvals existed they needed one surface scoped to _the model in view_, or they were discoverable only by people who already read the technical menu. The console is that surface: full-screen, entered from the systray toggle, the cog item or the Studio menu, with a top bar whose tabs come from a registry (`app_builder.console_tabs`) — Views built in, Automations / Webhooks / Access Control / Filter Rules / Edit Menu from `app_builder_ui`, Reports from `app_builder_report`, Approvals from `app_builder_approval`, New Model from `app_builder_model` — a view switcher fed by `addable_view_types`, and Close. Tabs other than Views navigate with `doAction` and return through the breadcrumb; embedding them as panes, and folding the composer in, is the next step.
 
 **X4 — Rename with migration.** Odoo's answer to renaming a field is to remove it from every view, edit it in Settings → Technical, and add it back everywhere. We already generate pre-migrations for dropped columns (`tools/migrationgen.py`); extending that to renames deletes the whole dance.
 
@@ -415,4 +426,4 @@ Relative sizes, not calendar estimates.
 | P6 PDF reports | XL | — |
 | P7 approval rules | M | — |
 | X1, X2, X4, X5 | S each | — |
-| X3 studio shell | M | after P5 |
+| X3 studio shell | M | after P5 — done |

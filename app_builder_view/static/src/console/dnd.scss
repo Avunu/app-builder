@@ -1,0 +1,218 @@
+// Dragging: the chip that follows the pointer, the zones a drop can land in,
+// and what the rest of the console does meanwhile -- the sidebar dims, the
+// hover and selection outlines step aside, the accepting containers show
+// their edges.
+
+$o-studio-dnd-brand: var(--o-color-primary, #714b67);
+
+// -- the helper ---------------------------------------------------------------
+
+// What the hook moves: a small box whose top-left corner is the pointer. It
+// is what the zones are matched against, so it stays small; the chip the
+// user sees hangs off it, out from under the pointer.
+.o_studio_drag_hit {
+    position: fixed;
+    z-index: 1100;
+    background: transparent;
+    pointer-events: auto;
+}
+
+.o_studio_drag_chip {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 200px;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid $o-studio-dnd-brand;
+    border-radius: 4px;
+    background: #fff;
+    color: #212529;
+    font-size: 12px;
+    line-height: 1.2;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    transform: rotate(-3deg);
+    transform-origin: 0 0;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+
+    > i {
+        flex: 0 0 auto;
+        width: 16px;
+        text-align: center;
+        color: $o-studio-dnd-brand;
+    }
+
+    .o_studio_chip_label {
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-weight: 600;
+    }
+
+    .o_studio_chip_caption {
+        display: none;
+        flex: 0 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: rgba(0, 0, 0, 0.6);
+    }
+
+    &.o_studio_chip_has_caption {
+        .o_studio_chip_label {
+            flex: 0 1 auto;
+        }
+
+        .o_studio_chip_caption {
+            display: inline;
+        }
+    }
+}
+
+// -- the zones ------------------------------------------------------------------
+
+.o_studio_overlay .o_studio_zones {
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    overflow: visible;
+
+    > * {
+        position: absolute;
+        box-sizing: border-box;
+    }
+}
+
+// A zone has real size -- the hit area -- and draws a thinner bar inside
+// it, so a tour can find it and a person can aim at it.
+.o_studio_dropzone {
+    pointer-events: none;
+
+    &::before {
+        content: "";
+        position: absolute;
+        border-radius: 3px;
+        background: rgba(113, 75, 103, 0.35);
+        transition: background 80ms;
+    }
+
+    // A bar across a column: 6px tall, the width of the zone.
+    &.o_studio_dz_y::before {
+        left: 0;
+        right: 0;
+        top: 4px;
+        height: 6px;
+    }
+
+    // A bar between things side by side: 6px wide, the height of the zone.
+    &.o_studio_dz_x::before {
+        top: 0;
+        bottom: 0;
+        left: 4px;
+        width: 6px;
+    }
+
+    // An empty container: the whole box, dashed.
+    &.o_studio_dz_inside {
+        border: 1px dashed rgba(113, 75, 103, 0.45);
+        border-radius: 3px;
+
+        &::before {
+            display: none;
+        }
+    }
+
+    // The one the drop would land in.
+    &.o_studio_dz_active {
+        &::before {
+            background: $o-studio-dnd-brand;
+            box-shadow: 0 0 0 1px #fff;
+        }
+
+        &.o_studio_dz_y::before {
+            top: 5px;
+            height: 4px;
+        }
+
+        &.o_studio_dz_x::before {
+            left: 5px;
+            width: 4px;
+        }
+
+        // The dot at the start of the active bar.
+        &.o_studio_dz_y::after,
+        &.o_studio_dz_x::after {
+            content: "";
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: $o-studio-dnd-brand;
+            box-shadow: 0 0 0 1px #fff;
+        }
+
+        &.o_studio_dz_y::after {
+            left: -4px;
+            top: 3px;
+        }
+
+        &.o_studio_dz_x::after {
+            top: -4px;
+            left: 3px;
+        }
+
+        &.o_studio_dz_inside {
+            border-style: solid;
+            border-color: $o-studio-dnd-brand;
+            background: rgba(113, 75, 103, 0.08);
+        }
+    }
+}
+
+// Every container that would take the drop shows its edges.
+.o_studio_dz_container {
+    outline: 1px dashed rgba(113, 75, 103, 0.4);
+    outline-offset: -1px;
+    pointer-events: none;
+}
+
+// -- the rest of the console while dragging --------------------------------------
+
+.o_studio_dragging {
+    .o_studio_sidebar {
+        opacity: 0.55;
+    }
+
+    .o_studio_overlay {
+        .o_studio_hover,
+        .o_studio_selection {
+            display: none;
+        }
+    }
+
+    // The canvas is not for clicking now.
+    .o_studio_canvas {
+        cursor: grabbing;
+    }
+}
+
+// The tile being dragged stays where it is, faded, until the drop.
+.o_studio_tile.o_dragged {
+    opacity: 0.4;
+}
+
+// A tile lifts a hair on hover, as something that can be picked up.
+.o_studio_tile.o_studio_draggable:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.o_studio_drag_hint {
+    margin-left: 4px;
+    opacity: 0.8;
+}

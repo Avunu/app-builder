@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.TopBar">
+    <div class="o_studio_top_bar">
+        <div class="o_studio_crumb_bar">
+            <i class="fa fa-magic me-2 opacity-75"/>
+            <span class="o_studio_crumb_model" t-esc="modelLabel"/>
+            <span class="mx-1 opacity-50">›</span>
+            <span class="o_studio_crumb_view" t-esc="viewTypeLabel"/>
+        </div>
+
+        <nav class="o_studio_tabs" aria-label="Console">
+            <button t-foreach="tabs" t-as="tab" t-key="tab.key" type="button"
+                    class="o_studio_top_tab" t-att-class="{ active: tab.key === 'views' }"
+                    t-att-data-tab="tab.key"
+                    t-on-click="() => this.openTab(tab)">
+                <t t-esc="tab.label"/>
+            </button>
+        </nav>
+
+        <div class="o_studio_switcher" t-if="switcher.length">
+            <button t-foreach="switcher" t-as="entry" t-key="entry.key" type="button"
+                    class="o_studio_switch" t-att-class="{ active: entry.active, add: entry.add }"
+                    t-att-data-view-type="entry.type"
+                    t-att-data-tooltip="entry.label"
+                    t-att-disabled="model.busy"
+                    t-on-click="() => this.onSwitch(entry)">
+                <i t-att-class="entry.icon"/>
+                <i t-if="entry.add" class="fa fa-plus o_studio_switch_plus"/>
+            </button>
+        </div>
+
+        <div class="o_studio_top_actions">
+            <button type="button" class="o_studio_top_button o_studio_undo"
+                    t-att-disabled="!undoEntry or model.busy"
+                    t-att-data-tooltip="undoTooltip"
+                    t-on-click="() => this.onUndo()">
+                <i class="fa fa-undo"/><span class="ms-1">Undo</span>
+            </button>
+            <button type="button" class="o_studio_top_button o_studio_redo"
+                    t-att-disabled="!redoEntry or model.busy"
+                    t-att-data-tooltip="redoTooltip"
+                    t-on-click="() => this.onRedo()">
+                <i class="fa fa-repeat"/><span class="ms-1">Redo</span>
+            </button>
+            <span class="o_studio_status" t-attf-class="o_studio_status_{{ status.cls }}"
+                  t-att-data-tooltip="status.tooltip"
+                  t-att-role="status.cls === 'pending' ? 'button' : undefined"
+                  t-on-click="() => this.onStatusClick()">
+                <i t-if="status.cls === 'saved'" class="fa fa-check me-1"/>
+                <i t-elif="status.cls === 'saving'" class="fa fa-circle-o-notch fa-spin me-1"/>
+                <i t-elif="status.cls === 'error'" class="fa fa-exclamation-triangle me-1"/>
+                <i t-elif="status.cls === 'dragging'" class="fa fa-arrows me-1"/>
+                <i t-elif="status.cls === 'pending'" class="fa fa-clock-o me-1"/>
+                <t t-esc="status.label"/>
+            </span>
+            <t t-if="pendingCount and !model.drag">
+                <button type="button" class="o_studio_top_button o_studio_apply"
+                        t-att-disabled="model.busy or model.applying"
+                        t-att-data-tooltip="applyTooltip || undefined"
+                        t-on-click="() => this.openApply()">
+                    <i class="fa fa-bolt"/><span class="ms-1">Apply</span>
+                </button>
+                <button type="button" class="o_studio_top_button o_studio_discard"
+                        t-att-disabled="model.busy or model.applying"
+                        t-on-click="() => this.onDiscard()">
+                    <i class="fa fa-trash-o"/><span class="ms-1">Discard</span>
+                </button>
+            </t>
+            <button type="button" class="o_studio_top_button o_studio_close"
+                    t-on-click="() => this.props.onClose()">
+                <i class="fa fa-times"/><span class="ms-1">Close</span>
+            </button>
+        </div>
+    </div>
+</t>
+
+</templates>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!-- The console from the Studio menu, with nothing in hand. The cog item
+         and the systray know which view the user is looking at; a menu does
+         not, so this opens the form of the first model the suggested package
+         owns that has one (the model a builder is most likely here for) and
+         falls back to Contacts, which every database has. Either way the
+         switcher and the tabs take it from there, and the console says so
+         in a banner (`opened_from`), since a form nobody asked for needs a
+         word on why it is on screen. Computed in a server action
+         rather than declared as a client action, because which package
+         that is cannot be known when the XML is written. -->
+    <record id="studio_console_action" model="ir.actions.server">
+        <field name="name">Console</field>
+        <field name="model_id" ref="model_studio_view_editor"/>
+        <field name="state">code</field>
+        <field name="code">
+model_name = "res.partner"
+package = env["studio.package"]._suggested()
+candidates = []
+if package:
+    candidates = sorted(package._owned_model_names()) + package.model_ids.mapped("model")
+for name in candidates:
+    if name in env and env["ir.ui.view"].default_view(name, "form"):
+        model_name = name
+        break
+params = {"model": model_name, "view_type": "form", "opened_from": "menu"}
+action = {
+    "type": "ir.actions.client",
+    "tag": "app_builder_console",
+    "name": "Console",
+    "target": "fullscreen",
+    "params": params,
+    "context": params,
+}
+        </field>
+    </record>
+
+    <menuitem id="menu_studio_console"
+              name="Console"
+              parent="app_builder_base.menu_studio_root"
+              action="studio_console_action"
+              sequence="5"/>
+</odoo>

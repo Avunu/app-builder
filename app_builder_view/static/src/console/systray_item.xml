@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.StudioSystrayItem">
+    <div t-if="target" class="o_studio_systray_item">
+        <button type="button" class="o_studio_systray_toggle"
+                t-att-data-tooltip="tooltip"
+                t-on-click="() => this.open()">
+            <i class="fa fa-magic"/>
+            <span class="o_studio_systray_label d-none d-md-inline" t-esc="label"/>
+        </button>
+    </div>
+</t>
+
+</templates>

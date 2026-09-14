@@ -1,0 +1,173 @@
+// The canvas: a neutral ground, the real view at its natural width, and the
+// overlay drawn on top of it -- never a change to the view itself.
+
+.o_studio_canvas {
+    position: relative;
+    flex: 1 1 auto;
+    overflow: auto;
+    background: var(--o-webclient-background-color, #f8f9fa);
+    // Every click selects instead of acting, and the cursor should say so
+    // before the user finds out by clicking.
+    cursor: pointer;
+
+    .o_studio_canvas_ground {
+        min-height: 100%;
+        min-width: fit-content;
+    }
+
+    // The view's own chrome that means nothing on a canvas. The control panel
+    // stays mounted for a form -- the smart buttons render in it -- so what
+    // is hidden is hidden by class, not by leaving the panel out.
+    .o_control_panel {
+        .o_cp_pager,
+        .o_cp_switch_buttons,
+        .o_control_panel_breadcrumbs_actions,
+        .o_control_panel_main_buttons,
+        .o_control_panel_navigation,
+        .o_form_status_indicator,
+        .o_cp_action_menus {
+            display: none !important;
+        }
+    }
+
+    // A read-only form hides every field the record leaves empty, which is
+    // right for reading and wrong for building: the field is in the view
+    // whether or not this record filled it in, and the builder has to be
+    // able to point at it.
+    .o_form_view .o_field_widget.o_field_empty {
+        display: var(--fieldWidget-display, inline-block);
+        min-height: 1.5em;
+        min-width: 1em;
+    }
+
+    // A hidden node the canvas was asked to show anyway: there, and dimmed.
+    .o_studio_invisible {
+        opacity: 0.45;
+    }
+
+    // A model with no records is shown with sample ones, which the views
+    // fade to a whisper and take the pointer away from -- right for a
+    // board with nothing on it, wrong for one being built: the cards are
+    // what is being pointed at and dragged from. The note in the corner
+    // says what they are; the "nothing here yet" helper the view lays over
+    // them would say it a second time, in the way. Under the ground, so
+    // the rule outweighs the views' own, which name the view and the
+    // renderer.
+    .o_studio_canvas_ground .o_view_sample_data {
+        .o_kanban_record,
+        .o_data_row,
+        .o_list_footer,
+        .o_group_header {
+            opacity: 1;
+            pointer-events: auto;
+            user-select: none;
+        }
+
+        .o_view_nocontent {
+            display: none;
+        }
+    }
+
+    .o_studio_canvas_note {
+        position: sticky;
+        top: 8px;
+        float: right;
+        margin: 0 8px 0 0;
+        padding: 2px 8px;
+        font-size: 11px;
+        line-height: 18px;
+        color: #6c757d;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid #dee2e6;
+        border-radius: 3px;
+        z-index: 6;
+        pointer-events: none;
+    }
+}
+
+// The layer the canvas owns. Nothing in it takes the pointer except the
+// selection frame's own controls, so a click through it still selects.
+.o_studio_overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+
+    > * {
+        position: absolute;
+        box-sizing: border-box;
+    }
+
+    .o_studio_hover {
+        outline: 2px solid rgba(113, 75, 103, 0.55);
+        outline-offset: -2px;
+        border-radius: 2px;
+    }
+
+    .o_studio_selection {
+        outline: 2px solid var(--o-color-primary, #714b67);
+        outline-offset: -1px;
+        border-radius: 2px;
+
+        &.o_studio_invisible_node {
+            outline-style: dashed;
+        }
+
+        .o_studio_tag {
+            position: absolute;
+            top: -22px;
+            left: -2px;
+            padding: 1px 8px;
+            font-size: 11px;
+            line-height: 18px;
+            white-space: nowrap;
+            color: #fff;
+            background: var(--o-color-primary, #714b67);
+            border-radius: 3px 3px 0 0;
+            pointer-events: auto;
+        }
+
+        .o_studio_grip,
+        .o_studio_remove {
+            position: absolute;
+            top: -22px;
+            width: 20px;
+            height: 20px;
+            padding: 0;
+            border: 0;
+            font-size: 11px;
+            line-height: 20px;
+            color: #fff;
+            background: var(--o-color-primary, #714b67);
+            border-radius: 3px 3px 0 0;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        .o_studio_grip {
+            right: 22px;
+            cursor: grab;
+        }
+
+        .o_studio_remove {
+            right: 0;
+
+            &:hover {
+                background: #dc3545;
+            }
+        }
+    }
+
+    // The one kanban card a drag lays its zones out on, standing in for
+    // the template: dashed, so the user knows which card to aim at, and
+    // that every card will follow.
+    .o_studio_dz_template {
+        outline: 2px dashed var(--o-color-primary, #714b67);
+        outline-offset: 2px;
+        border-radius: 3px;
+        pointer-events: none;
+    }
+}

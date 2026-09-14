@@ -2,9 +2,10 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """What you can change about the thing you selected, as data.
 
-These lived in ``static/src/wysiwyg/options.js`` as a registry of objects
-carrying functions -- ``choices(target, context)``, ``when(target)``,
-``placeholder(target)``. That worked while there were five groups, and it meant
+These lived in the client -- today ``static/src/console/options.js`` -- as a
+registry of objects carrying functions: ``choices(target, context)``,
+``when(target)``, ``placeholder(target)``. That worked while there were five
+groups, and it meant
 the composer and the view editor described the same product from two files that
 could not be compared.
 

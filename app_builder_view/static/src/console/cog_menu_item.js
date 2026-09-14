@@ -49,19 +49,33 @@ export class EditThisView extends Component {
         // viewId is deliberately allowed to be false. An ordinary action does
         // not pin one -- view_mode="list,form" resolves its views at load time
         // -- so the model and the view type are what we can always supply, and
-        // the server asks core's own default_view for the rest.
+        // the server asks core's own default_view for the rest. The record on
+        // screen and the action travel too, so the console renders the record
+        // the user was looking at and Close brings them back to it.
+        const controller = this.action.currentController;
+        const state = (controller && controller.currentState) || {};
         const params = {
             view_id: config.viewId || false,
             res_model: config.resModel,
+            model: config.resModel,
             view_type: config.viewType,
+            action_id: config.actionId || false,
+            res_id: state.resId || false,
         };
         this.action.doAction({
             type: "ir.actions.client",
-            tag: "app_builder_view_wysiwyg",
+            tag: "app_builder_console",
             name: `Edit ${config.viewType} view`,
-            params,
-            // Also in context so the editor survives a page reload from its own
-            // URL, the same way the model composer does.
+            // The action this view belongs to, as the action service holds
+            // it -- context evaluated, search state on it -- so Close can
+            // run it again for a list or kanban, whose restored controller
+            // would otherwise read records with the fields it was opened
+            // with and show a new one blank. In params only: an action
+            // object is not context to send with every request, and not
+            // something a URL carries.
+            params: { ...params, previous_action: controller ? controller.action : null },
+            // Also in context so the console survives a page reload from its
+            // own URL, the same way the model composer does.
             context: params,
         });
     }

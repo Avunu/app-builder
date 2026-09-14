@@ -385,31 +385,145 @@ Timeline, and one running enterprise sees Gantt and Cohort, without this
 addon depending on any of them. A type the builder has no scaffold for
 is listed and disabled with that as the reason, because “we cannot make
 one yet” is true and different from “no such thing”.</p>
-<p>Fields, buttons, tabs and groups can be added and removed, not only
-configured — and because every edit becomes a patch, that works on core
-screens as readily as on your own. Where a new node lands is decided
-from what you have selected: a container takes a child, anything else
-takes a sibling, and the panel says which before you click.</p>
-<p>The editor never asks you to type an xpath: the target is picked from a
-tree of the view’s nodes computed on the server, preferring identifying
-predicates (<tt class="docutils literal"><span class="pre">//field[&#64;name='x']</span></tt>) over positional ones (<tt class="docutils literal">//div[3]</tt>)
-so a picked target survives another module extending the same view.</p>
+<p>Editing happens in a <strong>console</strong>: full-screen, the real view rendered on
+a canvas with a real record in it, and a sidebar of Add, View and
+Properties. Fields, buttons, tabs, groups and columns are dragged from
+the sidebar onto the view and land exactly where they are dropped; what
+is already there is dragged to move it, between groups, across tabs,
+into a kanban card. Because every edit becomes a patch, that works on
+core screens as readily as on your own. Undo and redo walk the edits
+back and forward, and every change is on disk before the status pill
+says so.</p>
+<p>The console never asks you for an xpath and never computes one in the
+browser. The server names every node of the view before it is rendered
+and edits the node you pointed at, preferring identifying locators
+(<tt class="docutils literal"><span class="pre">//field[&#64;name='x']</span></tt>) over positional ones (<tt class="docutils literal">//div[3]</tt>) so an edit
+survives another module extending the same view — and if the view
+changed under you, the drop is refused, the canvas refreshed, and you
+are asked to try again rather than have it land somewhere else.</p>
 <p>Invalid edits are rejected by Odoo’s own view validator before anything
 is written, and its message is shown verbatim.</p>
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">
-<li><a class="reference internal" href="#bug-tracker" id="toc-entry-1">Bug Tracker</a></li>
-<li><a class="reference internal" href="#credits" id="toc-entry-2">Credits</a><ul>
-<li><a class="reference internal" href="#authors" id="toc-entry-3">Authors</a></li>
-<li><a class="reference internal" href="#contributors" id="toc-entry-4">Contributors</a></li>
-<li><a class="reference internal" href="#maintainers" id="toc-entry-5">Maintainers</a></li>
+<li><a class="reference internal" href="#usage" id="toc-entry-1">Usage</a><ul>
+<li><a class="reference internal" href="#the-sidebar" id="toc-entry-2">The sidebar</a></li>
+<li><a class="reference internal" href="#saving-undoing-applying" id="toc-entry-3">Saving, undoing, applying</a></li>
+<li><a class="reference internal" href="#around-the-view" id="toc-entry-4">Around the view</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#known-issues-roadmap" id="toc-entry-5">Known issues / Roadmap</a><ul>
+<li><a class="reference internal" href="#known-limits" id="toc-entry-6">Known limits</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#bug-tracker" id="toc-entry-7">Bug Tracker</a></li>
+<li><a class="reference internal" href="#credits" id="toc-entry-8">Credits</a><ul>
+<li><a class="reference internal" href="#authors" id="toc-entry-9">Authors</a></li>
+<li><a class="reference internal" href="#contributors" id="toc-entry-10">Contributors</a></li>
+<li><a class="reference internal" href="#maintainers" id="toc-entry-11">Maintainers</a></li>
 </ul>
 </li>
 </ul>
 </div>
+<div class="section" id="usage">
+<h1><a class="toc-backref" href="#toc-entry-1">Usage</a></h1>
+<p>Open any list, form or kanban and click <strong>Studio</strong> in the top bar, or
+pick <strong>Edit this view</strong> from the cog menu: the console opens full-screen
+on the view you were looking at, with the record you were looking at in
+it. <strong>Studio → Console</strong> opens it with nothing in hand, on the form of
+the first model your package owns, and the view switcher takes it from
+there.</p>
+<div class="section" id="the-sidebar">
+<h2><a class="toc-backref" href="#toc-entry-2">The sidebar</a></h2>
+<ul class="simple">
+<li><strong>Add</strong> holds three groups of tiles: <strong>Components</strong> (Tabs, Columns,
+Group, Separator, Button), <strong>New Fields</strong> (one per field type the
+package can make; a type it cannot is shown disabled with the reason)
+and <strong>Existing Fields</strong> (every field of the model not yet on the view,
+searchable). Drag a tile onto the canvas: bars appear between the
+elements that can take it, the chip names the spot under the pointer —
+“after Email”, “into Notes”, “at the end of the sheet” — and dropping
+on nothing does nothing. Resting on a notebook tab while dragging
+switches to it.</li>
+<li><strong>View</strong> edits the view’s own settings, shows invisible elements when
+asked, and shows the source of what this package has written for the
+view together with its recent changes.</li>
+<li><strong>Properties</strong> opens when you click something. It lists the element’s
+options as label / control rows — the same rows for a core field and
+one you added — and, for a field, its definition: label, help,
+required, the values of a selection. A field the package owns is
+edited in place; a core field shows what it is. <strong>Remove from view</strong>
+is at the bottom, and removing a group asks first, with the number of
+fields it would take.</li>
+</ul>
+<p>Moving is a drag too: pick up a field, a button or a tab and drop it
+where it should be; a group or a notebook is picked up by the grip on
+its selection frame, so that a click on it still selects what it holds.
+List columns reorder by dragging their headings, and take a dropped
+field between them. In a kanban the drop zones are laid out on one card,
+outlined as the template’s stand-in, and a drop into any card edits the
+template — every card follows.</p>
+</div>
+<div class="section" id="saving-undoing-applying">
+<h2><a class="toc-backref" href="#toc-entry-3">Saving, undoing, applying</a></h2>
+<p>Every edit is written when it is made: <strong>Saved</strong> in the status pill
+means the inheriting view is on disk. <strong>Undo</strong> and <strong>Redo</strong> (Ctrl+Z,
+Ctrl+Shift+Z) walk the view’s own history, whoever made the edits.</p>
+<p>A <strong>new field</strong> on a model the package owns as Python is the one thing
+that cannot be immediate: a real column needs the class re-imported. So
+the drop stages the field and shows it <em>in place</em> as a pending ghost,
+the pill reads “N pending · Apply”, and <strong>Apply</strong> places everything
+staged in one reload. Until then the ghost can be moved, re-anchored or
+discarded like anything else. On a core model, or on an <tt class="docutils literal">x_</tt> model, a
+new field is created and placed at once.</p>
+</div>
+<div class="section" id="around-the-view">
+<h2><a class="toc-backref" href="#toc-entry-4">Around the view</a></h2>
+<p>The top bar’s tabs — Views, Reports, Automations, Webhooks, Access
+Control, Filter Rules, Approvals, Edit Menu, New Model — are the
+studio’s other surfaces scoped to the model in front of you; the ones
+that are their own screen open with the breadcrumb leading back. The
+view switcher lists the model’s other views and offers to add the types
+the package can scaffold. <strong>Close</strong> returns to where you came from, with
+the edits already showing.</p>
+</div>
+</div>
+<div class="section" id="known-issues-roadmap">
+<h1><a class="toc-backref" href="#toc-entry-5">Known issues / Roadmap</a></h1>
+<div class="section" id="known-limits">
+<h2><a class="toc-backref" href="#toc-entry-6">Known limits</a></h2>
+<ul class="simple">
+<li><strong>Inline sub-views are shown but not droppable.</strong> A one2many’s
+embedded list or kanban is rendered on the canvas, but a click inside
+it selects the field that holds it: its nodes belong to another model
+and are edited in that model’s own view.</li>
+<li><strong>A kanban card written with ``t-esc`` has no parts to aim at.</strong> Only
+a <tt class="docutils literal">&lt;field&gt;</tt> puts anything addressable in the DOM; a click on such a
+part selects the nearest node that is one – the card itself, as a
+rule – and the parts are edited as source.</li>
+<li><strong>Models that patch their arch at read time are shown as written.</strong> An
+analytic line’s plan columns are inserted by the model in
+<tt class="docutils literal">_get_view()</tt> — which Odoo’s own studio also opts out of — and the
+canvas shows the view as it is defined, not as that model decorates
+it.</li>
+<li><strong>Master’s ``card`` view type is not handled yet.</strong> From the next
+Odoo, a kanban may point at a card that lives in a separate view; the
+node table reserves <tt class="docutils literal">view_id</tt> for it (see <tt class="docutils literal">FORWARD_COMPAT.md</tt> at
+the repository root).</li>
+<li><strong>Two consoles on one package</strong> are serialised only by the database
+transaction and the arch-version check: the second drop on a view the
+first just changed is refused and the canvas refreshed, never written
+twice.</li>
+<li><strong>The 19.0 port has been read, not run.</strong> Every version difference the
+console knows is in one file (<tt class="docutils literal">static/src/console/compat.js</tt>), each
+with the core lines that decide it, and the checklist for the Owl 3
+branch is in <tt class="docutils literal">FORWARD_COMPAT.md</tt>; a run against a 19 server is still
+to do.</li>
+</ul>
+</div>
+</div>
 <div class="section" id="bug-tracker">
-<h1><a class="toc-backref" href="#toc-entry-1">Bug Tracker</a></h1>
+<h1><a class="toc-backref" href="#toc-entry-7">Bug Tracker</a></h1>
 <p>Bugs are tracked on <a class="reference external" href="https://github.com/Avunu/app-builder/issues">GitHub Issues</a>.
 In case of trouble, please check there if your issue has already been reported.
 If you spotted it first, help us to smash it by providing a detailed and welcomed
@@ -417,21 +531,21 @@ If you spotted it first, help us to smash it by providing a detailed and welcome
 <p>Do not contact contributors directly about support or help with technical issues.</p>
 </div>
 <div class="section" id="credits">
-<h1><a class="toc-backref" href="#toc-entry-2">Credits</a></h1>
+<h1><a class="toc-backref" href="#toc-entry-8">Credits</a></h1>
 <div class="section" id="authors">
-<h2><a class="toc-backref" href="#toc-entry-3">Authors</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-9">Authors</a></h2>
 <ul class="simple">
 <li>Avunu LLC</li>
 </ul>
 </div>
 <div class="section" id="contributors">
-<h2><a class="toc-backref" href="#toc-entry-4">Contributors</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-10">Contributors</a></h2>
 <ul class="simple">
 <li>Kevin Shenk &lt;<a class="reference external" href="mailto:kevin&#64;avu.nu">kevin&#64;avu.nu</a>&gt; (<a class="reference external" href="https://avu.nu">https://avu.nu</a>)</li>
 </ul>
 </div>
 <div class="section" id="maintainers">
-<h2><a class="toc-backref" href="#toc-entry-5">Maintainers</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-11">Maintainers</a></h2>
 <p>This module is part of the <a class="reference external" href="https://github.com/Avunu/app-builder/tree/18.0/app_builder_view">Avunu/app-builder</a> project on GitHub.</p>
 <p>You are welcome to contribute.</p>
 </div>

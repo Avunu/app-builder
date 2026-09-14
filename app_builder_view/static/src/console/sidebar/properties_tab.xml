@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.PropertiesTab">
+    <div class="o_studio_properties">
+        <div t-if="!node" class="text-muted small p-2">
+            Click anything in the view to edit it — a field, a column heading,
+            a tab, or empty space for the view's own settings.
+        </div>
+        <t t-else="">
+            <nav t-if="crumbs.length" class="o_studio_crumbs small text-muted mb-2" aria-label="Ancestors">
+                <t t-foreach="crumbs" t-as="crumb" t-key="crumb.token">
+                    <a href="#" class="o_studio_crumb" t-on-click.prevent="() => this.model.select(crumb.token)"
+                       t-esc="crumb.label"/>
+                    <span class="mx-1">›</span>
+                </t>
+                <span class="fw-bold text-body" t-esc="model.tagFor(token)"/>
+            </nav>
+            <div t-if="node.hidden === 'groups'" class="alert alert-light small py-1" role="alert">
+                Hidden from you by its groups; still editable.
+            </div>
+
+            <!-- A pending field: staged on a draft, not in the arch. The
+                 panel shows what was staged and edits it there; the ghost
+                 has no view attributes to offer rows for. -->
+            <t t-if="isPending and pendingField">
+                <div class="o_studio_section_title">Pending field</div>
+                <div class="o_studio_pending_card">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <i t-att-class="pendingIcon"/>
+                        <span class="fw-bold o_studio_pending_name" t-esc="pendingField.string"/>
+                        <small class="text-muted" t-esc="pendingField.typeLabel"/>
+                    </div>
+                    <small class="text-muted d-block mb-2">
+                        <t t-if="pendingField.resolved">Pending — appears here after Apply.</t>
+                        <t t-else="">Will be placed automatically after Apply.</t>
+                    </small>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary btn-sm flex-grow-1 o_studio_edit_pending"
+                                t-att-disabled="model.busy"
+                                t-on-click="(ev) => this.onEditPending(ev)">
+                            <i class="fa fa-pencil me-1"/>Edit definition
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm o_studio_remove_pending"
+                                t-att-disabled="model.busy"
+                                t-on-click="() => this.onRemovePending()">
+                            Remove
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        Drag the ghost to change where it will land. Apply from the
+                        status pill when the changeset is complete.
+                    </small>
+                </div>
+            </t>
+
+            <t t-elif="state.loading and !state.target">
+                <div class="text-muted small p-2"><i class="fa fa-circle-o-notch fa-spin me-1"/>Loading…</div>
+            </t>
+
+            <t t-else="">
+            <t t-foreach="panels" t-as="panel" t-key="panel.id">
+                <div class="o_studio_section_title" t-esc="panel.title"/>
+                <div class="o_studio_row" t-att-class="{ o_studio_row_definition: labelWritesDefinition(row) }" t-foreach="panel.rows"
+                     t-as="row" t-key="row.key"
+                     t-att-data-row="row.name">
+                    <label class="o_studio_row_label" t-esc="row.label" t-att-title="row.help"/>
+                    <div class="o_studio_row_content">
+                        <input t-if="row.type === 'toggle'" class="form-check-input mt-0"
+                               type="checkbox"
+                               t-att-checked="row.value"
+                               t-att-disabled="model.busy"
+                               t-on-change="(ev) => this.onToggle(row, ev)"/>
+                        <select t-elif="row.type === 'select'"
+                                class="form-select form-select-sm"
+                                t-att-disabled="model.busy"
+                                t-on-change="(ev) => this.onInput(row, ev)">
+                            <option t-foreach="row.choices" t-as="choice"
+                                    t-key="choice[0]" t-att-value="choice[0]"
+                                    t-att-selected="choice[0] === row.value"
+                                    t-esc="choice[1]"/>
+                        </select>
+                        <!-- Group visibility is a list of xmlids, because that
+                             is what the arch carries and what still resolves in
+                             the next database. -->
+                        <select t-elif="row.type === 'groups'" class="form-select form-select-sm"
+                                multiple="multiple" size="5"
+                                t-att-disabled="model.busy"
+                                t-on-change="(ev) => this.onMultiSelect(row, ev)">
+                            <option t-foreach="groupChoices" t-as="group"
+                                    t-key="group.xmlid" t-att-value="group.xmlid"
+                                    t-att-selected="row.value.includes(group.xmlid)"
+                                    t-esc="group.name"/>
+                        </select>
+                        <!-- A Python expression over the record, not a domain:
+                             `attrs` went away in 17.0 and these attributes are
+                             evaluated, not matched. -->
+                        <input t-elif="row.type === 'condition'"
+                               class="form-control form-control-sm font-monospace"
+                               type="text" t-att-value="row.value"
+                               placeholder="state == 'draft'"
+                               t-att-disabled="model.busy"
+                               t-on-change="(ev) => this.onInput(row, ev)"/>
+                        <input t-else="" class="form-control form-control-sm"
+                               type="text" t-att-value="rowValue(row)"
+                               t-att-placeholder="row.placeholder"
+                               t-att-disabled="model.busy"
+                               t-on-change="(ev) => this.onInput(row, ev)"/>
+                        <!-- The label of a manual field is the model's: renaming
+                             it here renames it on every view, and says so. -->
+                        <small t-if="labelWritesDefinition(row)" class="text-muted d-block o_studio_row_hint">
+                            Renames the field itself, on every view.
+                        </small>
+                    </div>
+                </div>
+            </t>
+
+            <!-- The field's definition: editable rows of ir.model.fields for
+                 a manual field, facts for a core one. -->
+            <t t-if="definitionRows.length">
+                <div class="o_studio_section_title">Field definition</div>
+                <div t-foreach="definitionRows" t-as="row" t-key="row.key"
+                     class="o_studio_row" t-att-data-definition="row.name">
+                    <label class="o_studio_row_label" t-esc="row.label"/>
+                    <div class="o_studio_row_content">
+                        <input t-if="row.type === 'toggle'" class="form-check-input mt-0"
+                               type="checkbox"
+                               t-att-checked="row.value"
+                               t-att-disabled="model.busy"
+                               t-on-change="(ev) => this.onDefinitionToggle(row, ev)"/>
+                        <t t-elif="row.type === 'selection'">
+                            <div t-foreach="selectionRows" t-as="value" t-key="value_index"
+                                 class="d-flex gap-1 mb-1 o_studio_selection_row">
+                                <input type="text" class="form-control form-control-sm"
+                                       t-att-value="value.label" placeholder="Draft"
+                                       t-att-disabled="model.busy"
+                                       t-on-input="(ev) => this.editSelectionRow(value_index, 'label', ev.target.value)"/>
+                                <input type="text" class="form-control form-control-sm font-monospace"
+                                       t-att-value="value.value" placeholder="draft"
+                                       t-att-disabled="model.busy"
+                                       t-on-input="(ev) => this.editSelectionRow(value_index, 'value', ev.target.value)"/>
+                                <button type="button" class="btn btn-link btn-sm text-danger p-1"
+                                        t-att-disabled="model.busy"
+                                        t-on-click="() => this.removeSelectionRow(value_index)">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-link btn-sm p-0"
+                                        t-att-disabled="model.busy"
+                                        t-on-click="() => this.addSelectionRow()">
+                                    <i class="fa fa-plus me-1"/>Add a value
+                                </button>
+                                <button t-if="selectionDirty" class="btn btn-primary btn-sm ms-auto o_studio_save_selection"
+                                        type="button"
+                                        t-att-disabled="model.busy"
+                                        t-on-click="() => this.saveSelection()">
+                                    Save values
+                                </button>
+                            </div>
+                        </t>
+                        <input t-else="" class="form-control form-control-sm"
+                               type="text" t-att-value="row.value"
+                               t-att-disabled="model.busy"
+                               t-on-change="(ev) => this.onDefinitionInput(row, ev)"/>
+                    </div>
+                </div>
+            </t>
+
+            <t t-if="facts.length">
+                <div class="o_studio_section_title">
+                    <t t-if="isManual">About the field</t>
+                    <t t-else="">Field definition</t>
+                </div>
+                <div t-foreach="facts" t-as="fact" t-key="fact.label" class="o_studio_row">
+                    <span class="o_studio_row_label" t-esc="fact.label"/>
+                    <div class="o_studio_row_content small text-muted" t-esc="fact.value"/>
+                </div>
+                <small t-if="!isManual" class="text-muted d-block">
+                    Defined in Python, so its definition is read-only here; the
+                    view can still relabel or hide it above.
+                </small>
+            </t>
+
+            <!-- Removing takes the node out of the rendered view via
+                 position="replace"; hiding leaves it there and still loading,
+                 which is usually what somebody means. Both are offered, so the
+                 difference is a choice rather than a discovery. -->
+            <div t-if="canRemove" class="mt-3">
+                <button class="btn btn-outline-danger btn-sm w-100 o_studio_remove_button"
+                        t-att-disabled="model.busy"
+                        t-on-click="() => this.onRemove()">
+                    Remove from view
+                </button>
+                <small class="text-muted d-block">
+                    Takes it off this screen only. To keep it loading but out of
+                    sight, use Hidden above.
+                </small>
+            </div>
+            </t>
+        </t>
+    </div>
+</t>
+
+</templates>

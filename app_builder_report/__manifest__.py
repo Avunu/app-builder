@@ -12,6 +12,10 @@
     # web.external_layout, web.internal_layout.
     "depends": ["app_builder_base", "app_builder_ui", "app_builder_view", "web"],
     "assets": {
+        "web.assets_backend": [
+            "app_builder_report/static/src/console_items.js",
+            "app_builder_report/static/src/console/**/*",
+        ],
         "web.assets_tests": [
             "app_builder_report/static/tests/tours/report_editor_tour.js",
         ],

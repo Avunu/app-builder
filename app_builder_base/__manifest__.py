@@ -1,7 +1,7 @@
 {
     "name": "App Builder Base",
     "summary": "Engine for visually built Odoo modules that live in source control",
-    "version": "18.0.1.3.0",
+    "version": "18.0.1.4.0",
     "category": "Technical",
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",

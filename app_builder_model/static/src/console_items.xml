@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <!-- The composer's popover, as the console's field editor. Three blocks
+         only mean something for a class attribute waiting for an Apply —
+         where the scaffolded views show the field, a computed value, and
+         a default, which is a class attribute too — and go when the field
+         is a row created on the spot, since the server refuses them there
+         by name; the closing line says which of the two is happening. -->
+    <t t-name="app_builder_model.ConsoleFieldEditor"
+       t-inherit="app_builder_model.FieldPopover" t-inherit-mode="primary">
+        <xpath expr="//div[hasclass('o_studio_field_popover_body')]" position="attributes">
+            <attribute name="class" add="o_studio_field_editor" separator=" "/>
+        </xpath>
+        <xpath expr="//div[button[contains(@t-on-click, 'toggleCompute')]]" position="attributes">
+            <attribute name="t-if">staged</attribute>
+        </xpath>
+        <xpath expr="//div[hasclass('border-top')]" position="attributes">
+            <attribute name="t-if">staged</attribute>
+        </xpath>
+        <xpath expr="//div[@t-if=&quot;shows('default')&quot;]" position="attributes">
+            <attribute name="t-if">staged and shows('default')</attribute>
+        </xpath>
+        <xpath expr="//div[hasclass('text-muted')][hasclass('mt-2')]" position="replace">
+            <div class="text-muted small mt-2">
+                <t t-if="staged">Staged only — nothing is written until you apply.</t>
+                <t t-else="">Created the moment you press Done.</t>
+            </div>
+        </xpath>
+    </t>
+
+</templates>

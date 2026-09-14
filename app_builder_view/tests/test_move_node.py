@@ -129,7 +129,21 @@ class TestMoveNode(StudioCase):
     def test_an_invalid_position_is_refused(self):
         self.package.studio_capture(self.view)
         with self.assertRaises(UserError):
-            self._move("x_name", "x_note", position="inside")
+            self._move("x_name", "x_note", position="replace")
+
+    def test_moving_inside_the_root_makes_it_the_last_column(self):
+        """Core plants its sentinel at the end of the target, so `inside` is
+        "append" -- the same in 18, 19 and master."""
+        self.package.studio_capture(self.view)
+        self.editor.move_node(
+            self.view.id,
+            self.package.id,
+            {"kind": "column", "name": "x_name"},
+            {"kind": "root"},
+            "inside",
+        )
+        self.view.invalidate_recordset()
+        self.assertEqual(self._columns(), ["x_when", "x_note", "x_name"])
 
     def test_a_move_is_undoable_like_any_other_edit(self):
         self.package.studio_capture(self.view)
@@ -143,3 +157,141 @@ class TestMoveNode(StudioCase):
 
         self.view.invalidate_recordset()
         self.assertEqual(self._columns(), ["x_name", "x_when", "x_note"])
+
+
+FORM_ARCH = """
+<form string="Demo">
+    <sheet>
+        <notebook>
+            <page string="Main" name="page_main">
+                <group name="g_left">
+                    <field name="x_name"/>
+                    <field name="x_when"/>
+                </group>
+                <group name="g_right"/>
+            </page>
+        </notebook>
+    </sheet>
+</form>
+"""
+
+
+@tagged("post_install", "-at_install")
+class TestMoveInside(StudioCase):
+    """Moving *into* a container, which a drop on an empty group asks for.
+
+    `inside` appends: there is no "inside, at index n" in core, so anything
+    between two children is a before/after on one of them. And a node cannot
+    go into its own subtree -- core would extract it, target and all, then
+    try to insert it into what it just removed, and lxml refuses with a bare
+    exception rather than a sentence.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.editor = self.env["studio.view.editor"]
+        self.package = self.make_package(name="x_move_in_pkg")
+        self.env["ir.model"].create(
+            {
+                "name": "Move Inside Demo",
+                "model": "x_move_in_demo",
+                "field_id": [
+                    Command.create(
+                        {"name": "x_name", "ttype": "char", "field_description": "Name"}
+                    ),
+                    Command.create(
+                        {"name": "x_when", "ttype": "date", "field_description": "When"}
+                    ),
+                ],
+            }
+        )
+        self.view = self.env["ir.ui.view"].create(
+            {
+                "name": "studio.move.inside.test",
+                "model": "x_move_in_demo",
+                "type": "form",
+                "arch": FORM_ARCH,
+            }
+        )
+        self.package.studio_capture(self.view)
+
+    def _group(self, name):
+        root = etree.fromstring(self.view.get_combined_arch().encode())
+        group = root.find(".//group[@name='%s']" % name)
+        return [child.get("name") for child in group]
+
+    def test_a_field_moved_inside_an_empty_group_becomes_its_child(self):
+        self.editor.move_node(
+            self.view.id,
+            self.package.id,
+            {"kind": "field", "name": "x_when"},
+            {"kind": "group", "name": "g_right"},
+            "inside",
+        )
+        self.view.invalidate_recordset()
+        self.assertEqual(self._group("g_right"), ["x_when"])
+        self.assertEqual(self._group("g_left"), ["x_name"], "moved, not copied")
+
+    def test_a_field_moved_inside_its_own_group_goes_last(self):
+        """Append semantics, pinned: a drop into a container the node is
+        already in is a reorder to the end, not a no-op."""
+        self.editor.move_node(
+            self.view.id,
+            self.package.id,
+            {"kind": "field", "name": "x_name"},
+            {"kind": "group", "name": "g_left"},
+            "inside",
+        )
+        self.view.invalidate_recordset()
+        self.assertEqual(self._group("g_left"), ["x_when", "x_name"])
+
+    def test_moving_a_page_into_a_group_it_contains_is_refused(self):
+        with self.assertRaises(UserError) as caught:
+            self.editor.move_node(
+                self.view.id,
+                self.package.id,
+                {"kind": "page", "name": "page_main"},
+                {"kind": "group", "name": "g_left"},
+                "inside",
+            )
+        self.assertIn("into itself", str(caught.exception))
+
+    def test_the_ancestor_guard_also_covers_raw_locators(self):
+        """apply_operation takes xpaths straight from a caller, so the guard
+        has to hold there too rather than only where descriptors are resolved.
+        """
+        # Not `assertRaises`: Odoo's wraps the block in a savepoint that is
+        # rolled back on the exception, and "untouched" would then hold
+        # whatever the operation had written before refusing.
+        try:
+            self.editor.apply_operation(
+                self.view.id,
+                self.package.id,
+                {
+                    "type": "move_node",
+                    "xpath": "//page[@name='page_main']",
+                    "target_xpath": "//group[@name='g_left']",
+                    "position": "inside",
+                },
+            )
+        except UserError as caught:
+            self.assertIn("into itself", str(caught))
+        else:
+            self.fail("a move into the node's own subtree has to be refused")
+        self.view.invalidate_recordset()
+        self.assertEqual(self._group("g_left"), ["x_name", "x_when"], "untouched")
+
+    def test_moving_a_group_into_its_own_page_is_allowed(self):
+        """The page is the group's ancestor, not its descendant: this is a
+        legitimate reorder to the end of the page."""
+        self.editor.move_node(
+            self.view.id,
+            self.package.id,
+            {"kind": "group", "name": "g_left"},
+            {"kind": "page", "name": "page_main"},
+            "inside",
+        )
+        self.view.invalidate_recordset()
+        root = etree.fromstring(self.view.get_combined_arch().encode())
+        page = root.find(".//page[@name='page_main']")
+        self.assertEqual([g.get("name") for g in page], ["g_right", "g_left"])

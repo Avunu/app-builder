@@ -18,6 +18,27 @@ from odoo.tools.translate import TranslationImporter
 from odoo.addons.app_builder_base.models.studio_package import UNLINK_ORDER
 
 
+def groups_field(env):
+    """The field that holds a user's groups, by the name this server gives it.
+
+    18 calls it ``groups_id``; 19 renamed it ``group_ids`` (``res.users``,
+    and the same rename on ``ir.ui.view``, ``ir.ui.menu`` and
+    ``ir.actions.act_window``). A test that spells one of them is a test
+    that stops importing on the other branch, and the suite is meant to run
+    on both -- so nothing new spells it, and this answers instead.
+    """
+    return "group_ids" if "group_ids" in env["res.users"]._fields else "groups_id"
+
+
+def join_groups(users, group_xmlids):
+    """Put ``users`` in the groups named by ``group_xmlids``, keeping the
+    ones they already have."""
+    env = users.env
+    users.write(
+        {groups_field(env): [Command.link(env.ref(xmlid).id) for xmlid in group_xmlids]}
+    )
+
+
 # Reverse dependency order for teardown: dependants before their dependencies,
 # so no unlink ever hits a restrict/cascade surprise.
 class _NamedBytesIO(io.BytesIO):
@@ -63,6 +84,20 @@ class StudioCase(TransactionCase):
         if installed:
             self.register_module(package.name)
         return package
+
+    def make_user(self, login, group_xmlids, **overrides):
+        """A user in exactly ``group_xmlids``, whichever field holds them
+        (``groups_field``)."""
+        User = self.env["res.users"]
+        values = {
+            "name": login,
+            "login": login,
+            groups_field(self.env): [
+                Command.set([self.env.ref(xmlid).id for xmlid in group_xmlids])
+            ],
+        }
+        values.update(overrides)
+        return User.create(values)
 
     def unwritable_path(self):
         """A path nothing can write to, whatever user the suite runs as.

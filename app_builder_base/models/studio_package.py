@@ -231,6 +231,24 @@ class StudioPackage(models.Model):
         writable = self.search([]).filtered("writable")
         return writable[:1] if len(writable) == 1 else self.browse()
 
+    @api.model
+    def _chosen(self, package_id=None):
+        """The package a caller has already chosen, else the suggested one.
+
+        The console shows one package in its top bar and records every
+        drop into it; a list it opens beside the canvas -- automations,
+        access rules -- has to record into the same one, or a rule made
+        there lands in whichever package ``_suggested`` names, which with
+        two writable packages is none. A choice that is not writable is
+        no choice: the suggestion stands in for it, as for a caller that
+        made none.
+        """
+        if package_id:
+            package = self.browse(package_id).exists()
+            if package and package.writable:
+                return package
+        return self._suggested()
+
     def _compute_record_count(self):
         for package in self:
             package.record_count = self.env["ir.model.data"].search_count(
@@ -929,7 +947,7 @@ class StudioPackage(models.Model):
                 paths,
             )
 
-    def studio_capture(self, records):
+    def studio_capture(self, records, write_files=True):
         """Take ownership of ``records`` and flush the package to disk.
 
         This is the single entry point every builder module calls after it
@@ -937,13 +955,21 @@ class StudioPackage(models.Model):
         the caller's transaction, so the database and the source tree either
         both advance or both roll back -- which is what lets us treat the DB
         write as an optimisation rather than a second source of truth.
+
+        ``write_files=False`` takes ownership without touching the disk, and
+        leaves the package marked as having a write pending. It is for a
+        caller that captures several things in one gesture -- a field, then
+        the view it lands in -- and wants the directory written once, last:
+        a file written for the first step and then a failure in the second
+        would leave source on disk for a change the transaction rolled back.
+        The caller owes the package an ``action_write_files()``.
         """
         self._assert_studio_manager()
         self.ensure_one()
         if not any(True for _rec in self._flatten(records)):
             return False
         self._assign(records)
-        if self.writable:
+        if write_files and self.writable:
             self.action_write_files()
         else:
             self.state = "dirty"

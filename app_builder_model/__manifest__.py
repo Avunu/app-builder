@@ -16,6 +16,8 @@
             "app_builder_model/static/src/composer/composer.scss",
             "app_builder_model/static/src/composer/field_popover.js",
             "app_builder_model/static/src/composer/field_popover.xml",
+            "app_builder_model/static/src/console_items.js",
+            "app_builder_model/static/src/console_items.xml",
         ],
         "web.assets_tests": [
             "app_builder_model/static/tests/tours/composer_tour.js",
