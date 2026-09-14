@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <templates xml:space="preserve">
 
-    <!-- The composer's popover, as the console's field editor. Three blocks
+    <!-- The field popover, as the console's field editor. Three blocks
          only mean something for a class attribute waiting for an Apply —
          where the scaffolded views show the field, a computed value, and
          a default, which is a class attribute too — and go when the field

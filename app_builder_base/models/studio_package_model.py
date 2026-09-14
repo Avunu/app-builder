@@ -111,21 +111,19 @@ class StudioPackageModel(models.Model):
     def action_compose(self):
         """Open the builder on this model.
 
-        The engine's answer is the composer -- the model as a list of fields.
-        ``app_builder_view`` points this at the console instead, where the
-        same draft is edited by dropping fields onto the model's form; the
-        override lives there because the engine cannot name a client action
-        it does not ship. ``action_compose_fields`` keeps the field list one
-        click away either way.
+        The builder is the console, and ``app_builder_view`` ships it, so the
+        override that returns it lives there: the engine cannot name a
+        client action it does not carry. What the engine can do is say so
+        rather than fail obscurely when nothing has overridden this -- a
+        shell caller, or a database with the view addon missing.
         """
         self.ensure_one()
-        return self.action_compose_fields()
-
-    def action_compose_fields(self):
-        """Open the composer: the model as a list of fields, whatever the
-        console does with the same draft."""
-        self.ensure_one()
-        return self.env["studio.model.draft"].open_action(self.id)
+        raise UserError(
+            _(
+                "Composing a model needs the studio console; install "
+                "app_builder_view, which app_builder_model depends on."
+            )
+        )
 
     def action_retry_parse(self):
         """Give a frozen model another chance after the file was fixed."""

@@ -1,6 +1,6 @@
 # Copyright 2026 Avunu LLC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
-"""The edit buffer: what the composer changes before anything is written.
+"""The edit buffer: what is staged on a Python model before anything is written.
 
 A new column needs the class re-imported, so the studio cannot make each
 keystroke live the way a manual field would. Rather than hide that, it is made
@@ -126,7 +126,7 @@ class StudioModelDraft(models.TransientModel):
         call and not this method's.
 
         Drafts are per user (``create_uid``; the model has no owner field
-        because the composer never needed one), so two people building the
+        because the editor never needed one), so two people building the
         same model do not see each other's tray. Companions are not
         candidates: they exist to serve another draft's edit.
 
@@ -171,23 +171,8 @@ class StudioModelDraft(models.TransientModel):
             )
         return draft.load()
 
-    @api.model
-    def open_action(self, package_model_id):
-        """The client action for editing one model."""
-        draft = self.open_for(self.env["studio.package.model"].browse(package_model_id))
-        return {
-            "type": "ir.actions.client",
-            "tag": "app_builder_composer",
-            "name": draft.model,
-            "params": {"draft_id": draft.id},
-            # URL-resumable: Apply rebuilds the registry, and a page that could
-            # not be reopened from its address would lose the session on every
-            # save.
-            "context": {"studio_draft_id": draft.id},
-        }
-
     def load(self):
-        """Everything the composer needs, in one round trip."""
+        """Everything the console needs of the draft, in one round trip."""
         self.ensure_one()
         spec = self._spec()
         placement = self._placement()
@@ -337,7 +322,7 @@ class StudioModelDraft(models.TransientModel):
     def _resolve_computed(self, values):
         """Give a compute body the method name and dependencies it needs.
 
-        The composer asks for the body, because that is the part somebody has an
+        The field editor asks for the body, because that is the part somebody has an
         opinion about. The method name is derived -- ``pycodegen`` already owns
         the convention and generating two different answers to "what is this
         method called" is how a graduated field stops being found.

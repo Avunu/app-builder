@@ -296,6 +296,95 @@ registry.category("web_tour.tours").add("app_builder_console_staged_field_tour",
             run: "click",
         },
         {
+            // The class itself, from the View tab: every field in the order
+            // it is written, the staged one marked, and the others editable
+            // the same way -- this is what the composer used to be.
+            content: "open the View tab",
+            trigger: ".o_studio_sidebar_tab[data-tab='view']",
+            run: "click",
+        },
+        {
+            content: "the model's fields are listed, in class order",
+            trigger: ".o_studio_view_tab .o_studio_model_field[data-field='x_name']:contains('Name')",
+        },
+        {
+            content: "the staged field is among them, marked new",
+            trigger: ".o_studio_view_tab .o_studio_model_field[data-field='new_decimal'] .o_studio_model_badge:contains('new')",
+        },
+        {
+            content: "edit an existing field's definition",
+            trigger: ".o_studio_view_tab .o_studio_model_field[data-field='x_note'] .o_studio_model_edit",
+            run: "click",
+        },
+        {
+            content: "the editor opened on it",
+            trigger: ".o_studio_field_editor_popover .o_studio_field_editor input[type='text']:eq(0):value('Note')",
+        },
+        {
+            content: "relabel it",
+            trigger: ".o_studio_field_editor_popover .o_studio_field_editor input[type='text']:eq(0)",
+            run: "edit Remarks",
+        },
+        {
+            content: "done",
+            trigger: ".o_studio_field_editor_popover button:contains('Done')",
+            run: "click",
+        },
+        {
+            content: "the list shows the edit, marked",
+            trigger: ".o_studio_view_tab .o_studio_model_field[data-field='x_note']:contains('Remarks') .o_studio_model_badge:contains('edited')",
+        },
+        {
+            content: "two things pending now",
+            trigger: ".o_studio_top_bar .o_studio_status_pending:contains('2 pending')",
+        },
+        {
+            content: "add a field to the model without dropping it anywhere",
+            trigger: ".o_studio_view_tab .o_studio_model_add",
+            run: "click",
+        },
+        {
+            content: "the editor opened for a new field",
+            trigger: ".o_studio_field_editor_popover .o_studio_field_editor input[type='text']:eq(0)",
+            run: "edit Colour",
+        },
+        {
+            content: "done",
+            trigger: ".o_studio_field_editor_popover button:contains('Done')",
+            run: "click",
+        },
+        {
+            content: "it is listed as new, and counted",
+            trigger: ".o_studio_view_tab .o_studio_model_field:contains('Colour') .o_studio_model_badge:contains('new')",
+        },
+        {
+            content: "three pending",
+            trigger: ".o_studio_top_bar .o_studio_status_pending:contains('3 pending')",
+        },
+        {
+            content: "select the relabelled field on the canvas",
+            trigger: ".o_studio_canvas .o_form_view .o_field_widget[name='x_note']",
+            run: "click",
+        },
+        {
+            content: "its properties offer the definition, and say an edit is staged",
+            trigger: ".o_studio_properties .o_studio_owned_pending:contains('staged edit')",
+        },
+        {
+            content: "the class attribute can be edited from here too",
+            trigger: ".o_studio_properties .o_studio_edit_owned",
+            run: "click",
+        },
+        {
+            content: "on the staged label",
+            trigger: ".o_studio_field_editor_popover .o_studio_field_editor input[type='text']:eq(0):value('Remarks')",
+        },
+        {
+            content: "leave it",
+            trigger: ".o_studio_field_editor_popover button:contains('Cancel')",
+            run: "click",
+        },
+        {
             content: "discard it from the top bar",
             trigger: ".o_studio_top_bar .o_studio_discard",
             run: "click",
@@ -312,6 +401,15 @@ registry.category("web_tour.tours").add("app_builder_console_staged_field_tour",
         {
             content: "and nothing is pending",
             trigger: ".o_studio_top_bar .o_studio_status_saved",
+        },
+        {
+            content: "back to the View tab",
+            trigger: ".o_studio_sidebar_tab[data-tab='view']",
+            run: "click",
+        },
+        {
+            content: "the model list has no marks left",
+            trigger: ".o_studio_view_tab .o_studio_model_fields:not(:has(.o_studio_model_badge))",
         },
         {
             content: "close the console",

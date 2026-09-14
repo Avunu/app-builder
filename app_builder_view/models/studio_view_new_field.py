@@ -98,8 +98,8 @@ class StudioViewEditor(models.AbstractModel):
                 "reason": _(
                     "%(model)s is defined in Python by %(package)s, so a new "
                     "field is a class attribute and the model has to be "
-                    "re-imported before it exists. The composer batches that "
-                    "behind one Apply — it will open with this spot remembered.",
+                    "re-imported before it exists. Dropping it stages it here, "
+                    "where it lands on Apply.",
                     model=view.model,
                     package=owner.name,
                 ),

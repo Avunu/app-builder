@@ -66,6 +66,58 @@
             </div>
         </t>
 
+        <t t-if="showsModel">
+            <div class="o_studio_section_title">Model</div>
+            <div class="small text-muted mb-1">
+                The fields of <code t-esc="model.modelName"/>, in class order — the order
+                they are written to Python. Edits here are staged and land on Apply.
+            </div>
+            <div class="o_studio_model_fields mb-2">
+                <div class="o_studio_model_field d-flex align-items-center gap-1" t-att-class="{ 'o_studio_model_field_removed': entry.pendingKind === 'removed' }" t-foreach="modelFields"
+                     t-as="entry"
+                     t-key="entry.name"
+                     t-att-data-field="entry.name">
+                    <i class="text-muted" t-att-class="entry.icon"/>
+                    <span class="flex-grow-1 text-truncate" t-att-title="entry.name">
+                        <t t-esc="entry.string || entry.name"/>
+                        <small class="text-muted ms-1" t-esc="entry.typeLabel"/>
+                    </span>
+                    <span t-if="entry.pendingKind" class="badge text-bg-info o_studio_model_badge"
+                          t-esc="pendingBadge(entry)"/>
+                    <t t-if="entry.pendingKind !== 'removed'">
+                        <button type="button" class="btn btn-link btn-sm p-0 o_studio_model_up" title="Move up"
+                                t-att-disabled="model.busy or entry_first"
+                                t-on-click="() => this.onMoveUp(entry)">
+                            <i class="fa fa-arrow-up"/>
+                        </button>
+                        <button type="button" class="btn btn-link btn-sm p-0 o_studio_model_down" title="Move down"
+                                t-att-disabled="model.busy or entry_last"
+                                t-on-click="() => this.onMoveDown(entry)">
+                            <i class="fa fa-arrow-down"/>
+                        </button>
+                        <button type="button" class="btn btn-link btn-sm p-0 o_studio_model_edit" title="Edit definition"
+                                t-att-disabled="model.busy"
+                                t-on-click="(ev) => this.onEditModelField(ev, entry)">
+                            <i class="fa fa-pencil"/>
+                        </button>
+                    </t>
+                </div>
+                <div t-if="!modelFields.length" class="small text-muted">
+                    No fields yet.
+                </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm w-100 mb-2 o_studio_model_add"
+                    t-att-disabled="model.busy or !model.packageId"
+                    t-on-click="(ev) => this.onAddModelField(ev)">
+                <i class="fa fa-plus me-1"/>Add a field to the model
+            </button>
+            <small class="text-muted d-block mb-3">
+                A field added here has no place on this canvas yet; Apply puts it
+                where the balanced layout says, or drop it from the Add tab to
+                choose the spot.
+            </small>
+        </t>
+
         <div class="o_studio_section_title">Written so far</div>
         <t t-if="source">
             <div class="small text-muted mb-1">

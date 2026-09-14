@@ -286,6 +286,109 @@ export class PropertiesTab extends Component {
         return this.writeDefinition({ [row.name]: ev.target.value });
     }
 
+    // -- fields the package defines in Python ---------------------------------
+    //
+    // Their definition is a class attribute: editing it is staged on the
+    // model's draft, exactly like a pending field's, and lands on Apply.
+    // Three things the panel says about one: what the draft already holds
+    // for it, how to edit it, and that a removal drops a column.
+
+    /** A field node of a model this package defines in Python. */
+    get isOwnedPython() {
+        return Boolean(
+            this.model.pythonOwned &&
+                this.node &&
+                this.node.kind === "field" &&
+                this.definition &&
+                this.definition.origin !== "manual"
+        );
+    }
+
+    /** The change the draft holds for this field, or `null`. */
+    get ownedPendingKind() {
+        if (!this.isOwnedPython || !this.node) {
+            return null;
+        }
+        const entry = this.model.modelFields.find((f) => f.name === this.node.name);
+        return (entry && entry.pendingKind) || null;
+    }
+
+    get ownedPendingNote() {
+        switch (this.ownedPendingKind) {
+            case "changed":
+                return _t("Its definition has a staged edit; Apply writes it.");
+            case "removed":
+                return _t("Staged for removal; Apply drops the column and keeps its data aside.");
+            case "added":
+                return _t("Staged as a new field; Apply creates it.");
+            default:
+                return "";
+        }
+    }
+
+    /** Open the field editor on the class attribute, staged on the draft. */
+    async onEditOwned(ev) {
+        if (!this.node) {
+            return;
+        }
+        const name = this.node.name;
+        const anchor = ev.currentTarget;
+        const draft = await this.model._ensureDraft();
+        const staged = draft && this.model.stagedField(name);
+        if (!staged) {
+            this.model.notification.add(
+                _t("The class this field belongs to could not be read into a draft."),
+                { type: "warning" }
+            );
+            return;
+        }
+        this.editor.open(anchor, {
+            field: { ...staged },
+            mode: "staged",
+            fieldTypes: this.model.fieldTypes,
+            existingNames: ((this.model.draft && this.model.draft.fields) || [])
+                .map((f) => f.name)
+                .filter((n) => n !== name),
+            modelName: this.model.modelName,
+            inverseOptions: (comodel) => this.model.inverseOptions(comodel),
+            resolveRelated: (path) => this.model.resolveRelated(path),
+            onSave: async (values) => {
+                this.editor.close();
+                await this.model.updateStaged(name, values);
+            },
+            onDelete: () => {
+                this.editor.close();
+                this.onRemoveOwned();
+            },
+        });
+    }
+
+    /** Stage the removal of a class attribute: a dropped column on Apply. */
+    onRemoveOwned() {
+        if (!this.node) {
+            return;
+        }
+        const name = this.node.name;
+        const label = (this.definition && this.definition.values.field_description) || name;
+        this.dialog.add(ConfirmationDialog, {
+            title: _t("Remove field from the model"),
+            body: _t(
+                "Remove %s from the model? Nothing changes until Apply; then its " +
+                    "column is dropped and its data kept aside by a migration. " +
+                    "Discard the pending changes to take it back before that.",
+                label
+            ),
+            confirmLabel: _t("Stage the removal"),
+            confirm: async () => {
+                const result = await this.model.removePending(name);
+                if (result !== undefined) {
+                    this.model.clearSelection();
+                }
+            },
+            cancel: () => {},
+        });
+    }
+
     // -- pending fields -----------------------------------------------------
 
     get isPending() {

@@ -59,8 +59,10 @@ SUPPORTED_TTYPES = frozenset(
 # report, not a convenience.
 UNSUPPORTED_LIVE = {
     "default": "a default value is a class attribute; set it on the field afterwards",
-    "compute": "a computed field is written through the composer",
-    "compute_body": "a computed field is written through the composer",
+    "compute": "a computed field is a method, which only a model the package "
+    "defines in Python can carry",
+    "compute_body": "a computed field is a method, which only a model the "
+    "package defines in Python can carry",
     "digits": "decimal precision is a class attribute",
 }
 
@@ -96,7 +98,7 @@ def unique_name(name, taken):
     For a name derived from a label the user has not typed: the second
     Text tile dropped before the first was renamed is the same "New Text",
     and a refusal for that would be blaming the user for a name they did
-    not choose. The suffix is the one the composer's popover gives.
+    not choose. The suffix is the one the field editor gives.
     """
     if name not in taken:
         return name

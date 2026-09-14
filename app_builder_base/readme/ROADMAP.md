@@ -19,7 +19,7 @@
   embedded one2many list or form: those nodes belong to another model, and the
   palette would have to offer that model's fields. They are shown, and a click
   inside one selects the field that holds it.
-- **Automations stop short of the composer on purpose.** The wizard creates the
+- **Automations stop short of a studio form on purpose.** The wizard creates the
   `ir.actions.server` / `base.automation` pair, and `studio.automation.action_open`
   opens Odoo's own form scoped to the model in front of you with a package in
   context — a second copy of that form would drift from it on the first release.

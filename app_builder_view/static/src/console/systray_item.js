@@ -94,7 +94,7 @@ export class StudioSystrayItem extends Component {
     /**
      * Open the console on the screen. The params are also put in the
      * context so the console survives a reload from its own URL, the same
-     * way the cog item and the composer do.
+     * way the cog item does.
      */
     open() {
         const target = this.target;

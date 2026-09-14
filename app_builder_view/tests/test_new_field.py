@@ -303,9 +303,9 @@ class TestNewFieldFromTheEditor(StudioCase):
         message = self._refused(
             {"field_description": "Total", "ttype": "float", "compute": "x = 1"}
         )
-        self.assertIn("composer", message)
+        self.assertIn("defines in Python", message)
 
-    def test_a_python_model_hands_off_to_the_composer(self):
+    def test_a_python_model_stages_rather_than_creating_live(self):
         package = self.package
         self.build_demo_content(package)
         self.env["studio.package.model"]._adopt(

@@ -7,7 +7,7 @@
  * without a model, a selection without values, a related field without
  * its chain -- is asked for before anything is sent, so that Cancel is no
  * request at all. What asks is whatever is registered first in
- * `app_builder.field_editor`: `app_builder_model` registers the composer's
+ * `app_builder.field_editor`: `app_builder_model` registers its own
  * full popover there, and this module is the answer when nothing is --
  * the label, the type and the minimal parameters each type needs, and
  * not one row more. Both speak one contract, so the palette and the
@@ -63,7 +63,7 @@ export function fieldEditorComponent() {
 
 /**
  * Overlays the editor opens that are not inside it: a click in one of
- * them is not a click away. The same list the composer keeps.
+ * them is not a click away. The same list the field editor keeps.
  */
 const KEEPS_OPEN = [
     ".o_datetime_picker",

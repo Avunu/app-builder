@@ -95,7 +95,7 @@ export class StudioConsole extends Component {
     /**
      * What to open. The console's own params, the legacy editor's
      * (`view_id, res_model, view_type`), and the same in the context so
-     * the console survives a reload from its own URL, the way the composer
+     * the console survives a reload from its own URL, the way a client action
      * does.
      */
     get params() {

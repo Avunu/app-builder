@@ -404,6 +404,41 @@ $o-studio-brand: var(--o-color-primary, #714b67);
     color: $o-studio-brand !important;
 }
 
+// The model's own field list: one row per class attribute, the buttons
+// only when the row is pointed at, a removal struck through until Apply.
+.o_studio_model_fields {
+    max-height: 18rem;
+    overflow-y: auto;
+    border: 1px solid var(--border-color, #dee2e6);
+    border-radius: 4px;
+}
+
+.o_studio_model_field {
+    padding: 3px 6px;
+    font-size: 13px;
+
+    // Faded rather than hidden: a hidden button is not one a tour, or a
+    // keyboard, can reach.
+    .btn-link {
+        opacity: 0.35;
+        line-height: 1;
+    }
+
+    &:hover,
+    &:focus-within {
+        background: rgba(113, 75, 103, 0.06);
+
+        .btn-link {
+            opacity: 1;
+        }
+    }
+
+    &.o_studio_model_field_removed > span {
+        text-decoration: line-through;
+        opacity: 0.6;
+    }
+}
+
 .o_studio_row_hint {
     font-size: 11px;
     margin-top: 2px;

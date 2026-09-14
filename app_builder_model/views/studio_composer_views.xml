@@ -2,7 +2,7 @@
 <odoo>
 
     <!--
-        The list of models the builder owns, and the way into the composer.
+        The list of models the builder owns, and the way into the console.
         A studio.package.model row carries where its definition lives, which is
         what decides whether it can be composed at all.
     -->
@@ -19,8 +19,6 @@
                 <field name="parse_error" optional="hide"/>
                 <button name="action_compose" type="object" icon="fa-pencil"
                         string="Compose" invisible="source != 'python'"/>
-                <button name="action_compose_fields" type="object" icon="fa-list"
-                        string="Fields" invisible="source != 'python'"/>
                 <button name="action_retry_parse" type="object" icon="fa-refresh"
                         string="Re-read the file" invisible="source != 'frozen'"/>
             </list>
@@ -35,8 +33,6 @@
                 <header>
                     <button name="action_compose" type="object" string="Compose"
                             class="btn-primary" invisible="source != 'python'"/>
-                    <button name="action_compose_fields" type="object" string="Fields"
-                            invisible="source != 'python'"/>
                     <button name="action_retry_parse" type="object"
                             string="Re-read the file" invisible="source != 'frozen'"/>
                 </header>
@@ -59,16 +55,6 @@
         </field>
     </record>
 
-    <!--
-        A record, not just a tag, so the composer has a stable URL. Apply
-        rebuilds the registry; a page that could not be reopened from its
-        address would lose the session on every save.
-    -->
-    <record id="action_composer" model="ir.actions.client">
-        <field name="name">Compose Model</field>
-        <field name="tag">app_builder_composer</field>
-    </record>
-
     <record id="studio_package_model_action" model="ir.actions.act_window">
         <field name="name">Models</field>
         <field name="res_model">studio.package.model</field>
@@ -84,7 +70,7 @@
         Deliberately not "menu_studio_models": studio_menus.xml already uses
         that id for the technical ir.model list and loads after this file, so
         sharing it replaced this menu with that one and left no way into the
-        composer at all. Odoo does not warn about a redefined xmlid; the only
+        builder at all. Odoo does not warn about a redefined xmlid; the only
         symptom was a missing menu.
     -->
     <menuitem id="menu_studio_composer"

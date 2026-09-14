@@ -176,7 +176,27 @@
                     <span class="o_studio_row_label" t-esc="fact.label"/>
                     <div class="o_studio_row_content small text-muted" t-esc="fact.value"/>
                 </div>
-                <small t-if="!isManual" class="text-muted d-block">
+                <t t-if="isOwnedPython">
+                    <small t-if="ownedPendingNote" class="text-muted d-block mb-2 o_studio_owned_pending"
+                           t-esc="ownedPendingNote"/>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary btn-sm flex-grow-1 o_studio_edit_owned"
+                                t-att-disabled="model.busy or ownedPendingKind === 'removed'"
+                                t-on-click="(ev) => this.onEditOwned(ev)">
+                            <i class="fa fa-pencil me-1"/>Edit definition
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm o_studio_remove_owned"
+                                t-att-disabled="model.busy or ownedPendingKind === 'removed'"
+                                t-on-click="() => this.onRemoveOwned()">
+                            Remove from model
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        Defined in Python by this package. An edit is staged on the
+                        model and written on Apply, the way a new field is.
+                    </small>
+                </t>
+                <small t-elif="!isManual" class="text-muted d-block">
                     Defined in Python, so its definition is read-only here; the
                     view can still relabel or hide it above.
                 </small>

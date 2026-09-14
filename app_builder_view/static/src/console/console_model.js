@@ -1225,8 +1225,17 @@ export class ConsoleModel {
         return this.draft;
     }
 
-    /** One call on the draft, then the tray and the canvas reloaded. */
+    /**
+     * One call on the draft, then the tray and the canvas reloaded.
+     *
+     * The draft is opened on demand: editing the definition of a field the
+     * class already has is the first thing a Python-owned model may be
+     * asked, and it has no draft until something is staged on it.
+     */
     async _onDraft(method, args, { silent = false } = {}) {
+        if (!this.draftId && this.pythonOwned) {
+            await this._ensureDraft();
+        }
         const id = this.draftId;
         if (!id) {
             return undefined;
@@ -1275,6 +1284,56 @@ export class ConsoleModel {
         }
         delete rest.field_description;
         return this._onDraft("update_field", [name, rest]);
+    }
+
+    /**
+     * Reorder the class: `name` goes before `before`, or last. Class
+     * order is the order the fields are written to Python and the order a
+     * scaffolded view shows them in, so this is a layout gesture too.
+     */
+    async moveField(name, before = null) {
+        return this._onDraft("move_field", [name, before]);
+    }
+
+    /**
+     * Stage a field on the model without a place on this canvas -- from
+     * the model's own field list rather than a drop. Apply puts it where
+     * the balanced rule says, and the tray says so.
+     */
+    async addModelField(values) {
+        const cleaned = this.fieldValues(values);
+        const spec = { ...cleaned, string: cleaned.field_description };
+        delete spec.field_description;
+        return this._onDraft("add_field", [spec]);
+    }
+
+    /**
+     * The model's fields in class order, each with the kind of change the
+     * draft holds for it (`added`, `changed`, `removed`) or `null`. Fields
+     * the draft has removed are listed still, marked, so the removal can
+     * be seen and undone before Apply makes it a dropped column.
+     */
+    get modelFields() {
+        const draft = this.draft;
+        if (!draft) {
+            return [];
+        }
+        const kinds = new Map();
+        for (const change of draft.pending || []) {
+            if (change.name && change.kind !== "model" && !change.model) {
+                kinds.set(change.name, change.kind);
+            }
+        }
+        const listed = (draft.fields || []).map((field) => ({
+            ...field,
+            pendingKind: kinds.get(field.name) || null,
+        }));
+        for (const change of draft.pending || []) {
+            if (change.kind === "removed" && !change.model && !listed.some((f) => f.name === change.name)) {
+                listed.push({ name: change.name, string: change.name, pendingKind: "removed" });
+            }
+        }
+        return listed;
     }
 
     /** Everything the draft has staged, thrown away; the ghosts go too. */

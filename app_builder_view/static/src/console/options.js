@@ -4,7 +4,7 @@
  *
  * The rows themselves used to be declared here. They are declared in
  * `app_builder_view/tools/view_options.py` now, beside the field-type catalogue
- * the model composer reads, because two files describing one product drift and
+ * the field editor reads, because two files describing one product drift and
  * nothing compares them. What is left here is the half that genuinely belongs
  * on the client:
  *

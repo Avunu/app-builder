@@ -15,13 +15,13 @@
  * definition before it is created -- a relation's model, a selection's
  * values -- and ships a label-and-type fallback of its own for when
  * nothing is registered. This addon has the real thing already: the
- * composer's `FieldPopover`, with the type-conditional rows, the inverse
+ * `FieldPopover`, with the type-conditional rows, the inverse
  * picker and the related-chain resolver. It is registered here as it is,
  * behind a thin subclass that takes the two props the console adds to
- * the contract and that the composer never needed:
+ * the contract and that the popover's first home never needed:
  *
  *  - `initial`, the `{ttype, string}` a new field starts from -- the tile
- *    that was dropped -- where the composer always starts from Text;
+ *    that was dropped -- where it used to start from Text;
  *  - `mode`, `live` or `staged`, since on a core model the field is an
  *    `ir.model.fields` row created the moment Done is pressed, and the
  *    rows that only mean something for a class attribute -- placement in
@@ -34,7 +34,7 @@
 
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
-import { FieldPopover } from "./composer/field_popover";
+import { FieldPopover } from "./field_popover";
 
 export class ConsoleFieldEditor extends FieldPopover {
     static template = "app_builder_model.ConsoleFieldEditor";

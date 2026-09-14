@@ -262,6 +262,8 @@ What the console work discovered, in the same spirit as the list above:
 21.  **A draft is transient, and the default window is an hour.** `studio.model.draft` is a `TransientModel`; the server's `transient_age_limit` is one hour of idle time and the daily vacuum deletes what has aged out — with the anchors of every ghost on the canvas. `_transient_max_hours = 168`, and the console re-opens a vanished draft from its package model rather than crashing.
 
 
+**The composer is retired.** Once the console could stage, edit, remove and reorder a Python model's fields (the View tab's *Model* list, and *Edit definition* / *Remove from model* on any field of an owned model), the field-list-beside-a-preview it grew out of was a second UI for the same draft, guaranteed to fall behind the first. `Compose` on a model now opens the console on whichever view the model has; the composer's field popover survives as the console's field editor (`app_builder.field_editor`), and `studio.model.draft` is the same buffer underneath.
+
 ## Status
 
 **768 unit tests** (750 across `app_builder_base`, `app_builder_model`, `app_builder_view`, `app_builder_ui` and `app_builder_report`, 18 in `app_builder_approval`), 66 hoot tests run from the `app_builder_view` suite, and five end-to-end probes. CI runs ruff + pre-commit and the suite against both Odoo and OCB 18.0 in the OCA CI containers.
@@ -285,11 +287,11 @@ The original one — `load_from_files(serialize(db)) == db`, byte-identical — 
 
 Remaining:
 
--   **The console's second version** — the console above is the client; what it does not do yet: inline x2many subviews are visible but not droppable, a kanban card written with `t-esc` has no addressable parts, master's `card` view type (a kanban whose card lives in another view) is reserved for by `nodes[].view_id` and not handled, and the model composer is still its own door rather than a console pane. Two consoles on one package are serialised only by the transaction and the arch-version check.
+-   **The console's second version** — the console above is the client; what it does not do yet: inline x2many subviews are visible but not droppable, a kanban card written with `t-esc` has no addressable parts, master's `card` view type (a kanban whose card lives in another view) is reserved for by `nodes[].view_id` and not handled, Two consoles on one package are serialised only by the transaction and the arch-version check.
 -   **Relationships** — one2many with automatic inverse creation and notebook placement; then sub-models.
 -   **19.0** — the code is kept 19.0-clean but is only tested on 18.0. Several OCA dependencies are not ported to 19.0 yet.
 -   **Adopting two custom models that reference each other** in one operation is untested; adopt them one at a time.
--   **`many2one_reference`** cannot be _built_ by the composer, because the field needs a `model_field` companion naming the model its id belongs to and there is no way to declare one from the picker. Serializing an existing one is fine: the companion is read and the id leaves as an xmlid.
+-   **`many2one_reference`** cannot be _built_ by the field editor, because the field needs a `model_field` companion naming the model its id belongs to and there is no way to declare one from the picker. Serializing an existing one is fine: the companion is read and the id leaves as an xmlid.
 
 ## Reference reading
 

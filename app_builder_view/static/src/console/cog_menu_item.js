@@ -75,7 +75,7 @@ export class EditThisView extends Component {
             // something a URL carries.
             params: { ...params, previous_action: controller ? controller.action : null },
             // Also in context so the console survives a page reload from its
-            // own URL, the same way the model composer does.
+            // own URL, the same way a resumable client action does.
             context: params,
         });
     }
