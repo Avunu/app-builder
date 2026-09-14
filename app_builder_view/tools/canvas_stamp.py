@@ -300,7 +300,7 @@ def _string(element, kind):
         text = (element.text or "").strip()
         if text:
             return text
-    return element.get("name")
+    return element.get("name") or element.get("for")
 
 
 def _orientation(element, kind, key):
@@ -312,6 +312,51 @@ def _orientation(element, kind, key):
         # An outer group: its children are columns, laid out side by side.
         return "row"
     return "column"
+
+
+def _is_inner_group(element):
+    """A ``<group>`` that lays fields out, not one that lays groups out.
+
+    The form compiler draws a label for a field only when the field is a
+    direct child of one of these (``compileGroup``: ``!isOuterGroup``); a
+    group holding another group is columns, and its fields render bare.
+    """
+    return element.tag == "group" and not any(
+        isinstance(child.tag, str) and child.tag == "group" for child in element
+    )
+
+
+def draws_label(parent):
+    """Whether the form draws a label for a field put directly in ``parent``."""
+    return parent is not None and _is_inner_group(parent)
+
+
+def label_of(element, parent, labels):
+    """Where a form field's label comes from, or that it has none.
+
+    Three answers, because the form compiler has three: ``group`` when the
+    field sits directly in an inner group and has not switched its label
+    off with ``nolabel``; ``label`` when a ``<label for>`` somewhere in the
+    arch names it -- the compiler pairs the two wherever the label stands
+    (``pushLabel``/``encounteredFields``); ``None`` otherwise, which is a
+    field on a sheet, in a page, in a div or in columns: it renders with no
+    label at all, whatever its ``string`` says. ``labels`` maps a field
+    name to the ``<label for>`` naming it.
+    """
+    name = element.get("name")
+    in_group = parent is not None and _is_inner_group(parent)
+    if in_group and element.get("nolabel") not in INVISIBLE_LITERALS:
+        by = "group"
+    elif name in labels:
+        by = "label"
+    else:
+        by = None
+    return {
+        "shown": by is not None,
+        "by": by,
+        "token": labels.get(name),
+        "in_group": in_group,
+    }
 
 
 def stamp(root, view_type=None):
@@ -363,6 +408,7 @@ def stamp(root, view_type=None):
             "dom": dom,
             "field": None,
             "view_id": None,
+            "label": None,
         }
         elements[token] = element
         if parent is not None:
@@ -373,6 +419,19 @@ def stamp(root, view_type=None):
             copied = listed_copy[ordinal][0]
             existing = copied.get("class")
             copied.set("class", "%s %s" % (existing, token) if existing else token)
+    if root_tag == "form":
+        # Only a form draws labels; a list has headings, a card has neither.
+        # A `<label for>` counts wherever it stands, so the table is read
+        # once it is complete.
+        labels = {}
+        for token, element in elements.items():
+            if element.tag == "label" and element.get("for"):
+                labels.setdefault(element.get("for"), token)
+        for token, element in elements.items():
+            if element.tag == "field" and nodes[token]["dom"]:
+                # The lxml parent, not the nearest listed one: the compiler's
+                # rule is about direct children of a group.
+                nodes[token]["label"] = label_of(element, element.getparent(), labels)
     return StampResult(arch=arch, root=tokens[0], nodes=nodes, elements=elements)
 
 

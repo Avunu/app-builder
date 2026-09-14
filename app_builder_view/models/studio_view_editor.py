@@ -52,15 +52,17 @@ INSERT_POSITIONS = ("before", "after", "inside")
 # Keys a caller of ``apply_operation`` may find on the operation that no
 # handler reads: what the minting step *expected* to find at the locator, so
 # the owned path can check it is editing the node the user pointed at.
-EXPECTATION_KEYS = ("_expect", "_expect_target")
+EXPECTATION_KEYS = ("_expect", "_expect_target", "_expect_label")
 
 # What makes a node identifiable without counting its siblings. `name` is the
 # form and list answer; a report has none -- its spans are `<span t-field=...>`
 # -- and a positional path into a document shifts the moment anything is
 # inserted above it, which for a report is the ordinary edit. A kanban card
-# is a `<t t-name="card">`, named by its template name and nothing else.
+# is a `<t t-name="card">`, named by its template name and nothing else. A
+# `<label for>` is named by the field it labels: `//label[@for='x']` means
+# the same node however the sheet around it is rearranged.
 # Order matters: the first attribute that identifies the node uniquely wins.
-IDENTIFYING_ATTRS = ("name", "t-field", "t-name")
+IDENTIFYING_ATTRS = ("name", "for", "t-field", "t-name")
 
 # How many records the canvas counts before it stops counting. The number is
 # shown, and decides whether an empty list gets sample rows; neither needs
@@ -103,6 +105,8 @@ class StudioViewEditor(models.AbstractModel):
             return _("added %s", operation.get("name", "a field"))
         if kind == "remove_node":
             return _("removed a node")
+        if kind == "show_label":
+            return _("gave %s a label", operation.get("name", "a field"))
         return kind.replace("_", " ")
 
     @api.model
@@ -448,6 +452,7 @@ class StudioViewEditor(models.AbstractModel):
         for key, expected in (
             ("xpath", expectations.get("_expect")),
             ("target_xpath", expectations.get("_expect_target")),
+            ("label_xpath", expectations.get("_expect_label")),
         ):
             expr = operation.get(key)
             if not expr:
@@ -595,6 +600,12 @@ class StudioViewEditor(models.AbstractModel):
             node = self._new_xpath(root, expr, position)
         field = next((f for f in node.findall("field") if f.get("name") == name), None)
         if field is None:
+            if operation.get("label"):
+                # Where the form draws no label, one of core's own goes
+                # before the field -- in the same block, so the drop is
+                # one edit and one undo. `_label_wanted` decides.
+                label = etree.SubElement(node, "label")
+                label.set("for", name)
             field = etree.SubElement(node, "field")
         field.set("name", name)
         for key, value in (operation.get("attrs") or {}).items():
@@ -630,9 +641,25 @@ class StudioViewEditor(models.AbstractModel):
         if expr == anchor:
             raise UserError(_("A node cannot be moved relative to itself."))
         node = self._new_xpath(root, anchor, position)
+        # A field's label follows the field. Its own `<label for>` goes
+        # with it, first, so it still stands just before the field -- core
+        # inserts a spec's children in order for every position
+        # (`template_inheritance.py`, the sentinel) -- unless the
+        # destination is a group, which draws the label itself and would
+        # draw it twice; then the label is dropped. A field a group was
+        # labelling, moved to where nothing will, is given one.
+        if operation.get("label_xpath") and not operation.get("drop_label"):
+            label = etree.SubElement(node, "xpath")
+            label.set("expr", operation["label_xpath"])
+            label.set("position", "move")
+        elif operation.get("label") and operation.get("name"):
+            label = etree.SubElement(node, "label")
+            label.set("for", operation["name"])
         moved = etree.SubElement(node, "xpath")
         moved.set("expr", expr)
         moved.set("position", "move")
+        if operation.get("label_xpath") and operation.get("drop_label"):
+            self._new_xpath(root, operation["label_xpath"], "replace")
         return node
 
     def _op_add_filter(self, root, operation):
@@ -669,7 +696,12 @@ class StudioViewEditor(models.AbstractModel):
         existing = self._find_xpath(root, operation["xpath"], "replace")
         if existing is not None:
             return existing
-        return self._new_xpath(root, operation["xpath"], "replace")
+        node = self._new_xpath(root, operation["xpath"], "replace")
+        if operation.get("label_xpath"):
+            # A field's own `<label for>` has nothing to label once the
+            # field is gone, and would render as an empty label.
+            self._new_xpath(root, operation["label_xpath"], "replace")
+        return node
 
     def _op_set_attributes(self, root, operation):
         """Set attributes on an existing node, merging with prior edits."""
@@ -689,6 +721,36 @@ class StudioViewEditor(models.AbstractModel):
                 child.set("name", key)
                 if value is not None:
                     child.text = str(value)
+        return node
+
+    def _op_show_label(self, root, operation):
+        """Give a field the label the form would not draw for it.
+
+        A field is labelled by the form compiler only as a direct child of
+        an inner group; on a sheet, in a page, in a div or in columns it
+        renders bare, whatever its ``string`` says. Core's own answer is a
+        ``<label for="name"/>`` before it, which the compiler pairs with the
+        field and renders with the field's label -- the ``string`` the view
+        sets, or the model's. That is what is emitted, and nothing else:
+        the label's text stays the field's, so the Label row goes on
+        writing one attribute.
+
+        A second label for the same field would render twice, so
+        ``show_label_at`` refuses one the combined arch already has. Not
+        checked against the spec being built: a label this extension added
+        and then removed is still in it, and would wrongly count.
+        """
+        name = operation.get("name")
+        if not name:
+            raise UserError(_("Giving a field a label requires its name."))
+        current = operation.get("_current_arch")
+        if current is not None:
+            primary = xml_writer.parse_arch(current)
+            if any(label.get("for") == name for label in primary.iter("label")):
+                raise UserError(_("%s already has a label of its own.", name))
+        node = self._new_xpath(root, operation["xpath"], "before")
+        label = etree.SubElement(node, "label")
+        label.set("for", name)
         return node
 
     @api.model
@@ -930,12 +992,22 @@ class StudioViewEditor(models.AbstractModel):
                 _("That is not a place in the view the builder can address.")
             )
         operation = dict(operation)
-        operation["xpath"] = self._locator_for(node, self._occurrences(root))
+        occurrences = self._occurrences(root)
+        operation["xpath"] = self._locator_for(node, occurrences)
         operation["_expect"] = self._expectation_for(node)
         operation.setdefault(
             "position",
             self._insert_position(anchor, stamped and stamped.nodes[token]),
         )
+        if operation.get("type") == "add_field":
+            operation.setdefault(
+                "label", self._label_wanted(view, node, operation["position"])
+            )
+        elif operation.get("type") == "remove_node":
+            label = self._own_label(node)
+            if label is not None:
+                operation["label_xpath"] = self._locator_for(label, occurrences)
+                operation["_expect_label"] = self._expectation_for(label)
         return self.apply_operation(
             view_id,
             package_id,
@@ -962,6 +1034,55 @@ class StudioViewEditor(models.AbstractModel):
                 )
             )
         return position
+
+    @api.model
+    def show_label_at(
+        self,
+        view_id,
+        package_id,
+        anchor,
+        expected_arch_version=None,
+    ):
+        """Put a ``<label for>`` before the field the client selected.
+
+        The properties panel's "Show label" switch, for a field the form
+        draws no label for. The switch the other way is ``remove_at`` on
+        the label's own token -- the canvas table names it (``label.token``)
+        -- and for a field in a group, where the compiler draws the label
+        itself, both directions are the ``nolabel`` attribute and never
+        come here.
+        """
+        self._assert_studio_manager()
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view:
+            raise UserError(_("The view being edited no longer exists."))
+        expected_arch_version = self._claimed_version(expected_arch_version, anchor)
+        self._assert_arch_version(view, expected_arch_version)
+        root = etree.fromstring(view.get_combined_arch().encode())
+        node = self._find_descriptor(root, anchor)
+        if node is None or node.tag != "field" or not node.get("name"):
+            raise UserError(_("Only a field can be given a label."))
+        if view.type != "form":
+            raise UserError(_("Only a form draws labels for its fields."))
+        name = node.get("name")
+        if any(
+            label.get("for") == name
+            for label in root.iter("label")
+            if not any(a.tag == "field" for a in label.iterancestors())
+        ):
+            raise UserError(_("%s already has a label of its own.", name))
+        return self.apply_operation(
+            view_id,
+            package_id,
+            {
+                "type": "show_label",
+                "name": name,
+                "xpath": self._locator_for(node, self._occurrences(root)),
+                "position": "before",
+                "_expect": self._expectation_for(node),
+            },
+            expected_arch_version=expected_arch_version,
+        )
 
     @api.model
     def add_field_at(
@@ -1282,20 +1403,80 @@ class StudioViewEditor(models.AbstractModel):
             raise UserError(_("A node cannot be moved relative to itself."))
         if any(ancestor is source_node for ancestor in target_node.iterancestors()):
             raise UserError(_("A node cannot be moved into itself."))
+        operation = {
+            "type": "move_node",
+            "xpath": self._locator_for(source_node, occurrences),
+            "target_xpath": self._locator_for(target_node, occurrences),
+            "position": position,
+            "_expect": self._expectation_for(source_node),
+            "_expect_target": self._expectation_for(target_node),
+        }
+        # A field's label follows the field (see `_op_move_node`).
+        label = self._own_label(source_node)
+        if label is not None and label is not target_node:
+            operation["label_xpath"] = self._locator_for(label, occurrences)
+            operation["_expect_label"] = self._expectation_for(label)
+            operation["drop_label"] = not self._label_wanted(
+                view, target_node, position
+            )
+        elif source_node.tag == "field" and self._labelled_by_group(source_node):
+            operation["name"] = source_node.get("name")
+            operation["label"] = self._label_wanted(view, target_node, position)
         return self.apply_operation(
             view_id,
             package_id,
-            {
-                "type": "move_node",
-                "xpath": self._locator_for(source_node, occurrences),
-                "target_xpath": self._locator_for(target_node, occurrences),
-                "position": position,
-                "_expect": self._expectation_for(source_node),
-                "_expect_target": self._expectation_for(target_node),
-            },
+            operation,
             expected_arch_version=expected_arch_version,
             write_files=write_files,
         )
+
+    @api.model
+    def _label_wanted(self, view, node, position):
+        """Whether a field put at ``position`` of ``node`` needs a label of
+        its own to have one at all.
+
+        The form compiler labels a field only as a direct child of an
+        inner group (``canvas_stamp.draws_label``). Everywhere else --
+        the sheet, a tab, columns, a div -- it renders bare, whatever its
+        ``string`` says, and the studio's default is that a field dropped
+        there is labelled the way core's own views do it: ``<label for>``
+        before it. Two places are bare on purpose and get none: the header,
+        whose field is a status bar, and the button box.
+        """
+        if view.type != "form":
+            return False
+        parent = node if position == "inside" else node.getparent()
+        if parent is None or canvas_stamp.draws_label(parent):
+            return False
+        bare_on_purpose = parent.tag == "header" or (
+            parent.tag == "div" and parent.get("name") == "button_box"
+        )
+        return not bare_on_purpose
+
+    @api.model
+    def _labelled_by_group(self, node):
+        """Whether the form draws ``node``'s label because of its group."""
+        return (
+            bool(node.get("name"))
+            and canvas_stamp.draws_label(node.getparent())
+            and node.get("nolabel") not in canvas_stamp.INVISIBLE_LITERALS
+        )
+
+    @api.model
+    def _own_label(self, node):
+        """The ``<label for>`` immediately before ``node`` naming it, or ``None``."""
+        if node.tag != "field" or not node.get("name"):
+            return None
+        previous = node.getprevious()
+        while previous is not None and not isinstance(previous.tag, str):
+            previous = previous.getprevious()
+        if (
+            previous is not None
+            and previous.tag == "label"
+            and previous.get("for") == node.get("name")
+        ):
+            return previous
+        return None
 
     # -- the drop -----------------------------------------------------------
 

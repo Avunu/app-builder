@@ -24,6 +24,15 @@ package owns, and the view switcher takes it from there.
   what it is. **Remove from view** is at the bottom, and removing a group asks
   first, with the number of fields it would take.
 
+  A form draws a field's label only inside a group. A field dropped anywhere
+  else — on the sheet, in a tab, in columns — is given a label of its own
+  (`<label for>`, the way core's views do it) so it reads the same; the
+  **Show label** switch under the Label row takes it away or brings it back,
+  and says so when a label is not shown. The Label row itself renames a field
+  you added in the database; for a field your package defines in Python it
+  relabels this view only, and **Edit definition** below renames the field
+  itself, on Apply.
+
 Moving is a drag too: pick up a field, a button or a tab and drop it where it
 should be; a group or a notebook is picked up by the grip on its selection
 frame, so that a click on it still selects what it holds. List columns reorder

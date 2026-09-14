@@ -149,6 +149,70 @@ export class PropertiesTab extends Component {
         return !attrs.string;
     }
 
+    /**
+     * What the Label row writes, when that is not the obvious thing. A
+     * manual field's row renames the field itself; a field this package
+     * defines in Python has a definition of its own below, and the row
+     * dresses this view only -- said here, or the two labels look like
+     * one that did not take.
+     */
+    rowHint(row) {
+        if (row.name !== "string" || row.target === "option") {
+            return "";
+        }
+        if (this.labelWritesDefinition(row)) {
+            return _t("Renames the field itself, on every view.");
+        }
+        if (this.isOwnedPython) {
+            return _t("On this view only. Edit the definition below to rename the field itself.");
+        }
+        return "";
+    }
+
+    // -- the label ------------------------------------------------------------
+    //
+    // A form draws a field's label only in a group. Anywhere else -- on
+    // the sheet, in a tab, in columns -- the field renders bare, and a
+    // Label typed above changes the tag on the canvas and nothing on the
+    // screen. The table says where a field's label comes from (`label`),
+    // and the switch here turns it on the way core does: `<label for>`
+    // before the field, or `nolabel` off again in a group.
+
+    /** The label provenance of the selected field, or `null` off a form field. */
+    get labelSwitch() {
+        return this.node && this.node.kind === "field" && this.node.label
+            ? this.node.label
+            : null;
+    }
+
+    get labelNote() {
+        const label = this.labelSwitch;
+        if (!label) {
+            return "";
+        }
+        if (label.shown) {
+            return label.by === "label" ? _t("Shown by a label of its own, just before it.") : "";
+        }
+        return label.in_group
+            ? _t("Not shown: the label is switched off.")
+            : _t("Not shown here: outside a group a field has no label unless it is given one.");
+    }
+
+    async onToggleLabel(ev) {
+        const label = this.labelSwitch;
+        if (!label || !this.token) {
+            return;
+        }
+        const shown = ev.target.checked;
+        if (label.in_group) {
+            await this.model.setAttributes(this.token, { nolabel: shown ? null : "1" });
+        } else if (shown) {
+            await this.model.showLabel(this.token);
+        } else if (label.token) {
+            await this.model.hideLabel(label.token);
+        }
+    }
+
     /** The editable rows of a manual field's definition, with their values. */
     get definitionRows() {
         const definition = this.definition;

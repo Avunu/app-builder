@@ -12,6 +12,7 @@ from . import (
     test_move_node,
     test_new_field,
     test_search_view,
+    test_show_label,
     test_undo,
     test_view_editor,
     test_view_options,

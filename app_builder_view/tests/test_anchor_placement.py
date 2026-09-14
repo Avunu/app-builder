@@ -187,6 +187,24 @@ class TestAnchorPlacement(StudioCase):
         history = self.env["studio.view.edit"].stack_for(self.form.id)
         self.assertEqual(history["undo"][0]["summary"], "added x_active_flag")
 
+    def test_a_field_anchored_where_no_label_is_drawn_is_given_one(self):
+        """Anchored after the group, on the sheet: the form would draw no
+        label there, so the placement labels it the way a live drop does --
+        `<label for>` before it, in the same edit."""
+        draft = self._draft()
+        anchor = self._anchor(
+            self.form, "x_budget", xpath="//sheet/group", descriptor=None
+        )
+        self.assertTrue(draft._place_anchored(self.form, "x_active_flag", anchor, None))
+        self.form.invalidate_recordset()
+        sheet = etree.fromstring(self.form.get_combined_arch().encode()).find("sheet")
+        self.assertEqual(
+            [(c.tag, c.get("name") or c.get("for")) for c in sheet],
+            [("group", None), ("label", "x_active_flag"), ("field", "x_active_flag")],
+        )
+        history = self.env["studio.view.edit"].stack_for(self.form.id)
+        self.assertEqual(len(history["undo"]), 1)
+
     def test_a_changed_view_finds_the_neighbour_again(self):
         """Same anchor, stale version: the xpath is not trusted and the
         neighbour is found by what it is."""

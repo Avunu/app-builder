@@ -255,8 +255,25 @@ class TestConsoleTour(HttpCase):
         pages = root.xpath("//notebook/page")
         self.assertEqual(pages[-1].get("string"), "New tab")
 
-        # The cancelled drag dropped nothing.
-        self.assertFalse(root.xpath(own % "x_tour_second"))
+        # The cancelled drag dropped nothing; the second drag put the field
+        # on the sheet, bare, and the panel's switch gave it a label of its
+        # own -- core's `<label for>`, just before it. The Label row then
+        # renamed the field itself, as it does for a manual field, and the
+        # label on the sheet followed: it carries no text of its own.
+        second = root.xpath(own % "x_tour_second")
+        self.assertEqual(len(second), 1)
+        self.assertEqual(second[0].getparent(), sheet)
+        self.assertIsNone(second[0].get("string"))
+        label = second[0].getprevious()
+        self.assertEqual((label.tag, label.get("for")), ("label", "x_tour_second"))
+        self.assertIsNone(label.get("string"))
+        self.assertIn('<label for="x_tour_second"', patch.arch)
+        self.assertEqual(
+            self.env["ir.model.fields"]
+            ._get("res.partner", "x_tour_second")
+            .field_description,
+            "Second Label",
+        )
 
         self._assert_nothing_leaked(package, patch)
 

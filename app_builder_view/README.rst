@@ -88,9 +88,11 @@ The sidebar
   "after Email", "into Notes", "at the end of the sheet" — and dropping
   on nothing does nothing. Resting on a notebook tab while dragging
   switches to it.
+
 - **View** edits the view's own settings, shows invisible elements when
   asked, and shows the source of what this package has written for the
   view together with its recent changes.
+
 - **Properties** opens when you click something. It lists the element's
   options as label / control rows — the same rows for a core field and
   one you added — and, for a field, its definition: label, help,
@@ -98,6 +100,15 @@ The sidebar
   edited in place; a core field shows what it is. **Remove from view**
   is at the bottom, and removing a group asks first, with the number of
   fields it would take.
+
+  A form draws a field's label only inside a group. A field dropped
+  anywhere else — on the sheet, in a tab, in columns — is given a label
+  of its own (``<label for>``, the way core's views do it) so it reads
+  the same; the **Show label** switch under the Label row takes it away
+  or brings it back, and says so when a label is not shown. The Label
+  row itself renames a field you added in the database; for a field your
+  package defines in Python it relabels this view only, and **Edit
+  definition** below renames the field itself, on Apply.
 
 Moving is a drag too: pick up a field, a button or a tab and drop it
 where it should be; a group or a notebook is picked up by the grip on

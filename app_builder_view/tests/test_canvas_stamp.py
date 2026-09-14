@@ -253,6 +253,89 @@ class TestCanvasStamp(TransactionCase):
         separator = next(n for n in result.nodes.values() if n["tag"] == "separator")
         self.assertEqual(separator["string"], "A rule")
 
+    # -- where a field's label comes from --------------------------------------
+
+    LABELS = """
+    <form>
+        <sheet>
+            <group name="columns">
+                <group name="left">
+                    <field name="in_group"/>
+                    <field name="switched_off" nolabel="1"/>
+                    <field name="off_but_labelled" nolabel="1"/>
+                </group>
+                <field name="in_columns"/>
+            </group>
+            <label for="off_but_labelled"/>
+            <label for="on_sheet" string="Named"/>
+            <field name="on_sheet"/>
+            <field name="bare"/>
+            <notebook>
+                <page string="Notes" name="notes">
+                    <field name="in_page"/>
+                </page>
+            </notebook>
+        </sheet>
+    </form>
+    """
+
+    def test_a_field_in_an_inner_group_is_labelled_by_the_group(self):
+        _root, result = self._stamp(self.LABELS, "form")
+        label = result.nodes[_by_name(result, "in_group")]["label"]
+        self.assertEqual(
+            label, {"shown": True, "by": "group", "token": None, "in_group": True}
+        )
+
+    def test_nolabel_switches_the_group_label_off(self):
+        _root, result = self._stamp(self.LABELS, "form")
+        label = result.nodes[_by_name(result, "switched_off")]["label"]
+        self.assertEqual(
+            label, {"shown": False, "by": None, "token": None, "in_group": True}
+        )
+
+    def test_a_label_for_counts_wherever_it_stands(self):
+        _root, result = self._stamp(self.LABELS, "form")
+        label_tokens = {
+            node["attrs"].get("for"): token
+            for token, node in result.nodes.items()
+            if node["tag"] == "label"
+        }
+        # A label is a node of its own -- not *named* for its field, or the
+        # first node called `x` would be the label rather than the field --
+        # but it is captioned for it.
+        self.assertIn("off_but_labelled", label_tokens)
+        self.assertIsNone(result.nodes[label_tokens["off_but_labelled"]]["name"])
+        self.assertEqual(
+            result.nodes[label_tokens["off_but_labelled"]]["string"], "off_but_labelled"
+        )
+        self.assertEqual(result.nodes[label_tokens["on_sheet"]]["string"], "Named")
+        off = result.nodes[_by_name(result, "off_but_labelled")]["label"]
+        self.assertEqual(off["by"], "label")
+        self.assertEqual(off["token"], label_tokens["off_but_labelled"])
+        self.assertTrue(off["in_group"])
+        on_sheet = result.nodes[_by_name(result, "on_sheet")]["label"]
+        self.assertEqual(on_sheet["by"], "label")
+        self.assertFalse(on_sheet["in_group"])
+
+    def test_outside_a_group_a_field_has_no_label(self):
+        _root, result = self._stamp(self.LABELS, "form")
+        for name in ("in_columns", "bare", "in_page"):
+            label = result.nodes[_by_name(result, name)]["label"]
+            self.assertEqual(
+                label,
+                {"shown": False, "by": None, "token": None, "in_group": False},
+                name,
+            )
+
+    def test_only_a_form_field_knows_its_label(self):
+        _root, result = self._stamp(FORM, "form")
+        for node in result.nodes.values():
+            if node["tag"] != "field":
+                self.assertIsNone(node["label"], node["tag"])
+        _root, result = self._stamp(LIST, "list")
+        for node in result.nodes.values():
+            self.assertIsNone(node["label"])
+
     def test_nodes_never_carry_an_xpath(self):
         _root, result = self._stamp(FORM, "form")
         for node in result.nodes.values():

@@ -61,8 +61,8 @@
             <t t-else="">
             <t t-foreach="panels" t-as="panel" t-key="panel.id">
                 <div class="o_studio_section_title" t-esc="panel.title"/>
-                <div class="o_studio_row" t-att-class="{ o_studio_row_definition: labelWritesDefinition(row) }" t-foreach="panel.rows"
-                     t-as="row" t-key="row.key"
+                <t t-foreach="panel.rows" t-as="row" t-key="row.key">
+                <div class="o_studio_row" t-att-class="{ o_studio_row_definition: labelWritesDefinition(row) }"
                      t-att-data-row="row.name">
                     <label class="o_studio_row_label" t-esc="row.label" t-att-title="row.help"/>
                     <div class="o_studio_row_content">
@@ -108,11 +108,24 @@
                                t-on-change="(ev) => this.onInput(row, ev)"/>
                         <!-- The label of a manual field is the model's: renaming
                              it here renames it on every view, and says so. -->
-                        <small t-if="labelWritesDefinition(row)" class="text-muted d-block o_studio_row_hint">
-                            Renames the field itself, on every view.
-                        </small>
+                        <small t-if="rowHint(row)" class="text-muted d-block o_studio_row_hint"
+                               t-esc="rowHint(row)"/>
                     </div>
                 </div>
+                <!-- Right under the Label row: whether the form draws that
+                     label at all, and the switch that makes it. -->
+                <div t-if="row.name === 'string' and row.target !== 'option' and labelSwitch"
+                     class="o_studio_row" data-row="show_label">
+                    <label class="o_studio_row_label" for="o_studio_show_label">Show label</label>
+                    <div class="o_studio_row_content">
+                        <input id="o_studio_show_label" class="form-check-input mt-0" type="checkbox"
+                               t-att-checked="labelSwitch.shown"
+                               t-att-disabled="model.busy"
+                               t-on-change="(ev) => this.onToggleLabel(ev)"/>
+                        <small t-if="labelNote" class="text-muted d-block o_studio_label_note" t-esc="labelNote"/>
+                    </div>
+                </div>
+                </t>
             </t>
 
             <!-- The field's definition: editable rows of ir.model.fields for

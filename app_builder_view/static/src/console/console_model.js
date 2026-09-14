@@ -844,6 +844,39 @@ export class ConsoleModel {
     }
 
     /**
+     * Give a field the label the form would not draw for it: a `<label for>`
+     * before it. Where the form draws the label itself -- a field in a
+     * group -- the switch is the `nolabel` attribute and goes through
+     * `setAttributes` instead; the panel knows which from `node.label`.
+     */
+    async showLabel(token) {
+        return this._mutate(() =>
+            this.orm.call("studio.view.editor", "show_label_at", [
+                this.viewId,
+                this.packageId,
+                this.descriptor(token),
+                this.archVersion,
+            ])
+        );
+    }
+
+    /**
+     * Take that label away again. `remove` on the label's own token, but
+     * the field stays selected: the label was never what was selected.
+     */
+    async hideLabel(labelToken) {
+        return this._mutate(() =>
+            this.orm.call("studio.view.editor", "remove_at", [
+                this.viewId,
+                this.packageId,
+                this.descriptor(labelToken),
+                this.archVersion,
+                false,
+            ])
+        );
+    }
+
+    /**
      * Take a node out of the view.
      *
      * A container with something in it is refused the first time, with the

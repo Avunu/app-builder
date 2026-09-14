@@ -424,6 +424,7 @@ class StudioViewEditor(models.AbstractModel):
             "dom": True,
             "field": None,
             "view_id": None,
+            "label": None,
             "pending": {
                 "draft_id": info["draft_id"],
                 "name": info["name"],

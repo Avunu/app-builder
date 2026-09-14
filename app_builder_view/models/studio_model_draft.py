@@ -269,13 +269,17 @@ class StudioModelDraft(models.TransientModel):
         if not located:
             return False
         xpath, expectation = located
+        position = anchor.get("position") or "after"
+        found = editor._resolve_xpath(root, xpath) or []
         operation = {
             "type": "add_field",
             "name": name,
             "attrs": {"widget": widget} if widget else {},
             "xpath": xpath,
-            "position": anchor.get("position") or "after",
+            "position": position,
             "_expect": expectation,
+            # Labelled where the form would not label it, as a live drop is.
+            "label": len(found) == 1 and editor._label_wanted(view, found[0], position),
         }
         try:
             with self.env.cr.savepoint():

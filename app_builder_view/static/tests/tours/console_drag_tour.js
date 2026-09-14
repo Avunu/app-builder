@@ -1,5 +1,5 @@
 import { registry } from "@web/core/registry";
-import { animationFrame, delay, drag, hover, press, waitFor } from "@odoo/hoot-dom";
+import { animationFrame, delay, drag, hover, waitFor } from "@odoo/hoot-dom";
 
 /**
  * Building a form by dragging: a field from the palette between two fields,
@@ -182,7 +182,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
             content: "a drag given up with a key drops nothing",
             trigger: ".o_studio_tile_field.o_studio_draggable[data-name='x_tour_second']",
             run: async function () {
-                const { moveTo } = await drag(this.anchor);
+                const { moveTo, cancel } = await drag(this.anchor);
                 await animationFrame();
                 await hover(this.anchor, { position: { top: 20, left: 20 }, relative: true });
                 await animationFrame();
@@ -192,7 +192,9 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
                 );
                 await moveTo(zone, { position: "center" });
                 await animationFrame();
-                await press("Escape");
+                // The helper's own cancel: it presses Escape *and* lets go
+                // of the button it holds, so the next drag can start.
+                await cancel();
                 await animationFrame();
                 if (document.querySelector(".o_studio_dropzone")) {
                     throw new Error("the zones should go with the cancelled drag");
@@ -212,6 +214,62 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
         },
         {
             content: "the console still says saved",
+            trigger: ".o_studio_top_bar .o_studio_status_saved",
+        },
+        // A field dropped on the sheet itself, outside any group, is where
+        // the form draws no label: the drop gives it one of its own, and
+        // the panel's switch takes it away and brings it back.
+        {
+            content: "drop the same field on the sheet, after a group",
+            trigger: ".o_studio_tile_field.o_studio_draggable[data-name='x_tour_second']",
+            run: "drag_and_drop .o_studio_dropzone[data-container-kind='sheet'][data-kind='group'][data-position='after']",
+        },
+        {
+            content: "it renders on the sheet, with a label of its own before it",
+            trigger: ".o_studio_canvas .o_form_sheet > label.o_form_label:contains('Tour Second') + .o_field_widget[name='x_tour_second']",
+        },
+        {
+            content: "the panel says so, with the switch on",
+            trigger: ".o_studio_properties .o_studio_row[data-row='show_label'] input:checked",
+        },
+        {
+            content: "switch the label off",
+            trigger: ".o_studio_properties .o_studio_row[data-row='show_label'] input:checked",
+            run: "click",
+        },
+        {
+            content: "the field renders bare, and the panel says why",
+            trigger: ".o_studio_properties .o_studio_row[data-row='show_label'] .o_studio_label_note:contains('outside a group')",
+            run: function () {
+                const labels = document.querySelectorAll(".o_studio_canvas .o_form_sheet > label.o_form_label");
+                if ([...labels].some((el) => el.textContent.includes("Tour Second"))) {
+                    throw new Error("the label should be gone");
+                }
+                if (!document.querySelector(".o_studio_canvas .o_form_sheet > .o_field_widget[name='x_tour_second']")) {
+                    throw new Error("the field itself stays");
+                }
+            },
+        },
+        {
+            content: "and back on",
+            trigger: ".o_studio_properties .o_studio_row[data-row='show_label'] input:not(:checked)",
+            run: "click",
+        },
+        {
+            content: "a label of its own stands before the field again",
+            trigger: ".o_studio_canvas .o_form_sheet > label.o_form_label:contains('Tour Second') + .o_field_widget[name='x_tour_second']",
+        },
+        {
+            content: "rename it from the Label row",
+            trigger: ".o_studio_properties .o_studio_row[data-row='string'] input",
+            run: "edit Second Label && press Tab",
+        },
+        {
+            content: "the label on the sheet follows",
+            trigger: ".o_studio_canvas .o_form_sheet > label.o_form_label:contains('Second Label')",
+        },
+        {
+            content: "saved",
             trigger: ".o_studio_top_bar .o_studio_status_saved",
         },
         {

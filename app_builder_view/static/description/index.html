@@ -435,8 +435,8 @@ the first model your package owns, and the view switcher takes it from
 there.</p>
 <div class="section" id="the-sidebar">
 <h2><a class="toc-backref" href="#toc-entry-2">The sidebar</a></h2>
-<ul class="simple">
-<li><strong>Add</strong> holds three groups of tiles: <strong>Components</strong> (Tabs, Columns,
+<ul>
+<li><p class="first"><strong>Add</strong> holds three groups of tiles: <strong>Components</strong> (Tabs, Columns,
 Group, Separator, Button), <strong>New Fields</strong> (one per field type the
 package can make; a type it cannot is shown disabled with the reason)
 and <strong>Existing Fields</strong> (every field of the model not yet on the view,
@@ -444,17 +444,28 @@ searchable). Drag a tile onto the canvas: bars appear between the
 elements that can take it, the chip names the spot under the pointer —
 “after Email”, “into Notes”, “at the end of the sheet” — and dropping
 on nothing does nothing. Resting on a notebook tab while dragging
-switches to it.</li>
-<li><strong>View</strong> edits the view’s own settings, shows invisible elements when
+switches to it.</p>
+</li>
+<li><p class="first"><strong>View</strong> edits the view’s own settings, shows invisible elements when
 asked, and shows the source of what this package has written for the
-view together with its recent changes.</li>
-<li><strong>Properties</strong> opens when you click something. It lists the element’s
+view together with its recent changes.</p>
+</li>
+<li><p class="first"><strong>Properties</strong> opens when you click something. It lists the element’s
 options as label / control rows — the same rows for a core field and
 one you added — and, for a field, its definition: label, help,
 required, the values of a selection. A field the package owns is
 edited in place; a core field shows what it is. <strong>Remove from view</strong>
 is at the bottom, and removing a group asks first, with the number of
-fields it would take.</li>
+fields it would take.</p>
+<p>A form draws a field’s label only inside a group. A field dropped
+anywhere else — on the sheet, in a tab, in columns — is given a label
+of its own (<tt class="docutils literal">&lt;label for&gt;</tt>, the way core’s views do it) so it reads
+the same; the <strong>Show label</strong> switch under the Label row takes it away
+or brings it back, and says so when a label is not shown. The Label
+row itself renames a field you added in the database; for a field your
+package defines in Python it relabels this view only, and <strong>Edit
+definition</strong> below renames the field itself, on Apply.</p>
+</li>
 </ul>
 <p>Moving is a drag too: pick up a field, a button or a tab and drop it
 where it should be; a group or a notebook is picked up by the grip on

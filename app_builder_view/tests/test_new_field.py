@@ -407,8 +407,15 @@ class TestNewFieldFromTheEditor(StudioCase):
         self.assertEqual(selected["field"]["origin"], "manual")
         combined = etree.fromstring(view.get_combined_arch().encode())
         email_node = combined.find(".//field[@name='email']")
-        self.assertEqual(email_node.getnext().get("name"), "x_nick")
+        # Right after Email -- which `mail` keeps in a row div the group
+        # draws no label for, so the new field is given one of its own,
+        # in the same edit.
+        label = email_node.getnext()
+        self.assertEqual((label.tag, label.get("for")), ("label", "x_nick"))
+        self.assertEqual(label.getnext().get("name"), "x_nick")
+        self.assertEqual(selected["label"]["by"], "label")
         self.assertEqual(result["history"]["undo"][0]["summary"], "added x_nick")
+        self.assertEqual(len(result["history"]["undo"]), 1, "one edit, label included")
 
     # -- what the tiles say ---------------------------------------------------
 
