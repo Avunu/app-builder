@@ -29,9 +29,17 @@
  * `ir.model.fields` row, live the moment `drop_at` returns. On a
  * Python-owned model it is a class attribute waiting for an Apply, so the
  * drop stages it on this user's `studio.model.draft` and the canvas draws a
- * ghost where it will land; the draft's payload -- what is pending, what
- * the reload will cost -- is held here as `draft`, and Apply, Discard and
- * the edits to a staged field all go through it.
+ * ghost where it will land. The draft itself -- what is pending, what the
+ * reload will cost, Apply and Discard -- belongs to the shell
+ * (`shell/draft_model.js`): it is per model, and the pill that counts it
+ * sits on every pane. The delegations here keep the sidebar's vocabulary
+ * (`model.draft`, `model.updateStaged`...) and refresh the canvas after
+ * each, which is this pane's business and not the draft's.
+ *
+ * This is the Views pane's model. The shell owns the package in the top
+ * bar, the model on the crumb and the model's draft; this reads them
+ * through `shell` and owns everything about one view: its canvas, its
+ * selection, its history, its palette.
  *
  * No Owl in here. Reactivity is the caller's business (`useState` on the
  * instance); this class is plain so it can be tested and ported as it is.
@@ -40,6 +48,7 @@
 import { markRaw } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 import * as compat from "./compat";
+import { messageOf } from "./shell/draft_model";
 
 /**
  * Picker keys whose field cannot be made from a label alone, for a server
@@ -58,9 +67,6 @@ const DIALOG_TYPES = new Set([
     "related",
 ]);
 
-/** How long Apply waits for a restarting server, and how it waits. */
-export const RECONNECT_DELAYS_MS = [1000, 2000, 3000, 4000, 5000, 5000, 5000, 5000];
-
 /**
  * Spec keys a field created live cannot carry: they are class attributes
  * with no `ir.model.fields` column (`manualfield.UNSUPPORTED_LIVE`), and
@@ -74,21 +80,20 @@ export class ConsoleModel {
     /**
      * @param {Object} env the component env; `services.orm`,
      *   `services.notification` and `bus` are read.
-     * @param {Object} params `{view_id, model|res_model, view_type,
-     *   action_id, res_id}` -- the legacy and the console spellings both.
+     * @param {Object} shell the `StudioShell`: `packageId`, `modelName`,
+     *   `modelLabel`, `draft`, `view` and `learnContext` are read.
      */
-    constructor(env, params) {
+    constructor(env, shell) {
         this.env = env;
         this.orm = env.services.orm;
         this.notification = env.services.notification;
-        this.params = {
-            view_id: params.view_id || false,
-            model: params.model || params.res_model || false,
-            view_type: params.view_type || false,
-            action_id: params.action_id || false,
-            res_id: params.res_id || false,
-        };
+        this.shell = shell;
+        this.params = { view_id: false, model: false, view_type: false, res_id: false };
+        this._reset();
+    }
 
+    /** Everything about one view, back to nothing: `open` starts here. */
+    _reset() {
         this.context = null;
         this.canvas = null;
         this.selection = null;
@@ -123,10 +128,6 @@ export class ConsoleModel {
         // The picker's entries for this model, each saying whether it can
         // be made live here and whether it needs the editor first.
         this.fieldTypes = [];
-        // This user's draft on the model, as `studio.model.draft.load()`
-        // returns it, when the model is Python-owned and one exists.
-        this.draft = null;
-        this.applying = false;
         // Bumped when the model's fields changed under an unchanged arch
         // -- a manual field renamed -- so the canvas remounts on it.
         this.renderSerial = 0;
@@ -135,9 +136,42 @@ export class ConsoleModel {
         // Bumped after every search-view edit: the host list previewing the
         // search view loads it the ordinary way and has to be remounted.
         this.searchSerial = 0;
-        this.modelLabel = "";
         this.descriptions = markRaw({});
-        this.packageId = false;
+    }
+
+    // -- what the shell owns ----------------------------------------------
+
+    /** The package edits are recorded into: the one in the top bar. */
+    get packageId() {
+        return this.shell.packageId;
+    }
+
+    get modelLabel() {
+        return this.shell.modelLabel;
+    }
+
+    /** The shell's draft on this model; see `shell/draft_model.js`. */
+    get draftModel() {
+        return this.shell.draft;
+    }
+
+    get draft() {
+        return this.draftModel.draft;
+    }
+
+    get applying() {
+        return this.draftModel.applying;
+    }
+
+    /** What the status pill reads, whichever pane is on. */
+    get activity() {
+        return {
+            busy: this.busy,
+            status: this.status,
+            error: this.statusError,
+            drag: this.drag,
+            applying: this.applying,
+        };
     }
 
     // -- reading ------------------------------------------------------------
@@ -200,12 +234,7 @@ export class ConsoleModel {
 
     /** The draft the console addresses, from whichever answer named it last. */
     get draftId() {
-        return (
-            (this.draft && this.draft.id) ||
-            (this.canvas && this.canvas.draft_id) ||
-            (this.context && this.context.draft_id) ||
-            false
-        );
+        return this.draftModel.draftId || (this.canvas && this.canvas.draft_id) || false;
     }
 
     /** The ghosts the canvas carries: `{name, label, ttype, token, placed}`. */
@@ -227,20 +256,16 @@ export class ConsoleModel {
 
     /** The staged changes, as the draft lists them for its tray. */
     get pendingChanges() {
-        return (this.draft && this.draft.pending) || [];
+        return this.draftModel.pendingChanges;
     }
 
     get draftErrors() {
-        return (this.draft && this.draft.errors) || [];
+        return this.draftModel.errors;
     }
 
-    /** `inproc`, `restart` or `manual`: what an Apply costs on this server. */
+    /** `inproc` or `manual`: what an Apply costs on this server. */
     get reloadMode() {
-        return (
-            (this.draft && this.draft.package && this.draft.package.reload_mode) ||
-            (this.context && this.context.reload_mode) ||
-            false
-        );
+        return this.draftModel.reloadMode || (this.context && this.context.reload_mode) || false;
     }
 
     /** Why Apply is not on offer right now, or `""` when it is. */
@@ -248,19 +273,7 @@ export class ConsoleModel {
         if (!this.pendingCount) {
             return _t("Nothing is pending.");
         }
-        if (this.reloadMode === "manual") {
-            return _t(
-                "This server runs several workers, so it cannot reload in place. " +
-                    "Staging works; applying needs a restart of the server."
-            );
-        }
-        if (this.draft && this.draft.package && !this.draft.package.writable) {
-            return _t("This package is read-only, so nothing can be applied.");
-        }
-        if (this.draftErrors.length) {
-            return this.draftErrors.join("\n");
-        }
-        return "";
+        return this.draftModel.applyBlocker;
     }
 
     get canApply() {
@@ -269,8 +282,7 @@ export class ConsoleModel {
 
     /** The staged definition of a pending field, from the draft. */
     stagedField(name) {
-        const fields = (this.draft && this.draft.fields) || [];
-        return fields.find((field) => field.name === name) || null;
+        return this.draftModel.stagedField(name);
     }
 
     /** The picker entry for a key such as `char` or `priority`. */
@@ -329,13 +341,39 @@ export class ConsoleModel {
 
     // -- loading ------------------------------------------------------------
 
+    /**
+     * Open a view: `{view_id, model, view_type, res_id}`, any of which the
+     * server fills in when missing. Everything about the previous view is
+     * dropped first; the shell keeps the package, the model and the draft.
+     */
+    async open(target = {}) {
+        this._reset();
+        this.params = {
+            view_id: target.view_id || false,
+            model: target.model || target.res_model || false,
+            view_type: target.view_type || false,
+            res_id: target.res_id || false,
+        };
+        return this.load();
+    }
+
+    /** The view again, after another pane may have changed the model. */
+    async reactivate() {
+        if (!this.canvas) {
+            return this.load();
+        }
+        await this.loadContext();
+        await this.refresh({ keepSelection: true });
+        await this.loadDraft();
+        return undefined;
+    }
+
     async load() {
         await this.loadContext();
-        this.packageId = this.context.suggested_package_id || false;
         await this.refresh({ keepSelection: false });
         // The field plan is asked for every view, not only those with a
         // rendering: it is what says why a report cannot take a new field.
-        const loads = [this._loadModelLabel(), this.loadFieldPlan(), this.loadDraft()];
+        const loads = [this.loadFieldPlan(), this.loadDraft()];
         if (this.editableAs === "canvas" && this.modelName) {
             loads.push(
                 this.loadPalette(),
@@ -358,6 +396,9 @@ export class ConsoleModel {
                 { model: this.params.model, view_type: this.params.view_type }
             )
         );
+        // The shell learns the model, the package to suggest and the
+        // draft that may exist from the same answer.
+        await this.shell.learnContext(this.context);
     }
 
     /**
@@ -397,39 +438,18 @@ export class ConsoleModel {
     }
 
     /**
-     * This user's draft on the model, when there is one.
-     *
-     * Never created here: opening the console is not an edit, and the
-     * first staged drop makes the draft. A draft that has gone -- vacuumed
-     * after its idle window -- is not an error either: the context is
-     * re-read so the next drop opens a fresh one.
+     * This user's draft on the model, when there is one -- the shell's,
+     * read again. A canvas that named a draft the shell does not know of
+     * yet hands the id over first.
      */
     async loadDraft() {
-        const id = this.draftId;
-        if (!id) {
-            this.draft = null;
-            return;
+        if (!this.draftModel.draftId && this.canvas && this.canvas.draft_id) {
+            this.draftModel.setHints({
+                draft_id: this.canvas.draft_id,
+                reload_mode: this.reloadMode,
+            });
         }
-        try {
-            this.draft = markRaw(await this.orm.call("studio.model.draft", "load", [[id]]));
-        } catch (err) {
-            if (!(err && err.data)) {
-                throw err;
-            }
-            this.draft = null;
-            await this.loadContext();
-            if (this.draftId && this.draftId !== id) {
-                await this.loadDraft();
-            }
-        }
-    }
-
-    async _loadModelLabel() {
-        if (!this.modelName) {
-            return;
-        }
-        const names = await this.orm.call("ir.model", "display_name_for", [[this.modelName]]);
-        this.modelLabel = (names[0] && names[0].display_name) || this.modelName;
+        return this.draftModel.load();
     }
 
     _canvasOptions() {
@@ -719,7 +739,7 @@ export class ConsoleModel {
             if (result && result.draft) {
                 // A staged drop answers with the draft it staged on, so
                 // the tray is current without a second round trip.
-                this.draft = markRaw(result.draft);
+                this.draftModel.draft = markRaw(result.draft);
             }
             if (result && result.canvas) {
                 this._replaceCanvas(result.canvas, { select: select || result.select });
@@ -1231,76 +1251,27 @@ export class ConsoleModel {
         };
     }
 
-    /**
-     * The draft the editor's questions go to, opened when the model has
-     * none yet: `inverse_options` and `resolve_related` are methods of a
-     * draft, and a Python-owned model with nothing staged has no draft
-     * until its first drop. Opening one for a question is not an edit --
-     * a clean draft is nothing to apply -- and the drop that follows
-     * stages on it.
-     */
+    /** The draft the editor's questions go to, opened when the model has
+     * none yet; the shell's, opened on this model. */
     async _ensureDraft() {
-        if (this.draft) {
-            return this.draft;
-        }
-        if (this.draftId) {
-            await this.loadDraft();
-            if (this.draft) {
-                return this.draft;
-            }
-        }
-        const payload = await this._guard(() =>
-            this.orm.call("studio.model.draft", "open_for_model", [this.modelName])
-        );
-        if (payload) {
-            this.draft = markRaw(payload);
-        }
-        return this.draft;
+        return this.draftModel.ensure();
     }
 
     /**
-     * One call on the draft, then the tray and the canvas reloaded.
-     *
-     * The draft is opened on demand: editing the definition of a field the
-     * class already has is the first thing a Python-owned model may be
-     * asked, and it has no draft until something is staged on it.
+     * One call on the draft, then the tray and the canvas reloaded: the
+     * ghosts follow what was staged.
      */
     async _onDraft(method, args, { silent = false } = {}) {
-        if (!this.draftId && this.pythonOwned) {
-            await this._ensureDraft();
-        }
-        const id = this.draftId;
-        if (!id) {
-            return undefined;
-        }
         this.busy = true;
         try {
-            const result = await this._guardDraft(
-                () => this.orm.call("studio.model.draft", method, [[id], ...args]),
-                silent
-            );
+            const result = await this.draftModel.call(method, args, { silent });
             if (result === undefined) {
                 return undefined;
             }
-            await this.loadDraft();
             await this.refresh();
             return result;
         } finally {
             this.busy = false;
-        }
-    }
-
-    async _guardDraft(run, silent) {
-        try {
-            return await run();
-        } catch (err) {
-            if (!(err && err.data)) {
-                throw err;
-            }
-            if (!silent) {
-                this.notification.add(messageOf(err), { type: "warning" });
-            }
-            return undefined;
         }
     }
 
@@ -1340,33 +1311,9 @@ export class ConsoleModel {
         return this._onDraft("add_field", [spec]);
     }
 
-    /**
-     * The model's fields in class order, each with the kind of change the
-     * draft holds for it (`added`, `changed`, `removed`) or `null`. Fields
-     * the draft has removed are listed still, marked, so the removal can
-     * be seen and undone before Apply makes it a dropped column.
-     */
+    /** The model's fields in class order, with what the draft holds for each. */
     get modelFields() {
-        const draft = this.draft;
-        if (!draft) {
-            return [];
-        }
-        const kinds = new Map();
-        for (const change of draft.pending || []) {
-            if (change.name && change.kind !== "model" && !change.model) {
-                kinds.set(change.name, change.kind);
-            }
-        }
-        const listed = (draft.fields || []).map((field) => ({
-            ...field,
-            pendingKind: kinds.get(field.name) || null,
-        }));
-        for (const change of draft.pending || []) {
-            if (change.kind === "removed" && !change.model && !listed.some((f) => f.name === change.name)) {
-                listed.push({ name: change.name, string: change.name, pendingKind: "removed" });
-            }
-        }
-        return listed;
+        return this.draftModel.modelFields;
     }
 
     /** Everything the draft has staged, thrown away; the ghosts go too. */
@@ -1376,114 +1323,25 @@ export class ConsoleModel {
 
     /** The unified diff of what Apply would write, for the dialog. */
     async previewDiff() {
-        const id = this.draftId;
-        if (!id) {
-            return "";
-        }
-        const diff = await this._guard(() =>
-            this.orm.call("studio.model.draft", "preview_diff", [[id]])
-        );
-        return diff || "";
+        return this.draftModel.previewDiff();
     }
 
     /**
-     * Apply the draft: write the package, reload it, place what was
-     * staged where it was dropped.
-     *
-     * Returns `{ok: true}` once the console is current again, or `{ok:
-     * false, message, destructive}` with the server's sentence when it
-     * refused -- `destructive` when it refused because data would go, so
-     * the dialog can offer "Apply anyway". Under a `restart` reload the
-     * request itself may die with the server: that is not a refusal, and
-     * the console waits for the server to come back, then reads the
-     * draft to learn how far the apply got. The package may well have
-     * been written and reloaded with the placement still to do -- that
-     * part of the transaction died with the request -- and the draft
-     * then still counts the fields as pending although the registry has
-     * them; `place_pending` finishes that apply, and only when it cannot
-     * is the apply reported as still pending.
+     * Apply the draft through the shell, then read everything again: the
+     * package was reloaded, so the context, the canvas and every list are
+     * stale. `{ok, message, destructive, restartRequired}` as the draft
+     * says it.
      */
     async applyDraft(allowDestructive = false) {
-        const id = this.draftId;
-        if (!id) {
-            return { ok: false, message: _t("There is nothing to apply."), destructive: false };
+        const result = await this.draftModel.apply(allowDestructive);
+        if (result && result.ok) {
+            await this.afterApply();
         }
-        this.applying = true;
-        try {
-            try {
-                await this.orm.call("studio.model.draft", "action_apply", [[id], allowDestructive]);
-            } catch (err) {
-                if (err && err.data) {
-                    const message = messageOf(err);
-                    return {
-                        ok: false,
-                        message,
-                        destructive: !allowDestructive && /remove|drop|destructive|kept aside/i.test(message),
-                    };
-                }
-                if (this.reloadMode !== "restart") {
-                    throw err;
-                }
-                const back = await this._reconnect();
-                if (!back) {
-                    return {
-                        ok: false,
-                        message: _t("The server has not come back yet. Reload the page in a moment."),
-                        destructive: false,
-                    };
-                }
-            }
-            await this._afterApply();
-            if (this.pendingCount) {
-                // The server came back with the draft still dirty: the
-                // apply died before it committed, or after the package
-                // was written and before the fields were placed.
-                const finished = await this._placePending();
-                if (!finished.placed) {
-                    return {
-                        ok: false,
-                        message: finished.reason
-                            ? _t(
-                                  "The server restarted before the apply committed; it is still pending. %s",
-                                  finished.reason
-                              )
-                            : _t("The server restarted before the apply committed; it is still pending."),
-                        destructive: false,
-                    };
-                }
-                await this._afterApply();
-            }
-            this.notification.add(_t("Applied."), { type: "success" });
-            return { ok: true };
-        } finally {
-            this.applying = false;
-        }
-    }
-
-    /**
-     * The rest of an apply the server restarted in the middle of: the
-     * placement and the baseline, from the anchors the draft still holds.
-     * `{placed, reason}` as the server says it; a refusal is not thrown,
-     * since the caller has a sentence of its own to put it in.
-     */
-    async _placePending() {
-        const id = this.draftId;
-        if (!id) {
-            return { placed: false, reason: "" };
-        }
-        try {
-            const result = await this.orm.call("studio.model.draft", "place_pending", [[id]]);
-            return result || { placed: false, reason: "" };
-        } catch (err) {
-            if (err && err.data) {
-                return { placed: false, reason: messageOf(err) };
-            }
-            throw err;
-        }
+        return result;
     }
 
     /** Everything the console knows, read again after a reload. */
-    async _afterApply() {
+    async afterApply() {
         await this.loadContext();
         await this.refresh();
         await Promise.all([
@@ -1493,27 +1351,6 @@ export class ConsoleModel {
             this.loadFieldTypes(),
         ]);
         this.renderSerial += 1;
-    }
-
-    /**
-     * Wait for a restarting server: the canvas is asked for, with a
-     * growing pause between tries, until it answers or the tries run
-     * out. `true` when it answered.
-     */
-    async _reconnect(delays = RECONNECT_DELAYS_MS) {
-        for (const delay of delays) {
-            await new Promise((resolve) => setTimeout(resolve, delay));
-            try {
-                await this._fetchCanvas();
-                return true;
-            } catch (err) {
-                if (err && err.data) {
-                    // The server is up and refusing: it is back.
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     // -- a manual field's definition ---------------------------------------
@@ -1748,10 +1585,4 @@ const KIND_LABELS = {
     html: _t("Block"),
 };
 
-/** The sentence an RPC error carries for the user. */
-export function messageOf(err) {
-    if (err && err.data && err.data.message) {
-        return err.data.message;
-    }
-    return (err && err.message) || _t("Something went wrong.");
-}
+export { messageOf };

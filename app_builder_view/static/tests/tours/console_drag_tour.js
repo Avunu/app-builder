@@ -238,17 +238,12 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
             run: "click",
         },
         {
-            content: "the field renders bare, and the panel says why",
+            content: "the field renders bare once the canvas has followed",
+            trigger: ".o_studio_canvas .o_form_sheet:has(.o_field_widget[name='x_tour_second']):not(:has(label.o_form_label:contains('Tour Second')))",
+        },
+        {
+            content: "and the panel says why",
             trigger: ".o_studio_properties .o_studio_row[data-row='show_label'] .o_studio_label_note:contains('outside a group')",
-            run: function () {
-                const labels = document.querySelectorAll(".o_studio_canvas .o_form_sheet > label.o_form_label");
-                if ([...labels].some((el) => el.textContent.includes("Tour Second"))) {
-                    throw new Error("the label should be gone");
-                }
-                if (!document.querySelector(".o_studio_canvas .o_form_sheet > .o_field_widget[name='x_tour_second']")) {
-                    throw new Error("the field itself stays");
-                }
-            },
         },
         {
             content: "and back on",

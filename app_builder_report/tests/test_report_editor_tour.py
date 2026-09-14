@@ -72,19 +72,16 @@ class TestReportEditorTour(HttpCase):
         # package's before a report over it can be written to source.
         package.studio_capture(model)
         self.env["x_tour_job"].create({"x_name": "Bridge survey"})
-        made = self.env["studio.report"].create_report(
-            package.id, "x_tour_job", "Job Sheet"
-        )
 
-        # Start where a person starts -- the report list -- so the tour walks
-        # the whole path, including the Edit Layout button that is the only
-        # thing connecting a report to the editor.
+        # Start where a person starts -- the model's list, the cog, the
+        # console -- so the tour walks the whole path: the Reports pane, a
+        # report made from a layout, and Edit layout on its card, which is
+        # the only thing connecting a report to the editor.
         action = self.env["ir.actions.act_window"].create(
             {
-                "name": "Tour Reports",
-                "res_model": "ir.actions.report",
+                "name": "Tour Jobs",
+                "res_model": "x_tour_job",
                 "view_mode": "list,form",
-                "domain": "[('report_name', '=', %r)]" % made["report_name"],
             }
         )
         self.start_tour(
@@ -92,6 +89,12 @@ class TestReportEditorTour(HttpCase):
             "app_builder_report_editor_tour",
             login="admin",
         )
+        report = self.env["ir.actions.report"].search(
+            [("model", "=", "x_tour_job"), ("name", "=", "Job Sheet")]
+        )
+        self.assertEqual(len(report), 1)
+        self.assertEqual(report.studio_package_id, package)
+        made = {"view_id": self.env["studio.report"]._template_of(report).id}
 
         # What the tour saw on screen, asserted against what was written.
         arch = self.env["ir.ui.view"].browse(made["view_id"]).arch

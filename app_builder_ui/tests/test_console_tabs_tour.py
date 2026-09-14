@@ -49,9 +49,9 @@ class TestConsoleTabsTour(HttpCase):
         )
         return package
 
-    def test_the_automations_tab_opens_the_list_and_the_breadcrumb_returns(self):
-        """Automations of the model on the canvas, and only those; the
-        console one breadcrumb back and intact afterwards."""
+    def test_the_automations_pane_lists_the_models_rules_inside_the_console(self):
+        """Automations of the model on the canvas, and only those, as a pane
+        of the console; the canvas intact when the Views tab is clicked."""
         self._package("x_tour_tabs_pkg", "Tour Tabs")
         partner_model = self.env["ir.model"]._get("res.partner")
         other_model = self.env["ir.model"]._get("res.users")

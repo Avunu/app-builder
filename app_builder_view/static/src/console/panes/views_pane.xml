@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.ViewsPane">
+    <t t-component="this.canvasComponent" t-props="this.canvasProps"/>
+</t>
+
+<t t-name="app_builder_view.ViewsSidebar">
+    <div t-if="this.packageMissing" class="alert alert-warning rounded-0 mb-0 small" role="alert">
+        No package can be written to, so nothing can be edited yet. Create one
+        on the Home tab.
+    </div>
+    <div class="o_studio_sidebar_tabs" role="tablist">
+        <button class="o_studio_sidebar_tab" t-att-class="{ active: this.state.tab === tab.key }" t-foreach="this.tabs" t-as="tab"
+                t-key="tab.key" type="button"
+                role="tab"
+                t-att-data-tab="tab.key"
+                t-att-aria-selected="this.state.tab === tab.key"
+                t-on-click="() => this.state.tab = tab.key">
+            <t t-esc="tab.label"/>
+        </button>
+    </div>
+    <div class="o_studio_sidebar_pane" t-att-data-pane="this.state.tab">
+        <AddTab t-if="this.state.tab === 'add'" model="this.model"/>
+        <ViewTab t-elif="this.state.tab === 'view'" model="this.model"/>
+        <PropertiesTab t-else="" model="this.model"/>
+    </div>
+</t>
+
+</templates>

@@ -1,7 +1,7 @@
 {
     "name": "App Builder: PDF reports",
     "summary": "Create PDF reports, and edit existing ones as inheriting views",
-    "version": "18.0.1.0.0",
+    "version": "18.0.1.1.0",
     "category": "Technical",
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",

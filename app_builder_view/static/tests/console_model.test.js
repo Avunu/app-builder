@@ -16,6 +16,7 @@ import { beforeEach, expect, test } from "@odoo/hoot";
 import { patchTranslations } from "@web/../tests/web_test_helpers";
 
 import { ConsoleModel } from "@app_builder_view/console/console_model";
+import { DraftModel } from "@app_builder_view/console/shell/draft_model";
 
 beforeEach(() => patchTranslations());
 
@@ -82,10 +83,28 @@ function makeModel() {
             },
         },
     };
-    model = new ConsoleModel(env, { view_id: 7 });
-    model.packageId = 3;
+    // The shell the Views pane's model reads through: the package in the
+    // top bar, the model on the crumb, the draft; nothing else is asked.
+    const shell = {
+        env,
+        packageId: 3,
+        modelName: "res.partner",
+        modelLabel: "Contact",
+        learned: {},
+        async learnContext(context) {
+            this.learned = context;
+            this.modelName = context.view.model;
+            this.draft.setHints(context);
+        },
+        get pythonOwned() {
+            return Boolean(this.learned.python_owned);
+        },
+    };
+    shell.draft = new DraftModel(env, shell);
+    model = new ConsoleModel(env, shell);
+    model.params = { view_id: 7, model: false, view_type: false, res_id: false };
     model._replaceCanvas(canvas("v1", ["name", "email", "phone"]));
-    return { model, calls, notices };
+    return { model, calls, notices, shell };
 }
 
 test("a dropped Button tile is held with the version its token was minted on", async () => {
@@ -304,9 +323,10 @@ test("a staged answer carries the draft, and the ghost is removed through it", a
 
 /** A model with a draft on it, and a server that answers every reload. */
 function makeStagedModel({ reloadMode = "inproc", apply } = {}) {
-    const { model, calls, notices } = makeModel();
+    const { model, calls, notices, shell } = makeModel();
     model.context = { view: { id: 7, type: "form", model: "x_job" }, python_owned: true };
-    model.draft = {
+    shell.learned = model.context;
+    shell.draft.draft = {
         id: 9,
         change_count: 1,
         pending: [{ kind: "added", name: "weight" }],
@@ -337,18 +357,20 @@ function makeStagedModel({ reloadMode = "inproc", apply } = {}) {
 }
 
 test("Apply reloads everything the console knows and says so", async () => {
-    const { model, calls, notices } = makeStagedModel({ apply: () => true });
+    const { model, calls, notices } = makeStagedModel({
+        apply: () => ({ applied: true, restart_required: false }),
+    });
     expect(model.pendingCount).toBe(1);
     expect(model.canApply).toBe(true);
     const result = await model.applyDraft(false);
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, restartRequired: false });
     expect(calls.find((c) => c.method === "action_apply").args).toEqual([[9], false]);
-    // The context, the canvas and the draft are read again, in that order:
-    // the registry was rebuilt, and the arch the canvas shows has moved.
+    // The draft is read first, then the context and the canvas: the
+    // registry was rebuilt, and the arch the canvas shows has moved.
     const after = calls.map((c) => c.method);
-    expect(after.indexOf("editing_context")).toBeGreaterThan(after.indexOf("action_apply"));
+    expect(after.indexOf("load")).toBeGreaterThan(after.indexOf("action_apply"));
+    expect(after.indexOf("editing_context")).toBeGreaterThan(after.indexOf("load"));
     expect(after.indexOf("canvas")).toBeGreaterThan(after.indexOf("editing_context"));
-    expect(after).toInclude("load");
     expect(model.archVersion).toBe("v2");
     expect(model.pendingCount).toBe(0);
     expect(model.applying).toBe(false);
@@ -375,90 +397,40 @@ test("a refusal to apply comes back as the server's sentence, destructive or not
     expect(again.destructive).toBe(false);
 });
 
-test("Apply is not offered where the server cannot reload", async () => {
-    const { model } = makeStagedModel({ reloadMode: "manual", apply: () => true });
-    expect(model.canApply).toBe(false);
-    expect(model.applyBlocker).toMatch(/restart/);
-});
-
-test("under a restart the console waits for the server, then reads the draft", async () => {
-    let up = false;
-    const { model, calls } = makeStagedModel({
-        reloadMode: "restart",
-        apply: () => {
-            // The request dies with the server: no `data`, as the RPC
-            // layer reports a lost connection.
-            throw new Error("connection lost");
-        },
-    });
-    const call = model.orm.call;
-    model.orm.call = async (m, method, ...rest) => {
-        if (method === "canvas" && !up) {
-            up = true;
-            throw new Error("connection lost");
-        }
-        return call(m, method, ...rest);
-    };
-    model._reconnect = () => ConsoleModel.prototype._reconnect.call(model, [1, 1, 1]);
-    const result = await model.applyDraft(false);
-    expect(result).toEqual({ ok: true });
-    // One probe failed, the next answered, and the reload went on from there.
-    expect(calls.filter((c) => c.method === "canvas").length).toBeGreaterThan(1);
-    expect(model.pendingCount).toBe(0);
-});
-
-test("a restart that outran the placement is finished, not reported as pending", async () => {
-    // The package was written and reloaded, the request died before the
-    // fields were placed: the draft comes back still counting them.
+test("where the server cannot reload, Apply writes and says a restart is owed", async () => {
     const { model, calls, notices } = makeStagedModel({
-        reloadMode: "restart",
-        apply: () => {
-            throw new Error("connection lost");
-        },
+        reloadMode: "manual",
+        apply: () => ({ applied: false, restart_required: true, state: "awaiting_restart" }),
     });
-    let placed = false;
-    const call = model.orm.call;
-    model.orm.call = async (m, method, ...rest) => {
-        if (method === "load" && !placed) {
-            return { ...model.draft };
+    // Staging and applying both work; the pill says what the apply costs.
+    expect(model.canApply).toBe(true);
+    expect(model.reloadMode).toBe("manual");
+    model.orm.call = ((original) => async (m, method, args, kwargs) => {
+        if (method === "load") {
+            // Written, not loaded: the draft stays dirty until the restart.
+            calls.push({ method, args, kwargs });
+            return { ...model.draft, change_count: 1 };
         }
+        return original(m, method, args, kwargs);
+    })(model.orm.call);
+    const result = await model.applyDraft(false);
+    expect(result).toEqual({ ok: true, restartRequired: true });
+    expect(model.pendingCount).toBe(1);
+    expect(notices.at(-1).type).toBe("info");
+    expect(notices.at(-1).message).toMatch(/Restart the server/);
+});
+
+test("the rest of a written apply is placed once the server is back", async () => {
+    const { model, calls } = makeStagedModel({ apply: () => true });
+    model.orm.call = ((original) => async (m, method, args, kwargs) => {
         if (method === "place_pending") {
-            calls.push({ method, args: rest[0] });
-            placed = true;
+            calls.push({ method, args, kwargs });
             return { placed: true, reason: "" };
         }
-        return call(m, method, ...rest);
-    };
-    model._reconnect = () => ConsoleModel.prototype._reconnect.call(model, [1]);
-    const result = await model.applyDraft(false);
-    expect(result).toEqual({ ok: true });
+        return original(m, method, args, kwargs);
+    })(model.orm.call);
+    const result = await model.draftModel.placePending();
+    expect(result).toEqual({ placed: true, reason: "" });
     expect(calls.find((c) => c.method === "place_pending").args).toEqual([[9]]);
     expect(model.pendingCount).toBe(0);
-    expect(notices.at(-1)).toEqual({ message: "Applied.", type: "success" });
-});
-
-test("a restart before the write is still pending, with the server's reason", async () => {
-    const { model, calls } = makeStagedModel({
-        reloadMode: "restart",
-        apply: () => {
-            throw new Error("connection lost");
-        },
-    });
-    const call = model.orm.call;
-    model.orm.call = async (m, method, ...rest) => {
-        if (method === "load") {
-            return { ...model.draft };
-        }
-        if (method === "place_pending") {
-            calls.push({ method, args: rest[0] });
-            return { placed: false, reason: "x_job does not have weight yet." };
-        }
-        return call(m, method, ...rest);
-    };
-    model._reconnect = () => ConsoleModel.prototype._reconnect.call(model, [1]);
-    const result = await model.applyDraft(false);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/still pending/);
-    expect(result.message).toMatch(/does not have weight yet/);
-    expect(model.pendingCount).toBe(1);
 });

@@ -1,7 +1,7 @@
 {
     "name": "App Builder: Approval rules",
     "summary": "Turn on tier validation from the studio, and write the rules to source",
-    "version": "18.0.1.0.0",
+    "version": "18.0.1.1.0",
     "category": "Technical",
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",
@@ -16,6 +16,9 @@
     "assets": {
         "web.assets_backend": [
             "app_builder_approval/static/src/console_items.js",
+        ],
+        "web.assets_tests": [
+            "app_builder_approval/static/tests/tours/approvals_pane_tour.js",
         ],
     },
     "data": [],

@@ -235,8 +235,10 @@ class TestPatchAnExistingReport(StudioCase):
         self.build_demo_content(package)
         report, view = self._core_report()
         action = self.env["studio.report"].edit_action(report.id)
-        self.assertEqual(action["tag"], "app_builder_view_wysiwyg")
+        self.assertEqual(action["tag"], "app_builder_console")
+        self.assertEqual(action["params"]["pane"], "views")
         self.assertEqual(action["params"]["view_id"], view.id)
+        self.assertEqual(action["params"]["view_type"], "qweb")
 
     def test_a_report_with_no_template_says_so(self):
         package = self.make_package()

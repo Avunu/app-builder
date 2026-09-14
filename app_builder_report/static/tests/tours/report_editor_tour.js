@@ -11,15 +11,48 @@ import { registry } from "@web/core/registry";
 registry.category("web_tour.tours").add("app_builder_report_editor_tour", {
     steps: () => [
         {
-            content: "the report list is on screen",
+            content: "the list of the model is on screen",
             trigger: ".o_list_view",
         },
         {
-            // The only thing connecting a report to the editor. Odoo's own
-            // report form has a "Qweb Views" button that opens the template as
-            // ir.ui.view records; this is the editing one.
-            content: "the Edit Layout button is offered on the row",
-            trigger: ".o_list_view button[name='action_studio_edit']",
+            content: "open the cog menu",
+            trigger: ".o_cp_action_menus button:has(.fa-cog)",
+            run: "click",
+        },
+        {
+            content: "the studio entry",
+            trigger: ".o_studio_edit_view",
+            run: "click",
+        },
+        {
+            content: "the Reports pane",
+            trigger: ".o_studio_top_bar .o_studio_top_tab[data-tab='reports']",
+            run: "click",
+        },
+        {
+            content: "nothing yet: the empty state offers the layouts",
+            trigger: ".o_studio_record_pane .o_studio_pane_empty .o_studio_pane_template[data-template='internal']",
+            run: "click",
+        },
+        {
+            content: "name it",
+            trigger: ".o_studio_create_card .o_studio_row[data-row='name'] input",
+            run: "edit Job Sheet",
+        },
+        {
+            content: "create it",
+            trigger: ".o_studio_create_card .o_studio_create_confirm",
+            run: "click",
+        },
+        {
+            content: "the card, selected, in the Print menu",
+            trigger: ".o_studio_record_card.selected:contains('Job Sheet') .o_studio_record_badge[data-badge='print']",
+        },
+        {
+            // The only thing connecting a report to the editor: the card's
+            // Edit layout, which opens the template on the same console.
+            content: "Edit layout is offered on the card",
+            trigger: ".o_studio_record_card.selected .o_studio_record_actions [data-action='edit']",
             run: "click",
         },
         {

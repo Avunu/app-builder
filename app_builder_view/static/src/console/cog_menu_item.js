@@ -54,10 +54,16 @@ export class EditThisView extends Component {
         // the user was looking at and Close brings them back to it.
         const controller = this.action.currentController;
         const state = (controller && controller.currentState) || {};
+        // `env.config` does not carry the model on every view; the action
+        // the controller runs always does. Without it a model with no
+        // stored view of this type (a fresh manual model) would open the
+        // console with nothing to show.
+        const resModel =
+            config.resModel || (controller && controller.action && controller.action.res_model);
         const params = {
             view_id: config.viewId || false,
-            res_model: config.resModel,
-            model: config.resModel,
+            res_model: resModel,
+            model: resModel,
             view_type: config.viewType,
             action_id: config.actionId || false,
             res_id: state.resId || false,
@@ -72,11 +78,13 @@ export class EditThisView extends Component {
             // would otherwise read records with the fields it was opened
             // with and show a new one blank. In params only: an action
             // object is not context to send with every request, and not
-            // something a URL carries.
-            params: { ...params, previous_action: controller ? controller.action : null },
-            // Also in context so the console survives a page reload from its
-            // own URL, the same way a resumable client action does.
-            context: params,
+            // something a URL carries. The rest the console keeps in its
+            // own URL, so nothing is mirrored into the context.
+            params: {
+                ...params,
+                pane: "views",
+                previous_action: controller ? controller.action : null,
+            },
         });
     }
 }

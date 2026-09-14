@@ -1,34 +1,37 @@
 /** @odoo-module **/
 /**
  * The top bar: where you are, what else the console can open, and the
- * three buttons that matter -- Undo, Redo, Close -- with the status pill
- * between them.
+ * buttons that matter -- Undo, Redo, Close -- with the status pill and
+ * the Changes badge between them.
  *
- * The tabs come from the `app_builder.console_tabs` registry so that the
- * addons which own reports, automations and approvals can offer their
- * screens here without this one importing them: an entry is `{label,
- * isAvailable(ctx), open(env, ctx)}` and Views is the one built in. The
- * view switcher shows the views the model has and, as a "+", the ones the
- * builder could still create, with the reason when it cannot.
+ * Where you are is `package › model › view`: the package is a switcher
+ * over the workspaces the studio has, the model a picker over what the
+ * package defines and touches, the view a label on the Views pane. The
+ * tabs are the panes of `app_builder.panes`, in sequence; a pane that
+ * needs a model is dimmed with the reason rather than hidden, so the bar
+ * reads the same on every pane.
  *
- * Undo and Redo name the change and its author in their tooltips, because
- * the stack is per view, not per user, and taking back somebody else's
- * edit should be a decision rather than a surprise.
+ * Undo and Redo show when the active pane keeps a history -- the Views
+ * pane does -- and name the change and its author in their tooltips,
+ * because the stack is per view, not per user, and taking back somebody
+ * else's edit should be a decision rather than a surprise.
  *
- * On a Python-owned model the pill counts what is staged -- "2 pending ·
- * Apply" -- and is the way to the Apply dialog, with a Discard beside
- * it; Undo and Redo do not reach the draft, which has its own tray.
+ * The pill is package-wide: on a Python-owned model it counts what is
+ * staged -- "2 pending · Apply" -- on every pane, and is the way to the
+ * Apply dialog, with a Discard beside it. The badge beside it counts what
+ * has accumulated -- pending fields, drifted files, failed applies -- and
+ * opens the Changes pane.
  */
 
 import { Component, useState } from "@odoo/owl";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
+import { Dropdown } from "@web/core/dropdown/dropdown";
+import { DropdownItem } from "@web/core/dropdown/dropdown_item";
 import { useHotkey } from "@web/core/hotkeys/hotkey_hook";
 import { _t } from "@web/core/l10n/translation";
-import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { ApplyDialog } from "./apply_dialog";
-
-const tabRegistry = registry.category("app_builder.console_tabs");
+import { paneTabs } from "./shell/pane_registry";
 
 // The icons `ir.ui.view.get_view_info` returns for core's own types, for a
 // view the switcher shows before the addable list has been fetched.
@@ -44,62 +47,197 @@ const VIEW_ICONS = {
     qweb: "fa fa-file-text-o",
 };
 
+const HEALTH_DOT = {
+    read_only: "grey",
+    missing: "red",
+    failed_apply: "red",
+    drifted: "red",
+    restart_required: "amber",
+    pending: "amber",
+    pending_write: "amber",
+    uncommitted: "amber",
+    not_installed: "amber",
+};
+
+/** The colour a package's health dot takes: the worst thing wins. */
+export function healthDot(info) {
+    const flags = (info && info.health) || [];
+    if (flags.some((f) => HEALTH_DOT[f] === "red")) {
+        return "red";
+    }
+    if (flags.includes("read_only")) {
+        return "grey";
+    }
+    if (flags.some((f) => HEALTH_DOT[f] === "amber")) {
+        return "amber";
+    }
+    return "green";
+}
+
+// Selectors an undo hotkey must not reach into: an editor with a history
+// of its own.
+const EDITABLE_TARGET = ".ace_editor, input, textarea, select, [contenteditable]";
+
 export class TopBar extends Component {
     static template = "app_builder_view.TopBar";
+    static components = { Dropdown, DropdownItem };
     static props = {
-        model: Object,
+        shell: Object,
         onClose: Function,
-        onSwitchView: Function,
-        modelLabel: { type: String, optional: true },
     };
 
     setup() {
-        this.model = useState(this.props.model);
+        this.shell = useState(this.props.shell);
         this.dialog = useService("dialog");
-        useHotkey("control+z", () => this.onUndo());
-        useHotkey("control+shift+z", () => this.onRedo());
-        useHotkey("control+y", () => this.onRedo());
-    }
-
-    get tabs() {
-        const ctx = this.tabContext;
-        return tabRegistry
-            .getEntries()
-            .map(([key, entry]) => ({ key, ...entry }))
-            .filter((entry) => !entry.isAvailable || entry.isAvailable(ctx));
-    }
-
-    get tabContext() {
-        return {
-            model: this.model.modelName,
-            view: this.model.view,
-            context: this.model.context,
-            packageId: this.model.packageId,
+        this.orm = useService("orm");
+        this.state = useState({ modelSearch: "", modelMatches: [], picker: null });
+        const guarded = (run) => (ev) => {
+            const target = ev && ev.target;
+            if (target && target.closest && target.closest(EDITABLE_TARGET)) {
+                return;
+            }
+            run();
         };
+        useHotkey("control+z", guarded(() => this.onUndo()));
+        useHotkey("control+shift+z", guarded(() => this.onRedo()));
+        useHotkey("control+y", guarded(() => this.onRedo()));
     }
 
-    openTab(entry) {
-        if (entry.key === "views") {
-            return;
-        }
-        entry.open(this.env, this.tabContext);
+    // -- the package ---------------------------------------------------------
+
+    get packages() {
+        return this.shell.packages.map((info) => ({
+            ...info,
+            dot: healthDot(info),
+            active: info.id === this.shell.packageId,
+        }));
     }
+
+    get packageLabel() {
+        const info = this.shell.package;
+        return info ? info.name : _t("No package");
+    }
+
+    get packageDot() {
+        return this.shell.package ? healthDot(this.shell.package) : "grey";
+    }
+
+    /** A Python-owned model is edited in the package that defines it. */
+    get packagePinned() {
+        return Boolean(this.shell.learned.python_owner_id);
+    }
+
+    get packagePinnedReason() {
+        return _t(
+            "%s is defined by %s, so its fields can only change there. Pick another model to switch.",
+            this.shell.modelLabel || this.shell.modelName,
+            this.packageLabel
+        );
+    }
+
+    onPackage(info) {
+        if (!info.active && !this.packagePinned) {
+            this.shell.setPackage(info.id);
+        }
+    }
+
+    onNewPackage() {
+        this.shell.openPane("create_package");
+    }
+
+    // -- the model -----------------------------------------------------------
 
     get modelLabel() {
-        return this.props.modelLabel || this.model.modelName || "";
+        return this.shell.modelLabel || this.shell.modelName || "";
+    }
+
+    /** The picker's lists, read when it opens. */
+    async loadPicker() {
+        this.state.picker = await this.orm.call("studio.workspace", "models_for_picker", [
+            this.shell.packageId || false,
+        ]);
+    }
+
+    async onModelSearch(ev) {
+        const term = (ev.target.value || "").trim();
+        this.state.modelSearch = term;
+        if (term.length < 2) {
+            this.state.modelMatches = [];
+            return;
+        }
+        const rows = await this.orm.searchRead(
+            "ir.model",
+            ["|", ["name", "ilike", term], ["model", "ilike", term], ["transient", "=", false]],
+            ["model", "name"],
+            { limit: 12 }
+        );
+        if (this.state.modelSearch === term) {
+            this.state.modelMatches = rows.map((r) => ({ model: r.model, display_name: r.name }));
+        }
+    }
+
+    async onModel(entry) {
+        if (entry.model !== this.shell.modelName) {
+            await this.shell.setModel(entry.model);
+        }
+        if (this.shell.pane === "home") {
+            await this.shell.openView({ model: entry.model });
+        }
+    }
+
+    onBuildApp() {
+        this.shell.openPane("build_app");
+    }
+
+    onAdoptModel() {
+        this.shell.openPane("adopt_model");
+    }
+
+    get canBuild() {
+        return this.shell.packageWritable;
+    }
+
+    // -- the panes -----------------------------------------------------------
+
+    get tabs() {
+        return paneTabs(this.shell.paneContext).map((tab) => ({
+            ...tab,
+            active: tab.key === this.shell.pane,
+        }));
+    }
+
+    openTab(tab) {
+        if (!tab.available || tab.active) {
+            return;
+        }
+        this.shell.openPane(tab.key);
+    }
+
+    get onViews() {
+        return this.shell.pane === "views";
+    }
+
+    /** The Views pane's model, when it is on. */
+    get viewsModel() {
+        return this.onViews ? this.shell.activeModel : null;
     }
 
     get viewTypeLabel() {
-        const type = this.model.viewType || "";
-        const known = (this.model.addable || []).find((entry) => entry.type === type);
+        const model = this.viewsModel;
+        const type = (model && model.viewType) || this.shell.view.view_type || "";
+        const known = ((model && model.addable) || []).find((entry) => entry.type === type);
         return (known && known.label) || VIEW_TYPE_LABELS[type] || type;
     }
 
     /** The model's views, then the types the builder could still add. */
     get switcher() {
-        const context = this.model.context || {};
-        const current = this.model.viewId;
-        const addable = this.model.addable || [];
+        const model = this.viewsModel;
+        if (!model || !model.context) {
+            return [];
+        }
+        const context = model.context || {};
+        const current = model.viewId;
+        const addable = model.addable || [];
         const iconOf = (type) => {
             const entry = addable.find((e) => e.type === type);
             return (entry && entry.icon) || VIEW_ICONS[type] || "fa fa-square-o";
@@ -126,23 +264,32 @@ export class TopBar extends Component {
     }
 
     onSwitch(entry) {
+        const model = this.viewsModel;
         if (entry.view) {
             if (!entry.active) {
-                this.props.onSwitchView(entry.view);
+                this.shell.openView({
+                    view_id: entry.view.view_id,
+                    view_type: entry.view.type,
+                    res_id: this.shell.view.res_id,
+                });
             }
-        } else if (entry.add) {
-            this.model.addView(entry.add);
+        } else if (entry.add && model) {
+            model.addView(entry.add);
         }
     }
 
     // -- undo / redo ----------------------------------------------------------
 
+    get history() {
+        return this.shell.history;
+    }
+
     get undoEntry() {
-        return this.model.history.undo[0] || null;
+        return (this.history && this.history.undo[0]) || null;
     }
 
     get redoEntry() {
-        return this.model.history.redo[0] || null;
+        return (this.history && this.history.redo[0]) || null;
     }
 
     get undoTooltip() {
@@ -159,38 +306,52 @@ export class TopBar extends Component {
             : _t("Nothing to redo");
     }
 
+    get busy() {
+        return this.shell.activity.busy;
+    }
+
     onUndo() {
-        if (this.undoEntry && !this.model.busy) {
-            this.model.undo();
+        const model = this.shell.activeModel;
+        if (this.undoEntry && !this.busy && model && model.undo) {
+            model.undo();
         }
     }
 
     onRedo() {
-        if (this.redoEntry && !this.model.busy) {
-            this.model.redo();
+        const model = this.shell.activeModel;
+        if (this.redoEntry && !this.busy && model && model.redo) {
+            model.redo();
         }
     }
 
     // -- the draft: Apply and Discard ------------------------------------------
 
     get pendingCount() {
-        return this.model.pendingCount;
+        return this.shell.pendingCount;
+    }
+
+    get applying() {
+        return this.shell.draft.applying;
     }
 
     /** Why Apply is greyed out, for its tooltip; `""` when it is not. */
     get applyTooltip() {
-        return this.model.applyBlocker;
+        return this.shell.draft.applyBlocker;
+    }
+
+    get applyLabel() {
+        return this.shell.draft.reloadMode === "manual" ? _t("Write & restart…") : _t("Apply");
     }
 
     openApply() {
         if (!this.pendingCount) {
             return;
         }
-        this.dialog.add(ApplyDialog, { model: this.props.model });
+        this.dialog.add(ApplyDialog, { shell: this.props.shell });
     }
 
     onDiscard() {
-        if (!this.pendingCount || this.model.busy) {
+        if (!this.pendingCount || this.busy) {
             return;
         }
         this.dialog.add(ConfirmationDialog, {
@@ -200,7 +361,7 @@ export class TopBar extends Component {
                 this.pendingCount
             ),
             confirmLabel: _t("Discard"),
-            confirm: () => this.model.discardDraft(),
+            confirm: () => this.shell.discard(),
             cancel: () => {},
         });
     }
@@ -208,7 +369,8 @@ export class TopBar extends Component {
     // -- the status pill ------------------------------------------------------
 
     get status() {
-        const drag = this.model.drag;
+        const activity = this.shell.activity;
+        const drag = activity.drag;
         if (drag) {
             // While something is dragged the pill names it and, once a
             // zone is under the pointer, where it would land.
@@ -217,30 +379,54 @@ export class TopBar extends Component {
                 : _t("Dragging %s", drag.label);
             return { cls: "dragging", label, tooltip: _t("Press any key to cancel") };
         }
-        if (this.model.applying) {
+        if (activity.applying) {
             return { cls: "saving", label: _t("Applying…"), tooltip: "" };
         }
-        if (this.model.status === "saving") {
+        if (activity.status === "saving") {
             return { cls: "saving", label: _t("Saving…"), tooltip: "" };
         }
-        if (this.model.status === "error") {
-            return { cls: "error", label: _t("Not saved"), tooltip: this.model.statusError };
+        if (activity.status === "error") {
+            return { cls: "error", label: _t("Not saved"), tooltip: activity.error };
         }
         if (this.pendingCount) {
             return {
                 cls: "pending",
-                label: _t("%s pending · Apply", this.pendingCount),
+                label: _t("%s pending · %s", this.pendingCount, this.applyLabel),
                 tooltip: this.applyTooltip || _t("Staged on this model's draft; click to apply."),
             };
+        }
+        if (this.shell.restartRequired) {
+            return {
+                cls: "pending",
+                label: _t("Restart needed"),
+                tooltip: _t(
+                    "Something was written to disk that only a restart of the server can load."
+                ),
+            };
+        }
+        if (this.shell.package && !this.shell.packageWritable) {
+            return { cls: "readonly", label: _t("Read-only"), tooltip: "" };
         }
         return { cls: "saved", label: _t("Saved"), tooltip: "" };
     }
 
     /** The pill is the way to Apply when something is pending. */
     onStatusClick() {
-        if (this.status.cls === "pending") {
+        if (this.status.cls === "pending" && this.pendingCount) {
             this.openApply();
+        } else if (this.status.cls === "pending") {
+            this.shell.openPane("changes");
         }
+    }
+
+    // -- the changes badge ----------------------------------------------------
+
+    get changesCount() {
+        return this.shell.changesCount;
+    }
+
+    openChanges() {
+        this.shell.openPane("changes");
     }
 }
 
@@ -255,13 +441,3 @@ const VIEW_TYPE_LABELS = {
     qweb: _t("Report"),
     activity: _t("Activity"),
 };
-
-tabRegistry.add(
-    "views",
-    {
-        label: _t("Views"),
-        isAvailable: () => true,
-        open: () => {},
-    },
-    { sequence: 10 }
-);

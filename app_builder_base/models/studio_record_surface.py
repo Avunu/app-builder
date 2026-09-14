@@ -388,10 +388,12 @@ class StudioRecordSurface(models.AbstractModel):
                 parsed = ast.literal_eval(domain or "[]")
             else:
                 parsed = safe_eval(domain or "[]", context)
-            count = self.env[model_name].sudo().search_count(parsed)
+            model = self.env[model_name].sudo()
+            count = model.search_count(parsed)
+            total = model.search_count([])
         except Exception as err:  # noqa: BLE001 - any failure is the same answer
             return {"valid": False, "reason": str(err)}
-        return {"valid": True, "count": count}
+        return {"valid": True, "count": count, "total": total}
 
     @api.model
     def _virtual_value(self, record, name):
@@ -415,10 +417,15 @@ class StudioRecordSurface(models.AbstractModel):
         if row.type == "many2one":
             if isinstance(value, dict):
                 value = value.get("id")
-            return int(value) if value else False
+            value = int(value) if value else False
+            if value:
+                self._assert_in_source(row, [value])
+            return value
         if row.type in ("many2many", "groups", "fields"):
             ids = [v.get("id") if isinstance(v, dict) else v for v in (value or [])]
-            return [(6, 0, [int(i) for i in ids if i])]
+            ids = [int(i) for i in ids if i]
+            self._assert_in_source(row, ids)
+            return [(6, 0, ids)]
         if row.type == "domain":
             domain = (value or "").strip() or "[]"
             check = self._check_domain(model_name, domain)
@@ -432,6 +439,30 @@ class StudioRecordSurface(models.AbstractModel):
                 )
             return domain
         return value if value is not None else False
+
+    @api.model
+    def _assert_in_source(self, row, ids):
+        """A reference the file could not carry is refused before the write.
+
+        The serializer emits a many2one as ``ref="module.name"``; a record
+        that only this database has -- a template made by hand, a user --
+        has no such name, and the failure would otherwise surface from deep
+        inside the write, worded for a developer.
+        """
+        if not row.comodel or row.comodel not in self.env or not ids:
+            return
+        records = self.env[row.comodel].sudo().browse(ids).exists()
+        xmlids = records.get_external_id()
+        for record in records:
+            if not xmlids.get(record.id):
+                raise UserError(
+                    _(
+                        "%(record)s is only in this database: it has no "
+                        "external id, so the package's file could not point "
+                        "at it. Pick one that comes from a module or a package.",
+                        record=record.display_name,
+                    )
+                )
 
     # -- writing ---------------------------------------------------------------
 
@@ -534,19 +565,22 @@ class StudioRecordSurface(models.AbstractModel):
         return
 
     @api.model
-    def remove_record(self, record_id, package_id=None):
+    def remove_record(self, record_id, package_id=None, force=False):
+        """Take a record out of the database and, at the next write, out of
+        the file. A surface that wants a question asked first raises
+        ``StudioConfirmRequired`` from ``_before_remove`` unless ``force``."""
         self._assert_studio_manager()
         record = self._record(record_id)
         package = self.env["studio.package"]._chosen(package_id)
         owner = self._assert_editable(record, package)
-        self._before_remove(record, owner)
+        self._before_remove(record, owner, force)
         record.unlink()
         # Gone from the database, so the next write leaves it out of the file.
         owner.action_write_files()
         return True
 
     @api.model
-    def _before_remove(self, record, package):
+    def _before_remove(self, record, package, force=False):
         return
 
     @api.model

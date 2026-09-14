@@ -1,0 +1,504 @@
+// The console's chrome beyond the canvas: the crumb, the panes, cards,
+// flows, diffs. `console.scss` keeps the bar, the sidebar and the
+// primitives every pane reuses (rows, tiles, section titles).
+
+$o-studio-brand: var(--o-color-primary, #714b67);
+
+// -- the top bar's crumb ----------------------------------------------------
+
+.o_studio_top_bar {
+    .o_studio_crumb_bar {
+        max-width: 34%;
+        gap: 2px;
+    }
+
+    .o_studio_crumb_home,
+    .o_studio_crumb {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        padding: 4px 6px;
+        border-radius: 4px;
+        white-space: nowrap;
+        font: inherit;
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        &.active {
+            background: rgba(255, 255, 255, 0.16);
+        }
+    }
+
+    .o_studio_crumb_model {
+        font-weight: 600;
+    }
+
+    .o_studio_crumb_view {
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .o_studio_top_tab.disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+
+    .o_studio_changes_badge {
+        position: relative;
+
+        .o_studio_badge_count {
+            position: absolute;
+            top: -2px;
+            right: -4px;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            border-radius: 8px;
+            background: #e6a23c;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 16px;
+            text-align: center;
+        }
+    }
+
+    .o_studio_status_readonly {
+        background: rgba(255, 255, 255, 0.12);
+    }
+
+    @media (max-width: 1400px) {
+        .o_studio_top_word {
+            display: none;
+        }
+    }
+}
+
+.o_studio_dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #adb5bd;
+    vertical-align: middle;
+
+    &.o_studio_dot_green {
+        background: #28a745;
+    }
+
+    &.o_studio_dot_amber {
+        background: #e6a23c;
+    }
+
+    &.o_studio_dot_red {
+        background: #dc3545;
+    }
+
+    &.o_studio_dot_grey {
+        background: #adb5bd;
+    }
+}
+
+.o_studio_package_menu,
+.o_studio_model_menu {
+    min-width: 280px;
+    max-height: 70vh;
+    overflow-y: auto;
+
+    .dropdown-item.active {
+        background: rgba(113, 75, 103, 0.12);
+        color: inherit;
+    }
+
+    .dropdown-item.disabled {
+        opacity: 0.5;
+    }
+}
+
+// -- the content slot -----------------------------------------------------------
+
+.o_studio_console_content {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    background: var(--o-webclient-background-color, #f5f5f5);
+
+    > .o_studio_pane {
+        flex: 1 1 auto;
+    }
+
+    // The Views pane: the canvas owns its scrolling and its ground.
+    &.o_studio_console_canvas {
+        overflow: hidden;
+        flex-direction: row;
+    }
+}
+
+.o_studio_readonly_banner {
+    flex: 0 0 auto;
+}
+
+.o_studio_pane {
+    padding: 16px 24px 32px;
+    min-height: 0;
+}
+
+.o_studio_pane_toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+// -- cards ------------------------------------------------------------------------
+
+.o_studio_cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.o_studio_card {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+    padding: 10px 12px;
+    text-align: left;
+
+    &.selected {
+        border-color: $o-studio-brand;
+        box-shadow: 0 0 0 1px $o-studio-brand;
+    }
+}
+
+.o_studio_package_cards {
+    margin-bottom: 16px;
+
+    .o_studio_package_card {
+        cursor: pointer;
+        min-width: 200px;
+    }
+
+    .o_studio_package_add {
+        color: rgba(0, 0, 0, 0.6);
+        border-style: dashed;
+    }
+}
+
+// -- home -------------------------------------------------------------------------
+
+.o_studio_home_head {
+    margin-bottom: 4px;
+}
+
+.o_studio_health {
+    font-size: 13px;
+    margin-bottom: 16px;
+
+    .o_studio_health_item {
+        white-space: nowrap;
+    }
+}
+
+.o_studio_home_tiles {
+    margin-bottom: 20px;
+
+    .o_studio_home_tile {
+        min-width: 160px;
+        flex: 1 1 160px;
+        max-width: 220px;
+        text-align: left;
+        padding: 12px;
+
+        .o_studio_tile_icon {
+            font-size: 18px;
+            color: $o-studio-brand;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .o_studio_tile_label {
+            font-weight: 600;
+            display: block;
+        }
+    }
+}
+
+.o_studio_model_row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 4px;
+    margin-bottom: 4px;
+
+    .btn-link {
+        opacity: 0.6;
+    }
+
+    &:hover .btn-link {
+        opacity: 1;
+    }
+}
+
+.o_studio_checklist {
+    margin-top: 20px;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.o_studio_home_first_run {
+    max-width: 720px;
+    margin: 24px auto;
+}
+
+// -- empty states -------------------------------------------------------------------
+
+.o_studio_empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: rgba(0, 0, 0, 0.7);
+
+    &.o_studio_empty_inline {
+        padding: 12px;
+        text-align: left;
+    }
+}
+
+// -- flows --------------------------------------------------------------------------
+
+.o_studio_flow {
+    max-width: 760px;
+
+    .o_studio_flow_head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+
+    .o_studio_flow_steps {
+        display: flex;
+        gap: 16px;
+        list-style: none;
+        padding: 0;
+        margin: 0 0 16px;
+        font-size: 13px;
+        color: rgba(0, 0, 0, 0.5);
+
+        li {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+
+            &.active {
+                color: $o-studio-brand;
+                font-weight: 600;
+            }
+
+            &.done {
+                color: rgba(0, 0, 0, 0.75);
+            }
+        }
+
+        .o_studio_flow_num {
+            display: inline-flex;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid currentColor;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+        }
+    }
+
+    .o_studio_flow_body {
+        background: #fff;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 6px;
+        padding: 16px;
+    }
+
+    .o_studio_flow_foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 12px;
+    }
+}
+
+// -- changes ------------------------------------------------------------------------
+
+.o_studio_file_list,
+.o_studio_apply_row {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+
+.o_studio_apply_row {
+    margin-bottom: 6px;
+}
+
+.o_studio_file_row {
+    padding: 3px 0;
+
+    &.drifted code {
+        color: #b02a37;
+    }
+}
+
+.o_studio_git_state {
+    display: inline-block;
+    width: 2.2em;
+    color: rgba(0, 0, 0, 0.5);
+}
+
+.o_studio_diff {
+    margin: 6px 0;
+    padding: 8px;
+    font-size: 12px;
+    background: #f8f9fa;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    max-height: 320px;
+    overflow: auto;
+
+    span {
+        display: block;
+        white-space: pre;
+    }
+
+    .o_studio_diff_add {
+        color: #1a7f37;
+        background: rgba(46, 160, 67, 0.12);
+    }
+
+    .o_studio_diff_del {
+        color: #b02a37;
+        background: rgba(220, 53, 69, 0.1);
+    }
+
+    .o_studio_diff_hunk {
+        color: #6f42c1;
+    }
+}
+
+.o_studio_commit {
+    padding: 12px;
+}
+
+// -- record panes --------------------------------------------------------------------
+
+.o_studio_record_list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.o_studio_record_card {
+    cursor: pointer;
+
+    &.inactive {
+        opacity: 0.6;
+    }
+
+    &.foreign {
+        background: #fbfbfb;
+    }
+
+    &.highlight {
+        border-left: 3px solid $o-studio-brand;
+    }
+
+    .o_studio_record_actions {
+        opacity: 0.35;
+    }
+
+    &:hover .o_studio_record_actions,
+    &.selected .o_studio_record_actions {
+        opacity: 1;
+    }
+}
+
+.o_studio_create_card {
+    border-color: $o-studio-brand;
+}
+
+.o_studio_domain_editor {
+    background: #fff;
+}
+
+.o_studio_code_editor {
+    min-height: 120px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+// The children of a record in the sidebar: an automation's steps.
+.o_studio_children {
+    margin-bottom: 8px;
+}
+
+.o_studio_child {
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 4px;
+    margin-bottom: 4px;
+    background: #fff;
+
+    .o_studio_child_head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        cursor: pointer;
+        font-size: 0.9em;
+    }
+
+    .o_studio_child_index {
+        display: inline-block;
+        min-width: 18px;
+        height: 18px;
+        line-height: 18px;
+        border-radius: 9px;
+        background: rgba(0, 0, 0, 0.08);
+        color: #555;
+        text-align: center;
+        font-size: 0.8em;
+    }
+
+    .o_studio_child_body {
+        border-top: 1px solid rgba(0, 0, 0, 0.08);
+        padding: 8px;
+    }
+
+    &.open {
+        border-color: $o-studio-brand;
+    }
+
+    &.open .o_studio_child_index {
+        background: $o-studio-brand;
+        color: #fff;
+    }
+}
+
+// The gate a surface reports: switched on before its records mean anything.
+.o_studio_gate_card {
+    border-color: $o-studio-brand;
+    max-width: 560px;
+
+    .o_studio_row_label {
+        flex-basis: 30%;
+    }
+}

@@ -37,12 +37,12 @@ export class ApplyDialog extends Component {
     static template = "app_builder_view.ApplyDialog";
     static components = { Dialog };
     static props = {
-        model: Object,
+        shell: Object,
         close: Function,
     };
 
     setup() {
-        this.model = useState(this.props.model);
+        this.shell = useState(this.props.shell);
         this.dialog = useService("dialog");
         this.state = useState({
             allowDestructive: false,
@@ -55,11 +55,21 @@ export class ApplyDialog extends Component {
     }
 
     get title() {
-        return _t("Apply %s pending change(s)", this.model.pendingCount);
+        return _t("Apply %s pending change(s)", this.draft.pendingCount);
+    }
+
+    /** The shell's draft on the model in hand. */
+    get draft() {
+        return this.shell.draft;
+    }
+
+    /** The Views pane's model, when the console is on a canvas. */
+    get views() {
+        return this.shell.pane === "views" ? this.shell.activeModel : null;
     }
 
     get changes() {
-        return this.model.pendingChanges;
+        return this.draft.pendingChanges;
     }
 
     /**
@@ -74,21 +84,21 @@ export class ApplyDialog extends Component {
      * here, and it is the balanced placement that will put it here.
      */
     whereabouts(change) {
-        if (change.kind !== "added") {
+        if (change.kind !== "added" || !this.views) {
             return "";
         }
-        const entry = this.model.pending.find((p) => p.name === change.name);
+        const entry = this.views.pending.find((p) => p.name === change.name);
         if (!entry || entry.placed) {
             return "";
         }
-        if (entry.view_id && entry.view_id !== this.model.viewId) {
+        if (entry.view_id && entry.view_id !== this.views.viewId) {
             return _t("Not on this canvas: it was dropped on another view of this model.");
         }
         return _t("Not on this canvas: it will be placed automatically after Apply.");
     }
 
     get errors() {
-        return this.model.draftErrors;
+        return this.draft.errors;
     }
 
     /** Whether anything here would lose data, so "Apply anyway" is offered. */
@@ -97,28 +107,29 @@ export class ApplyDialog extends Component {
     }
 
     get reloadMode() {
-        return this.model.reloadMode;
+        return this.draft.reloadMode;
     }
 
     get reloadNotice() {
-        const mode = this.reloadMode;
-        if (mode === "manual") {
+        if (this.reloadMode === "manual") {
             return _t(
                 "This server runs several workers, so it cannot reload in place. " +
-                    "Staging works; to apply, restart the server after writing the package."
-            );
-        }
-        if (mode === "restart") {
-            return _t(
-                "Applying restarts the server, which takes a few seconds; the console reconnects by itself."
+                    "The files are written and the package is marked for upgrade; " +
+                    "restart the server and Odoo loads it on the way up. Until then " +
+                    "the fields are in the file, not in the database."
             );
         }
         return _t("Applying reloads this package in place. It takes a moment.");
     }
 
+    /** What the primary button says: a write under workers, an apply otherwise. */
+    get applyLabel() {
+        return this.reloadMode === "manual" ? _t("Write files") : _t("Apply");
+    }
+
     /** Why Apply cannot be pressed, or `""`. */
     get blocker() {
-        const blocker = this.model.applyBlocker;
+        const blocker = this.draft.applyBlocker;
         if (blocker) {
             return blocker;
         }
@@ -129,11 +140,11 @@ export class ApplyDialog extends Component {
     }
 
     get canApply() {
-        return !this.model.applying && !this.blocker;
+        return !this.draft.applying && !this.blocker;
     }
 
     get applying() {
-        return this.model.applying;
+        return this.draft.applying;
     }
 
     async toggleDiff() {
@@ -141,7 +152,7 @@ export class ApplyDialog extends Component {
         if (this.state.showDiff && this.state.diff === null) {
             this.state.loadingDiff = true;
             try {
-                this.state.diff = await this.model.previewDiff();
+                this.state.diff = await this.draft.previewDiff();
             } finally {
                 this.state.loadingDiff = false;
             }
@@ -153,7 +164,7 @@ export class ApplyDialog extends Component {
             return;
         }
         this.state.error = "";
-        const result = await this.model.applyDraft(this.state.allowDestructive);
+        const result = await this.shell.apply(this.state.allowDestructive);
         if (result.ok) {
             this.props.close();
             return;
@@ -167,19 +178,19 @@ export class ApplyDialog extends Component {
     }
 
     onDiscard() {
-        if (this.applying || this.model.busy) {
+        if (this.applying || this.shell.activity.busy) {
             return;
         }
         this.dialog.add(ConfirmationDialog, {
             title: _t("Discard pending changes"),
             body: _t(
                 "Throw away the %s staged change(s)? Nothing has been applied, so nothing else is lost.",
-                this.model.pendingCount
+                this.draft.pendingCount
             ),
             confirmLabel: _t("Discard"),
             confirm: () => {
                 this.props.close();
-                this.model.discardDraft();
+                this.shell.discard();
             },
             cancel: () => {},
         });

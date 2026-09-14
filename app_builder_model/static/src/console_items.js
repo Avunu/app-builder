@@ -85,24 +85,3 @@ export class ConsoleFieldEditor extends FieldPopover {
 }
 
 registry.category("app_builder.field_editor").add("field_popover", ConsoleFieldEditor);
-
-registry.category("app_builder.console_tabs").add(
-    "new_model",
-    {
-        label: _t("New Model"),
-        isAvailable: () => true,
-        async open(env, ctx) {
-            // The wizard's own action, so its form and `target="new"` come
-            // from the XML; the package is the console's when it has one,
-            // else the wizard's own default.
-            const context = {};
-            if (ctx.packageId) {
-                context.default_package_id = ctx.packageId;
-            }
-            await env.services.action.doAction("app_builder_model.studio_model_wizard_action", {
-                additionalContext: context,
-            });
-        },
-    },
-    { sequence: 90 }
-);

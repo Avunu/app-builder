@@ -10,7 +10,7 @@
             <i class="fa fa-circle-o-notch fa-spin fa-2x mb-3 d-block"/>
             <div class="fw-bold">Applying… reloading the package</div>
             <small class="text-muted">
-                <t t-if="reloadMode === 'restart'">The server is restarting; this waits for it to come back.</t>
+                <t t-if="reloadMode === 'manual'">Writing the files; the package is marked for upgrade.</t>
                 <t t-else="">This takes a moment.</t>
             </small>
         </div>
@@ -88,7 +88,7 @@
                     t-att-title="blocker"
                     t-on-click="() => this.onApply()">
                 <i t-if="applying" class="fa fa-circle-o-notch fa-spin me-1"/>
-                Apply
+                <t t-esc="applyLabel"/>
             </button>
             <button type="button" class="btn btn-secondary o_studio_apply_discard"
                     t-att-disabled="applying or !changes.length"

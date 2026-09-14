@@ -1,85 +1,104 @@
 /** @odoo-module **/
 /**
- * What this addon adds to the studio console: the tabs for everything
- * about a model that is not a view.
+ * The panes this addon adds to the console, as data.
  *
- * The console's top bar takes its tabs from the `app_builder.console_tabs`
- * registry, so Automations, Webhooks, Access Control and Filter Rules sit
- * beside Views without the console knowing this addon exists. None of them
- * is a new screen: each opens Odoo's own list, scoped to the model on the
- * canvas and with a package in context, and the scoping is done on the
- * server -- `studio.automation.action_open`, `studio.security.surface
- * .action_access` / `.action_rules`. The package is the console's own: the
- * one its top bar shows and its drops are recorded into, so a rule made
- * from a tab lands in the same addon as the view it was made beside; the
- * server only falls back to guessing for a caller that has no console.
- * Edit Menu is the one wizard: the New Menu form, with the model and the
- * package filled in.
- *
- * Navigation, not embedded panes: `doAction` stacks the list on top of the
- * console, and the breadcrumb brings the user back to a console that is
- * exactly as they left it.
+ * Automations, webhooks, access control, record rules and the menu: each
+ * a record pane the console renders itself from the surface named here.
+ * Nothing is imported from the console's addon -- this one does not
+ * depend on it, and an import would only resolve while it is installed
+ * -- so an entry is a surface name and a few strings, and the console's
+ * record pane does the rest. The empty states carry the one sentence
+ * that says what a record of that kind is and where it is written.
  */
 
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 
-const tabs = registry.category("app_builder.console_tabs");
+const panes = registry.category("app_builder.panes");
 
-/** A tab that opens a server-computed list for the model on the canvas. */
-function scopedList(key, label, sequence, model, method, kwargs = {}) {
-    tabs.add(
-        key,
-        {
-            label,
-            // Every list here is a list *for a model*: a report console has
-            // none, and a tab that opened the whole database would be a
-            // longer road to the same screen.
-            isAvailable: (ctx) => Boolean(ctx.model),
-            async open(env, ctx) {
-                const action = await env.services.orm.call(model, method, [], {
-                    model_name: ctx.model,
-                    package_id: ctx.packageId || false,
-                    ...kwargs,
-                });
-                await env.services.action.doAction(action);
-            },
-        },
-        { sequence }
-    );
+function pane(key, label, icon, sequence, surface, extra = {}) {
+    panes.add(key, { label, icon, scope: "model", surface, ...extra }, { sequence });
 }
 
-scopedList("automations", _t("Automations"), 30, "studio.automation", "action_open");
-scopedList("webhooks", _t("Webhooks"), 40, "studio.automation", "action_open", {
-    webhooks: true,
-});
-scopedList("access", _t("Access Control"), 50, "studio.security.surface", "action_access");
-scopedList("rules", _t("Filter Rules"), 60, "studio.security.surface", "action_rules");
-
-tabs.add(
-    "edit_menu",
-    {
-        label: _t("Edit Menu"),
-        isAvailable: (ctx) => Boolean(ctx.model),
-        async open(env, ctx) {
-            // The wizard's own action, so its form and target come from the
-            // XML; only the defaults are ours. `ir.model` is keyed by id
-            // where the console knows the name, so the id is looked up here
-            // rather than asking the wizard to grow a second picker.
-            const models = await env.services.orm.searchRead(
-                "ir.model",
-                [["model", "=", ctx.model]],
-                ["id"],
-                { limit: 1 }
-            );
-            const context = { default_model_id: models.length ? models[0].id : false };
-            if (ctx.packageId) {
-                context.default_package_id = ctx.packageId;
-            }
-            await env.services.action.doAction("app_builder_ui.studio_menu_wizard_action", {
-                additionalContext: context,
-            });
-        },
+pane("automations", _t("Automations"), "fa fa-bolt", 30, "studio.automation", {
+    empty: {
+        title: _t("Make something happen on its own"),
+        help: _t(
+            "Pick what to watch for and what to do about it. Rules you add are written to data/<model>_automation.xml and ship with the package."
+        ),
     },
-    { sequence: 80 }
-);
+});
+pane("webhooks", _t("Webhooks"), "fa fa-plug", 40, "studio.automation", {
+    surfaceArgs: { webhooks: true },
+    empty: {
+        title: _t("Let another system drive this database"),
+        help: _t(
+            "A webhook gives you a URL. Anything that can send it a POST can create or update records of this model."
+        ),
+    },
+});
+pane("access", _t("Access Control"), "fa fa-lock", 50, "studio.access.surface", {
+    empty: {
+        title: _t("Nobody but the administrator can see this model"),
+        help: _t("One line per group. Lines you add are written to security/ir.model.access.csv."),
+    },
+});
+pane("rules", _t("Filter Rules"), "fa fa-filter", 60, "studio.rule.surface", {
+    empty: {
+        title: _t("Decide which records each group sees"),
+        help: _t(
+            "A rule is a condition on the records, per group. Rules you add are written to security/<model>_security.xml."
+        ),
+    },
+});
+
+/** The row before or after `row` among the rows with the same parent. */
+function sibling(model, row, direction) {
+    const siblings = model.rows.filter((r) => r.parent_id === row.parent_id);
+    const index = siblings.findIndex((r) => r.id === row.id);
+    return siblings[index + direction] || null;
+}
+
+pane("menu", _t("Menu"), "fa fa-bars", 80, "studio.menu", {
+    scope: "package",
+    empty: {
+        title: _t("Nothing in the apps menu yet"),
+        help: _t(
+            "An app is a root menu with an icon; a submenu opens a model's views. Both are written to views/menus.xml."
+        ),
+    },
+    // Up and down among the menus beside it: the surface renumbers the
+    // package's own siblings 10/20/30 and leaves the others' numbers alone.
+    rowActions: [
+        {
+            key: "up",
+            label: _t("Move up"),
+            icon: "fa fa-arrow-up",
+            when: (row) => row.editable,
+            run: (shell, row, model) => {
+                const before = sibling(model, row, -1);
+                if (before) {
+                    model.call("move", [row.id, row.parent_id || false, before.id, shell.packageId]);
+                }
+            },
+        },
+        {
+            key: "down",
+            label: _t("Move down"),
+            icon: "fa fa-arrow-down",
+            when: (row) => row.editable,
+            run: (shell, row, model) => {
+                const after = sibling(model, row, 1);
+                if (after) {
+                    const target = sibling(model, after, 1);
+                    model.call("move", [
+                        row.id,
+                        row.parent_id || false,
+                        target ? target.id : false,
+                        shell.packageId,
+                    ]);
+                }
+            },
+        },
+    ],
+});

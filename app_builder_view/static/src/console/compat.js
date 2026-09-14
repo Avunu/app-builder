@@ -237,3 +237,17 @@ export function clearViewCaches(env) {
     rpcBus.trigger("CLEAR-CACHES", "get_views");
     env.bus.trigger("CLEAR-CACHES");
 }
+
+/**
+ * The prop that lets a `ModelFieldSelector` follow relations, by the name
+ * this branch gives it: `followRelations` on 18
+ * (`core/model_field_selector/model_field_selector.js` 18:20), renamed
+ * `followRelation` on master (:23). 19.0 has not been checked against a
+ * checkout; it is assumed to be on the 18 side until it is.
+ */
+export function fieldSelectorFollow(follow = true) {
+    if (versionAtLeast(19, 5)) {
+        return { followRelation: follow };
+    }
+    return { followRelations: follow };
+}

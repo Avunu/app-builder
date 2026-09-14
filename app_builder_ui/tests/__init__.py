@@ -3,3 +3,8 @@ from . import test_rules
 from . import test_security_surface
 from . import test_console_menu
 from . import test_console_tabs_tour
+from . import test_automation_surface
+from . import test_automations_pane_tour
+from . import test_security_panes_tour
+from . import test_menu_surface
+from . import test_menu_pane_tour

@@ -248,16 +248,13 @@ class StudioReport(models.AbstractModel):
             )
         return {
             "type": "ir.actions.client",
-            "tag": "app_builder_view_wysiwyg",
+            "tag": "app_builder_console",
             "name": _("Edit %s", report.name),
+            "target": "fullscreen",
             "params": {
-                "view_id": view.id,
+                "pane": "views",
                 "res_model": report.model,
-                "view_type": "qweb",
-            },
-            "context": {
                 "view_id": view.id,
-                "res_model": report.model,
                 "view_type": "qweb",
             },
         }

@@ -92,9 +92,9 @@ export class StudioSystrayItem extends Component {
     }
 
     /**
-     * Open the console on the screen. The params are also put in the
-     * context so the console survives a reload from its own URL, the same
-     * way the cog item does.
+     * Open the console on the screen, on its Views pane. What the console
+     * needs to come back to this screen after a reload it keeps in its
+     * own URL, so nothing is mirrored into the context.
      */
     open() {
         const target = this.target;
@@ -106,8 +106,7 @@ export class StudioSystrayItem extends Component {
             tag: "app_builder_console",
             target: "fullscreen",
             name: _t("Studio"),
-            params: { ...target },
-            context: { ...target },
+            params: { ...target, pane: "views" },
         });
     }
 }

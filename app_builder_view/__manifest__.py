@@ -1,13 +1,14 @@
 {
     "name": "App Builder: View Editor",
     "summary": "Edit views visually; every change becomes an inheriting view in source",
-    "version": "18.0.1.1.0",
+    "version": "18.0.1.2.0",
     "category": "Technical",
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",
     "license": "AGPL-3",
     "development_status": "Beta",
     "installable": True,
+    "uninstall_hook": "uninstall_hook",
     # html_editor is auto-installed on top of web in 18, 19 and master, but
     # auto_install decides what a fresh database gets, not what stays: the
     # module can be uninstalled, and the console imports its drag-and-drop

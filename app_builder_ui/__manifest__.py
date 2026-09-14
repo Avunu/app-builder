@@ -1,7 +1,7 @@
 {
     "name": "App Builder: Menus, Actions, Security & Automations",
     "summary": "Build menus, actions, access rules and automations into source",
-    "version": "18.0.1.3.0",
+    "version": "18.0.1.4.0",
     "category": "Technical",
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",
@@ -17,6 +17,9 @@
         ],
         "web.assets_tests": [
             "app_builder_ui/static/tests/tours/console_tabs_tour.js",
+            "app_builder_ui/static/tests/tours/automations_pane_tour.js",
+            "app_builder_ui/static/tests/tours/security_panes_tour.js",
+            "app_builder_ui/static/tests/tours/menu_pane_tour.js",
         ],
     },
     "data": [

@@ -24,9 +24,11 @@ The template is rendered directly through ``ir.qweb`` instead, with the same
 ``docs`` the report would have passed.
 """
 
+import time
+
 from lxml import etree
 
-from odoo import _, api, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 
@@ -71,6 +73,10 @@ class StudioReportPreview(models.AbstractModel):
                 ),
             }
         qweb = self.env["ir.qweb"].with_context(inherit_branding=True)
+        # The same names a printed report gets (`ir.actions.report
+        # ._render_template`): the internal layout stamps the time with
+        # `context_timestamp`, the external one reads `res_company`.
+        user = self.env["res.users"].browse(self.env.uid)
         html = qweb._render(
             view.id,
             {
@@ -78,6 +84,15 @@ class StudioReportPreview(models.AbstractModel):
                 "doc_ids": record.ids,
                 "doc_model": model_name,
                 "env": self.env,
+                "time": time,
+                "context_timestamp": lambda t: fields.Datetime.context_timestamp(
+                    self.with_context(tz=user.tz), t
+                ),
+                "user": user,
+                "res_company": self.env.company,
+                "web_base_url": self.env["ir.config_parameter"]
+                .sudo()
+                .get_param("web.base.url", default=""),
             },
         )
         return {

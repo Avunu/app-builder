@@ -117,7 +117,8 @@ test("the toggle opens the console on what is on screen", async () => {
     expect(action.type).toBe("ir.actions.client");
     expect(action.tag).toBe("app_builder_console");
     expect(action.target).toBe("fullscreen");
-    const expected = {
+    expect(action.params).toEqual({
+        pane: "views",
         model: "res.partner",
         view_type: "form",
         // The id the action pins for this type; `false` when it pins none,
@@ -126,9 +127,10 @@ test("the toggle opens the console on what is on screen", async () => {
         action_id: 42,
         // The record the form is on now, not the one the action opened.
         res_id: 5,
-    };
-    expect(action.params).toEqual(expected);
-    expect(action.context).toEqual(expected);
+    });
+    // Nothing mirrored into the context: the console keeps what it needs
+    // to come back after a reload in its own URL.
+    expect(action.context).toBe(undefined);
 });
 
 test("an unpinned view and a list send no view id and no record", async () => {
@@ -141,6 +143,7 @@ test("an unpinned view and a list send no view id and no record", async () => {
     await click(".o_studio_systray_toggle");
     await animationFrame();
     expect(holder.actions[0].params).toEqual({
+        pane: "views",
         model: "res.partner",
         view_type: "list",
         view_id: false,

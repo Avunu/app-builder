@@ -15,6 +15,7 @@
 
 import { Component } from "@odoo/owl";
 import { DropdownItem } from "@web/core/dropdown/dropdown_item";
+import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { user } from "@web/core/user";
 import { useService } from "@web/core/utils/hooks";
@@ -29,11 +30,19 @@ export class StudioAutomations extends Component {
         this.orm = useService("orm");
     }
 
-    async onOpen() {
-        const action = await this.orm.call("studio.automation", "action_open", [], {
-            model_name: this.env.config.resModel,
+    /** The console, on its Automations pane for the model on screen. */
+    onOpen() {
+        this.action.doAction({
+            type: "ir.actions.client",
+            tag: "app_builder_console",
+            target: "fullscreen",
+            name: _t("Studio"),
+            params: {
+                pane: "automations",
+                res_model: this.env.config.resModel,
+                action_id: this.env.config.actionId || false,
+            },
         });
-        this.action.doAction(action);
     }
 }
 

@@ -40,15 +40,18 @@ class StudioPackageModel(models.Model):
                     self.model,
                 )
             )
-        params = {"model": self.model, "view_type": view_type, "opened_from": "model"}
         return {
             "type": "ir.actions.client",
             "tag": "app_builder_console",
             "name": self.model,
             "target": "fullscreen",
-            "params": params,
-            # The same in the context, so the console survives a reload from
-            # its own URL -- Apply rebuilds the registry, and the page has to
-            # come back to the model it was editing.
-            "context": dict(params),
+            # The console keeps what it needs to come back after a reload
+            # -- Apply rebuilds the registry -- in its own URL.
+            "params": {
+                "pane": "views",
+                "package_id": self.package_id.id,
+                "res_model": self.model,
+                "view_type": view_type,
+                "opened_from": "model",
+            },
         }

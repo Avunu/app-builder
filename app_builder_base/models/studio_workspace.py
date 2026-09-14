@@ -491,16 +491,13 @@ class StudioWorkspace(models.AbstractModel):
         package = self._package(package_id)
         self.env["studio.package.apply"].sudo()._reap_abandoned(package)
         package.action_check_drift()
-        drift = []
+        drift, files = [], []
         for entry in package.file_ids.sorted("path"):
-            if not entry.drifted:
-                continue
-            drift.append(
-                {
-                    "path": entry.path,
-                    "status": "missing" if not entry.disk_checksum else "edited",
-                }
-            )
+            status = "in_sync"
+            if entry.drifted:
+                status = "missing" if not entry.disk_checksum else "edited"
+                drift.append({"path": entry.path, "status": status})
+            files.append({"path": entry.path, "status": status})
         git = {
             "is_git": package.is_git,
             "branch": package.git_branch or "",
@@ -518,6 +515,7 @@ class StudioWorkspace(models.AbstractModel):
                 package, suggested=self.env["studio.package"].sudo()._suggested()
             ),
             "drift": drift,
+            "files": files,
             "pending_write": package.state == "dirty",
             "git": git,
             "applies": [self._apply_dict(apply, package) for apply in applies],

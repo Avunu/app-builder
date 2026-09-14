@@ -49,9 +49,38 @@ class StudioCase(TransactionCase):
 
     @classmethod
     def setUpClass(cls):
+        cls._prime_memoized_class_attributes()
         super().setUpClass()
         cls.registry.enter_test_mode(cls.cr)
         cls.addClassCleanup(cls.registry.leave_test_mode)
+
+    @classmethod
+    def _prime_memoized_class_attributes(cls):
+        """Give every model class the three attributes ``setup_models``
+        memoizes, before the leak detector takes its snapshot.
+
+        ``TransactionCase.check_attrs`` compares the class attributes after
+        each test with a snapshot taken in ``setUpClass``. A test here that
+        creates a manual model runs ``registry.setup_models``, whose
+        ``_init_constraints_onchanges`` puts ``_onchange_methods`` (and its
+        two siblings) on *every* class -- and after a preceding HttpCase
+        some classes have been seen without them, so the snapshot lacks
+        what the test then adds and every test of the class fails for
+        nothing. Setting the same property objects here, the way
+        ``setup_models`` does, makes the snapshot complete.
+        """
+        from odoo.models import BaseModel
+        from odoo.modules.registry import Registry
+        from odoo.tests.common import get_db_name
+
+        for model in Registry(get_db_name()).values():
+            for name in (
+                "_constraint_methods",
+                "_ondelete_methods",
+                "_onchange_methods",
+            ):
+                if name not in vars(model):
+                    setattr(model, name, getattr(BaseModel, name))
 
     def setUp(self):
         # Must be registered before anything else so it runs last.

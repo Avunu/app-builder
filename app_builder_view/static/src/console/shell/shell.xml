@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.StudioConsole">
+    <div class="o_studio_console">
+        <TopBar shell="this.shell" onClose.bind="this.close"/>
+
+        <div t-if="this.state.error" class="alert alert-danger m-3" role="alert" t-esc="this.state.error"/>
+        <div t-elif="!this.state.ready" class="o_studio_loading text-muted p-4">
+            <i class="fa fa-circle-o-notch fa-spin me-2"/>Opening the studio…
+        </div>
+        <t t-else="">
+            <div t-if="this.readOnly" class="alert alert-secondary rounded-0 mb-0 py-2 small o_studio_readonly_banner"
+                 role="status" t-esc="this.readOnlyNote"/>
+            <div class="o_studio_console_body" t-att-data-pane="this.shell.pane">
+                <ResizablePanel t-if="this.sidebar" class="'o_studio_sidebar'"
+                                t-key="this.shell.pane" initialWidth="this.sidebarWidth" minWidth="300"
+                                handleSide="'end'" onResize.bind="this.onSidebarResize">
+                    <div class="o_studio_sidebar_inner">
+                        <t t-component="this.sidebar" t-props="this.paneProps"/>
+                    </div>
+                </ResizablePanel>
+
+                <div class="o_studio_console_content" t-att-class="{ 'o_studio_console_canvas': this.shell.pane === 'views' }">
+                    <div t-if="this.shell.error" class="alert alert-warning m-3" role="alert" t-esc="this.shell.error"/>
+                    <div t-elif="this.shell.loading" class="o_studio_loading text-muted p-4">
+                        <i class="fa fa-circle-o-notch fa-spin me-2"/>Opening…
+                    </div>
+                    <t t-elif="this.content" t-component="this.content" t-props="this.paneProps"/>
+                </div>
+            </div>
+        </t>
+    </div>
+</t>
+
+</templates>

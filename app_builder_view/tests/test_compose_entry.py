@@ -27,14 +27,16 @@ class TestComposeEntry(StudioCase):
 
     def test_compose_opens_the_console_on_the_models_form(self):
         """A Python model with a form is composed by dropping fields onto
-        that form, so Compose lands in the console, full-screen, carrying
-        the model both in params and context so a reload finds it again."""
+        that form, so Compose lands in the console, full-screen, on the
+        Views pane of its package; the console keeps that in its own URL."""
         action = self.package_model.action_compose()
         self.assertEqual(action["tag"], "app_builder_console")
         self.assertEqual(action["target"], "fullscreen")
-        self.assertEqual(action["params"]["model"], "x_studio_project")
+        self.assertEqual(action["params"]["pane"], "views")
+        self.assertEqual(action["params"]["res_model"], "x_studio_project")
         self.assertEqual(action["params"]["view_type"], "form")
-        self.assertEqual(action["context"]["model"], "x_studio_project")
+        self.assertEqual(action["params"]["package_id"], self.package.id)
+        self.assertNotIn("context", action)
 
     def test_without_a_form_the_console_opens_on_what_the_model_has(self):
         """The class is edited from the View tab whatever the canvas shows,

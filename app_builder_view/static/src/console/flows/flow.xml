@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_view.Flow">
+    <div class="o_studio_pane o_studio_flow" t-att-data-flow="this.flow.spec.key || ''">
+        <div class="o_studio_flow_head">
+            <h4 class="mb-0" t-esc="this.title"/>
+            <button type="button" class="btn btn-link btn-sm o_studio_flow_cancel"
+                    t-att-disabled="this.flow.busy"
+                    t-on-click="() => this.flow.cancel()">Cancel</button>
+        </div>
+        <ol class="o_studio_flow_steps">
+            <!-- `item`, not `step`: a loop variable named like a getter of the
+                 component (`this.step`) is silently not assigned. -->
+            <li t-foreach="this.flow.steps" t-as="item" t-key="item.key"
+                t-att-class="{ active: item_index === this.flow.index, done: item_index lt this.flow.index }"
+                t-att-data-step="item.key">
+                <span class="o_studio_flow_num" t-esc="item_index + 1"/>
+                <span t-esc="item.label"/>
+            </li>
+        </ol>
+        <div class="o_studio_flow_body">
+            <t t-component="this.flow.step.Component" t-props="this.stepProps"/>
+            <div t-if="this.flow.error" class="alert alert-warning mt-3 o_studio_flow_error" role="alert" t-esc="this.flow.error"/>
+        </div>
+        <div class="o_studio_flow_foot">
+            <button type="button" class="btn btn-secondary o_studio_flow_back"
+                    t-att-disabled="this.flow.index === 0 or this.flow.busy"
+                    t-on-click="() => this.flow.back()">Back</button>
+            <button type="button" class="btn btn-primary o_studio_flow_next"
+                    t-att-disabled="this.flow.busy"
+                    t-on-click="() => this.flow.next()">
+                <i t-if="this.flow.busy" class="fa fa-circle-o-notch fa-spin me-1"/>
+                <t t-esc="this.nextLabel"/>
+            </button>
+        </div>
+    </div>
+</t>
+
+</templates>
