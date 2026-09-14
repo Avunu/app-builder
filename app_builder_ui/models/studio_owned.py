@@ -3,52 +3,11 @@
 """Package ownership for menus, actions, security and automations.
 
 These records are all freely creatable by a studio package -- unlike ir.model /
-ir.model.fields, there is no "declared in Python" variant to protect.
+ir.model.fields, there is no "declared in Python" variant to protect. The
+mixins themselves live in the engine; this is only the list of what wears them.
 """
 
-import logging
-
-from odoo import api, models
-
-_logger = logging.getLogger(__name__)
-
-
-class StudioCapturedOnCreate(models.AbstractModel):
-    """Records that belong to the package the studio is working in.
-
-    Same reasoning as ``ir.model.fields``: a rule created through the studio and
-    left unassigned exists in this database and nowhere else, which is exactly
-    the drift the project exists to prevent -- and it is invisible, because the
-    rule *works*. It works here, forever, and never anywhere else.
-
-    Only when a package is named in context, so ordinary use of Settings →
-    Technical is unaffected. A warning rather than an error for the same reason
-    the field mixin warns: callers that are not the studio must not be forced
-    into a package they never asked for.
-    """
-
-    _name = "studio.captured.on.create"
-    _description = "Studio Captured On Create"
-
-    @api.model_create_multi
-    def create(self, vals_list):
-        records = super().create(vals_list)
-        if self.env.context.get("studio_skip_autocapture"):
-            return records
-        package = (
-            self.env["studio.package"]
-            .browse(self.env.context.get("studio_package_id") or [])
-            .exists()
-        )
-        if package and package.writable:
-            package.studio_capture(records)
-        elif self.env.context.get("studio_package_id"):
-            _logger.warning(
-                "%s was created for a studio package that is missing or "
-                "read-only, so it will not be written to source.",
-                records._name,
-            )
-        return records
+from odoo import models
 
 
 class IrUiMenu(models.Model):
@@ -75,14 +34,22 @@ class IrActionsReport(models.Model):
     _inherit = ["ir.actions.report", "studio.owned.mixin"]
 
 
+# Captured on create like an automation: the console's Access Control and
+# Filter Rules tabs open Odoo's own lists with a package in context, and a row
+# made there is exactly the kind of record that works in this database and
+# ships nowhere unless somebody takes ownership of it at once.
 class IrModelAccess(models.Model):
     _name = "ir.model.access"
-    _inherit = ["ir.model.access", "studio.owned.mixin"]
+    _inherit = [
+        "ir.model.access",
+        "studio.owned.mixin",
+        "studio.captured.on.create",
+    ]
 
 
 class IrRule(models.Model):
     _name = "ir.rule"
-    _inherit = ["ir.rule", "studio.owned.mixin"]
+    _inherit = ["ir.rule", "studio.owned.mixin", "studio.captured.on.create"]
 
 
 class BaseAutomation(models.Model):

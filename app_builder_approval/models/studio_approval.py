@@ -40,6 +40,69 @@ class StudioApproval(models.AbstractModel):
     _inherit = ["studio.security.mixin"]
     _description = "Studio: Approval Rules"
 
+    # -- the rules themselves ---------------------------------------------
+
+    @api.model
+    def action_open(self, model_name=None, package_id=None):
+        """base_tier_validation's own rule list, scoped and with a package.
+
+        The console's Approvals tab. Not a form of our own: the engine's
+        form already knows which reviewer kinds exist and which fields can
+        name one, and a second copy would drift from it. What the studio
+        adds is the scope -- the rules *for the model on the canvas* -- and
+        the package the rule created there is written into, so it is source
+        rather than a row that gates records here and nowhere else: the
+        console's own package when it names one, else the suggested one.
+
+        A model that is not gated yet still gets its list: empty, with the
+        help text saying that the gate comes first, since a rule on a model
+        without the mixin is not an error -- it silently never fires.
+        """
+        self._assert_studio_user()
+        package = self.env["studio.package"]._chosen(package_id)
+        domain = []
+        context = {"studio_package_id": package.id or False}
+        if model_name:
+            if model_name not in self.env:
+                raise UserError(_("Unknown model '%s'.", model_name))
+            model = self.env["ir.model"]._get(model_name)
+            # `model` is the stored related the engine matches on, and the
+            # column its own search view filters by.
+            domain.append(("model", "=", model_name))
+            context["default_model_id"] = model.id
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Approvals"),
+            "res_model": "tier.definition",
+            "view_mode": "list,form",
+            # Spelled out because the dict is returned over plain RPC, and
+            # the client derives nothing from view_mode on that path.
+            "views": [(False, "list"), (False, "form")],
+            "domain": domain,
+            "context": context,
+            "help": self._empty_state(model_name),
+        }
+
+    @api.model
+    def _empty_state(self, model_name):
+        gated = model_name and MIXIN in self.env[model_name]._inherit_module
+        if model_name and not gated:
+            return "<p class='o_view_nocontent_smiling_face'>%s</p><p>%s</p>" % (
+                _("Approvals are not switched on for %s yet", model_name),
+                _(
+                    "An approval rule gates a state change, and the model has "
+                    "to carry the gate first: turn approvals on from the "
+                    "studio, then come back here to say who approves what."
+                ),
+            )
+        return "<p class='o_view_nocontent_smiling_face'>%s</p><p>%s</p>" % (
+            _("Say who must approve, and in what order"),
+            _(
+                "Rules you create here are written into your studio package, "
+                "so they ship with the rest of your customisation."
+            ),
+        )
+
     # -- what a model needs before it can be gated ------------------------
 
     @api.model
@@ -264,3 +327,18 @@ class StudioApproval(models.AbstractModel):
             if spec is not None and MIXIN in spec.inherit:
                 out.append(entry.model)
         return out
+
+
+class TierDefinition(models.Model):
+    """Rules created with a package in context belong to it at once.
+
+    The Approvals tab opens the engine's own list with ``studio_package_id``
+    in context, and a rule made there that stayed unowned would gate records
+    in this database and ship nowhere -- and it would *work*, which is what
+    makes that drift invisible. The engine's capture on create, the same one
+    an automation or an access row gets; only when a package is named, so
+    the engine's own form under Settings is unaffected.
+    """
+
+    _name = "tier.definition"
+    _inherit = ["tier.definition", "studio.captured.on.create"]

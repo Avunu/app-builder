@@ -5,7 +5,11 @@
 Lives in the engine rather than in a builder module: ``app_builder_ui`` inherits
 it for menus, actions and rules without having any reason to depend on the
 model builder, and a mixin defined in a module you do not depend on aborts the
-registry at install time.
+registry at install time. The same goes for capture on create, which
+``app_builder_approval`` needs for the engine's approval rules without any
+reason to depend on ``app_builder_ui``: one rule, in the one module both
+depend on, rather than a copy per builder that drifts unnoticed because each
+copy works.
 """
 
 import logging
@@ -129,6 +133,44 @@ class StudioOwnedMixin(models.AbstractModel):
         for package in self.mapped("studio_package_id"):
             package.action_write_files()
         return True
+
+
+class StudioCapturedOnCreate(models.AbstractModel):
+    """Records that belong to the package the studio is working in.
+
+    Same reasoning as ``ir.model.fields``: a rule created through the studio and
+    left unassigned exists in this database and nowhere else, which is exactly
+    the drift the project exists to prevent -- and it is invisible, because the
+    rule *works*. It works here, forever, and never anywhere else.
+
+    Only when a package is named in context, so ordinary use of Settings →
+    Technical is unaffected. A warning rather than an error for the same reason
+    the field mixin warns: callers that are not the studio must not be forced
+    into a package they never asked for.
+    """
+
+    _name = "studio.captured.on.create"
+    _description = "Studio Captured On Create"
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        if self.env.context.get("studio_skip_autocapture"):
+            return records
+        package = (
+            self.env["studio.package"]
+            .browse(self.env.context.get("studio_package_id") or [])
+            .exists()
+        )
+        if package and package.writable:
+            package.studio_capture(records)
+        elif self.env.context.get("studio_package_id"):
+            _logger.warning(
+                "%s was created for a studio package that is missing or "
+                "read-only, so it will not be written to source.",
+                records._name,
+            )
+        return records
 
 
 class IrUiView(models.Model):

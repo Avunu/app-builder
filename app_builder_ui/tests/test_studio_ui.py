@@ -204,6 +204,26 @@ class TestAutomationSurface(StudioCase):
         action = self.env["studio.automation"].action_open()
         self.assertFalse(action["context"]["studio_package_id"])
 
+    def test_the_consoles_choice_is_taken_over_a_guess(self):
+        """The console has picked a package already; the tab passes it and
+        the automation made from the list is written into that one."""
+        self.make_package(name="x_studio_one")
+        two = self.make_package(name="x_studio_two")
+        self.build_demo_content(two)
+        model = self.env["ir.model"]._get("x_studio_project")
+        action = self.env["studio.automation"].action_open(
+            model_name="x_studio_project", webhooks=True, package_id=two.id
+        )
+        self.assertEqual(action["context"]["studio_package_id"], two.id)
+        automation = (
+            self.env["base.automation"]
+            .with_context(**action["context"])
+            .create({"name": "Console hook", "model_id": model.id})
+        )
+        self.addCleanup(self.env["base.automation"]._unregister_hook)
+        self.assertEqual(automation.trigger, "on_webhook")
+        self.assertEqual(automation.studio_package_id, two)
+
     def test_a_rule_created_in_context_lands_in_source(self):
         package = self.make_package()
         self.build_demo_content(package)

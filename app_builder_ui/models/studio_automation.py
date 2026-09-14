@@ -33,14 +33,14 @@ class StudioAutomation(models.AbstractModel):
     _description = "Studio Automations"
 
     @api.model
-    def _suggested_package(self):
-        return self.env["studio.package"]._suggested()
+    def action_open(self, model_name=None, webhooks=False, package_id=None):
+        """Odoo's automation list, scoped and with a package to record into.
 
-    @api.model
-    def action_open(self, model_name=None, webhooks=False):
-        """Odoo's automation list, scoped and with a package to record into."""
+        The console's when it names one, the suggested one for a caller
+        with no console -- the Studio menu -- to have chosen already.
+        """
         self._assert_studio_user()
-        package = self._suggested_package()
+        package = self.env["studio.package"]._chosen(package_id)
         domain = []
         context = {"studio_package_id": package.id or False}
         if model_name:
@@ -57,6 +57,9 @@ class StudioAutomation(models.AbstractModel):
             "name": _("Webhooks") if webhooks else _("Automations"),
             "res_model": "base.automation",
             "view_mode": "list,form",
+            # Spelled out because the dict is also returned over plain RPC,
+            # and the client derives nothing from view_mode on that path.
+            "views": [(False, "list"), (False, "form")],
             "domain": domain,
             "context": context,
             "help": self._empty_state(model_name, webhooks),
