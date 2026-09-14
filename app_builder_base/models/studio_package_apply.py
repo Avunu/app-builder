@@ -21,6 +21,8 @@ import shutil
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
+from .studio_package import _mute_dev_watcher
+
 _logger = logging.getLogger(__name__)
 
 BACKUP_DIR = ".studio/backup"
@@ -94,6 +96,9 @@ class StudioPackageApply(models.Model):
         """
         self.ensure_one()
         root = self.package_id.root_path or ""
+        # Old bytes going back onto disk are .py files too; the dev watcher
+        # must not restart on them any more than on the write being undone.
+        _mute_dev_watcher(root)
         for entry in self.file_ids:
             full = os.path.join(root, entry.path)
             try:

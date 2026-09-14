@@ -29,7 +29,9 @@ real method with a real `@api.depends`.
 
 Adopting requires the package to be installed as a module (Odoo only imports
 Python for installed modules) and takes effect once the package reloads, which
-`--dev=reload` does automatically when the file lands. It closes no doors:
+the studio does in process, in the same request -- under `--dev=reload` too,
+where it keeps the dev server's own restart out of the way of its writes. It
+closes no doors:
 afterwards the model behaves like any other the builder owns, with the marked
 block kept in sync and everything outside it yours.
 

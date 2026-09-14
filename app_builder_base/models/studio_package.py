@@ -12,6 +12,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 
 from odoo import _, api, fields, models
 from odoo import models as models_module
@@ -81,6 +82,70 @@ STATES = [
 ]
 
 
+# -- the dev-mode file watcher --------------------------------------------
+#
+# `--dev=reload` restarts the server on any .py change under an addons path,
+# and gives the requests in flight one second before it closes the database
+# connections (`ThreadedServer.stop`). The studio writes .py files and then
+# reloads them itself, in process, inside the same request -- so the restart
+# the watcher would start is both needless and fatal: the upgrade dies half
+# way with a closed cursor, and the rollback that follows dies the same way.
+# So the watcher is told to look away from a package the studio is writing,
+# for a few seconds around the write. A developer's own edit under the same
+# directory, outside that window, restarts the server exactly as before.
+
+_WATCHER_MUTED_UNTIL = {}  # realpath of a package root -> monotonic deadline
+_WATCHER_MUTE_SECONDS = 5.0
+
+
+def _mute_dev_watcher(root, seconds=_WATCHER_MUTE_SECONDS):
+    """Keep the autoreload watcher from restarting on writes under ``root``.
+
+    A no-op outside ``--dev=reload``: there is no watcher to mute. Called
+    before a write and again after it, so a slow write cannot outrun its
+    own window; the events the watcher delivers a moment after the last
+    write still fall inside it.
+    """
+    if not root or "reload" not in (tools_config["dev_mode"] or []):
+        return
+    _install_watcher_mute()
+    _WATCHER_MUTED_UNTIL[os.path.realpath(root)] = time.monotonic() + seconds
+
+
+def _install_watcher_mute():
+    """Wrap ``FSWatcherBase.handle_file`` once, for the life of the process.
+
+    Both of core's watchers -- watchdog and inotify -- funnel every event
+    through that one method, and it is the method that decides to restart.
+    Wrapping it is the smallest intervention that covers both, and the
+    wrapper only ever declines: a path nobody muted is handled by core.
+    """
+    from odoo.service import server as odoo_server
+
+    base = getattr(odoo_server, "FSWatcherBase", None)
+    if base is None or getattr(base, "_studio_muted", False):
+        return
+    original = base.handle_file
+
+    def handle_file(self, path):
+        real = os.path.realpath(path)
+        now = time.monotonic()
+        for muted_root, until in list(_WATCHER_MUTED_UNTIL.items()):
+            if until < now:
+                _WATCHER_MUTED_UNTIL.pop(muted_root, None)
+            elif real == muted_root or real.startswith(muted_root + os.sep):
+                _logger.debug(
+                    "autoreload: %s was written by the studio and is reloaded in "
+                    "process; not restarting",
+                    path,
+                )
+                return None
+        return original(self, path)
+
+    base.handle_file = handle_file
+    base._studio_muted = True
+
+
 class StudioPackage(models.Model):
     _name = "studio.package"
     _inherit = ["studio.security.mixin"]
@@ -126,7 +191,6 @@ class StudioPackage(models.Model):
     reload_mode = fields.Selection(
         [
             ("inproc", "In this process"),
-            ("restart", "Server restart (--dev=reload)"),
             ("manual", "Manual restart required"),
         ],
         compute="_compute_reload_mode",
@@ -883,6 +947,7 @@ class StudioPackage(models.Model):
         self.ensure_one()
         root = self.root_path
         os.makedirs(root, exist_ok=True)
+        _mute_dev_watcher(root)
         written = []
         for relative, content in files.items():
             full = os.path.join(root, relative)
@@ -894,6 +959,9 @@ class StudioPackage(models.Model):
             with open(full, "w", encoding="utf-8") as handle:
                 handle.write(content)
             written.append(relative)
+        # Again, after: the window is measured from the last write, not the
+        # first, and the watcher hears about a file a moment after it lands.
+        _mute_dev_watcher(root)
 
         if not prune:
             return written
@@ -1230,16 +1298,18 @@ class StudioPackage(models.Model):
         rebuilds its registry -- but their ``sys.modules`` still holds the old
         Python, so they would rebuild against a stale class. An in-process
         re-import across workers is not slow, it is wrong.
+
+        ``--dev=reload`` does not change the answer. It used to select a
+        third mode that let the dev server's own restart do the reload, and
+        that never worked: the restart the watcher starts on the first .py
+        written kills the request that is still writing, and a plain boot
+        does not install a module that is only marked for it. The studio
+        reloads its own packages in process instead, and mutes the watcher
+        for its own writes (``_mute_dev_watcher``).
         """
         workers = tools_config["workers"]
-        dev = tools_config["dev_mode"] or []
         for package in self:
-            if "reload" in dev:
-                package.reload_mode = "restart"
-            elif not workers:
-                package.reload_mode = "inproc"
-            else:
-                package.reload_mode = "manual"
+            package.reload_mode = "inproc" if not workers else "manual"
 
     def _reimport_module(self):
         """Purge this package's Python so it is imported again.

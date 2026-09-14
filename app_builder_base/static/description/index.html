@@ -440,10 +440,11 @@ because the metadata is reclassified rather than deleted. A sandboxed
 <tt class="docutils literal">&#64;api.depends</tt>.</p>
 <p>Adopting requires the package to be installed as a module (Odoo only
 imports Python for installed modules) and takes effect once the package
-reloads, which <tt class="docutils literal"><span class="pre">--dev=reload</span></tt> does automatically when the file lands.
-It closes no doors: afterwards the model behaves like any other the
-builder owns, with the marked block kept in sync and everything outside
-it yours.</p>
+reloads, which the studio does in process, in the same request – under
+<tt class="docutils literal"><span class="pre">--dev=reload</span></tt> too, where it keeps the dev server’s own restart out of
+the way of its writes. It closes no doors: afterwards the model behaves
+like any other the builder owns, with the marked block kept in sync and
+everything outside it yours.</p>
 </div>
 <div class="section" id="production">
 <h2><a class="toc-backref" href="#toc-entry-3">Production</a></h2>

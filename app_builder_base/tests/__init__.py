@@ -2,6 +2,7 @@ from . import (
     common,
     test_adopt,
     test_default_and_cron,
+    test_dev_watcher,
     test_domainspec,
     test_manifest,
     test_model_draft,
