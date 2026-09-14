@@ -23,7 +23,7 @@ import logging
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.app_builder_base.tools import modelspec, scaffold
+from odoo.addons.app_builder_base.tools import compat, modelspec, pycodegen, scaffold
 
 _logger = logging.getLogger(__name__)
 
@@ -51,12 +51,21 @@ class StudioAppBuilder(models.AbstractModel):
     # -- the gesture ------------------------------------------------------
 
     @api.model
-    def create_app(self, package, label, model_name=None, options=None, groups=None):
-        """Build a usable app and return the pieces it is made of."""
+    def create_app(
+        self, package, label, model_name=None, options=None, groups=None, menu=None
+    ):
+        """Build a usable app and return the pieces it is made of.
+
+        ``menu`` says where the app goes in the apps menu: ``None`` or
+        ``{"new_root": True}`` for an app of its own, with an icon;
+        ``{"parent_id": id}`` for an item under an existing app. The parent
+        has to carry an xmlid, since the menu file refers to it by one.
+        """
         self._assert_studio_manager()
         package._assert_writable()
         options = options or scaffold.ScaffoldOptions()
         model_name = model_name or self.technical_name(label, package)
+        parent = self._menu_parent(menu)
 
         # Companions first: Tags and Lines are models of their own, and the
         # parent's many2many/one2many name them. Seeded before the parent and
@@ -92,7 +101,7 @@ class StudioAppBuilder(models.AbstractModel):
                 )
             )
 
-        built = self._build_ui(package, spec, options, groups)
+        built = self._build_ui(package, spec, options, groups, parent=parent)
         # A companion needs an access rule or nobody can read it -- and a tag
         # model with no ACL makes the parent's form fail to load rather than
         # merely hiding the tags. No menu and no views: a tag is edited through
@@ -133,7 +142,25 @@ class StudioAppBuilder(models.AbstractModel):
     # -- the UI half ------------------------------------------------------
 
     @api.model
-    def _build_ui(self, package, spec, options, groups=None):
+    def _menu_parent(self, menu):
+        """The menu a new app goes under, checked, or ``None`` for a root."""
+        if not menu or not menu.get("parent_id"):
+            return None
+        parent = self.env["ir.ui.menu"].browse(int(menu["parent_id"])).exists()
+        if not parent:
+            raise UserError(_("The menu to put the app under no longer exists."))
+        if not parent.get_external_id().get(parent.id):
+            raise UserError(
+                _(
+                    "%s has no external id, so a menu file cannot refer to it. "
+                    "Pick a menu a module declares, or make the app a root.",
+                    parent.complete_name,
+                )
+            )
+        return parent
+
+    @api.model
+    def _build_ui(self, package, spec, options, groups=None, parent=None):
         model = self.env[spec.name]
         ir_model = self.env["ir.model"].search([("model", "=", spec.name)], limit=1)
         groups = groups or self.env.ref("base.group_user")
@@ -141,10 +168,12 @@ class StudioAppBuilder(models.AbstractModel):
         access = self._build_access(ir_model, groups)
         views = self._build_views(model, spec, options)
         action = self._build_action(spec, views)
-        menus = self._build_menu(spec, action, package)
+        menus = self._build_menu(spec, action, package, parent=parent)
         sequence = self._build_sequence(spec, options)
 
-        captured = [access, action, menus["root"], menus["item"]]
+        captured = [access, action, menus["item"]]
+        if menus["root"]:
+            captured.append(menus["root"])
         captured.extend(views.values())
         if sequence:
             captured.append(sequence)
@@ -279,7 +308,7 @@ class StudioAppBuilder(models.AbstractModel):
         )
 
     @api.model
-    def _build_menu(self, spec, action, package):
+    def _build_menu(self, spec, action, package, parent=None):
         """A real app menu, not a child of the Studio menu.
 
         The generated menu must be a *root* -- parent_id unset, no groups -- or
@@ -295,6 +324,17 @@ class StudioAppBuilder(models.AbstractModel):
         ``_seed_app_icon`` has the detail).
         """
         Menu = self.env["ir.ui.menu"]
+        if parent is not None:
+            # Under an existing app: one item, no root and no icon.
+            item = Menu.create(
+                {
+                    "name": spec.description,
+                    "parent_id": parent.id,
+                    "action": "ir.actions.act_window,%d" % action.id,
+                    "sequence": 10,
+                }
+            )
+            return {"root": Menu.browse(), "item": item}
         root = Menu.create(
             {
                 "name": spec.description,
@@ -343,7 +383,13 @@ class StudioAppBuilder(models.AbstractModel):
             user = (
                 self.env["res.users"]
                 .sudo()
-                .search([("groups_id", "in", group.id), ("active", "=", True)], limit=1)
+                .search(
+                    [
+                        (compat.groups_field(self.env), "in", group.id),
+                        ("active", "=", True),
+                    ],
+                    limit=1,
+                )
             )
             if not user:
                 results.append(
@@ -361,3 +407,297 @@ class StudioAppBuilder(models.AbstractModel):
                 ok, detail = False, str(err).splitlines()[0]
             results.append({"group": group.display_name, "ok": ok, "detail": detail})
         return results
+
+    # -- over the wire ----------------------------------------------------
+    #
+    # The console calls these with ids and gets dicts back; the methods
+    # above take and return records, which the probes and the tests use.
+
+    @api.model
+    def features(self):
+        """The scaffold features, with what each implies and builds."""
+        self._assert_studio_user()
+        out = []
+        for entry in scaffold.features_json():
+            feature = scaffold.FEATURES_BY_KEY[entry["key"]]
+            out.append(
+                {
+                    **entry,
+                    "implies": list(feature.implies),
+                    "companion": feature.companion or "",
+                    "offered": entry["key"] in scaffold.WIZARD_FEATURES,
+                }
+            )
+        return {"features": out, "defaults": sorted(scaffold.DEFAULT_FEATURES)}
+
+    @api.model
+    def suggest_name(self, label, package_id):
+        """The technical name a label gets, and whether it is free."""
+        self._assert_studio_user()
+        package = self.env["studio.package"].browse(package_id).exists()
+        if not package:
+            raise UserError(_("That package no longer exists."))
+        name = self.technical_name(label, package)
+        taken = name in self.env or bool(
+            self.env["ir.model"].sudo().search_count([("model", "=", name)])
+        )
+        return {"model": name, "taken": taken}
+
+    @api.model
+    def create_app_rpc(self, package_id, spec):
+        """``create_app`` for the console: ids in, ids out."""
+        self._assert_studio_manager()
+        package = self.env["studio.package"].browse(package_id).exists()
+        if not package:
+            raise UserError(_("That package no longer exists."))
+        label = (spec.get("label") or "").strip()
+        if not label:
+            raise UserError(_("The app needs a name."))
+        try:
+            options = scaffold.ScaffoldOptions.from_keys(spec.get("features") or ())
+        except ValueError as err:
+            raise UserError(str(err)) from err
+        group_ids = [int(g) for g in (spec.get("groups") or []) if g]
+        groups = self.env["res.groups"].browse(group_ids) if group_ids else None
+        built = self.create_app(
+            package,
+            label,
+            model_name=(spec.get("model_name") or "").strip() or None,
+            options=options,
+            groups=groups,
+            menu=spec.get("menu"),
+        )
+        ir_model = built["model"]
+        return {
+            "model": ir_model.model,
+            "model_id": ir_model.id,
+            "action_id": built["action"].id,
+            "menu_id": built["menu"].id,
+            "root_menu_id": built["root_menu"].id if built["root_menu"] else False,
+            "views": {vtype: view.id for vtype, view in built["views"].items()},
+            "access_ids": built["access"].ids,
+            "sequence_id": built["sequence"].id if built["sequence"] else False,
+            "companions": [
+                {"model": rows.model_id.model, "access_ids": rows.ids}
+                for rows in built["companions"]
+                if rows
+            ],
+            "visibility": self.check_visibility(
+                ir_model.model, groups or self.env.ref("base.group_user")
+            ),
+        }
+
+    # Features that cannot be added to a model that exists: each builds a
+    # second model with an access rule of its own, which is New Model's job.
+    NEEDS_SECOND_MODEL = ("tags", "lines")
+
+    @api.model
+    def add_feature(self, package_id, model_name, key):
+        """Stage a scaffold feature on a model the package defines in Python.
+
+        The same fields and model options the feature would have given a
+        new model, staged on the model's draft so they are previewed and
+        applied like any other change; the views a feature owes -- a
+        kanban, a chatter -- are added after the apply, when the columns
+        exist (``studio.model.draft._apply_features``).
+        """
+        self._assert_studio_manager()
+        if key not in scaffold.FEATURES_BY_KEY:
+            raise UserError(_("There is no feature called '%s'.", key))
+        if key in self.NEEDS_SECOND_MODEL:
+            raise UserError(
+                _(
+                    "Tags and Lines build a second model each. Create it with "
+                    "New Model, then drop a Tags or Lines field that points at it."
+                )
+            )
+        Draft = self.env["studio.model.draft"]
+        draft = Draft.browse(Draft.open_for_model(model_name)["id"])
+        if draft.package_id.id != package_id:
+            raise UserError(
+                _(
+                    "%(model)s is defined by %(owner)s; switch to that package "
+                    "to change it.",
+                    model=model_name,
+                    owner=draft.package_id.name,
+                )
+            )
+        spec = draft._spec()
+        label = spec.description or model_name
+        bare = scaffold.scaffold_spec(
+            model_name, label, scaffold.ScaffoldOptions.from_keys(())
+        )
+        wanted = scaffold.scaffold_spec(
+            model_name, label, scaffold.ScaffoldOptions.from_keys((key,))
+        )
+        bare_names = {f.name for f in bare.fields}
+        wanted_json = modelspec.spec_to_json(wanted)["fields"]
+        added, already = [], []
+        for index, field in enumerate(wanted.fields):
+            if field.name in bare_names:
+                continue
+            if spec.field(field.name):
+                already.append(field.name)
+                continue
+            placement = modelspec.default_placement(field.ttype)
+            draft.add_field({**wanted_json[index], "placement": dict(placement)})
+            added.append(field.name)
+        options = {}
+        missing_mixins = [m for m in wanted.inherit if m not in spec.inherit]
+        if missing_mixins:
+            options["inherit"] = list(spec.inherit) + missing_mixins
+        if key == "ordering" and wanted.order and wanted.order != spec.order:
+            options["order"] = wanted.order
+        if wanted.active_name and not spec.active_name:
+            options["active_name"] = wanted.active_name
+        if wanted.sequence_code and not spec.sequence_code:
+            options["sequence_code"] = wanted.sequence_code
+            options["sequence_field"] = wanted.sequence_field
+        if options:
+            draft.set_model_options(options)
+        if not added and not options:
+            raise UserError(
+                _(
+                    "%(model)s already has everything %(key)s adds.",
+                    model=model_name,
+                    key=key,
+                )
+            )
+        draft.stage_feature(key)
+        feature = scaffold.FEATURES_BY_KEY[key]
+        return {
+            "draft_id": draft.id,
+            "added": added,
+            "already": already,
+            "options": options,
+            "views": list(feature.views),
+            "chatter": key == "chatter",
+        }
+
+    # -- adopt --------------------------------------------------------------
+
+    @api.model
+    def adoptable_models(self):
+        """Manual models no package defines in Python, with a preview each."""
+        self._assert_studio_user()
+        owned_python = set(
+            self.env["studio.package.model"]
+            .sudo()
+            .search([("source", "in", ("python", "frozen"))])
+            .mapped("model")
+        )
+        Package = self.env["studio.package"].sudo()
+        out = []
+        for model in self.env["ir.model"].sudo().search([("state", "=", "manual")]):
+            if model.model in owned_python:
+                continue
+            xmlid = model.get_external_id().get(model.id) or ""
+            module = xmlid.partition(".")[0]
+            owner = (
+                Package.search([("name", "=", module)], limit=1) if module else Package
+            )
+            manual_fields = model.field_id.filtered(lambda f: f.state == "manual")
+            try:
+                preview = pycodegen.render_model(
+                    pycodegen.spec_from_ir_model(model, manual_fields)
+                )
+            except Exception as err:  # noqa: BLE001 - the preview says why
+                preview = "# %s" % err
+            count = 0
+            if model.model in self.env:
+                count = self.env[model.model].sudo().search_count([])
+            out.append(
+                {
+                    "id": model.id,
+                    "model": model.model,
+                    "name": model.name,
+                    "origin": "studio" if module else "manual",
+                    "owner_package": (
+                        {"id": owner.id, "name": owner.name} if owner else None
+                    ),
+                    "field_count": len(manual_fields),
+                    "record_count": count,
+                    "preview": preview,
+                }
+            )
+        return out
+
+    @api.model
+    def adopt(self, package_id, model_names):
+        """Bring manual models under Python management, in the package."""
+        self._assert_studio_manager()
+        package = self.env["studio.package"].browse(package_id).exists()
+        if not package:
+            raise UserError(_("That package no longer exists."))
+        names = [n for n in (model_names or []) if n]
+        if not names:
+            raise UserError(_("Choose at least one model."))
+        # A hand-made model belongs to no package; the user just said which.
+        already = package._owned_model_names()
+        captured = []
+        for model in self.env["ir.model"].search([("model", "in", names)]):
+            if model.model in already:
+                continue
+            package.studio_capture(
+                [model, model.field_id.filtered(lambda f: f.state == "manual")]
+            )
+            captured.append(model.model)
+        package.action_adopt(names)
+        return {
+            "adopted": names,
+            "captured": captured,
+            "applied": False,
+            "restart_required": package.reload_mode == "manual",
+        }
+
+    @api.model
+    def create_field(self, package_id, model_name, values):
+        """A manual ``x_`` field on any model, written to the package.
+
+        The console's drop creates a field where it lands; this is the
+        field with no place yet -- a computed one, say -- made from the
+        model's own list.
+        """
+        self._assert_studio_manager()
+        package = self.env["studio.package"].browse(package_id).exists()
+        if not package:
+            raise UserError(_("That package no longer exists."))
+        name = (values.get("name") or "").strip()
+        if not name.startswith("x_"):
+            raise UserError(_("A custom field name must start with 'x_'."))
+        ir_model = (
+            self.env["ir.model"].sudo().search([("model", "=", model_name)], limit=1)
+        )
+        if not ir_model:
+            raise UserError(_("Unknown model '%s'.", model_name))
+        ttype = values.get("ttype") or "char"
+        vals = {
+            "name": name,
+            "field_description": values.get("field_description") or name,
+            "ttype": ttype,
+            "model_id": ir_model.id,
+            "required": bool(values.get("required")),
+            "store": values.get("store", True),
+        }
+        if ttype in ("many2one", "one2many", "many2many"):
+            if not values.get("relation"):
+                raise UserError(_("A relational field needs a related model."))
+            vals["relation"] = values["relation"]
+        if ttype == "one2many":
+            if not values.get("relation_field"):
+                raise UserError(_("A one2many field needs an inverse field."))
+            vals["relation_field"] = values["relation_field"]
+        if values.get("compute"):
+            vals.update(
+                {
+                    "compute": values["compute"],
+                    "depends": values.get("depends") or False,
+                }
+            )
+        field = (
+            self.env["ir.model.fields"]
+            .with_context(studio_skip_autocapture=True)
+            .create(vals)
+        )
+        package.studio_capture(field)
+        return {"field_id": field.id, "name": field.name}

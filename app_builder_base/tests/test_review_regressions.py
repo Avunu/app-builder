@@ -917,16 +917,30 @@ class TestApplyIsRecoverable(StudioCase):
         )
 
     def test_a_pending_apply_from_a_dead_process_is_reaped(self):
-        """Step 7 cannot run if the process is gone. A row left pending is the
-        only signal that a rollback never completed."""
+        """Step 7 cannot run if the process is gone. A row left pending by
+        another process, long enough ago, is the only signal that a rollback
+        never completed; one this process started, or one a sibling worker
+        started a moment ago, is in progress and is left alone."""
         package = self._python_package()
-        self.env["studio.package.apply"]._snapshot(
+        Apply = self.env["studio.package.apply"]
+        own = Apply._snapshot(
             package, {"__manifest__.py": "{}"}, stamp="20260728120003"
         )
-        reaped = self.env["studio.package.apply"]._reap_abandoned(package)
-        self.assertTrue(reaped)
-        self.assertEqual(reaped[0].state, "failed")
-        self.assertIn("stopped", reaped[0].error)
+        self.assertFalse(Apply._reap_abandoned(package), "started here: in progress")
+
+        own.write({"boot_id": "someotherprocess"})
+        self.assertFalse(Apply._reap_abandoned(package), "too young to be abandoned")
+
+        self.env.cr.execute(
+            "UPDATE studio_package_apply"
+            " SET create_date = now() - interval '10 minutes' WHERE id = %s",
+            (own.id,),
+        )
+        own.invalidate_recordset()
+        reaped = Apply._reap_abandoned(package)
+        self.assertEqual(reaped, own)
+        self.assertEqual(own.state, "failed")
+        self.assertIn("stopped", own.error)
 
     def test_multi_worker_deployments_refuse_an_in_process_reload(self):
         """Other workers would rebuild against the Python already in their own

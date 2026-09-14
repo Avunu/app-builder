@@ -1,6 +1,7 @@
 from . import (
     common,
     test_adopt,
+    test_apply_lifecycle,
     test_default_and_cron,
     test_dev_watcher,
     test_domainspec,
@@ -10,9 +11,11 @@ from . import (
     test_package,
     test_placement,
     test_pycodegen,
+    test_record_surface,
     test_review_regressions,
     test_roundtrip,
     test_serializer,
     test_serializer_coverage,
+    test_workspace,
     test_xml_writer,
 )

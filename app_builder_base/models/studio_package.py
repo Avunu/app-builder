@@ -204,6 +204,11 @@ class StudioPackage(models.Model):
         "readability; model_ids is the real registry.",
     )
 
+    restart_required = fields.Boolean(
+        compute="_compute_restart_required",
+        help="Something was written to disk that only a server restart can load.",
+    )
+
     is_git = fields.Boolean(compute="_compute_git_info")
     git_branch = fields.Char(compute="_compute_git_info")
     auto_commit = fields.Selection(
@@ -250,6 +255,7 @@ class StudioPackage(models.Model):
             elif not package.root_path:
                 package.root_path = False
 
+    @api.depends("root_path")
     def _compute_writable(self):
         for package in self:
             path = package.root_path
@@ -317,6 +323,18 @@ class StudioPackage(models.Model):
         for package in self:
             package.record_count = self.env["ir.model.data"].search_count(
                 [("module", "=", package.name)]
+            )
+
+    def _compute_restart_required(self):
+        Apply = self.env["studio.package.apply"]
+        for package in self:
+            package.restart_required = bool(
+                Apply.search_count(
+                    [
+                        ("package_id", "=", package.id),
+                        ("state", "=", "awaiting_restart"),
+                    ]
+                )
             )
 
     def _compute_git_info(self):
@@ -1484,18 +1502,34 @@ class StudioPackage(models.Model):
                 files[migrationgen.migration_path(self.version, stamp)] = content
         return files
 
-    def action_apply(self, reason="", allow_destructive=False):
+    def action_apply(
+        self, reason="", allow_destructive=False, overlay=None, reload=None
+    ):
         """Write the package and make the running process see it.
 
         The sequence is fixed and none of it is optional -- see the class
         docstring on ``studio.package.apply`` for why a half-finished apply is
         not something the ORM can roll back for us.
+
+        ``overlay`` is content a caller has for files the render would
+        otherwise produce from disk -- a draft's rewritten ``.py`` -- and
+        it goes through this sequence *instead of* being written first:
+        the snapshot at step 3 has to record the bytes the file had before
+        the change, or a rollback puts the change back.
+
+        ``reload=False`` -- and any apply on a server that cannot reload
+        in place -- stops after step 5. The files are on disk and
+        committed, the apply is ``awaiting_restart``, and the restart the
+        user is told about is what makes the change live. Nothing is
+        restored, because nothing was loaded and nothing could have gone
+        wrong yet.
         """
         self._assert_studio_manager()
         self.ensure_one()
         self._assert_writable()
 
         files = self._render_files()  # 1. render to memory
+        files.update(overlay or {})
         self._assert_sources_compile(files)  # 2. validate before touching disk
         self._assert_specs_reparse(files)
 
@@ -1530,6 +1564,11 @@ class StudioPackage(models.Model):
         self._sync_file_records(files)
         self._run_auto_commit(written)
         self.env.cr.commit()  # 5. commit BEFORE the reload
+
+        if reload is False or self.reload_mode == "manual":
+            apply.state = "awaiting_restart"
+            self.state = "synced"
+            return apply
 
         try:
             self._reload_now()  # 6. reimport, then upgrade
@@ -1598,6 +1637,17 @@ class StudioPackage(models.Model):
         """
         self._assert_studio_manager()
         self.ensure_one()
+        if self.reload_mode == "manual":
+            # The same reason `_reload_now` refuses: the other workers would
+            # rebuild their registry against the Python already in memory.
+            raise UserError(
+                _(
+                    "This server runs %(workers)s worker processes, so a "
+                    "package cannot be reloaded in place. Restart the server "
+                    "to read the package from disk.",
+                    workers=tools_config["workers"],
+                )
+            )
         self._invalidate_module_caches()
         module = self._find_or_create_module()
         if module.state == "installed":

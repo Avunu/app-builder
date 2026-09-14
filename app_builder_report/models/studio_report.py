@@ -69,10 +69,10 @@ class StudioReport(models.AbstractModel):
         return out
 
     @api.model
-    def action_open(self, model_name=None):
+    def action_open(self, model_name=None, package_id=None):
         """Odoo's report list, scoped and with a package to record into."""
         self._assert_studio_user()
-        package = self.env["studio.package"]._suggested()
+        package = self.env["studio.package"]._chosen(package_id)
         # qweb-text and the non-qweb types have no template to click into, so
         # showing them here would be offering an editor that cannot open.
         domain = [("report_type", "in", ["qweb-pdf", "qweb-html"])]

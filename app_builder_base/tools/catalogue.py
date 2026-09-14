@@ -65,7 +65,11 @@ class Row:
 
     name: str
     label: str
-    type: str = "text"  # text | toggle | select | groups | condition | field
+    # A renderer the client supplies. For an arch node: text | toggle |
+    # select | groups | condition | field. A record pane adds textarea |
+    # integer | domain | field_path | fields | code | many2one | many2many |
+    # selection | readonly, each still nothing but data about the value.
+    type: str = "text"
     target: str = ATTRIBUTE
     help: str = ""
     # A toggle whose attribute exists to switch something *off*: create="0"
@@ -83,6 +87,19 @@ class Row:
     placeholder_from: str = ""
     allow_empty: bool = True
     empty_label: str = ""
+    # -- record panes ----------------------------------------------------
+    # many2one / many2many: the model to pick from, and a domain string in
+    # which "{model}" and "{model_id}" stand for the subject model.
+    comodel: str = ""
+    comodel_domain: str = ""
+    # "model.field": choices read from that selection field when the
+    # catalogue is served, so the row cannot fall behind the field.
+    selection_from: str = ""
+    # The row is shown only while every clause holds: ((row_name, (values,)),)
+    visible_when: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    required: bool = False
+    # For type="code": the editor's language.
+    language: str = ""
 
     def to_json(self, translate=identity):
         # Built by hand rather than with `asdict`, which deep-copies every
@@ -103,6 +120,35 @@ class Row:
             "placeholder_from": self.placeholder_from,
             "allow_empty": self.allow_empty,
             "empty_label": translate(self.empty_label) if self.empty_label else "",
+            "comodel": self.comodel,
+            "comodel_domain": self.comodel_domain,
+            "selection_from": self.selection_from,
+            "visible_when": [[row, list(values)] for row, values in self.visible_when],
+            "required": self.required,
+            "language": self.language,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Section:
+    """Rows a record pane shows under one heading.
+
+    The record-pane cousin of ``OptionGroup``: a group is keyed by view type
+    and node kind, which a record has neither of, so a section is keyed by
+    nothing and shown when its ``visible_when`` holds.
+    """
+
+    id: str
+    title: str
+    rows: tuple[Row, ...] = dc_field(default_factory=tuple)
+    visible_when: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+    def to_json(self, translate=identity):
+        return {
+            "id": self.id,
+            "title": translate(self.title),
+            "rows": [row.to_json(translate) for row in self.rows],
+            "visible_when": [[row, list(values)] for row, values in self.visible_when],
         }
 
 

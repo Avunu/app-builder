@@ -1,1 +1,1 @@
-from . import studio_approval, tier_serializers
+from . import studio_approval, studio_workspace, tier_serializers

@@ -16,18 +16,7 @@ from odoo.tools.translate import TranslationImporter
 # it predated base.automation and ir.cron, and a wipe that deletes a server
 # action while a cron still references it fails on the foreign key.
 from odoo.addons.app_builder_base.models.studio_package import UNLINK_ORDER
-
-
-def groups_field(env):
-    """The field that holds a user's groups, by the name this server gives it.
-
-    18 calls it ``groups_id``; 19 renamed it ``group_ids`` (``res.users``,
-    and the same rename on ``ir.ui.view``, ``ir.ui.menu`` and
-    ``ir.actions.act_window``). A test that spells one of them is a test
-    that stops importing on the other branch, and the suite is meant to run
-    on both -- so nothing new spells it, and this answers instead.
-    """
-    return "group_ids" if "group_ids" in env["res.users"]._fields else "groups_id"
+from odoo.addons.app_builder_base.tools.compat import groups_field
 
 
 def join_groups(users, group_xmlids):

@@ -17,6 +17,8 @@ recovery is then ``git checkout`` or copying the backup back, from a shell.
 import logging
 import os
 import shutil
+import uuid
+from datetime import timedelta
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
@@ -26,6 +28,14 @@ from .studio_package import _mute_dev_watcher
 _logger = logging.getLogger(__name__)
 
 BACKUP_DIR = ".studio/backup"
+
+# One per process, minted at import. An apply records the id of the process
+# that started it; a 'pending' row from any other process is one whose step
+# 7 never ran, because the process is gone. Under a prefork server every
+# worker has an id of its own, which is why age is checked as well: a row a
+# sibling worker created a moment ago is not abandoned, it is in progress.
+PROCESS_BOOT_ID = uuid.uuid4().hex
+ABANDONED_AFTER = timedelta(minutes=2)
 
 
 class StudioPackageApply(models.Model):
@@ -41,6 +51,10 @@ class StudioPackageApply(models.Model):
         [
             ("pending", "Pending"),
             ("applied", "Applied"),
+            # Written to disk and committed, not reloaded: the server runs
+            # workers and cannot reload in place, so the change is live
+            # once the server has been restarted -- nothing to restore.
+            ("awaiting_restart", "Awaiting restart"),
             ("failed", "Failed"),
             ("rolled_back", "Rolled back"),
         ],
@@ -50,6 +64,7 @@ class StudioPackageApply(models.Model):
     )
     error = fields.Text(readonly=True)
     backup_path = fields.Char(readonly=True)
+    boot_id = fields.Char(readonly=True, help="The process that started the apply.")
     file_ids = fields.One2many("studio.package.apply.file", "apply_id")
 
     # -- snapshot ---------------------------------------------------------
@@ -65,6 +80,7 @@ class StudioPackageApply(models.Model):
                 "reason": reason,
                 "state": "pending",
                 "backup_path": backup,
+                "boot_id": PROCESS_BOOT_ID,
             }
         )
         rows = []
@@ -113,16 +129,27 @@ class StudioPackageApply(models.Model):
         return True
 
     def action_rollback(self):
-        """Undo an apply from the UI, then reload back to what was there."""
+        """Undo an apply from the UI, then reload back to what was there.
+
+        An apply that was written but never loaded (``awaiting_restart``,
+        or one a dead process left ``pending``) is restored the same way;
+        under a server that cannot reload in place the files go back and
+        the restart the user was already owed is the one that makes it
+        count, so nothing is reloaded here and the answer says so.
+        """
         self.ensure_one()
         self.package_id._assert_studio_manager()
         self.package_id._assert_writable()
+        if not self.file_ids:
+            raise UserError(_("There is nothing recorded to put back."))
         self._restore()
         self.env.cr.commit()  # the reload below rebuilds from disk
-        self.package_id._reload_now()
+        restart_required = self.package_id.reload_mode == "manual"
+        if not restart_required:
+            self.package_id._reload_now()
         self.write({"state": "rolled_back"})
         self.package_id.action_check_drift()
-        return True
+        return {"rolled_back": True, "restart_required": restart_required}
 
     def action_discard_backup(self):
         for record in self:
@@ -134,30 +161,44 @@ class StudioPackageApply(models.Model):
     # -- crash recovery ---------------------------------------------------
 
     @api.model
-    def _reap_abandoned(self, package):
+    def _reap_abandoned(self, packages):
         """Mark applies that were pending when the process died.
 
         Step 7 of the apply sequence cannot run if the process is gone -- a
         --dev=reload restart, an OOM kill. Those rows stay 'pending' forever
         and are the signal that a rollback was never completed.
+
+        A row is abandoned when it was started by another process *and* is
+        older than ``ABANDONED_AFTER``. The first clause keeps a slow apply
+        in this process alive; the second covers a prefork server, where a
+        sibling worker's legitimately pending apply lives for milliseconds
+        and a stale one for ever. Called from the workspace, where the state
+        is read, and never from ``_register_hook``: that runs again inside
+        the apply's own reload and would reap the apply in flight.
         """
-        boot = self.env["ir.config_parameter"].sudo().get_param("app_builder.boot_id")
+        cutoff = fields.Datetime.now() - ABANDONED_AFTER
         stale = self.search(
-            [("package_id", "=", package.id), ("state", "=", "pending")]
+            [
+                ("package_id", "in", packages.ids),
+                ("state", "=", "pending"),
+                ("boot_id", "!=", PROCESS_BOOT_ID),
+                ("create_date", "<", cutoff),
+            ]
         )
         if not stale:
             return stale
-        stale.write(
-            {
-                "state": "failed",
-                "error": _(
-                    "The server stopped while this change was being applied "
-                    "(boot %s). The files on disk may be half-written; roll "
-                    "back to restore what was there before.",
-                    boot or "unknown",
-                ),
-            }
-        )
+        for record in stale:
+            record.write(
+                {
+                    "state": "failed",
+                    "error": _(
+                        'The server stopped while "%s" was being applied. '
+                        "The files on disk may be half-written; roll back to "
+                        "restore what was there before.",
+                        record.reason or _("this change"),
+                    ),
+                }
+            )
         return stale
 
 

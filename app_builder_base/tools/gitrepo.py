@@ -44,6 +44,56 @@ def is_repo(path):
     return _run(["rev-parse", "--is-inside-work-tree"], path) is not None
 
 
+def toplevel(path):
+    """The repository root ``path`` sits in, or ``False``.
+
+    Porcelain paths are relative to this, not to ``path``: a package that is
+    one directory of a larger repository gets ``custom/x_pkg/models/a.py``
+    back from ``status``, and has to strip its own prefix to read it.
+    """
+    out = _run(["rev-parse", "--show-toplevel"], path)
+    return (out or "").strip() or False
+
+
+def init(path):
+    """Make ``path`` a repository. True when it is one afterwards."""
+    if not path or not os.path.isdir(path):
+        return False
+    if is_repo(path):
+        return True
+    return _run(["init", "-q"], path) is not None
+
+
+def log(path, limit=20, paths=None):
+    """The last ``limit`` commits touching ``paths``, newest first."""
+    out = _run(
+        [
+            "log",
+            "-n",
+            str(limit),
+            "--format=%H%x1f%h%x1f%an%x1f%aI%x1f%s",
+            "--",
+            *(paths or ["."]),
+        ],
+        path,
+    )
+    entries = []
+    for line in (out or "").splitlines():
+        parts = line.split("\x1f")
+        if len(parts) == 5:
+            sha, short, author, date, subject = parts
+            entries.append(
+                {
+                    "sha": sha,
+                    "short": short,
+                    "author": author,
+                    "date": date,
+                    "subject": subject,
+                }
+            )
+    return entries
+
+
 def current_branch(path):
     out = _run(["rev-parse", "--abbrev-ref", "HEAD"], path)
     return (out or "").strip() or False
@@ -51,7 +101,10 @@ def current_branch(path):
 
 def status(path, paths=None):
     """Porcelain status limited to ``paths``, as a list of ``(code, path)``."""
-    out = _run(["status", "--porcelain", "--", *(paths or ["."])], path)
+    out = _run(
+        ["status", "--porcelain", "--untracked-files=all", "--", *(paths or ["."])],
+        path,
+    )
     if out is None:
         return []
     entries = []
@@ -78,7 +131,7 @@ def commit(path, message, paths=None):
     Nothing-to-commit is a success with no sha, not a failure -- the builder
     calls this after every operation and most operations are no-ops for git.
     """
-    if paths and not add(path, paths):
+    if not add(path, paths or ["."]):
         return False
     if not status(path, paths):
         return False

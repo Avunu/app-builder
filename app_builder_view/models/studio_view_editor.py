@@ -107,6 +107,8 @@ class StudioViewEditor(models.AbstractModel):
             return _("removed a node")
         if kind == "show_label":
             return _("gave %s a label", operation.get("name", "a field"))
+        if kind == "add_chatter":
+            return _("added the chatter")
         return kind.replace("_", " ")
 
     @api.model
@@ -881,6 +883,12 @@ class StudioViewEditor(models.AbstractModel):
         operation["_created_name"] = separator.get("name")
         return node
 
+    def _op_add_chatter(self, root, operation):
+        """A ``<chatter/>`` after the sheet, the way every core form has it."""
+        node = self._new_xpath(root, operation["xpath"], "after")
+        etree.SubElement(node, "chatter")
+        return node
+
     def _op_add_label(self, root, operation):
         """Add a piece of static text styled as a label.
 
@@ -1034,6 +1042,48 @@ class StudioViewEditor(models.AbstractModel):
                 )
             )
         return position
+
+    @api.model
+    def add_chatter(self, view_id, package_id, expected_arch_version=None):
+        """Give a form the messaging pane, once the model has the mixins.
+
+        After the sheet -- or, on a form without one, at the end -- as
+        every core form does it. A form that already has one is left
+        alone: a second chatter is not a stronger one.
+        """
+        self._assert_studio_manager()
+        view = self.env["ir.ui.view"].browse(view_id).exists()
+        if not view or view.type != "form":
+            raise UserError(_("Only a form has a chatter."))
+        model = self.env.get(view.model)
+        if model is None or "message_ids" not in model._fields:
+            raise UserError(
+                _(
+                    "%s does not carry messaging yet; the chatter needs the "
+                    "mail mixins on the model first.",
+                    view.model,
+                )
+            )
+        root = etree.fromstring(view.get_combined_arch().encode())
+        if root.find(".//chatter") is not None:
+            return False
+        sheet = root.find("./sheet")
+        anchor = sheet if sheet is not None else list(root)[-1] if len(root) else None
+        if anchor is None:
+            raise UserError(_("The form is empty; put something on it first."))
+        occurrences = self._occurrences(root)
+        self.apply_operation(
+            view_id,
+            package_id,
+            {
+                "type": "add_chatter",
+                "xpath": self._locator_for(anchor, occurrences),
+                "position": "after",
+                "_expect": self._expectation_for(anchor),
+            },
+            expected_arch_version=expected_arch_version,
+        )
+        return True
 
     @api.model
     def show_label_at(

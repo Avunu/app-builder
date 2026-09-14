@@ -10,4 +10,5 @@ from . import (
     studio_package_model,
     studio_serializer,
 )
-from . import studio_domain
+from . import res_users, studio_domain, studio_record_surface  # isort: skip
+from . import studio_security_surfaces, studio_workspace

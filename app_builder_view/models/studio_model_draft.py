@@ -40,7 +40,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import sql
 
-from odoo.addons.app_builder_base.tools import modelspec
+from odoo.addons.app_builder_base.tools import modelspec, scaffold
 
 _logger = logging.getLogger(__name__)
 
@@ -370,6 +370,56 @@ class StudioModelDraft(models.TransientModel):
             self._store_anchors({k: v for k, v in anchors.items() if k not in added})
         return bool(placed or foreign)
 
+    def _apply_features(self):
+        """What a staged feature owes the views, now that its columns exist.
+
+        Stages wants a kanban and Date & calendar a calendar -- the same
+        views the app builder scaffolds for a new model -- and Messaging
+        wants the form to end in a ``<chatter/>``. Each is skipped when the
+        model already has it, so a second run is harmless, like placement.
+        """
+        self.ensure_one()
+        keys = self._features()
+        if not keys:
+            return False
+        editor = self.env["studio.view.editor"]
+        package = self.package_id
+        model_name = self.model
+        existing = {
+            view["type"] for view in editor._views_of(model_name) if view.get("view_id")
+        }
+        done = False
+        for key in keys:
+            feature = scaffold.FEATURES_BY_KEY.get(key)
+            if feature is None:
+                continue
+            for view_type in feature.views:
+                if view_type in existing:
+                    continue
+                arguments = {}
+                if view_type in ("calendar", "timeline"):
+                    date_field = scaffold.first_field_of(
+                        self.env[model_name],
+                        ("date", "datetime"),
+                        prefer=("date", "date_start"),
+                    )
+                    if not date_field:
+                        continue
+                    arguments["date_field"] = date_field
+                editor.add_view(model_name, view_type, package.id, **arguments)
+                existing.add(view_type)
+                done = True
+            if key == "chatter":
+                form = editor._views_of(model_name)
+                form_view = next(
+                    (v for v in form if v["type"] == "form" and v.get("view_id")),
+                    None,
+                )
+                if form_view:
+                    done |= bool(editor.add_chatter(form_view["view_id"], package.id))
+        self.features_json = "[]"
+        return done
+
     @api.model
     def _combined_names(self, view, name):
         """Whether ``name`` is already in the view as it renders, its
@@ -418,6 +468,7 @@ class StudioModelDraft(models.TransientModel):
             planned.append((draft, spec, diff))
         for draft, spec, diff in planned:
             draft._place_in_views(spec, diff)
+            draft._apply_features()
         for draft in drafts:
             draft.base_spec_json = draft.spec_json
         return {"placed": True, "reason": ""}

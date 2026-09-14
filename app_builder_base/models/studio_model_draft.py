@@ -59,6 +59,12 @@ class StudioModelDraft(models.TransientModel):
         help="Which views each staged field should appear in. View intent, "
         "not class definition, so it is kept out of the spec.",
     )
+    # Scaffold features staged on this draft (``scaffold.FEATURES`` keys).
+    # Their fields and model options are already in the spec; what is
+    # remembered here is the work a feature owes the views once its
+    # columns exist -- a kanban for stages, a chatter node -- which
+    # ``_apply_features`` does after the reload, like placement.
+    features_json = fields.Text(default="[]")
 
     # A related list needs a field on the *other* model pointing back, and that
     # field has to exist by the time the registry is rebuilt or setup fails on
@@ -613,7 +619,15 @@ class StudioModelDraft(models.TransientModel):
         """Change what the class says about itself: order, display field, mixins."""
         self._assert_studio_manager()
         self.ensure_one()
-        allowed = {"description", "order", "rec_name", "active_name", "inherit"}
+        allowed = {
+            "description",
+            "order",
+            "rec_name",
+            "active_name",
+            "inherit",
+            "sequence_code",
+            "sequence_field",
+        }
         unknown = set(values) - allowed
         if unknown:
             raise UserError(
@@ -624,6 +638,35 @@ class StudioModelDraft(models.TransientModel):
         if "inherit" in values:
             data["inherit"] = tuple(values["inherit"])
         return self._store(modelspec.spec_from_json(data))
+
+    # -- features ---------------------------------------------------------
+
+    def _features(self):
+        self.ensure_one()
+        try:
+            return list(json.loads(self.features_json or "[]"))
+        except ValueError:
+            return []
+
+    def stage_feature(self, key):
+        """Remember that ``key`` was added; its fields are staged separately."""
+        self.ensure_one()
+        keys = self._features()
+        if key not in keys:
+            keys.append(key)
+            self.features_json = json.dumps(keys)
+        return keys
+
+    def _apply_features(self):
+        """The view work a feature owes once its columns are live.
+
+        Nothing here: a package without the view editor has no way to add
+        a view or a chatter node, and the feature's fields are already on
+        screen through placement. The view addon overrides this.
+        """
+        self.ensure_one()
+        self.features_json = "[]"
+        return False
 
     # -- what the tray shows ----------------------------------------------
 
@@ -776,7 +819,6 @@ class StudioModelDraft(models.TransientModel):
             payload[draft.package_model_id.python_path] = draft._rewritten_source(spec)
             diff = modelspec.diff_specs(draft._base_spec(), spec)
             planned.append((draft, spec, diff))
-        package._write_files(payload)
 
         # Removals go first, and that ordering is not stylistic. The upgrade
         # re-imports the package's view files, so a <field> naming a column
@@ -787,18 +829,42 @@ class StudioModelDraft(models.TransientModel):
         for draft, _spec, diff in planned:
             draft._retract_from_views(diff)
 
+        # The rewritten sources travel as an overlay rather than being
+        # written here first: the apply snapshots what is on disk before it
+        # writes, and a file written ahead of it would be "restored" to the
+        # very change a rollback is meant to undo.
         applied = package.action_apply(
             reason=_("edit %s", self.model),
             allow_destructive=allow_destructive,
+            overlay=payload,
         )
+        if applied.state == "awaiting_restart":
+            # Written, committed, not loaded: the columns do not exist yet,
+            # so the views cannot name them and the baseline must not move
+            # -- the draft stays dirty until `place_pending` runs after the
+            # restart, which is the honest state of a change not yet live.
+            return {
+                "apply_id": applied.id,
+                "state": applied.state,
+                "applied": False,
+                "restart_required": True,
+                "placed": False,
+            }
         # Additions can only go in afterwards: the registry has to have the
         # column before a view naming it will validate.
         for draft, spec, diff in planned:
             draft._place_in_views(spec, diff)
+            draft._apply_features()
         # The file is the definition, so each draft's baseline moves with it.
         for draft in drafts:
             draft.base_spec_json = draft.spec_json
-        return applied
+        return {
+            "apply_id": applied.id,
+            "state": applied.state,
+            "applied": True,
+            "restart_required": False,
+            "placed": True,
+        }
 
     def _rewritten_source(self, spec):
         """This model's file with the studio block replaced by ``spec``."""
@@ -970,6 +1036,7 @@ class StudioModelDraft(models.TransientModel):
         self.ensure_one()
         self.spec_json = self.base_spec_json
         self.placement_json = "{}"
+        self.features_json = "[]"
         # A companion exists only to serve an edit on this draft, so discarding
         # that edit leaves nothing for it to do.
         self.companion_ids.unlink()
