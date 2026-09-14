@@ -1,11 +1,14 @@
-Go to **Studio → Packages** and create a package. Its directory defaults to the
-first writable entry on the addons path, preferring one named `custom`.
+Open the **Studio** app. On a fresh database its Home walks you through creating
+a package: a name, a place on the addons path (the first writable entry,
+preferring one named `custom`), whether to start a git repository. Nothing is
+written before the last button, and the review step names the files.
 
 From then on, anything the builder assigns to that package is written to disk as
-you work. The package form shows the generated files, whether any have been
-edited by hand, and the git branch they live on.
+you work. Home shows the package's health — in sync, edited on disk, an apply
+waiting for a restart — and the **Changes** pane shows the generated files, the
+ones edited by hand, the git status with a commit box, and the apply history.
 
-Three buttons matter:
+Three actions matter, on Home's sidebar and on Changes:
 
 - **Write to disk** — re-serialize the package. Safe to run at any time; an
   unchanged package produces byte-identical files and no git diff.
@@ -15,12 +18,16 @@ Three buttons matter:
   generated. A file somebody edited by hand is reported, never silently
   overwritten and never deleted.
 
+The package list itself, and the technical lists behind the console's cards
+(models, fields, views), are under **Studio → Packages** in developer mode.
+
 ## Adopt an existing model
 
-New models are already Python. **Studio → Adopt Existing Model** is for the ones
-that are not yet: an `x_` model built by an older version of the studio, or one
-made by hand in Settings → Technical. The records, the table and its data are
-untouched; only where the definition lives changes.
+New models are already Python. **Home → Adopt a model** is for the ones that
+are not yet: an `x_` model built by an older version of the studio, or one made
+by hand in Settings → Technical. Choose it, see the class the studio will write,
+review, adopt. The records, the table and its data are untouched; only where
+the definition lives changes.
 
 It is lossless because the xmlids Odoo's reflection assigns to a code-defined
 model are identical to the ones the studio emitted, and because the metadata is
@@ -34,6 +41,14 @@ where it keeps the dev server's own restart out of the way of its writes. It
 closes no doors:
 afterwards the model behaves like any other the builder owns, with the marked
 block kept in sync and everything outside it yours.
+
+## Servers that cannot reload in place
+
+Under several workers, or when the package's reload mode is set to manual, an
+apply writes the files and stops: the pill reads *Restart needed*, the apply is
+recorded as awaiting a restart, and Odoo loads the package on the way up.
+Nothing is half-applied; a rollback from that state restores the files as they
+were.
 
 ## Production
 

@@ -50,15 +50,19 @@ UIs live in ``app_builder_model``, ``app_builder_view`` and
 Usage
 =====
 
-Go to **Studio → Packages** and create a package. Its directory defaults
-to the first writable entry on the addons path, preferring one named
-``custom``.
+Open the **Studio** app. On a fresh database its Home walks you through
+creating a package: a name, a place on the addons path (the first
+writable entry, preferring one named ``custom``), whether to start a git
+repository. Nothing is written before the last button, and the review
+step names the files.
 
 From then on, anything the builder assigns to that package is written to
-disk as you work. The package form shows the generated files, whether
-any have been edited by hand, and the git branch they live on.
+disk as you work. Home shows the package's health — in sync, edited on
+disk, an apply waiting for a restart — and the **Changes** pane shows
+the generated files, the ones edited by hand, the git status with a
+commit box, and the apply history.
 
-Three buttons matter:
+Three actions matter, on Home's sidebar and on Changes:
 
 - **Write to disk** — re-serialize the package. Safe to run at any time;
   an unchanged package produces byte-identical files and no git diff.
@@ -68,14 +72,18 @@ Three buttons matter:
   last generated. A file somebody edited by hand is reported, never
   silently overwritten and never deleted.
 
+The package list itself, and the technical lists behind the console's
+cards (models, fields, views), are under **Studio → Packages** in
+developer mode.
+
 Adopt an existing model
 -----------------------
 
-New models are already Python. **Studio → Adopt Existing Model** is for
-the ones that are not yet: an ``x_`` model built by an older version of
-the studio, or one made by hand in Settings → Technical. The records,
-the table and its data are untouched; only where the definition lives
-changes.
+New models are already Python. **Home → Adopt a model** is for the ones
+that are not yet: an ``x_`` model built by an older version of the
+studio, or one made by hand in Settings → Technical. Choose it, see the
+class the studio will write, review, adopt. The records, the table and
+its data are untouched; only where the definition lives changes.
 
 It is lossless because the xmlids Odoo's reflection assigns to a
 code-defined model are identical to the ones the studio emitted, and
@@ -90,6 +98,15 @@ reloads, which the studio does in process, in the same request -- under
 the way of its writes. It closes no doors: afterwards the model behaves
 like any other the builder owns, with the marked block kept in sync and
 everything outside it yours.
+
+Servers that cannot reload in place
+-----------------------------------
+
+Under several workers, or when the package's reload mode is set to
+manual, an apply writes the files and stops: the pill reads *Restart
+needed*, the apply is recorded as awaiting a restart, and Odoo loads the
+package on the way up. Nothing is half-applied; a rollback from that
+state restores the files as they were.
 
 Production
 ----------
@@ -126,11 +143,14 @@ Next
   belong to another model, and the palette would have to offer that
   model's fields. They are shown, and a click inside one selects the
   field that holds it.
-- **Automations stop short of a studio form on purpose.** The wizard
-  creates the ``ir.actions.server`` / ``base.automation`` pair, and
-  ``studio.automation.action_open`` opens Odoo's own form scoped to the
-  model in front of you with a package in context — a second copy of
-  that form would drift from it on the first release.
+- **The record panes stop where a gesture would lie.** The Automations
+  pane edits a rule and its steps from a catalogue of typed rows; the
+  three triggers whose value is a ``Many2oneReference`` (stage, user,
+  tag set) are offered and their value set through *Advanced…*, Odoo's
+  own form, since the catalogue has no honest picker for a record of a
+  model chosen at runtime. A foreign access line or rule is not copied
+  into the package (lines add up, so a copy would not be what it looks
+  like), and a foreign automation is not switched off from source.
 - **Group-bys and the search view's own three lists are still one field
   each.** A filter can now carry any condition the builder can express;
   a group-by is still a field and a context, which is all a group-by is.
@@ -195,12 +215,12 @@ Known limits
   development and shipping through git is a convention the studio
   supports, not one it enforces.
 - **Tags and Lines are decided when the app is created.** Both are
-  offered by the New Model wizard only, because a companion is a second
+  offered by the Build-an-app flow only, because a companion is a second
   model and ``create_app`` is the only thing that builds one — so adding
-  Lines to an app that already exists means building a second app.
-  Removing them is not offered either: taking ``line_ids`` off the
-  parent would leave the line model, its table, its access rule and its
-  file in place.
+  Lines to an app that already exists means building a second app; the
+  flow's tile says so. Removing them is not offered either: taking
+  ``line_ids`` off the parent would leave the line model, its table, its
+  access rule and its file in place.
 - **A value that needs a module is only recorded where a bridge says
   so.** ``_value_depends`` maps a field value to the module that
   contributes it, so a rule using ``review_type="expression"`` pulls
@@ -234,8 +254,11 @@ Known limits
 - **Multi-worker deployments cannot reload in place** and are told so
   rather than served badly: the other workers rebuild their registry
   from Python they still hold in ``sys.modules``, so they would rebuild
-  against a stale class. Studio editing is a single-process development
-  activity; production runs read-only.
+  against a stale class. An apply there writes the files and stops as
+  *awaiting a restart* — the pill says *Restart needed* until the
+  process comes back — and finishes placing the fields after it. Studio
+  editing is a single-process development activity; production runs
+  read-only.
 - **The inverse of a related list can only be created on a model this
   package defines in Python.** Pointing at anything else needs a
   many2one that already aims back; the picker lists the candidates and

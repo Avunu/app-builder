@@ -1,32 +1,18 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
-    <menuitem id="menu_studio_new_model"
-              name="New Model"
-              parent="app_builder_base.menu_studio_root"
-              action="studio_model_wizard_action"
-              sequence="20"/>
-
-    <menuitem id="menu_studio_new_field"
-              name="New Field"
-              parent="app_builder_base.menu_studio_root"
-              action="studio_field_wizard_action"
-              sequence="30"/>
-
-    <menuitem id="menu_studio_adopt"
-              name="Adopt Existing Model"
-              parent="app_builder_base.menu_studio_root"
-              action="studio_adopt_wizard_action"
-              sequence="35"/>
-
+    <!-- Developer-mode lists under Studio › Packages. The studio itself is
+         the console, one entry above; these are the rows behind its cards. -->
     <menuitem id="menu_studio_models"
               name="Custom Models"
-              parent="app_builder_base.menu_studio_root"
+              parent="app_builder_base.menu_studio_packages"
               action="ir_model_action_studio"
+              groups="base.group_no_one"
               sequence="40"/>
 
     <menuitem id="menu_studio_fields"
               name="Custom Fields"
-              parent="app_builder_base.menu_studio_root"
+              parent="app_builder_base.menu_studio_packages"
               action="ir_model_fields_action_studio"
+              groups="base.group_no_one"
               sequence="50"/>
 </odoo>

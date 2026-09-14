@@ -3,7 +3,9 @@
     <!-- The console from the Studio menu: its Home, on the package the user
          last had open (the console works that out from its own preferences).
          A client action declared as a server action so its name and tag stay
-         one record other addons can point at. -->
+         one record other addons can point at. Running a server action needs
+         write access on its model, so studio users have it on the (abstract)
+         editor model (see security/ir.model.access.csv). -->
     <record id="studio_console_action" model="ir.actions.server">
         <field name="name">Studio</field>
         <field name="model_id" ref="model_studio_view_editor"/>

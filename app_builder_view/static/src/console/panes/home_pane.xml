@@ -105,6 +105,13 @@
                                     <t t-if="this.countsLine(entry.counts)"> · <t t-esc="this.countsLine(entry.counts)"/></t>
                                 </small>
                             </div>
+                            <select t-if="this.featuresFor(entry).length" class="form-select form-select-sm w-auto o_studio_model_feature"
+                                    t-att-disabled="this.model.busy" t-att-title="entry.model"
+                                    t-on-change="(ev) => this.onAddFeature(entry, ev)">
+                                <option value="">+ Feature…</option>
+                                <option t-foreach="this.featuresFor(entry)" t-as="feature" t-key="feature.key"
+                                        t-att-value="feature.key" t-att-disabled="feature.companion" t-esc="feature.label"/>
+                            </select>
                             <button type="button" class="btn btn-link btn-sm o_studio_model_open"
                                     t-on-click="() => this.onOpenModel(entry)">Open ▸</button>
                             <button t-if="entry.adoptable" class="btn btn-link btn-sm o_studio_model_adopt" type="button"

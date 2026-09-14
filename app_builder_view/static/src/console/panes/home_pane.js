@@ -56,6 +56,7 @@ export class HomeModel {
             const [, checklist] = await Promise.all([
                 this.shell.loadInventory(),
                 this.orm.call("studio.workspace", "checklist", [this.shell.packageId]),
+                this.loadFeatures(),
             ]);
             this.checklist = checklist;
         } catch (err) {
@@ -63,6 +64,50 @@ export class HomeModel {
                 throw err;
             }
             this.error = messageOf(err);
+        } finally {
+            this.busy = false;
+        }
+    }
+
+    /**
+     * The features a Python model of the package can still take on
+     * (`studio.app.builder.features`), when the app builder is installed
+     * -- it registers the build_app flow, which is how this addon, which
+     * does not depend on it, knows.
+     */
+    async loadFeatures() {
+        if (this.features !== undefined) {
+            return;
+        }
+        const builder = paneRegistry.contains("build_app");
+        if (!builder) {
+            this.features = [];
+            return;
+        }
+        const answer = await this.orm.call("studio.app.builder", "features", []);
+        this.features = answer.features.filter((f) => f.offered);
+    }
+
+    /**
+     * Stage a feature on a model the package defines in Python: fields and
+     * model options on the draft, applied like any other change.
+     */
+    async addFeature(modelName, key) {
+        this.busy = true;
+        this.error = "";
+        try {
+            const added = await this.orm.call("studio.app.builder", "add_feature", [
+                this.shell.packageId,
+                modelName,
+                key,
+            ]);
+            return added;
+        } catch (err) {
+            if (!(err && err.data)) {
+                throw err;
+            }
+            this.shell.notification.add(messageOf(err), { type: "warning" });
+            return undefined;
         } finally {
             this.busy = false;
         }
@@ -366,6 +411,37 @@ export class HomePane extends Component {
     async onAdopt(entry) {
         await this.shell.setModel(entry.model, { open: false });
         await this.shell.openPane("adopt_model", { model: entry.model });
+    }
+
+    /** The features a row offers: the builder's, on a model written in Python. */
+    featuresFor(entry) {
+        if (entry.source !== "python" || !this.shell.packageWritable) {
+            return [];
+        }
+        return this.model.features || [];
+    }
+
+    /** A feature chosen on a model row: staged, then the form shows the ghosts. */
+    async onAddFeature(entry, ev) {
+        const key = ev.target.value;
+        ev.target.value = "";
+        if (!key) {
+            return;
+        }
+        const added = await this.model.addFeature(entry.model, key);
+        if (!added) {
+            return;
+        }
+        const count = (added.added || []).length;
+        this.shell.notification.add(
+            count
+                ? _t("%s staged on %s: apply from the Views pane.", count, entry.display_name)
+                : _t("%s already has that.", entry.display_name),
+            { type: "info" }
+        );
+        // The Views pane learns the draft from the editing context it
+        // loads on open; the form then shows the staged fields as ghosts.
+        await this.shell.openView({ model: entry.model, view_type: "form" });
     }
 
     // -- checklist ------------------------------------------------------------

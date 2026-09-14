@@ -16,7 +16,8 @@ them. A type the builder has no scaffold for is listed and disabled with that as
 the reason, because "we cannot make one yet" is true and different from "no such
 thing".
 
-Editing happens in a **console**: full-screen, the real view rendered on a
+Editing happens in the **studio console**, which is the whole studio: Home for
+the package, the Views pane for this — full-screen, the real view rendered on a
 canvas with a real record in it, and a sidebar of Add, View and Properties.
 Fields, buttons, tabs, groups and columns are dragged from the sidebar onto the
 view and land exactly where they are dropped; what is already there is dragged

@@ -17,10 +17,16 @@
             "app_builder_model/static/src/field_popover.xml",
             "app_builder_model/static/src/console_items.js",
             "app_builder_model/static/src/console_items.xml",
+            "app_builder_model/static/src/flows/build_app_flow.js",
+            "app_builder_model/static/src/flows/build_app_flow.xml",
+            "app_builder_model/static/src/flows/adopt_model_flow.js",
+            "app_builder_model/static/src/flows/adopt_model_flow.xml",
+        ],
+        "web.assets_tests": [
+            "app_builder_model/static/tests/tours/build_app_tour.js",
         ],
     },
     "data": [
-        "security/ir.model.access.csv",
         "views/studio_model_views.xml",
         "views/studio_composer_views.xml",
         "views/studio_menus.xml",

@@ -37,3 +37,23 @@ class TestConsoleMenu(StudioCase):
         self.assertEqual(action["params"]["opened_from"], "menu")
         # No model is chosen for the user: Home is the place to choose one.
         self.assertNotIn("res_model", action["params"])
+
+    def test_the_studio_app_is_one_entry(self):
+        """The root menu opens the console itself; every other entry under
+        it is developer-mode only, so a builder sees exactly one."""
+        root = self.env.ref("app_builder_base.menu_studio_root")
+        self.assertEqual(
+            root.action, self.env.ref("app_builder_view.studio_console_action")
+        )
+        # The menu bar's own filter (`_visible_menu_ids`) is what the person
+        # sees; as the administrator, who is in every studio group but is
+        # not in developer mode.
+        admin = self.env.ref("base.user_admin")
+        visible = self.env["ir.ui.menu"].with_user(admin)._visible_menu_ids()
+        below = self.env["ir.ui.menu"].search(
+            [("id", "child_of", root.id), ("id", "!=", root.id)]
+        )
+        self.assertFalse(
+            [m.complete_name for m in below if m.id in visible],
+            "menu entries a builder would see beside the console",
+        )

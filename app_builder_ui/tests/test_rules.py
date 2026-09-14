@@ -15,19 +15,16 @@ from odoo.addons.app_builder_base.tests.common import StudioCase
 
 @tagged("post_install", "-at_install")
 class TestRuleBuilder(StudioCase):
-    def _wizard(self, package, **overrides):
-        values = {
-            "package_id": package.id,
-            "model_id": self.env["ir.model"]._get("res.partner").id,
-            "name": "Own contacts only",
-            "domain": "[['user_id', '=', 1]]",
-        }
+    def _make(self, package, **overrides):
+        values = {"name": "Own contacts only", "domain_force": "[['user_id', '=', 1]]"}
         values.update(overrides)
-        return self.env["studio.rule.wizard"].create(values)
+        return self.env["studio.rule.surface"].create_record(
+            "res.partner", package.id, values, template="blank"
+        )
 
     def test_a_rule_is_created_and_written_to_source(self):
         package = self.make_package()
-        self._wizard(package).action_create()
+        self._make(package)
         rule = self.env["ir.rule"].search([("name", "=", "Own contacts only")], limit=1)
         self.assertTrue(rule)
         self.assertEqual(rule.studio_package_id, package)
@@ -37,34 +34,17 @@ class TestRuleBuilder(StudioCase):
         """Not a style objection: a rule whose domain raises makes every read
         raise, for everyone it applies to."""
         package = self.make_package()
-        wizard = self._wizard(package, domain="[['nope', '=', 1]]")
         with self.assertRaises(UserError) as caught:
-            wizard.action_create()
+            self._make(package, domain_force="[['nope', '=', 1]]")
         self.assertIn("does not search", str(caught.exception))
 
-    def test_a_rule_that_applies_to_nothing_is_refused(self):
+    def test_the_pane_says_what_the_condition_matches(self):
         package = self.make_package()
-        wizard = self._wizard(
-            package,
-            perm_read=False,
-            perm_write=False,
-            perm_create=False,
-            perm_unlink=False,
-        )
-        with self.assertRaises(UserError):
-            wizard.action_create()
-
-    def test_the_wizard_says_what_the_condition_matches(self):
-        package = self.make_package()
-        wizard = self._wizard(package, domain="[]")
-        wizard._onchange_domain()
-        self.assertIn("Matches", wizard.matches)
-
-    def test_a_broken_condition_says_so_before_saving(self):
-        package = self.make_package()
-        wizard = self._wizard(package, domain="[['nope', '=', 1]]")
-        wizard._onchange_domain()
-        self.assertIn("does not search", wizard.matches)
+        row = self._make(package, domain_force="[]")
+        described = self.env["studio.rule.surface"].describe(row["id"], package.id)
+        self.assertTrue(described["matches"]["valid"])
+        self.assertIn("count", described["matches"])
+        self.assertIn("total", described["matches"])
 
 
 @tagged("post_install", "-at_install")

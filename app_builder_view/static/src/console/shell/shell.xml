@@ -12,6 +12,20 @@
         <t t-else="">
             <div t-if="this.readOnly" class="alert alert-secondary rounded-0 mb-0 py-2 small o_studio_readonly_banner"
                  role="status" t-esc="this.readOnlyNote"/>
+            <!-- Next steps: once, after a flow, and dismissed for good. -->
+            <div t-if="this.shell.callout" class="o_studio_callout" role="status" t-att-data-callout="this.shell.callout.key">
+                <div class="d-flex align-items-start gap-2">
+                    <i class="fa fa-check-circle o_studio_callout_icon"/>
+                    <div class="flex-grow-1">
+                        <div class="fw-bold" t-esc="this.shell.callout.title"/>
+                        <ul class="mb-0 ps-3 small">
+                            <li t-foreach="this.shell.callout.lines" t-as="line" t-key="line_index" t-esc="line"/>
+                        </ul>
+                    </div>
+                    <button type="button" class="btn btn-link btn-sm p-0 o_studio_callout_close" title="Dismiss"
+                            t-on-click="() => this.shell.callout = null"><i class="fa fa-times"/></button>
+                </div>
+            </div>
             <div class="o_studio_console_body" t-att-data-pane="this.shell.pane">
                 <ResizablePanel t-if="this.sidebar" class="'o_studio_sidebar'"
                                 t-key="this.shell.pane" initialWidth="this.sidebarWidth" minWidth="300"

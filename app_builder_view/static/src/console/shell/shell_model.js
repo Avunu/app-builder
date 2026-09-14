@@ -76,6 +76,9 @@ export class StudioShell {
         // How the console was entered; never in the URL.
         this.entry = params.entry || {};
         this.sidebarWidth = null;
+        // `{key, title, lines}` after a flow completes: shown once, under
+        // the bar, until dismissed or the next flow.
+        this.callout = null;
         warnLegacyTabs();
     }
 

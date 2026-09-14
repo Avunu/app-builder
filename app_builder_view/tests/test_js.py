@@ -25,8 +25,9 @@ import logging
 import re
 from urllib.parse import quote
 
-from odoo.tests import HttpCase, tagged
+from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.tests.common import StudioHttpCase
 from odoo.addons.web.tests.test_js import unit_test_error_checker
 
 # The suite prefix hoot gives the files of this addon: ``@<addon>/<file>``,
@@ -55,7 +56,7 @@ class _RunnerLines(logging.Handler):
 
 
 @tagged("post_install", "-at_install")
-class TestJs(HttpCase):
+class TestJs(StudioHttpCase):
     def test_hoot_suite(self):
         """Every hoot test under ``static/tests`` passes, and at least one
         of them ran."""

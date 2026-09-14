@@ -502,3 +502,53 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         flex-basis: 30%;
     }
 }
+
+// Next steps after a flow.
+.o_studio_callout {
+    margin: 8px 12px 0;
+    padding: 8px 12px;
+    border: 1px solid $o-studio-brand;
+    border-left-width: 4px;
+    border-radius: 4px;
+    background: #fff;
+
+    .o_studio_callout_icon {
+        color: $o-studio-brand;
+        margin-top: 3px;
+    }
+}
+
+// Flow steps that pick from tiles or cards.
+.o_studio_feature_tile {
+    cursor: pointer;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+
+    &.selected {
+        border-color: $o-studio-brand;
+        background: rgba(113, 75, 103, 0.06);
+    }
+}
+
+.o_studio_adopt_card {
+    cursor: pointer;
+
+    &.selected {
+        border-color: $o-studio-brand;
+    }
+}
+
+.o_studio_code_preview {
+    max-height: 360px;
+    overflow: auto;
+    padding: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 4px;
+    background: #fafafa;
+    font-size: 12px;
+}
+
+.o_studio_review_files li {
+    line-height: 1.6;
+}

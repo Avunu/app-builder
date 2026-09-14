@@ -26,6 +26,10 @@ done
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="${PYTHON:-python}"
+# The probes import odoo as a script would, not through odoo-bin: with the
+# checkout's own directory first, so a namespace package rooted at the
+# workspace (the `odoo/` directory itself) does not shadow the real one.
+export PYTHONPATH="$PWD/odoo${PYTHONPATH:+:$PYTHONPATH}"
 PSQL="${PSQL:-psql}"
 PSQL_ARGS="-h 127.0.0.1 -p 5442 -U odoo"
 

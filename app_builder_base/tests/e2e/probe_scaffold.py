@@ -82,27 +82,25 @@ def main():
                     "auto_commit": "off",
                 }
             )
-            # Through the wizard, not the builder API: this is the path a
-            # user actually takes, and it commits and rebuilds the registry,
-            # so no TransactionCase can reach it.
-            wizard = env["studio.model.wizard"].create(
-                {
-                    "package_id": package.id,
-                    "name": LABEL,
-                    "add_chatter": True,
-                    "add_stage": True,
-                    "add_user": True,
-                    "add_reference": True,
-                    # The two features that build a second model. They cannot
-                    # be exercised from a TransactionCase for the same reason
-                    # as everything else here: create_app commits.
-                    "add_tags": True,
-                    "add_lines": True,
-                }
+            # Through the RPC the console's Build-an-app flow calls: this is
+            # the path a user actually takes, and it commits and rebuilds the
+            # registry, so no TransactionCase can reach it. Tags and Lines
+            # are the two features that build a second model; they cannot be
+            # exercised from a TransactionCase for the same reason.
+            builder = env["studio.app.builder"]
+            # The flow starts from the defaults and adds what is ticked.
+            features = builder.features()["defaults"] + [
+                "chatter",
+                "stage",
+                "user",
+                "reference",
+                "tags",
+                "lines",
+            ]
+            built = builder.create_app_rpc(
+                package.id, {"label": LABEL, "features": features}
             )
-            wizard._onchange_name()
-            action = wizard.action_create()
-            model_name = action["res_model"]
+            model_name = built["model"]
             cr.commit()
 
         print("  built model: %s" % model_name)

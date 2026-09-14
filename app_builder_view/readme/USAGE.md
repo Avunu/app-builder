@@ -1,8 +1,10 @@
 Open any list, form or kanban and click **Studio** in the top bar, or pick
 **Edit this view** from the cog menu: the console opens full-screen on the view
-you were looking at, with the record you were looking at in it. **Studio →
-Console** opens it with nothing in hand, on the form of the first model your
-package owns, and the view switcher takes it from there.
+you were looking at, with the record you were looking at in it. The **Studio**
+app opens the console on its Home: the package, its health, the guided tiles
+(Build an app, Adopt a model, Open a view, Edit menus, Changes), the models it
+defines, and a getting-started checklist. The top bar's crumb — package ›
+model › view — is where everything is scoped, and every pane follows it.
 
 ## The sidebar
 
@@ -56,9 +58,16 @@ at once.
 
 ## Around the view
 
-The top bar's tabs — Views, Reports, Automations, Webhooks, Access Control,
-Filter Rules, Approvals, Edit Menu, New Model — are the studio's other
-surfaces scoped to the model in front of you; the ones that are their own
-screen open with the breadcrumb leading back. The view switcher lists the
-model's other views and offers to add the types the package can scaffold.
-**Close** returns to where you came from, with the edits already showing.
+The top bar's tabs — Home, Views, Reports, Automations, Webhooks, Access
+Control, Filter Rules, Approvals, Menu, Changes — are the studio's other
+surfaces, each a pane of the same console scoped to the model in front of you
+(a tab that needs a model is dimmed until there is one). A record pane lists
+the model's records of that kind as cards with a sentence each; **New** starts
+from a template and asks only what a record cannot exist without, and the
+sidebar edits the rest as label / control rows. Odoo's own form is one button,
+*Advanced…*. **Changes** shows what is pending, the written files and their
+drift, git with a commit box, and the apply history with roll back. The view
+switcher lists the model's other views and offers to add the types the package
+can scaffold. **Close** returns to where you came from, with the edits already
+showing. The URL carries the pane, the package, the model and the record, so
+a reload lands where you were.

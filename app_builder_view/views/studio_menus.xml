@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<odoo>
-    <menuitem id="menu_studio_views"
-              name="Studio Views"
-              parent="app_builder_base.menu_studio_root"
-              action="ir_ui_view_action_studio"
-              sequence="60"/>
-</odoo>

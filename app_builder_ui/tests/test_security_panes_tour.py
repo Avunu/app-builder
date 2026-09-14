@@ -5,14 +5,14 @@
 import os
 import tempfile
 
-from odoo.tests import HttpCase, tagged
+from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import join_groups
+from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
 from odoo.addons.app_builder_base.tools import compat
 
 
 @tagged("post_install", "-at_install")
-class TestSecurityPanesTour(HttpCase):
+class TestSecurityPanesTour(StudioHttpCase):
     def setUp(self):
         super().setUp()
         console = self.env["ir.module.module"].search(

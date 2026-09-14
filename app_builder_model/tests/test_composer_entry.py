@@ -42,10 +42,17 @@ class TestComposerEntryPoint(TransactionCase):
     def test_an_administrator_can_see_the_way_in(self):
         """The root menu is group-gated, so 'no menu anywhere' is also what a
         missing group implication looks like. base.group_system has to reach
-        it, or the person who installed the studio cannot open it."""
+        it, or the person who installed the studio cannot open it. The
+        composer list itself is developer-mode only: the console is the
+        way in, and this list is the rows behind its cards."""
+        root = self.env.ref("app_builder_base.menu_studio_root")
         menu = self.env.ref("app_builder_model.menu_studio_composer")
-        visible = self.env["ir.ui.menu"].with_user(self.env.ref("base.user_admin"))
-        self.assertIn(menu.id, visible.search([]).ids)
+        admin = self.env.ref("base.user_admin")
+        visible = self.env["ir.ui.menu"].with_user(admin)
+        self.assertIn(root.id, visible.search([]).ids)
+        self.assertNotIn(menu.id, visible.search([]).ids)
+        debug = visible.with_context(**{"ir.ui.menu.full_list": True})
+        self.assertIn(menu.id, debug.search([]).ids)
 
 
 @tagged("post_install", "-at_install")

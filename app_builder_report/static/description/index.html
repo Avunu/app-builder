@@ -371,11 +371,12 @@ ul.auto-toc {
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! -->
 <p><a class="reference external image-reference" href="https://odoo-community.org/page/development-status"><img alt="Beta" src="https://img.shields.io/badge/maturity-Beta-yellow.png" /></a> <a class="reference external image-reference" href="http://www.gnu.org/licenses/agpl-3.0-standalone.html"><img alt="License: AGPL-3" src="https://img.shields.io/badge/license-AGPL--3-blue.png" /></a> <a class="reference external image-reference" href="https://github.com/Avunu/app-builder/tree/18.0/app_builder_report"><img alt="Avunu/app-builder" src="https://img.shields.io/badge/github-Avunu%2Fapp--builder-lightgray.png?logo=github" /></a></p>
 <p>Build PDF reports, and edit the ones that came with Odoo.</p>
-<p><strong>New reports.</strong> Name it, pick what it prints and pick a layout —
+<p><strong>New reports.</strong> From the console’s Reports pane: pick a layout —
 External for something a customer receives, Internal for something used
-in the building, Blank for a label or a preprinted form. You get an
-action, a qweb template and a <em>Print</em> menu entry, written into your
-studio package as source.</p>
+in the building, Blank for a label or a preprinted form — and name it.
+You get an action, a qweb template and a <em>Print</em> menu entry, written
+into your studio package as source; the card’s <em>Edit layout</em> opens the
+template on the canvas.</p>
 <p><strong>Existing reports, patched rather than copied.</strong> This is the half Odoo
 Studio cannot do. Its own documentation tells you to duplicate the
 standard report and edit the duplicate — which is why the copy stops
@@ -388,7 +389,9 @@ That is what Odoo’s own addons do to each other: <tt class="docutils literal">
 patches <tt class="docutils literal">sale.report_saleorder_document</tt> exactly this way. Your change
 is a reviewable patch, and the report underneath keeps getting fixed.</p>
 <p>The editor is the same one used for forms and lists, because a report
-template is the same kind of record.</p>
+template is the same kind of record. A patched report says so on its
+card, and <em>Reset layout</em> deletes the patch; the original was never
+changed.</p>
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">

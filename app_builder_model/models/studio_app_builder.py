@@ -623,7 +623,7 @@ class StudioAppBuilder(models.AbstractModel):
         return out
 
     @api.model
-    def adopt(self, package_id, model_names):
+    def adopt(self, package_id, model_names, apply=True):
         """Bring manual models under Python management, in the package."""
         self._assert_studio_manager()
         package = self.env["studio.package"].browse(package_id).exists()
@@ -643,10 +643,16 @@ class StudioAppBuilder(models.AbstractModel):
             )
             captured.append(model.model)
         package.action_adopt(names)
+        # The class is on disk; one reload makes it the model. `apply`
+        # is separable for the tests, which cannot sit through a commit.
+        applied = False
+        if apply:
+            result = package.action_apply(reason=_("adopt %s", ", ".join(names)))
+            applied = result.state == "applied"
         return {
             "adopted": names,
             "captured": captured,
-            "applied": False,
+            "applied": applied,
             "restart_required": package.reload_mode == "manual",
         }
 

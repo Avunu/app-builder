@@ -10,13 +10,13 @@ console that survived the round trip. Those are the two things this drives.
 
 import tempfile
 
-from odoo.tests import HttpCase, tagged
+from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import join_groups
+from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
 
 
 @tagged("post_install", "-at_install")
-class TestConsoleTabsTour(HttpCase):
+class TestConsoleTabsTour(StudioHttpCase):
     def setUp(self):
         super().setUp()
         # The console lives in app_builder_view, which this addon does not

@@ -11,11 +11,13 @@ file exists.
 import tempfile
 
 from odoo import Command
-from odoo.tests import HttpCase, tagged
+from odoo.tests import tagged
+
+from odoo.addons.app_builder_base.tests.common import StudioHttpCase
 
 
 @tagged("post_install", "-at_install")
-class TestReportEditorTour(HttpCase):
+class TestReportEditorTour(StudioHttpCase):
     def test_a_report_can_be_edited_by_clicking_it(self):
         package = self.env["studio.package"].create(
             {

@@ -6,13 +6,13 @@ from the sidebar, the rule switched off -- and the file afterwards."""
 import os
 import tempfile
 
-from odoo.tests import HttpCase, tagged
+from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import join_groups
+from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
 
 
 @tagged("post_install", "-at_install")
-class TestAutomationsPaneTour(HttpCase):
+class TestAutomationsPaneTour(StudioHttpCase):
     def setUp(self):
         super().setUp()
         console = self.env["ir.module.module"].search(

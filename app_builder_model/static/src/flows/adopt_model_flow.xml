@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="app_builder_model.AdoptChoose">
+    <div class="o_studio_flow_step">
+        <p class="text-muted">
+            A model made by hand, or by an older studio as records, becomes a Python
+            class in the package. Afterwards it is like any model the package
+            defines: fields are staged and applied, and the class is yours to edit.
+            One at a time is easiest to review.
+        </p>
+        <div t-if="this.state.loading" class="text-muted small"><i class="fa fa-circle-o-notch fa-spin me-1"/>Loading…</div>
+        <div t-elif="!this.state.models.length" class="o_studio_empty">
+            <div class="fw-bold mb-1">Nothing to adopt</div>
+            <div class="small text-muted">Every manual model here is already Python, or there is none.</div>
+        </div>
+        <div t-else="" class="o_studio_record_list">
+            <div class="o_studio_card o_studio_adopt_card" t-att-class="{ selected: this.isOn(entry.model) }" t-foreach="this.state.models"
+                 t-as="entry" t-key="entry.model"
+                 t-att-data-model="entry.model" t-on-click="() => this.toggle(entry.model)">
+                <div class="d-flex align-items-center gap-2">
+                    <i t-att-class="this.isOn(entry.model) ? 'fa fa-check-square-o' : 'fa fa-square-o'"/>
+                    <span class="fw-bold" t-esc="entry.name"/>
+                    <code class="small" t-esc="entry.model"/>
+                    <span class="ms-auto small text-muted">
+                        <t t-esc="entry.field_count"/> fields · <t t-esc="entry.record_count"/> records
+                    </span>
+                </div>
+                <div class="small text-muted" t-esc="this.origin(entry)"/>
+            </div>
+        </div>
+    </div>
+</t>
+
+<t t-name="app_builder_model.AdoptPreview">
+    <div class="o_studio_flow_step">
+        <p class="text-muted">The class as it will be written. Nothing is on disk yet.</p>
+        <div t-foreach="this.previews" t-as="preview" t-key="preview.name" class="mb-3">
+            <div class="o_studio_section_title font-monospace" t-esc="preview.name"/>
+            <pre class="o_studio_code_preview" t-esc="preview.code"/>
+        </div>
+    </div>
+</t>
+
+<t t-name="app_builder_model.AdoptReview">
+    <div class="o_studio_flow_step o_studio_flow_review">
+        <div class="o_studio_section_title">What is written</div>
+        <ul class="font-monospace small o_studio_review_files">
+            <li t-foreach="this.files" t-as="file" t-key="file" t-esc="file"/>
+        </ul>
+        <div class="o_studio_section_title">What happens</div>
+        <p t-if="!this.manual" class="small">
+            The class is written, the manual definition it replaces is retired from
+            the database, and the package reloads once. Records are untouched: the
+            table stays, the class now describes it.
+        </p>
+        <p t-else="" class="small">
+            This server runs several workers, so it cannot reload in place. The class
+            is written and the manual definition retired; restart the server and
+            Odoo loads the class on the way up.
+        </p>
+        <p class="small text-muted">Nothing is written before <b>Adopt</b>.</p>
+    </div>
+</t>
+
+</templates>

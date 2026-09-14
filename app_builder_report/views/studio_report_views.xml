@@ -1,36 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
-    <record id="studio_report_wizard_view_form" model="ir.ui.view">
-        <field name="name">studio.report.wizard.form</field>
-        <field name="model">studio.report.wizard</field>
-        <field name="arch" type="xml">
-            <form string="New Report">
-                <group>
-                    <field name="package_id"/>
-                    <field name="name" placeholder="e.g. Job Sheet"/>
-                    <field name="model_id"/>
-                </group>
-                <group string="Layout">
-                    <field name="layout" widget="radio"/>
-                    <field name="layout_help" nolabel="1" colspan="2" readonly="1"/>
-                    <field name="paperformat_id"/>
-                </group>
-                <footer>
-                    <button name="action_create" type="object" string="Create"
-                            class="btn-primary"/>
-                    <button string="Cancel" class="btn-secondary" special="cancel"/>
-                </footer>
-            </form>
-        </field>
-    </record>
-
-    <record id="studio_report_wizard_action" model="ir.actions.act_window">
-        <field name="name">New Report</field>
-        <field name="res_model">studio.report.wizard</field>
-        <field name="view_mode">form</field>
-        <field name="target">new</field>
-    </record>
-
     <!-- Odoo's own report form has a "Qweb Views" stat button, which opens the
          template as ir.ui.view records. That is the technical view of it; this
          is the editing one. -->
@@ -66,12 +35,4 @@
         </field>
     </record>
 
-    <!-- A server action, like Automations, so the package to record into is
-         worked out when the menu is clicked rather than baked into a domain. -->
-    <record id="studio_reports_action" model="ir.actions.server">
-        <field name="name">Reports</field>
-        <field name="model_id" ref="model_studio_report"/>
-        <field name="state">code</field>
-        <field name="code">action = env["studio.report"].action_open()</field>
-    </record>
 </odoo>

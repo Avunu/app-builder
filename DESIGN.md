@@ -268,14 +268,36 @@ What the console work discovered, in the same spirit as the list above:
 
 **The composer is retired.** Once the console could stage, edit, remove and reorder a Python model's fields (the View tab's *Model* list, and *Edit definition* / *Remove from model* on any field of an owned model), the field-list-beside-a-preview it grew out of was a second UI for the same draft, guaranteed to fall behind the first. `Compose` on a model now opens the console on whichever view the model has; the composer's field popover survives as the console's field editor (`app_builder.field_editor`), and `studio.model.draft` is the same buffer underneath.
 
+### The console is the studio — the shell, the panes and what they found
+
+The second iteration made the console's chrome the whole product (PLAN.md §X6). Its shape: a `StudioShell` (`console/shell/shell_model.js`, Owl-free) holding the three scopes — package, model, view — and a pane registry (`app_builder.panes`) with three entry shapes: a custom pane (a component), a **record pane** (a server surface's name and a few strings; the console's `RecordPane` / `RecordSidebar` / `RowEditor` do the rest), and a **flow** (a stepper hosted in the content slot). The server side is one contract, `studio.record.surface` (`app_builder_base/models/studio_record_surface.py`): `catalogue` (sections of typed `catalogue.Row`s, templates), `rows`, `describe`, `write_record`, `create_record`, `remove_record`, `duplicate_record`, `run`; each surface is an AbstractModel over one Odoo model, with hooks for the sentence a card says, who owns a record, why a foreign one is not edited here, and what a record's children are. What it found:
+
+23.  **A client action's URL is its `params`.** `updateActionState(patch)` writes every non-`PATH_KEYS` key of the patch to the query string and hands them back as `action.params` on reload; `static path = "studio"` gives `/odoo/studio`. The model key has to be `res_model` — `model` is one of the router's own keys and would be swallowed. Browser Back and Forward *remount* the client action (`loadState → doAction`); accepted, since the URL carries everything, and the alternative is the website builder's `skipRouteChange` hack.
+
+24.  **A loop variable that shares a name with a getter of its component is silently not assigned.** Owl's loop context is `Object.create(component)`; assigning `ctx["row"] = ...` where the prototype has a getter-only `row` fails without an error in sloppy mode, and every iteration sees the getter's value — two rows, one key, "duplicate key in t-foreach: undefined". `t-as="row"` beside `get row()`, `t-as="step"` beside `get step()`: renamed, and worth a grep whenever a template gains a loop.
+
+25.  **`env.config.resModel` is not always there.** The cog item read the model from the view's env config, which carries the view id and type but not the model on every view; a fresh manual model with no stored list view opened the console with nothing to show. The controller's action always names it.
+
+26.  **A reference the file cannot carry is refused before the write.** The serializer emits a many2one as `ref="module.name"` and raises, from deep inside `studio_capture`, for a record with no external id — a mail template made by hand, a user. The surfaces check the ids of every many2one and many2many value first and say it in the person's words: *"is only in this database: it has no external id, so the package's file could not point at it."*
+
+27.  **The draft wrote the new source before the snapshot.** `studio.model.draft.action_apply` used to write the rewritten `.py` and *then* call the package apply, whose snapshot recorded the new bytes as `content_before` — a rollback restored the wrong file. The draft's sources now go through `action_apply(overlay=...)`, into the same sequence as everything else, and the snapshot holds what the file had.
+
+28.  **A server that cannot reload in place still applies.** Under workers, or when `reload_mode` is manual, `action_apply` writes the files, commits and stops with the apply in `awaiting_restart`; the pill says *Restart needed* until the process boot id changes, and `place_pending` finishes after the restart. Applies a dead process left `pending` are reaped by the workspace on the next read — other boot id *and* older than two minutes, the second condition because a live apply is `pending` for the length of one reload.
+
+29.  **The internal report layout needs the printing context.** `web.internal_layout` stamps the time with `context_timestamp`, which `ir.actions.report._render_template` supplies and a bare `ir.qweb._render` does not; the preview passes the same names a printed report gets.
+
+30.  **`ir.ui.menu.search` hides a folder with no children.** A menu with no action is shown only if something visible sits under it, so the surface that lists a package's menus reads them with `ir.ui.menu.full_list`, or a submenu made a moment ago has no parent to sit under.
+
+31.  **The leak detector's snapshot can be incomplete.** `TransactionCase.check_attrs` compares class attributes after each test with a snapshot from `setUpClass`; `setup_models` (any test that creates a manual model) puts `_onchange_methods` and two siblings on *every* class, and after a preceding `HttpCase` some classes have been seen without them — every test of the next class then fails for nothing. `StudioCase` primes the three attributes before the snapshot.
+
 ## Status
 
-**768 unit tests** (750 across `app_builder_base`, `app_builder_model`, `app_builder_view`, `app_builder_ui` and `app_builder_report`, 18 in `app_builder_approval`), 66 hoot tests run from the `app_builder_view` suite, and five end-to-end probes. CI runs ruff + pre-commit and the suite against both Odoo and OCB 18.0 in the OCA CI containers.
+**886 unit tests** across `app_builder_base`, `app_builder_model`, `app_builder_view`, `app_builder_ui`, `app_builder_report` and `app_builder_approval` — the console's tours among them (the canvas, every record pane, the flows to their review step) — 68 hoot tests run from the `app_builder_view` suite, and five end-to-end probes. CI runs ruff + pre-commit and the suite against both Odoo and OCB 18.0 in the OCA CI containers.
 
 -   `app_builder_base` — packages, serializer framework, canonical writer, drift, the spec layer (`modelspec` / `pycodegen` / `pyparse`), apply + snapshot + rollback, reload modes, pre-migration generation, scaffold
 -   `app_builder_model` — model & field builder, app builder, adopt
--   `app_builder_view` — view editor: operation API, server-minted canvas identity, the console (drag-and-drop, properties, undo/redo, staged fields)
--   `app_builder_ui` — menus, actions, ACLs, record rules, automations
+-   `app_builder_view` — view editor: operation API, server-minted canvas identity, the console (the shell, Home, Changes, the record-pane framework, the flows, drag-and-drop, properties, undo/redo, staged fields)
+-   `app_builder_ui` — menus, actions, ACLs, record rules, automations, as surfaces the console's panes render
 
 ### The three invariants
 
@@ -291,7 +313,8 @@ The original one — `load_from_files(serialize(db)) == db`, byte-identical — 
 
 Remaining:
 
--   **The console's second version** — the console above is the client; what it does not do yet: inline x2many subviews are visible but not droppable, a kanban card written with `t-esc` has no addressable parts, master's `card` view type (a kanban whose card lives in another view) is reserved for by `nodes[].view_id` and not handled, Two consoles on one package are serialised only by the transaction and the arch-version check.
+-   **The canvas** — inline x2many subviews are visible but not droppable, a kanban card written with `t-esc` has no addressable parts, master's `card` view type (a kanban whose card lives in another view) is reserved for by `nodes[].view_id` and not handled, two consoles on one package are serialised only by the transaction and the arch-version check.
+-   **The panes** — what §X6 deferred and says so in the UI: sequences, crons and defaults have no pane (Changes lists their files), a foreign access line or rule is not copied, a foreign automation is not switched off from source, the approval mixin is not removed, there are no bulk actions, the menu tree is reordered with buttons rather than by drag, and the legacy `action_open` list openers are still on the models though nothing calls them.
 -   **Relationships** — one2many with automatic inverse creation and notebook placement; then sub-models.
 -   **19.0** — the code is kept 19.0-clean but is only tested on 18.0. Several OCA dependencies are not ported to 19.0 yet.
 -   **Adopting two custom models that reference each other** in one operation is untested; adopt them one at a time.

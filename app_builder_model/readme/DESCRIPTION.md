@@ -1,14 +1,20 @@
 Build custom models and fields visually; they land in your source tree as you
 work.
 
-Adds a guided **New Model** wizard that creates the model, a name field, an
-access rule, list and form views, an action and a menu in one step — and assigns
-all of it to a studio package, so the addon directory exists before you close
-the dialog.
+**Build an app**, from the studio's Home: a name, the features it starts with
+(each tile says what it builds and what it costs), who can use it, where its
+menu goes — then one button writes the model as Python, reloads, and builds
+the views, the menu and the access lines. The review step names every file.
+The console opens on the new model's form with the next steps beside it.
 
-**Compose** opens a model in the studio console, where fields are dropped onto
-the model's own views and the class itself -- every field, in the order it is
-written -- is edited from the View tab. The field editor covers every field
+**Adopt a model** brings a hand-made `x_` model under Python; a feature can be
+added to a Python model later from Home's model list, staged and applied like
+any other change (Tags and Lines are decided when the app is built: each is a
+second model).
+
+Fields are dropped onto the model's own views in the console, and the class
+itself -- every field, in the order it is written -- is edited from the View
+tab. The field editor covers every field
 type Odoo supports, and the picker offers what people are actually choosing
 rather than what the ORM calls it: Priority arrives with its four values and
 its stars, Image renders as an image, a Related field asks only which field it
@@ -21,5 +27,6 @@ and say which fields it reads; the method name is derived, because generating
 two answers to "what is this method called" is how a field stops being found
 once its model graduates to Python.
 
-Also adds a `Studio Package` column to the custom model and field lists, so you
-can see at a glance which addon a customization belongs to.
+Also adds a `Studio Package` column to the custom model and field lists (under
+Studio → Packages, in developer mode), so you can see at a glance which addon a
+customization belongs to.

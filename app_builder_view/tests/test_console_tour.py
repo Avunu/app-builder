@@ -17,13 +17,13 @@ import tempfile
 from lxml import etree
 
 from odoo import Command
-from odoo.tests import HttpCase, tagged
+from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import join_groups
+from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
 
 
 @tagged("post_install", "-at_install")
-class TestConsoleTour(HttpCase):
+class TestConsoleTour(StudioHttpCase):
     def _package(self, name, label):
         # Exactly one writable package, so editing_context can suggest it
         # without the console having to ask which one to record into.

@@ -22,9 +22,5 @@
             "app_builder_ui/static/tests/tours/menu_pane_tour.js",
         ],
     },
-    "data": [
-        "security/ir.model.access.csv",
-        "views/studio_ui_views.xml",
-        "views/studio_menus.xml",
-    ],
+    "data": [],
 }

@@ -74,7 +74,7 @@ Three things make the generated class lossless rather than a rewrite:
 -   a sandboxed `compute` string is promoted to a real method with a real `@api.depends`;
 -   metadata rows are _reclassified_ (`state` manual → base), never deleted. Deleting would be doubly catastrophic: `ir.model.fields.unlink` calls `_drop_column` and would destroy user data, and every `model_id` in Odoo is `ondelete='cascade'`, so dropping the `ir.model` row silently takes the access rules and automations with it.
 
-Adding a field means re-importing the class, so edits batch behind an explicit **Apply** — one reload per changeset rather than one per field. **Studio → Adopt Existing Model** brings an older `x_` model under the same management; it is a migration for what came before, not a milestone.
+Adding a field means re-importing the class, so edits batch behind an explicit **Apply** — one reload per changeset rather than one per field. **Home → Adopt a model** brings an older `x_` model under the same management; it is a migration for what came before, not a milestone.
 
 ## Read-only in production is a feature
 

@@ -176,14 +176,15 @@ class TestAppBuilderRpc(StudioCase):
 
     def test_adopt_captures_and_writes_the_class(self):
         self._manual_model("x_rpc_adopted")
-        answer = self.builder.adopt(self.package.id, ["x_rpc_adopted"])
+        answer = self.builder.adopt(self.package.id, ["x_rpc_adopted"], apply=False)
         self.assertEqual(answer["captured"], ["x_rpc_adopted"])
+        self.assertFalse(answer["applied"])
         self.assertFalse(answer["restart_required"])
         entry = self.package.model_ids.filtered(lambda m: m.model == "x_rpc_adopted")
         self.assertEqual(entry.source, "python")
         self.assertIn("x_name", self.package._read_source(entry.python_path))
         with self.assertRaises(UserError):
-            self.builder.adopt(self.package.id, [])
+            self.builder.adopt(self.package.id, [], apply=False)
 
     # -- a manual field --------------------------------------------------------------
 

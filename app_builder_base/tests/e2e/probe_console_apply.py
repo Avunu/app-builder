@@ -120,16 +120,11 @@ def main():
                     "auto_commit": "off",
                 }
             )
-            wizard = env["studio.model.wizard"].create(
-                {
-                    "package_id": package.id,
-                    "name": LABEL,
-                    "add_chatter": True,
-                    "add_user": True,
-                }
+            # The console's Build-an-app flow calls the same RPC.
+            built = env["studio.app.builder"].create_app_rpc(
+                package.id, {"label": LABEL, "features": ["chatter", "user"]}
             )
-            wizard._onchange_name()
-            model_name = wizard.action_create()["res_model"]
+            model_name = built["model"]
             package_id = package.id
             cr.commit()
         print("  built %s" % model_name)

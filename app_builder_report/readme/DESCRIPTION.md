@@ -1,9 +1,10 @@
 Build PDF reports, and edit the ones that came with Odoo.
 
-**New reports.** Name it, pick what it prints and pick a layout — External for
+**New reports.** From the console's Reports pane: pick a layout — External for
 something a customer receives, Internal for something used in the building,
-Blank for a label or a preprinted form. You get an action, a qweb template and
-a *Print* menu entry, written into your studio package as source.
+Blank for a label or a preprinted form — and name it. You get an action, a
+qweb template and a *Print* menu entry, written into your studio package as
+source; the card's *Edit layout* opens the template on the canvas.
 
 **Existing reports, patched rather than copied.** This is the half Odoo Studio
 cannot do. Its own documentation tells you to duplicate the standard report and
@@ -18,4 +19,5 @@ exactly this way. Your change is a reviewable patch, and the report underneath
 keeps getting fixed.
 
 The editor is the same one used for forms and lists, because a report template
-is the same kind of record.
+is the same kind of record. A patched report says so on its card, and *Reset
+layout* deletes the patch; the original was never changed.

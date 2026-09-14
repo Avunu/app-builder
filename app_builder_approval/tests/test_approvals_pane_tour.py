@@ -9,13 +9,13 @@ person sees before pressing it.
 
 import tempfile
 
-from odoo.tests import HttpCase, tagged
+from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import join_groups
+from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
 
 
 @tagged("post_install", "-at_install")
-class TestApprovalsPaneTour(HttpCase):
+class TestApprovalsPaneTour(StudioHttpCase):
     def setUp(self):
         super().setUp()
         console = self.env["ir.module.module"].search(

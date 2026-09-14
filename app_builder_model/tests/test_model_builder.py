@@ -17,7 +17,7 @@ class TestModelBuilder(StudioCase):
     def make_manual_model(self, package, model_name, label="Demo"):
         """A manual model, made directly.
 
-        The wizard builds Python and reloads the package, which commits -- so
+        The builder writes Python and reloads the package, which commits -- so
         it cannot be used as a fixture inside a TransactionCase. These tests
         are about the *field* builder and about ownership, so a plain manual
         model is the right stand-in.
@@ -42,41 +42,65 @@ class TestModelBuilder(StudioCase):
         )
         return model
 
-    def test_the_wizard_derives_a_clean_technical_name(self):
+    def test_the_builder_derives_a_clean_technical_name(self):
         """No x_ prefix: a Python-defined model has no such requirement, and
-        the name is what users see in filters and domains."""
-        package = self.make_package(name="x_naming_demo")
-        wizard = self.env["studio.model.wizard"].new(
-            {"package_id": package.id, "name": "My Great Thing"}
-        )
-        wizard._onchange_name()
-        self.assertEqual(wizard.model, "naming_demo.my_great_thing")
-        self.assertNotIn("x_", wizard.model)
-
-    def test_the_derived_name_follows_the_package(self):
+        the name is what users see in filters and domains; it follows the
+        package it is built in."""
         first = self.make_package(name="x_alpha_pkg")
         second = self.make_package(name="x_beta_pkg")
-        wizard = self.env["studio.model.wizard"].new(
-            {"package_id": first.id, "name": "Job"}
+        builder = self.env["studio.app.builder"]
+        self.assertEqual(
+            builder.technical_name("My Great Thing", first), "alpha_pkg.my_great_thing"
         )
-        wizard._onchange_name()
-        self.assertEqual(wizard.model, "alpha_pkg.job")
-        wizard.package_id = second
-        wizard._onchange_package_id()
-        self.assertEqual(wizard.model, "beta_pkg.job")
+        self.assertEqual(builder.technical_name("Job", second), "beta_pkg.job")
 
-    def test_the_wizard_refuses_a_read_only_package(self):
+    def test_the_builder_refuses_a_read_only_package(self):
         """Production runs read-only from the store; say so rather than
         failing somewhere deeper."""
         package = self.make_package(name="x_ro_demo", root_path=self.unwritable_path())
-        wizard = self.env["studio.model.wizard"].create(
-            {"package_id": package.id, "name": "Nope"}
-        )
         with self.assertRaises(UserError):
-            wizard.action_create()
+            self.env["studio.app.builder"].create_app_rpc(
+                package.id, {"label": "Nope", "features": []}
+            )
 
-    def test_scaffold_options_map_from_the_wizard_checkboxes(self):
-        """What the dialog offers has to reach the spec, or the checkboxes lie."""
+    def test_a_stored_compute_field_computes(self):
+        """A compute defined as data must actually compute, through the
+        same call the console's field editor makes."""
+        package = self.make_package(name="x_field_demo")
+        model = self.make_manual_model(package, "x_field_demo_model", "Field Demo")
+        self.env["studio.app.builder"].create_field(
+            package.id,
+            model.model,
+            {
+                "name": "x_shout",
+                "field_description": "Shout",
+                "ttype": "char",
+                "store": True,
+                "compute": (
+                    "for r in self:\n    r['x_shout'] = (r.x_name or '').upper()"
+                ),
+                "depends": "x_name",
+            },
+        )
+        record = self.env["x_field_demo_model"].create({"x_name": "quiet"})
+        self.assertEqual(record.x_shout, "QUIET")
+
+    def test_a_relational_field_needs_its_relation(self):
+        package = self.make_package(name="x_rel_demo")
+        model = self.make_manual_model(package, "x_rel_demo_model", "Rel Demo")
+        with self.assertRaises(UserError):
+            self.env["studio.app.builder"].create_field(
+                package.id,
+                model.model,
+                {
+                    "name": "x_partner_id",
+                    "field_description": "Partner",
+                    "ttype": "many2one",
+                },
+            )
+
+    def test_scaffold_options_map_from_the_feature_tiles(self):
+        """What the flow offers has to reach the spec, or the tiles lie."""
         spec = scaffold.scaffold_spec(
             "demo.job",
             "Demo Job",
@@ -90,82 +114,16 @@ class TestModelBuilder(StudioCase):
         self.assertEqual(spec.inherit, ("mail.thread", "mail.activity.mixin"))
         self.assertEqual(spec.sequence_field, "reference")
 
-    # The wizard's actual build -- write the class, install, reload, then make
-    # the views against the live model -- commits and rebuilds the registry, so
+    # The actual build -- write the class, install, reload, then make the
+    # views against the live model -- commits and rebuilds the registry, so
     # it cannot run in a TransactionCase at all. It is covered end to end by
     # app_builder_base/tests/e2e/probe_scaffold.py, which also checks the thing
     # that matters most: that a plain internal user can see the result.
-
-    def test_field_wizard_creates_a_stored_compute(self):
-        package = self.make_package(name="x_field_demo")
-        model = self.make_manual_model(package, "x_field_demo_model", "Field Demo")
-
-        self.env["studio.field.wizard"].create(
-            {
-                "package_id": package.id,
-                "model_id": model.id,
-                "name": "x_shout",
-                "field_description": "Shout",
-                "ttype": "char",
-                "store": True,
-                "compute": (
-                    "for r in self:\n    r['x_shout'] = (r.x_name or '').upper()"
-                ),
-                "depends": "x_name",
-            }
-        ).action_create()
-
-        record = self.env["x_field_demo_model"].create({"x_name": "quiet"})
-        self.assertEqual(
-            record.x_shout, "QUIET", "a compute defined as data must actually compute"
-        )
-
-    def test_field_wizard_requires_relation_for_relational_types(self):
-        package = self.make_package(name="x_rel_demo")
-        model = self.make_manual_model(package, "x_rel_demo_model", "Rel Demo")
-        wizard = self.env["studio.field.wizard"].create(
-            {
-                "package_id": package.id,
-                "model_id": model.id,
-                "name": "x_partner_id",
-                "field_description": "Partner",
-                "ttype": "many2one",
-            }
-        )
-        with self.assertRaises(UserError):
-            wizard.action_create()
 
     def test_package_ownership_is_readable_from_the_record(self):
         package = self.make_package(name="x_owner_demo")
         model = self.make_manual_model(package, "x_owner_demo_model", "Owner Demo")
         self.assertEqual(model.studio_package_id, package)
-
-    def test_adopt_wizard_previews_the_source(self):
-        package = self.make_package(name="x_grad_wizard")
-        model = self.make_manual_model(package, "x_grad_demo", "Grad Demo")
-        wizard = self.env["studio.adopt.wizard"].create(
-            {"package_id": package.id, "model_ids": [(6, 0, model.ids)]}
-        )
-        wizard._onchange_model_ids()
-        self.assertIn("class XGradDemo", wizard.preview)
-        self.assertIn("x_name = fields.Char", wizard.preview)
-
-    def test_adopt_wizard_only_offers_owned_unpython_models(self):
-        package = self.make_package(name="x_grad_avail")
-        self.make_manual_model(package, "x_avail_demo", "Avail Demo")
-        wizard = self.env["studio.adopt.wizard"].create({"package_id": package.id})
-        wizard._compute_available_model_ids()
-        offered = wizard.available_model_ids.mapped("model")
-        self.assertIn("x_avail_demo", offered)
-        self.assertNotIn("res.partner", offered, "only models we own can be adopted")
-
-        package.action_adopt(["x_avail_demo"])
-        wizard._compute_available_model_ids()
-        self.assertNotIn(
-            "x_avail_demo",
-            wizard.available_model_ids.mapped("model"),
-            "an already-graduated model must not be offered again",
-        )
 
     def test_base_model_cannot_be_captured(self):
         """Python-declared records belong to the module that declares them."""
@@ -319,30 +277,21 @@ class TestFeatureViews(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestWizardCoversTheRegistry(StudioCase):
-    def test_the_wizard_offers_every_feature(self):
-        """A feature added to the registry and forgotten here is simply never
-        offered, which is the kind of gap nothing complains about."""
-        wizard = self.env["studio.model.wizard"]
-        missing = [
-            key
-            for key in scaffold.WIZARD_FEATURES
-            if "add_%s" % key not in wizard._fields
-        ]
-        self.assertFalse(
-            missing,
-            "the New Model wizard has no checkbox for: %s" % ", ".join(missing),
-        )
+class TestTheFlowCoversTheRegistry(StudioCase):
+    def test_the_flow_offers_every_feature(self):
+        """A feature added to the registry and forgotten by the builder is
+        simply never offered, which is the kind of gap nothing complains
+        about. The flow renders what `features()` marks as offered."""
+        offered = {
+            f["key"]
+            for f in self.env["studio.app.builder"].features()["features"]
+            if f["offered"]
+        }
+        self.assertEqual(offered, set(scaffold.WIZARD_FEATURES))
 
-    def test_the_wizard_offers_nothing_the_registry_lacks(self):
-        wizard = self.env["studio.model.wizard"]
-        stray = [
-            name[len("add_") :]
-            for name in wizard._fields
-            if name.startswith("add_")
-            and name[len("add_") :] not in scaffold.FEATURES_BY_KEY
-        ]
-        self.assertFalse(stray, "no such feature: %s" % ", ".join(stray))
+    def test_the_flow_offers_nothing_the_registry_lacks(self):
+        keys = {f["key"] for f in self.env["studio.app.builder"].features()["features"]}
+        self.assertTrue(keys <= set(scaffold.FEATURES_BY_KEY))
 
 
 @tagged("post_install", "-at_install")

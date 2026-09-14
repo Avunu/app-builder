@@ -19,10 +19,14 @@
   embedded one2many list or form: those nodes belong to another model, and the
   palette would have to offer that model's fields. They are shown, and a click
   inside one selects the field that holds it.
-- **Automations stop short of a studio form on purpose.** The wizard creates the
-  `ir.actions.server` / `base.automation` pair, and `studio.automation.action_open`
-  opens Odoo's own form scoped to the model in front of you with a package in
-  context — a second copy of that form would drift from it on the first release.
+- **The record panes stop where a gesture would lie.** The Automations pane
+  edits a rule and its steps from a catalogue of typed rows; the three triggers
+  whose value is a `Many2oneReference` (stage, user, tag set) are offered and
+  their value set through *Advanced…*, Odoo's own form, since the catalogue has
+  no honest picker for a record of a model chosen at runtime. A foreign
+  access line or rule is not copied into the package (lines add up, so a copy
+  would not be what it looks like), and a foreign automation is not switched
+  off from source.
 - **Group-bys and the search view's own three lists are still one field each.**
   A filter can now carry any condition the builder can express; a group-by is
   still a field and a context, which is all a group-by is. What has no gesture
@@ -77,9 +81,9 @@
   in development and shipping through git is a convention the studio supports,
   not one it enforces.
 - **Tags and Lines are decided when the app is created.** Both are offered by
-  the New Model wizard only, because a companion is a second model and
+  the Build-an-app flow only, because a companion is a second model and
   `create_app` is the only thing that builds one — so adding Lines to an app
-  that already exists means building a second app. Removing them is not offered
+  that already exists means building a second app; the flow's tile says so. Removing them is not offered
   either: taking `line_ids` off the parent would leave the line model, its
   table, its access rule and its file in place.
 - **A value that needs a module is only recorded where a bridge says so.**
@@ -112,8 +116,11 @@
   pending -- and the tray carries the rest of the difference until Apply.
 - **Multi-worker deployments cannot reload in place** and are told so rather than
   served badly: the other workers rebuild their registry from Python they still
-  hold in `sys.modules`, so they would rebuild against a stale class. Studio
-  editing is a single-process development activity; production runs read-only.
+  hold in `sys.modules`, so they would rebuild against a stale class. An apply
+  there writes the files and stops as *awaiting a restart* — the pill says
+  *Restart needed* until the process comes back — and finishes placing the
+  fields after it. Studio editing is a single-process development activity;
+  production runs read-only.
 - **The inverse of a related list can only be created on a model this package
   defines in Python.** Pointing at anything else needs a many2one that already
   aims back; the picker lists the candidates and says so when there are none.

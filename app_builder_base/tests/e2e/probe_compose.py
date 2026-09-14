@@ -66,11 +66,11 @@ def arch_of(env, model_name, view_type):
 
 
 def build_app(env, package, label):
-    wizard = env["studio.model.wizard"].create(
-        {"package_id": package.id, "name": label, "add_chatter": True}
+    # The console's flow calls the same RPC.
+    built = env["studio.app.builder"].create_app_rpc(
+        package.id, {"label": label, "features": ["chatter"]}
     )
-    wizard._onchange_name()
-    return wizard.action_create()["res_model"]
+    return built["model"]
 
 
 def draft_for(env, package, model_name):

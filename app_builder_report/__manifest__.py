@@ -21,8 +21,6 @@
         ],
     },
     "data": [
-        "security/ir.model.access.csv",
         "views/studio_report_views.xml",
-        "views/studio_menus.xml",
     ],
 }

@@ -1,5 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_studio_menu_wizard,studio.menu.wizard,model_studio_menu_wizard,app_builder_base.group_studio_manager,1,1,1,1
-access_studio_access_wizard,studio.access.wizard,model_studio_access_wizard,app_builder_base.group_studio_manager,1,1,1,1
-access_studio_automation_wizard,studio.automation.wizard,model_studio_automation_wizard,app_builder_base.group_studio_manager,1,1,1,1
-access_studio_rule_wizard,studio.rule.wizard,model_studio_rule_wizard,app_builder_base.group_studio_manager,1,1,1,1

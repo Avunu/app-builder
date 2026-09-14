@@ -372,17 +372,23 @@ ul.auto-toc {
 <p><a class="reference external image-reference" href="https://odoo-community.org/page/development-status"><img alt="Beta" src="https://img.shields.io/badge/maturity-Beta-yellow.png" /></a> <a class="reference external image-reference" href="http://www.gnu.org/licenses/agpl-3.0-standalone.html"><img alt="License: AGPL-3" src="https://img.shields.io/badge/license-AGPL--3-blue.png" /></a> <a class="reference external image-reference" href="https://github.com/Avunu/app-builder/tree/18.0/app_builder_model"><img alt="Avunu/app-builder" src="https://img.shields.io/badge/github-Avunu%2Fapp--builder-lightgray.png?logo=github" /></a></p>
 <p>Build custom models and fields visually; they land in your source tree
 as you work.</p>
-<p>Adds a guided <strong>New Model</strong> wizard that creates the model, a name field,
-an access rule, list and form views, an action and a menu in one step —
-and assigns all of it to a studio package, so the addon directory exists
-before you close the dialog.</p>
-<p><strong>Compose</strong> opens a model in the studio console, where fields are
-dropped onto the model’s own views and the class itself – every field,
-in the order it is written – is edited from the View tab. The field
-editor covers every field type Odoo supports, and the picker offers what
-people are actually choosing rather than what the ORM calls it: Priority
-arrives with its four values and its stars, Image renders as an image, a
-Related field asks only which field it follows and works the rest out.</p>
+<p><strong>Build an app</strong>, from the studio’s Home: a name, the features it starts
+with (each tile says what it builds and what it costs), who can use it,
+where its menu goes — then one button writes the model as Python,
+reloads, and builds the views, the menu and the access lines. The review
+step names every file. The console opens on the new model’s form with
+the next steps beside it.</p>
+<p><strong>Adopt a model</strong> brings a hand-made <tt class="docutils literal">x_</tt> model under Python; a
+feature can be added to a Python model later from Home’s model list,
+staged and applied like any other change (Tags and Lines are decided
+when the app is built: each is a second model).</p>
+<p>Fields are dropped onto the model’s own views in the console, and the
+class itself – every field, in the order it is written – is edited
+from the View tab. The field editor covers every field type Odoo
+supports, and the picker offers what people are actually choosing rather
+than what the ORM calls it: Priority arrives with its four values and
+its stars, Image renders as an image, a Related field asks only which
+field it follows and works the rest out.</p>
 <p>Computed fields are there too. A compute is <em>data</em> in Odoo —
 <tt class="docutils literal">ir.model.fields.compute</tt> is a sandboxed expression, not code — so one
 added here works immediately, with no code file and no server restart.
@@ -390,8 +396,8 @@ Write the body and say which fields it reads; the method name is
 derived, because generating two answers to “what is this method called”
 is how a field stops being found once its model graduates to Python.</p>
 <p>Also adds a <tt class="docutils literal">Studio Package</tt> column to the custom model and field
-lists, so you can see at a glance which addon a customization belongs
-to.</p>
+lists (under Studio → Packages, in developer mode), so you can see at a
+glance which addon a customization belongs to.</p>
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">

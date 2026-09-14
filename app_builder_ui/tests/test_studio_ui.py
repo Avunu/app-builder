@@ -48,14 +48,36 @@ class TestStudioUi(StudioCase):
         with open(path, encoding="utf-8") as handle:
             return handle.read()
 
-    def test_menu_wizard_writes_action_and_menu(self):
-        self.env["studio.menu.wizard"].create(
-            {
-                "package_id": self.package.id,
-                "name": "UI Demo Records",
-                "model_id": self.model.id,
-            }
-        ).action_create()
+    # The surfaces the console's panes call: a menu with its action, an
+    # access line, an automation with its step -- each written the moment
+    # it exists.
+
+    def _menu(self, name):
+        return self.env["studio.menu"].create_record(
+            False,
+            self.package.id,
+            {"name": name, "opens_model": self.model.id},
+            template="app",
+        )
+
+    def _access(self, **values):
+        return self.env["studio.access.surface"].create_record(
+            "x_ui_demo",
+            self.package.id,
+            {"group_id": self.env.ref("base.group_user").id, **values},
+            template="full",
+        )
+
+    def _automation(self, name, code):
+        return self.env["studio.automation"].create_record(
+            "x_ui_demo",
+            self.package.id,
+            {"name": name, "trigger": "on_create", "steps.0.code": code},
+            template="run_code",
+        )
+
+    def test_a_menu_writes_action_and_menu(self):
+        self._menu("UI Demo Records")
         views = self._source("views/x_ui_demo_views.xml")
         self.assertIn('model="ir.actions.act_window"', views)
         self.assertIn("x_ui_demo", views)
@@ -66,41 +88,22 @@ class TestStudioUi(StudioCase):
 
     def test_menu_references_its_action_by_ref(self):
         """A reference field must still serialize as a portable xmlid."""
-        self.env["studio.menu.wizard"].create(
-            {
-                "package_id": self.package.id,
-                "name": "Reffed",
-                "model_id": self.model.id,
-            }
-        ).action_create()
+        self._menu("Reffed")
         source = self._source("views/menus.xml")
         self.assertIn('<field name="action" ref=', source)
 
-    def test_access_wizard_writes_csv(self):
-        self.env["studio.access.wizard"].create(
-            {
-                "package_id": self.package.id,
-                "model_id": self.model.id,
-                "group_id": self.env.ref("base.group_user").id,
-                "perm_unlink": False,
-            }
-        ).action_create()
+    def test_an_access_line_writes_csv(self):
+        self._access(perm_unlink=False)
         source = self._source("security/ir.model.access.csv")
         self.assertIn("model_x_ui_demo", source)
         self.assertIn("base.group_user", source)
         self.assertTrue(source.rstrip().endswith(",1,1,1,0"))
 
-    def test_automation_wizard_writes_and_runs(self):
-        self.env["studio.automation.wizard"].create(
-            {
-                "package_id": self.package.id,
-                "name": "Shout on create",
-                "model_id": self.model.id,
-                "trigger": "on_create",
-                "code": "for r in records:\n    r['x_name'] = (r.x_name or '').upper()",
-            }
-        ).action_create()
-
+    def test_an_automation_writes_and_runs(self):
+        self._automation(
+            "Shout on create",
+            "for r in records:\n    r['x_name'] = (r.x_name or '').upper()",
+        )
         source = self._source("data/x_ui_demo_automation.xml")
         self.assertIn('model="ir.actions.server"', source)
         self.assertIn('model="base.automation"', source)
@@ -111,15 +114,7 @@ class TestStudioUi(StudioCase):
 
     def test_automation_secret_is_not_committed(self):
         """webhook_uuid differs per database and must never reach source."""
-        self.env["studio.automation.wizard"].create(
-            {
-                "package_id": self.package.id,
-                "name": "Webhooked",
-                "model_id": self.model.id,
-                "trigger": "on_create",
-                "code": "pass",
-            }
-        ).action_create()
+        self._automation("Webhooked", "pass")
         source = self._source("data/x_ui_demo_automation.xml")
         self.assertNotIn("webhook_uuid", source)
 
@@ -137,29 +132,9 @@ class TestStudioUi(StudioCase):
 
     def test_everything_round_trips(self):
         """The full UI surface must survive serialize -> wipe -> reload."""
-        self.env["studio.menu.wizard"].create(
-            {
-                "package_id": self.package.id,
-                "name": "RT Menu",
-                "model_id": self.model.id,
-            }
-        ).action_create()
-        self.env["studio.access.wizard"].create(
-            {
-                "package_id": self.package.id,
-                "model_id": self.model.id,
-                "group_id": self.env.ref("base.group_user").id,
-            }
-        ).action_create()
-        self.env["studio.automation.wizard"].create(
-            {
-                "package_id": self.package.id,
-                "name": "RT Automation",
-                "model_id": self.model.id,
-                "trigger": "on_create",
-                "code": "pass",
-            }
-        ).action_create()
+        self._menu("RT Menu")
+        self._access()
+        self._automation("RT Automation", "pass")
 
         before = self.package._render_files()
         self.wipe_package_records(self.package)

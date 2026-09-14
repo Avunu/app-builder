@@ -391,32 +391,37 @@ UIs live in <tt class="docutils literal">app_builder_model</tt>, <tt class="docu
 <ul class="simple">
 <li><a class="reference internal" href="#usage" id="toc-entry-1">Usage</a><ul>
 <li><a class="reference internal" href="#adopt-an-existing-model" id="toc-entry-2">Adopt an existing model</a></li>
-<li><a class="reference internal" href="#production" id="toc-entry-3">Production</a></li>
+<li><a class="reference internal" href="#servers-that-cannot-reload-in-place" id="toc-entry-3">Servers that cannot reload in place</a></li>
+<li><a class="reference internal" href="#production" id="toc-entry-4">Production</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#known-issues-roadmap" id="toc-entry-4">Known issues / Roadmap</a><ul>
-<li><a class="reference internal" href="#next" id="toc-entry-5">Next</a></li>
-<li><a class="reference internal" href="#known-limits" id="toc-entry-6">Known limits</a></li>
+<li><a class="reference internal" href="#known-issues-roadmap" id="toc-entry-5">Known issues / Roadmap</a><ul>
+<li><a class="reference internal" href="#next" id="toc-entry-6">Next</a></li>
+<li><a class="reference internal" href="#known-limits" id="toc-entry-7">Known limits</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#bug-tracker" id="toc-entry-7">Bug Tracker</a></li>
-<li><a class="reference internal" href="#credits" id="toc-entry-8">Credits</a><ul>
-<li><a class="reference internal" href="#authors" id="toc-entry-9">Authors</a></li>
-<li><a class="reference internal" href="#contributors" id="toc-entry-10">Contributors</a></li>
-<li><a class="reference internal" href="#maintainers" id="toc-entry-11">Maintainers</a></li>
+<li><a class="reference internal" href="#bug-tracker" id="toc-entry-8">Bug Tracker</a></li>
+<li><a class="reference internal" href="#credits" id="toc-entry-9">Credits</a><ul>
+<li><a class="reference internal" href="#authors" id="toc-entry-10">Authors</a></li>
+<li><a class="reference internal" href="#contributors" id="toc-entry-11">Contributors</a></li>
+<li><a class="reference internal" href="#maintainers" id="toc-entry-12">Maintainers</a></li>
 </ul>
 </li>
 </ul>
 </div>
 <div class="section" id="usage">
 <h1><a class="toc-backref" href="#toc-entry-1">Usage</a></h1>
-<p>Go to <strong>Studio → Packages</strong> and create a package. Its directory defaults
-to the first writable entry on the addons path, preferring one named
-<tt class="docutils literal">custom</tt>.</p>
+<p>Open the <strong>Studio</strong> app. On a fresh database its Home walks you through
+creating a package: a name, a place on the addons path (the first
+writable entry, preferring one named <tt class="docutils literal">custom</tt>), whether to start a git
+repository. Nothing is written before the last button, and the review
+step names the files.</p>
 <p>From then on, anything the builder assigns to that package is written to
-disk as you work. The package form shows the generated files, whether
-any have been edited by hand, and the git branch they live on.</p>
-<p>Three buttons matter:</p>
+disk as you work. Home shows the package’s health — in sync, edited on
+disk, an apply waiting for a restart — and the <strong>Changes</strong> pane shows
+the generated files, the ones edited by hand, the git status with a
+commit box, and the apply history.</p>
+<p>Three actions matter, on Home’s sidebar and on Changes:</p>
 <ul class="simple">
 <li><strong>Write to disk</strong> — re-serialize the package. Safe to run at any time;
 an unchanged package produces byte-identical files and no git diff.</li>
@@ -426,13 +431,16 @@ the database, which is also how you adopt a hand-edit.</li>
 last generated. A file somebody edited by hand is reported, never
 silently overwritten and never deleted.</li>
 </ul>
+<p>The package list itself, and the technical lists behind the console’s
+cards (models, fields, views), are under <strong>Studio → Packages</strong> in
+developer mode.</p>
 <div class="section" id="adopt-an-existing-model">
 <h2><a class="toc-backref" href="#toc-entry-2">Adopt an existing model</a></h2>
-<p>New models are already Python. <strong>Studio → Adopt Existing Model</strong> is for
-the ones that are not yet: an <tt class="docutils literal">x_</tt> model built by an older version of
-the studio, or one made by hand in Settings → Technical. The records,
-the table and its data are untouched; only where the definition lives
-changes.</p>
+<p>New models are already Python. <strong>Home → Adopt a model</strong> is for the ones
+that are not yet: an <tt class="docutils literal">x_</tt> model built by an older version of the
+studio, or one made by hand in Settings → Technical. Choose it, see the
+class the studio will write, review, adopt. The records, the table and
+its data are untouched; only where the definition lives changes.</p>
 <p>It is lossless because the xmlids Odoo’s reflection assigns to a
 code-defined model are identical to the ones the studio emitted, and
 because the metadata is reclassified rather than deleted. A sandboxed
@@ -446,8 +454,16 @@ the way of its writes. It closes no doors: afterwards the model behaves
 like any other the builder owns, with the marked block kept in sync and
 everything outside it yours.</p>
 </div>
+<div class="section" id="servers-that-cannot-reload-in-place">
+<h2><a class="toc-backref" href="#toc-entry-3">Servers that cannot reload in place</a></h2>
+<p>Under several workers, or when the package’s reload mode is set to
+manual, an apply writes the files and stops: the pill reads <em>Restart
+needed</em>, the apply is recorded as awaiting a restart, and Odoo loads the
+package on the way up. Nothing is half-applied; a rollback from that
+state restores the files as they were.</p>
+</div>
 <div class="section" id="production">
-<h2><a class="toc-backref" href="#toc-entry-3">Production</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-4">Production</a></h2>
 <p>The editor gates on write access to the package directory. Against a
 read-only deployment it disables itself with an explanatory banner
 rather than failing: build in development, ship through git, deploy
@@ -455,9 +471,9 @@ immutably.</p>
 </div>
 </div>
 <div class="section" id="known-issues-roadmap">
-<h1><a class="toc-backref" href="#toc-entry-4">Known issues / Roadmap</a></h1>
+<h1><a class="toc-backref" href="#toc-entry-5">Known issues / Roadmap</a></h1>
 <div class="section" id="next">
-<h2><a class="toc-backref" href="#toc-entry-5">Next</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-6">Next</a></h2>
 <ul class="simple">
 <li><strong>A report is edited by clicking a value, not by writing prose.</strong>
 Placing a value and printing a table of child rows are gestures now,
@@ -480,11 +496,14 @@ not do is drop into an embedded one2many list or form: those nodes
 belong to another model, and the palette would have to offer that
 model’s fields. They are shown, and a click inside one selects the
 field that holds it.</li>
-<li><strong>Automations stop short of a studio form on purpose.</strong> The wizard
-creates the <tt class="docutils literal">ir.actions.server</tt> / <tt class="docutils literal">base.automation</tt> pair, and
-<tt class="docutils literal">studio.automation.action_open</tt> opens Odoo’s own form scoped to the
-model in front of you with a package in context — a second copy of
-that form would drift from it on the first release.</li>
+<li><strong>The record panes stop where a gesture would lie.</strong> The Automations
+pane edits a rule and its steps from a catalogue of typed rows; the
+three triggers whose value is a <tt class="docutils literal">Many2oneReference</tt> (stage, user,
+tag set) are offered and their value set through <em>Advanced…</em>, Odoo’s
+own form, since the catalogue has no honest picker for a record of a
+model chosen at runtime. A foreign access line or rule is not copied
+into the package (lines add up, so a copy would not be what it looks
+like), and a foreign automation is not switched off from source.</li>
 <li><strong>Group-bys and the search view’s own three lists are still one field
 each.</strong> A filter can now carry any condition the builder can express;
 a group-by is still a field and a context, which is all a group-by is.
@@ -495,7 +514,7 @@ here to build.</li>
 </ul>
 </div>
 <div class="section" id="known-limits">
-<h2><a class="toc-backref" href="#toc-entry-6">Known limits</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-7">Known limits</a></h2>
 <ul class="simple">
 <li><strong>A condition is a flat list or it is source.</strong> <tt class="docutils literal">studio.domain</tt>
 shows a domain as rows joined by all-of or any-of, and refuses
@@ -550,12 +569,12 @@ writable reports <tt class="docutils literal">writable = True</tt> and is not st
 development and shipping through git is a convention the studio
 supports, not one it enforces.</li>
 <li><strong>Tags and Lines are decided when the app is created.</strong> Both are
-offered by the New Model wizard only, because a companion is a second
+offered by the Build-an-app flow only, because a companion is a second
 model and <tt class="docutils literal">create_app</tt> is the only thing that builds one — so adding
-Lines to an app that already exists means building a second app.
-Removing them is not offered either: taking <tt class="docutils literal">line_ids</tt> off the
-parent would leave the line model, its table, its access rule and its
-file in place.</li>
+Lines to an app that already exists means building a second app; the
+flow’s tile says so. Removing them is not offered either: taking
+<tt class="docutils literal">line_ids</tt> off the parent would leave the line model, its table, its
+access rule and its file in place.</li>
 <li><strong>A value that needs a module is only recorded where a bridge says
 so.</strong> <tt class="docutils literal">_value_depends</tt> maps a field value to the module that
 contributes it, so a rule using <tt class="docutils literal"><span class="pre">review_type=&quot;expression&quot;</span></tt> pulls
@@ -589,8 +608,11 @@ until Apply.</li>
 <li><strong>Multi-worker deployments cannot reload in place</strong> and are told so
 rather than served badly: the other workers rebuild their registry
 from Python they still hold in <tt class="docutils literal">sys.modules</tt>, so they would rebuild
-against a stale class. Studio editing is a single-process development
-activity; production runs read-only.</li>
+against a stale class. An apply there writes the files and stops as
+<em>awaiting a restart</em> — the pill says <em>Restart needed</em> until the
+process comes back — and finishes placing the fields after it. Studio
+editing is a single-process development activity; production runs
+read-only.</li>
 <li><strong>The inverse of a related list can only be created on a model this
 package defines in Python.</strong> Pointing at anything else needs a
 many2one that already aims back; the picker lists the candidates and
@@ -637,7 +659,7 @@ edits.</li>
 </div>
 </div>
 <div class="section" id="bug-tracker">
-<h1><a class="toc-backref" href="#toc-entry-7">Bug Tracker</a></h1>
+<h1><a class="toc-backref" href="#toc-entry-8">Bug Tracker</a></h1>
 <p>Bugs are tracked on <a class="reference external" href="https://github.com/Avunu/app-builder/issues">GitHub Issues</a>.
 In case of trouble, please check there if your issue has already been reported.
 If you spotted it first, help us to smash it by providing a detailed and welcomed
@@ -645,21 +667,21 @@ If you spotted it first, help us to smash it by providing a detailed and welcome
 <p>Do not contact contributors directly about support or help with technical issues.</p>
 </div>
 <div class="section" id="credits">
-<h1><a class="toc-backref" href="#toc-entry-8">Credits</a></h1>
+<h1><a class="toc-backref" href="#toc-entry-9">Credits</a></h1>
 <div class="section" id="authors">
-<h2><a class="toc-backref" href="#toc-entry-9">Authors</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-10">Authors</a></h2>
 <ul class="simple">
 <li>Avunu LLC</li>
 </ul>
 </div>
 <div class="section" id="contributors">
-<h2><a class="toc-backref" href="#toc-entry-10">Contributors</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-11">Contributors</a></h2>
 <ul class="simple">
 <li>Kevin Shenk &lt;<a class="reference external" href="mailto:kevin&#64;avu.nu">kevin&#64;avu.nu</a>&gt; (<a class="reference external" href="https://avu.nu">https://avu.nu</a>)</li>
 </ul>
 </div>
 <div class="section" id="maintainers">
-<h2><a class="toc-backref" href="#toc-entry-11">Maintainers</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-12">Maintainers</a></h2>
 <p>This module is part of the <a class="reference external" href="https://github.com/Avunu/app-builder/tree/18.0/app_builder_base">Avunu/app-builder</a> project on GitHub.</p>
 <p>You are welcome to contribute.</p>
 </div>

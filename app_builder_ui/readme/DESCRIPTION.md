@@ -1,26 +1,27 @@
 Build the rest of an addon visually: menus, window actions, access rules, record
 rules and automations — all written to source.
 
-**Automations** and **Webhooks** are reachable from the Studio menu and from the
-cog menu of any screen, where they show the rules for *that* model rather than
-the whole database's list under Settings → Technical. What opens is Odoo's own
-automation form, not a copy of it: that form is trigger-aware in a way that took
-years to get right, and a second copy would drift from it on the first release
-and be wrong in ways nobody could see. What the studio adds is the part Odoo has
-no opinion about — a rule created from here belongs to a package, so it lands in
-source instead of only in this database.
+Each is a pane of the studio console, scoped to the model in front of you:
 
-Adds guided wizards for:
+- **Automations** and **Webhooks** — the model's rules as cards, each with its
+  sentence: when, only if, then what. New starts from a template (when a record
+  is saved, set a field, after a delay, notify a URL, a webhook in); the
+  sidebar edits the trigger, the condition — with how many records it matches
+  today — and the steps, added by kind, reordered, removed. A rule another
+  module defines is shown, not edited; a copy into your package starts
+  switched off. A webhook's URL is shown with a *Rotate secret* action.
+- **Access Control** — one line per group, read / write / create / delete as
+  toggles, written to `security/ir.model.access.csv` in the conventional
+  column order. Lines add up, so a line Odoo ships is shown and never edited.
+- **Filter Rules** — record rules, with a template for the usual ones (only
+  their own records, their company) and a condition builder that says what it
+  matches; written to `security/<model>_security.xml`.
+- **Menu** — the package's menus as a tree under the apps they hang from, an
+  app or a submenu made with the list+form action it opens, moved among its
+  siblings, written to `views/menus.xml`.
 
-- **New Menu** — creates a window action and its menu item together.
-- **New Access Rule** — an `ir.model.access` line, written into the addon's
-  `security/ir.model.access.csv` in the conventional column order.
-- **New Automation** — a `base.automation` and its server action. The Python runs
-  in Odoo's sandbox and is stored as data, so an automation you add here works
-  without a code file or a restart.
-
-Record rules (`ir.rule`) assigned to a package are written to
-`security/<model>_security.xml`.
+Odoo's own form for any of them is one button, *Advanced…*; what it saves is
+written to the package too.
 
 **Promote to source.** An automation's Python lives in a text column evaluated
 by `safe_eval`. That is the right trade for getting started and the wrong place

@@ -19,7 +19,6 @@
         "security/ir.model.access.csv",
         "views/studio_view_editor_views.xml",
         "views/studio_console_views.xml",
-        "views/studio_menus.xml",
     ],
     "assets": {
         "web.assets_backend": [

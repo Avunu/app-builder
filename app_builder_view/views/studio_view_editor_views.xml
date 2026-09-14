@@ -21,4 +21,12 @@
         <field name="view_mode">list,form</field>
         <field name="view_id" ref="ir_ui_view_view_list_studio"/>
     </record>
+
+    <!-- Developer mode only: the rows behind what the console draws. -->
+    <menuitem id="menu_studio_views"
+              name="Studio Views"
+              parent="app_builder_base.menu_studio_packages"
+              action="ir_ui_view_action_studio"
+              groups="base.group_no_one"
+              sequence="60"/>
 </odoo>
