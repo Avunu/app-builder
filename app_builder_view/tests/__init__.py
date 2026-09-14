@@ -3,6 +3,7 @@ from . import (
     test_anchor_placement,
     test_canvas,
     test_canvas_stamp,
+    test_compose_entry,
     test_console_tour,
     test_drop_at,
     test_edit_guards,

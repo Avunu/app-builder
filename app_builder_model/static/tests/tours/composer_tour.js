@@ -15,7 +15,7 @@ registry.category("web_tour.tours").add("app_builder_composer_tour", {
     steps: () => [
         {
             content: "open the composer the way a user does",
-            trigger: ".o_data_row button[name='action_compose']",
+            trigger: ".o_data_row button[name='action_compose_fields']",
             run: "click",
         },
         {
