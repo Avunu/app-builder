@@ -233,6 +233,15 @@ export class StudioShell {
             this.modelName = model;
             await this._loadModelLabel();
         }
+        // The view the server resolved when only a model or a type was
+        // given: held here so the URL names it and a reload lands on it.
+        if (context.view && context.view.id) {
+            this.view = {
+                view_id: context.view.id,
+                view_type: context.view.type || this.view.view_type,
+                res_id: this.view.res_id,
+            };
+        }
         this.draft.setHints(context);
         if (this.draft.draftId && !this.draft.draft) {
             await this.draft.load();

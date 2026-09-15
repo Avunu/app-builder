@@ -11,6 +11,7 @@ cached, no token anywhere a token could be read back by somebody else.
 from lxml import etree
 
 from odoo import Command
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.tests.common import StudioCase
@@ -409,6 +410,18 @@ class TestCanvas(StudioCase):
         self.assertIs(context["draft_id"], False)
         self.assertIn(context["reload_mode"], ("inproc", "restart", "manual"))
         self.assertEqual(context["record_count"], 0)
+
+    def test_the_model_alone_opens_on_its_form(self):
+        """Home's Open, the crumb's picker and a URL with only a model give
+        no view type: the form is where a field goes, so it comes first,
+        and a model with no form still opens on what it has."""
+        self._view(LIST_ARCH, "list")
+        context = self.editor.editing_context(model=self.view.model)
+        self.assertEqual(context["view"]["type"], "form")
+        listed = self.editor.editing_context(model="ir.ui.menu")
+        self.assertIn(listed["view"]["type"], ("form", "list"))
+        with self.assertRaises(UserError):
+            self.editor.editing_context(model="studio.record.surface")
 
     def test_an_amount_is_offered_when_the_live_model_has_a_currency(self):
         """The rule is "monetary only with a currency field", and a model no

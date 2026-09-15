@@ -2390,6 +2390,15 @@ class StudioViewEditor(models.AbstractModel):
         view = View.browse(view_id).exists() if view_id else View.browse()
         if not view and model and view_type:
             view = View.browse(View.default_view(model, view_type))
+        if not view and model and not view_type:
+            # Only the model in hand -- Home's Open, the crumb's picker, a
+            # URL without a view: the form first, since that is where a
+            # field goes, then whichever view the model has.
+            existing = {v["type"]: v["view_id"] for v in self._views_of(model)}
+            for candidate in ("form", "list", "kanban", *existing):
+                if candidate in existing:
+                    view = View.browse(existing[candidate])
+                    break
         if not view:
             raise UserError(
                 _(
