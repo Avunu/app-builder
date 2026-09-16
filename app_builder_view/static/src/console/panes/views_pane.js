@@ -7,8 +7,9 @@
  * maps the view's `editable_as` to: the rendered view for anything with
  * a rendering, the three lists for a search view, and -- registered by
  * `app_builder_report`, which owns the RPCs it calls -- the printed
- * document for a report. The sidebar is Add | View | Properties, and
- * Properties opens by itself when something is selected.
+ * document for a report. The sidebar is the outline -- the view as a
+ * tree, above -- and Add | View | Properties below it; Properties opens
+ * by itself when something is selected, and the outline stays.
  *
  * The pane's model is `ConsoleModel`: the canvas, the selection, the
  * history and the palette of one view; the shell owns the package, the
@@ -16,7 +17,6 @@
  */
 
 import { Component, useEffect, useState } from "@odoo/owl";
-import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
@@ -24,7 +24,9 @@ import { StudioCanvas } from "../canvas";
 import { SearchListsCanvas } from "../canvases/search_lists_canvas";
 import { ConsoleModel } from "../console_model";
 import { AddTab } from "../sidebar/add_tab";
+import { Outline } from "../sidebar/outline";
 import { PropertiesTab } from "../sidebar/properties_tab";
+import { removeWithConfirm } from "../sidebar/remove_flow";
 import { ViewTab } from "../sidebar/view_tab";
 import { paneRegistry } from "../shell/pane_registry";
 
@@ -67,24 +69,15 @@ export class ViewsPane extends Component {
 
     async removeFromCanvas(token) {
         this.model.select(token);
-        // The panel owns the confirmation; a click on the frame's cross is
-        // the same request as its Remove button.
-        const result = await this.model.remove(token, false);
-        if (result && result.confirm) {
-            this.dialog.add(ConfirmationDialog, {
-                title: _t("Remove from view"),
-                body: result.confirm,
-                confirmLabel: _t("Remove"),
-                confirm: () => this.model.remove(token, true),
-                cancel: () => {},
-            });
-        }
+        // A click on the frame's cross is the same request as the panel's
+        // Remove button, and the outline's, and asks the same question.
+        await removeWithConfirm({ model: this.model, dialog: this.dialog, token });
     }
 }
 
 export class ViewsSidebar extends Component {
     static template = "app_builder_view.ViewsSidebar";
-    static components = { AddTab, ViewTab, PropertiesTab };
+    static components = { Outline, AddTab, ViewTab, PropertiesTab };
     static props = { shell: Object, model: { type: Object, optional: true } };
 
     setup() {
@@ -109,6 +102,11 @@ export class ViewsSidebar extends Component {
 
     get packageMissing() {
         return Boolean(this.model.context) && !this.shell.packageId;
+    }
+
+    /** The outline lists a node table: what a rendered canvas has and a search view or a report has not. */
+    get showOutline() {
+        return Boolean(this.model.root) && this.model.editableAs === "canvas";
     }
 }
 

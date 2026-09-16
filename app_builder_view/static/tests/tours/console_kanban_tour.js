@@ -114,19 +114,19 @@ registry.category("web_tour.tours").add("app_builder_console_kanban_tour", {
                 await animationFrame();
                 await hover(this.anchor, { position: { top: 20, left: 20 }, relative: true });
                 await animationFrame();
-                await waitFor(".o_studio_dropzone", { visible: true, timeout: 1000 });
+                await waitFor(".o_studio_overlay .o_studio_dropzone", { visible: true, timeout: 1000 });
                 const template = templateRect();
                 const first = rectOf(".o_studio_canvas .o_kanban_record:contains('Card A')");
                 if (!contains(template, centre(first))) {
                     throw new Error("the first card should be outlined as the template");
                 }
-                for (const zone of queryAll(".o_studio_dropzone")) {
+                for (const zone of queryAll(".o_studio_overlay .o_studio_dropzone")) {
                     if (!inside(zone.getBoundingClientRect(), template)) {
                         throw new Error("every zone should be laid out on the template card");
                     }
                 }
                 const zone = await waitFor(
-                    ".o_studio_dropzone[data-container-kind='main'][data-edge='end']",
+                    ".o_studio_overlay .o_studio_dropzone[data-container-kind='main'][data-edge='end']",
                     { visible: true, timeout: 1000 }
                 );
                 await moveTo(zone, { position: "center" });
@@ -155,7 +155,7 @@ registry.category("web_tour.tours").add("app_builder_console_kanban_tour", {
             content: "the drag is over: no zone and no template outline is left behind",
             trigger: ".o_studio_canvas",
             run: function () {
-                if (document.querySelector(".o_studio_dropzone, .o_studio_dz_template")) {
+                if (document.querySelector(".o_studio_overlay .o_studio_dropzone, .o_studio_overlay .o_studio_dz_template")) {
                     throw new Error("drop zones should go with the drag");
                 }
             },
@@ -172,7 +172,7 @@ registry.category("web_tour.tours").add("app_builder_console_kanban_tour", {
                 await animationFrame();
                 await hover(this.anchor, { position: { top: 2, left: 2 }, relative: true });
                 await animationFrame();
-                await waitFor(".o_studio_dropzone", { visible: true, timeout: 1000 });
+                await waitFor(".o_studio_overlay .o_studio_dropzone", { visible: true, timeout: 1000 });
                 const second = rectOf(".o_studio_canvas .o_kanban_record:contains('Card B')");
                 if (!contains(templateRect(), centre(second))) {
                     throw new Error("the zones should start on the card the field came from");
@@ -183,7 +183,7 @@ registry.category("web_tour.tours").add("app_builder_console_kanban_tour", {
                 const target = centre(first.getBoundingClientRect());
                 await waitForTemplateOn(target);
                 const zone = await waitFor(
-                    ".o_studio_dropzone[data-kind='aside'][data-position='inside']",
+                    ".o_studio_overlay .o_studio_dropzone[data-kind='aside'][data-position='inside']",
                     { visible: true, timeout: 1000 }
                 );
                 if (!inside(zone.getBoundingClientRect(), first.getBoundingClientRect())) {
@@ -280,7 +280,7 @@ registry.category("web_tour.tours").add("app_builder_console_kanban_sample_tour"
         {
             content: "drag a field from the palette to the end of the card's body",
             trigger: ".o_studio_tile_field.o_studio_draggable[data-name='x_extra']",
-            run: "drag_and_drop .o_studio_dropzone[data-container-kind='main'][data-edge='end']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-container-kind='main'][data-edge='end']",
         },
         {
             // Sample data has no value for a field it does not know by

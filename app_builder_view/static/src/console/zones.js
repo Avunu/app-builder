@@ -104,7 +104,8 @@ export function payloadTag(payload, nodes = {}) {
  *   node's own `orientation` otherwise
  * @returns {{zones: Object[], containers: Object[]}} the zones, each
  *   `{token, position, rect, caption, kind, name, container, containerKind,
- *   edge, axis}`, and the accepting containers as `{token, rect}`
+ *   edge, axis, layer}` -- `layer` is `"canvas"`; the outline lays its own
+ *   -- and the accepting containers as `{token, rect}`
  */
 export function buildZones({
     nodes,
@@ -122,13 +123,7 @@ export function buildZones({
     }
     const excluded = moving ? subtree(nodes, moving) : new Set();
     for (const [token, node] of Object.entries(nodes)) {
-        if (!node.container || !node.accepts.includes(tag) || excluded.has(token)) {
-            continue;
-        }
-        const hasSheet = node.children.some((c) => nodes[c] && nodes[c].kind === "sheet");
-        if (node.kind === "root" && hasSheet) {
-            // A form with a sheet: everything goes in the sheet, and a zone
-            // beside the sheet would put a field outside the paper.
+        if (!takesTag(nodes, token, tag) || excluded.has(token)) {
             continue;
         }
         if (node.kind === "page" && !isActive(token)) {
@@ -143,6 +138,7 @@ export function buildZones({
         const axis = flow === "row" ? "x" : "y";
         const depth = depthOf(nodes, token);
         const base = {
+            layer: "canvas",
             container: token,
             containerKind: node.kind,
             containerLabel: labelOf(node),
@@ -194,6 +190,23 @@ export function buildZones({
     return { zones: separate(zones), containers };
 }
 
+/**
+ * Whether the container at `token` takes a child of `tag`: the server's
+ * word on what it accepts, less the one case the rendering decides -- a
+ * form with a sheet takes nothing beside the sheet, since a field there
+ * would land outside the paper.
+ */
+export function takesTag(nodes, token, tag) {
+    const node = nodes[token];
+    if (!node || !node.container || !tag || !node.accepts.includes(tag)) {
+        return false;
+    }
+    if (node.kind === "root") {
+        return !node.children.some((c) => nodes[c] && nodes[c].kind === "sheet");
+    }
+    return true;
+}
+
 /** The label a node is spoken of by: its string, its field's, its name. */
 export function labelOf(node) {
     if (!node) {
@@ -231,7 +244,7 @@ const KIND_LABELS = {
  * What the chip says over a zone. Plain strings: the captions travel into
  * datasets and comparisons, where a lazily translated one would not read.
  */
-function captionFor(position, edge, anchor, container) {
+export function captionFor(position, edge, anchor, container) {
     const ends = ["sheet", "page", "root", "card", "main", "aside", "footer"];
     if (edge === "end" && ends.includes(container.kind)) {
         return String(_t("at the end of %s", labelOf(container)));
@@ -244,7 +257,7 @@ function captionFor(position, edge, anchor, container) {
 }
 
 /** The token and every token listed under it. */
-function subtree(nodes, token) {
+export function subtree(nodes, token) {
     const out = new Set([token]);
     const pending = [token];
     while (pending.length) {
@@ -257,7 +270,8 @@ function subtree(nodes, token) {
     return out;
 }
 
-function depthOf(nodes, token) {
+/** How many ancestors a node has: 0 for the root. */
+export function depthOf(nodes, token) {
     let depth = 0;
     let cursor = nodes[token] ? nodes[token].parent : null;
     while (cursor && nodes[cursor]) {

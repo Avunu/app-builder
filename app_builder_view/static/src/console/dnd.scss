@@ -75,12 +75,18 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
 
 // -- the zones ------------------------------------------------------------------
 
-.o_studio_overlay .o_studio_zones {
+// The layer the zones are drawn in: a point at the origin of a scroll
+// container's content, with the zones laid out from it. The canvas has one
+// in its overlay; the outline has one in its list.
+.o_studio_zones {
+    position: absolute;
     top: 0;
     left: 0;
     width: 0;
     height: 0;
     overflow: visible;
+    pointer-events: none;
+    z-index: 5;
 
     > * {
         position: absolute;
@@ -101,11 +107,13 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
         transition: background 80ms;
     }
 
-    // A bar across a column: 6px tall, the width of the zone.
+    // A bar across a column: 6px tall, the width of the zone. Drawn near
+    // the top of a canvas zone, which is thin; on the line the zone
+    // names when it has one, as an outline zone spanning two rows does.
     &.o_studio_dz_y::before {
         left: 0;
         right: 0;
-        top: 4px;
+        top: calc(var(--o-studio-dz-line, 7px) - 3px);
         height: 6px;
     }
 
@@ -135,7 +143,7 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
         }
 
         &.o_studio_dz_y::before {
-            top: 5px;
+            top: calc(var(--o-studio-dz-line, 7px) - 2px);
             height: 4px;
         }
 
@@ -158,7 +166,7 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
 
         &.o_studio_dz_y::after {
             left: -4px;
-            top: 3px;
+            top: calc(var(--o-studio-dz-line, 7px) - 4px);
         }
 
         &.o_studio_dz_x::after {
@@ -184,8 +192,16 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
 // -- the rest of the console while dragging --------------------------------------
 
 .o_studio_dragging {
-    .o_studio_sidebar {
+    // The palette and the properties step back; the outline does not --
+    // it takes drops -- and opacity on the sidebar itself could not be
+    // undone on it.
+    .o_studio_sidebar_tabs,
+    .o_studio_sidebar_pane {
         opacity: 0.55;
+    }
+
+    .o_studio_outline {
+        cursor: grabbing;
     }
 
     .o_studio_overlay {
@@ -201,8 +217,10 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
     }
 }
 
-// The tile being dragged stays where it is, faded, until the drop.
-.o_studio_tile.o_dragged {
+// The tile -- or the outline row -- being dragged stays where it is,
+// faded, until the drop.
+.o_studio_tile.o_dragged,
+.o_studio_outline_row.o_dragged {
     opacity: 0.4;
 }
 

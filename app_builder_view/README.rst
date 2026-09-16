@@ -82,6 +82,28 @@ scoped, and every pane follows it.
 The sidebar
 -----------
 
+Above the tabs, the **Outline** is the view as a tree: every element in
+document order, indented by where it sits — sheet, groups, fields, the
+notebook and its tabs — including what the canvas is not showing: a
+field on a tab that is not open, one hidden by ``invisible`` or by its
+groups (dimmed, with an eye-slash), a field staged and waiting for Apply
+(with a clock). A click on a row selects the element on the canvas — the
+canvas switches to its tab and scrolls to it — and opens its properties
+below, with the tree still in view; a click on the canvas marks the row
+and opens its way. Hovering either outlines the other. Rows are dragged
+like anything else: within the tree to reorder or move into another
+container (the bar between two rows says where, and where a gap closes a
+group the left edge means "after the group" while the row's own indent
+means "after its last field"), onto the canvas, or from the palette into
+the tree; resting on a folded row unfolds it. The keyboard does the same
+without aim: arrows walk and fold, Enter selects, Delete removes, and
+Alt with ↑ ↓ ← → moves the row before its neighbour, after it, out of
+its container or into the one above. A right-click offers those by name,
+with Remove and the label switch. The filter box keeps the rows that
+match and the way down to them. The panel is resized by its lower edge
+and folded shut by its caret; its height, whether it is open and what is
+folded in each view are remembered by this browser.
+
 - **Add** holds three groups of tiles: **Components** (Tabs, Columns,
   Group, Separator, Button), **New Fields** (one per field type the
   package can make; a type it cannot is shown disabled with the reason)

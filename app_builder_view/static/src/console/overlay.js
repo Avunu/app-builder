@@ -59,7 +59,8 @@ export class Overlay {
         });
         // A sibling of the hover and the frame, so the zones can be
         // cleared in one go and drawn under nothing.
-        this.zoneLayer = child(this.layer, "div", "o_studio_zones");
+        this.zones = new ZoneLayer(scrollEl, this.layer);
+        this.zoneLayer = this.zones.el;
         scrollEl.appendChild(this.layer);
         this.state = {
             hover: null,
@@ -134,6 +135,52 @@ export class Overlay {
 
     // -- drop zones ---------------------------------------------------------
 
+    /** The zones of a drag, drawn in this layer; see `ZoneLayer.setZones`. */
+    setZones(zones, containers = [], template = null) {
+        return this.zones.setZones(zones, containers, template);
+    }
+
+    clearZones() {
+        this.zones.clearZones();
+    }
+
+    place(el, rect) {
+        place(el, rect);
+    }
+
+    hide(el) {
+        el.hidden = true;
+    }
+
+    /** Every rendered instance of a token, for callers that need them all. */
+    instancesOf(token) {
+        return elementsFor(token, this.scrollEl, this.state.nodes);
+    }
+}
+
+/**
+ * The layer the drop zones of a drag are drawn in: a plain element in a
+ * scroll container, positioned in that container's content coordinates
+ * so the zones travel with what they were laid out on. The canvas has
+ * one inside its overlay; the outline has one of its own in its list,
+ * and the drag matches the hook against both.
+ */
+export class ZoneLayer {
+    /**
+     * @param {HTMLElement} scrollEl the scroll container the zones are
+     *   positioned in
+     * @param {HTMLElement} [parent] where the layer element goes; the
+     *   scroll container itself by default
+     */
+    constructor(scrollEl, parent = scrollEl) {
+        this.scrollEl = scrollEl;
+        this.el = child(parent, "div", "o_studio_zones");
+    }
+
+    destroy() {
+        this.el.remove();
+    }
+
     /**
      * Draw the zones of a drag, and the outline of every container that
      * would take the drop. Returns the zone elements, in the order given,
@@ -147,15 +194,15 @@ export class Overlay {
     setZones(zones, containers = [], template = null) {
         this.clearZones();
         if (template) {
-            const el = child(this.zoneLayer, "div", "o_studio_dz_template");
-            this.place(el, this.toContent(template));
+            const el = child(this.el, "div", "o_studio_dz_template");
+            place(el, this.toContent(template));
         }
         for (const { rect } of containers) {
-            const el = child(this.zoneLayer, "div", "o_studio_dz_container");
-            this.place(el, this.toContent(rect));
+            const el = child(this.el, "div", "o_studio_dz_container");
+            place(el, this.toContent(rect));
         }
         return zones.map((zone) => {
-            const el = child(this.zoneLayer, "div", "o_studio_dropzone");
+            const el = child(this.el, "div", "o_studio_dropzone");
             el.dataset.token = zone.token;
             el.dataset.name = zone.name || "";
             el.dataset.kind = zone.kind;
@@ -164,37 +211,38 @@ export class Overlay {
             el.dataset.container = zone.container;
             el.dataset.containerKind = zone.containerKind;
             el.dataset.axis = zone.axis;
+            el.dataset.layer = zone.layer || "canvas";
             if (zone.edge) {
                 el.dataset.edge = zone.edge;
             }
             el.classList.add(
                 zone.position === "inside" ? "o_studio_dz_inside" : `o_studio_dz_${zone.axis}`
             );
-            this.place(el, this.toContent(zone.rect));
+            // A bar drawn on a line inside the zone -- the boundary of two
+            // rows of the outline -- rather than at its top.
+            if (zone.line !== null && zone.line !== undefined) {
+                el.style.setProperty("--o-studio-dz-line", `${zone.line - zone.rect.top}px`);
+            }
+            place(el, this.toContent(zone.rect));
             return el;
         });
     }
 
     clearZones() {
-        this.zoneLayer.replaceChildren();
+        this.el.replaceChildren();
     }
 
-    place(el, rect) {
-        el.hidden = false;
-        el.style.top = `${rect.top}px`;
-        el.style.left = `${rect.left}px`;
-        el.style.width = `${rect.width}px`;
-        el.style.height = `${rect.height}px`;
+    toContent(rect) {
+        return toContent(rect, this.scrollEl);
     }
+}
 
-    hide(el) {
-        el.hidden = true;
-    }
-
-    /** Every rendered instance of a token, for callers that need them all. */
-    instancesOf(token) {
-        return elementsFor(token, this.scrollEl, this.state.nodes);
-    }
+function place(el, rect) {
+    el.hidden = false;
+    el.style.top = `${rect.top}px`;
+    el.style.left = `${rect.left}px`;
+    el.style.width = `${rect.width}px`;
+    el.style.height = `${rect.height}px`;
 }
 
 function child(parent, tag, className) {

@@ -102,6 +102,14 @@ export class ConsoleModel {
         // properties on the former and not on the latter.
         this.selectionSerial = 0;
         this.hover = null;
+        // Bumped by `reveal`: the canvas brings `revealToken` on screen --
+        // its page switched to, its element scrolled to -- on the bump.
+        this.revealSerial = 0;
+        this.revealToken = null;
+        // Set by the outline while it is mounted: how the drag reaches
+        // its rows and its zone layer (`sidebar/outline.js`), read by
+        // `drag.js` when a drag starts. `null` when there is no outline.
+        this.outlineDrag = null;
         // `{label, caption}` while something is being dragged over the
         // canvas -- what the status pill says meanwhile -- else `null`.
         this.drag = null;
@@ -617,6 +625,20 @@ export class ConsoleModel {
         this.selection = null;
     }
 
+    /**
+     * Select `token` and ask the canvas to bring it on screen: the page
+     * it is on switched to, its element scrolled into view. What the
+     * outline does on a click, where the row may stand for something the
+     * canvas is not showing.
+     */
+    reveal(token) {
+        this.select(token);
+        if (token && this.nodes[token]) {
+            this.revealToken = token;
+            this.revealSerial += 1;
+        }
+    }
+
     hoverAt(token) {
         if (this.hover !== token) {
             this.hover = token || null;
@@ -878,6 +900,30 @@ export class ConsoleModel {
                 this.archVersion,
             ])
         );
+    }
+
+    /**
+     * Show or hide a form field's label, whichever way the form draws
+     * it: `nolabel` where a group draws the label, a `<label for>` of its
+     * own anywhere else. What the properties' switch and the outline's
+     * menu both do; `node.label` says which way applies.
+     */
+    async setLabelShown(token, shown) {
+        const node = this.nodes[token];
+        const label = node && node.kind === "field" ? node.label : null;
+        if (!label) {
+            return undefined;
+        }
+        if (label.in_group) {
+            return this.setAttributes(token, { nolabel: shown ? null : "1" });
+        }
+        if (shown) {
+            return this.showLabel(token);
+        }
+        if (label.token) {
+            return this.hideLabel(label.token);
+        }
+        return undefined;
     }
 
     /**

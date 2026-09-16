@@ -10,6 +10,7 @@
         No package can be written to, so nothing can be edited yet. Create one
         on the Home tab.
     </div>
+    <Outline t-if="this.showOutline" model="this.model"/>
     <div class="o_studio_sidebar_tabs" role="tablist">
         <button class="o_studio_sidebar_tab" t-att-class="{ active: this.state.tab === tab.key }" t-foreach="this.tabs" t-as="tab"
                 t-key="tab.key" type="button"

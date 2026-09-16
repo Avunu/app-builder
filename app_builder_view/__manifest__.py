@@ -29,6 +29,7 @@
             "app_builder_view/static/tests/tours/console_drag_tour.js",
             "app_builder_view/static/tests/tours/console_new_field_tour.js",
             "app_builder_view/static/tests/tours/console_kanban_tour.js",
+            "app_builder_view/static/tests/tours/console_outline_tour.js",
         ],
         "web.assets_unit_tests": [
             "app_builder_view/static/tests/**/*.test.js",

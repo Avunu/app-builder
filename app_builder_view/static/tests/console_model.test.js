@@ -434,3 +434,54 @@ test("the rest of a written apply is placed once the server is back", async () =
     expect(calls.find((c) => c.method === "place_pending").args).toEqual([[9]]);
     expect(model.pendingCount).toBe(0);
 });
+
+test("reveal selects and asks the canvas once; an unknown token does neither", () => {
+    const { model } = makeModel();
+    expect(model.revealSerial).toBe(0);
+    model.reveal("o_studio_n_3");
+    expect(model.selection.token).toBe("o_studio_n_3");
+    expect(model.selectionSerial).toBe(1);
+    expect(model.revealSerial).toBe(1);
+    expect(model.revealToken).toBe("o_studio_n_3");
+    // The same node again: still a request to bring it on screen, and
+    // not a new selection.
+    model.reveal("o_studio_n_3");
+    expect(model.selectionSerial).toBe(1);
+    expect(model.revealSerial).toBe(2);
+    model.reveal("o_studio_n_99");
+    expect(model.selection).toBe(null);
+    expect(model.revealSerial).toBe(2);
+});
+
+test("the label switch goes the way the form draws the label", async () => {
+    const { model, calls } = makeModel();
+    // An edit that answers with no canvas has the model fetch one, which
+    // the recorded orm answers with the canvas as it is; the request is
+    // looked for by name rather than taken as the last call.
+    const call = model.orm.call;
+    const kept = model.canvas;
+    model.orm = {
+        call: async (...args) => (args[1] === "canvas" ? kept : call(...args)),
+    };
+    const sent = (method) => {
+        const found = calls.find((call) => call.method === method);
+        calls.length = 0;
+        return found;
+    };
+    // In a group: the `nolabel` attribute, off and on.
+    model.canvas.nodes.o_studio_n_2.label = { shown: true, by: "group", token: null, in_group: true };
+    await model.setLabelShown("o_studio_n_2", false);
+    expect(sent("apply_at").args[3].attrs).toEqual({ nolabel: "1" });
+    await model.setLabelShown("o_studio_n_2", true);
+    expect(sent("apply_at").args[3].attrs).toEqual({ nolabel: null });
+    // Elsewhere: a <label for> of its own, made, then taken away by its token.
+    model.canvas.nodes.o_studio_n_3.label = { shown: false, by: null, token: null, in_group: false };
+    await model.setLabelShown("o_studio_n_3", true);
+    expect(sent("show_label_at").args[2].token).toBe("o_studio_n_3");
+    model.canvas.nodes.o_studio_n_3.label = { shown: true, by: "label", token: "o_studio_n_9", in_group: false };
+    await model.setLabelShown("o_studio_n_3", false);
+    expect(sent("remove_at").args[2].token).toBe("o_studio_n_9");
+    // Not a field with a label switch: nothing is sent.
+    expect(await model.setLabelShown("o_studio_n_1", true)).toBe(undefined);
+    expect(calls).toEqual([]);
+});

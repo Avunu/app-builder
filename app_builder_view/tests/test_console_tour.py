@@ -186,6 +186,57 @@ class TestConsoleTour(StudioHttpCase):
         self.assertTrue(patch, "the field should live in an inheriting view")
         self.assertIn('name="x_tour_search"', patch.arch)
 
+    def test_the_outline_navigates_and_reorders(self):
+        """The tree above the sidebar's tabs: a row selects its node on
+        the canvas, a row on another tab switches the canvas to that tab,
+        a click on the canvas marks the row, and Alt with an arrow moves
+        the field -- one edit, written as any drop is."""
+        package = self._package("x_tour_outline_pkg", "Tour Outline")
+        # With a job position and a reference, so both fields are rendered
+        # rather than folded away as empty: one to move, one on the second
+        # tab to reveal.
+        partner = self.env["res.partner"].create(
+            {"name": "Tour Subject", "function": "Tour Tester", "ref": "TOUR-1"}
+        )
+        action = self.env["ir.actions.act_window"].create(
+            {
+                "name": "Tour Contact",
+                "res_model": "res.partner",
+                "view_mode": "form",
+                "res_id": partner.id,
+            }
+        )
+        base = self.env.ref("base.view_partner_form")
+
+        def placed():
+            arch = etree.fromstring(base.get_combined_arch().encode())
+            # The form's own Job Position, not the one of the contacts
+            # subview inside `child_ids`.
+            (field,) = arch.xpath("//field[@name='function'][not(ancestor::field)]")
+            return field.getparent(), field.getprevious(), field.getnext()
+
+        parent_before, _previous_before, next_before = placed()
+        self.assertIsNotNone(next_before)
+
+        self.start_tour(
+            "/odoo/action-%s/%s" % (action.id, partner.id),
+            "app_builder_console_outline_tour",
+            login="admin",
+        )
+
+        patch = self.env["ir.ui.view"].search(
+            [("inherit_id", "=", base.id), ("name", "like", "studio")]
+        )
+        self.assertTrue(patch)
+        base.invalidate_recordset()
+        parent_after, previous_after, _next_after = placed()
+        # Down one: what was next is now previous, in the same group. The
+        # outline lists invisible fields too, so "next" may be one of those.
+        self.assertEqual(previous_after.get("name"), next_before.get("name"))
+        self.assertEqual(parent_after.get("name"), parent_before.get("name"))
+        self.assertEqual(parent_after.tag, parent_before.tag)
+        self._assert_nothing_leaked(package, patch)
+
     def test_a_form_takes_drops(self):
         """Dragging onto the form: a palette field between two fields, a
         group and two columns onto the end of the sheet, a tab onto the

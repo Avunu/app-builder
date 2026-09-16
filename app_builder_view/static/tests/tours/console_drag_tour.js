@@ -47,7 +47,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
         {
             content: "drag an existing field from the palette to just after Job Position",
             trigger: ".o_studio_tile_field.o_studio_draggable[data-name='x_tour_extra']",
-            run: "drag_and_drop .o_studio_dropzone[data-name='function'][data-position='after']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-name='function'][data-position='after']",
         },
         {
             content: "the field landed on the canvas",
@@ -65,7 +65,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
             content: "the drag is over: no zone is left behind",
             trigger: ".o_studio_canvas",
             run: function () {
-                if (document.querySelector(".o_studio_dropzone")) {
+                if (document.querySelector(".o_studio_overlay .o_studio_dropzone")) {
                     throw new Error("drop zones should go with the drag");
                 }
                 if (document.body.classList.contains("o_studio_dragging")) {
@@ -81,7 +81,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
         {
             content: "drag a group onto the end of the sheet",
             trigger: ".o_studio_tile.o_studio_draggable[data-component='group']",
-            run: "drag_and_drop .o_studio_dropzone[data-container-kind='sheet'][data-edge='end']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-container-kind='sheet'][data-edge='end']",
         },
         {
             content: "the new, empty group is selected and has a grip",
@@ -90,7 +90,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
         {
             content: "move Job Position from its group into the empty one",
             trigger: ".o_studio_canvas .o_field_widget[name='function']",
-            run: "drag_and_drop .o_studio_dropzone[data-position='inside'][data-kind='group']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-position='inside'][data-kind='group']",
         },
         {
             content: "the field is now in the group at the sheet level",
@@ -108,7 +108,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
         {
             content: "drag two columns onto the end of the sheet",
             trigger: ".o_studio_tile.o_studio_draggable[data-component='columns']",
-            run: "drag_and_drop .o_studio_dropzone[data-container-kind='sheet'][data-edge='end']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-container-kind='sheet'][data-edge='end']",
         },
         {
             content: "a second outer group is on the sheet, with two columns in it",
@@ -128,7 +128,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
         {
             content: "drag a tab onto the end of the notebook's tab strip",
             trigger: ".o_studio_tile.o_studio_draggable[data-component='page']",
-            run: "drag_and_drop .o_studio_dropzone[data-container-kind='notebook'][data-edge='end']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-container-kind='notebook'][data-edge='end']",
         },
         {
             content: "the notebook has the new tab",
@@ -148,7 +148,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
                 await animationFrame();
                 await hover(this.anchor, { position: { top: 20, left: 20 }, relative: true });
                 await animationFrame();
-                await waitFor(".o_studio_dropzone", { visible: true, timeout: 1000 });
+                await waitFor(".o_studio_overlay .o_studio_dropzone", { visible: true, timeout: 1000 });
                 const tab = document.querySelector(
                     ".o_studio_canvas .o_notebook .nav-link[name='sales_purchases']"
                 );
@@ -156,7 +156,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
                 await delay(400);
                 await animationFrame();
                 const zone = await waitFor(
-                    ".o_studio_dropzone[data-name='purchase'][data-position='inside']",
+                    ".o_studio_overlay .o_studio_dropzone[data-name='purchase'][data-position='inside']",
                     { visible: true, timeout: 2000 }
                 );
                 await moveTo(zone, { position: "center" });
@@ -187,7 +187,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
                 await hover(this.anchor, { position: { top: 20, left: 20 }, relative: true });
                 await animationFrame();
                 const zone = await waitFor(
-                    ".o_studio_dropzone[data-name='vat'][data-position='after']",
+                    ".o_studio_overlay .o_studio_dropzone[data-name='vat'][data-position='after']",
                     { visible: true, timeout: 1000 }
                 );
                 await moveTo(zone, { position: "center" });
@@ -196,7 +196,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
                 // of the button it holds, so the next drag can start.
                 await cancel();
                 await animationFrame();
-                if (document.querySelector(".o_studio_dropzone")) {
+                if (document.querySelector(".o_studio_overlay .o_studio_dropzone")) {
                     throw new Error("the zones should go with the cancelled drag");
                 }
                 // A drop sent by mistake would show as the pill saving for
@@ -222,7 +222,7 @@ registry.category("web_tour.tours").add("app_builder_console_drag_tour", {
         {
             content: "drop the same field on the sheet, after a group",
             trigger: ".o_studio_tile_field.o_studio_draggable[data-name='x_tour_second']",
-            run: "drag_and_drop .o_studio_dropzone[data-container-kind='sheet'][data-kind='group'][data-position='after']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-container-kind='sheet'][data-kind='group'][data-position='after']",
         },
         {
             content: "it renders on the sheet, with a label of its own before it",
@@ -307,7 +307,7 @@ registry.category("web_tour.tours").add("app_builder_console_list_drag_tour", {
         {
             content: "drag the Email heading before Name",
             trigger: ".o_studio_canvas th[data-name='email']",
-            run: "drag_and_drop .o_studio_dropzone[data-name='display_name'][data-position='before']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-name='display_name'][data-position='before']",
         },
         {
             content: "Email is now the first column",
@@ -330,7 +330,7 @@ registry.category("web_tour.tours").add("app_builder_console_list_drag_tour", {
         {
             content: "drop a field from the palette between Name and the next heading",
             trigger: ".o_studio_tile_field.o_studio_draggable[data-name='x_tour_extra']",
-            run: "drag_and_drop .o_studio_dropzone[data-name='display_name'][data-position='after']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-name='display_name'][data-position='after']",
         },
         {
             content: "the new column follows Name",

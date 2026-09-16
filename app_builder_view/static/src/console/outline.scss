@@ -1,0 +1,177 @@
+// The outline: a tree of the view's nodes above the sidebar's tabs, with
+// the divider that gives it more or less of the column.
+
+$o-studio-outline-brand: var(--o-color-primary, #714b67);
+
+.o_studio_outline {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    min-height: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+
+    &.o_studio_outline_closed {
+        height: auto !important;
+    }
+
+    .o_studio_outline_head {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+    }
+
+    .o_studio_outline_toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 0;
+        background: none;
+        padding: 4px 0;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: rgba(0, 0, 0, 0.55);
+
+        > i {
+            width: 10px;
+            text-align: center;
+        }
+    }
+
+    .o_studio_outline_filter {
+        max-width: 160px;
+        margin-left: auto;
+    }
+
+    // The scrolling list. Positioned so the drag's zone layer -- a point at
+    // the origin of its content -- can lay zones over the rows.
+    .o_studio_outline_list {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        margin: 0;
+        padding: 2px 0;
+        list-style: none;
+        outline: none;
+    }
+
+    .o_studio_outline_divider {
+        flex: 0 0 6px;
+        cursor: row-resize;
+        background: transparent;
+        transition: background 80ms;
+
+        &:hover {
+            background: rgba(113, 75, 103, 0.15);
+        }
+    }
+
+    .o_studio_outline_row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding-left: calc(8px + var(--o-outline-depth, 0) * 16px);
+        padding-right: 8px;
+        font-size: 12px;
+        line-height: 24px;
+        cursor: pointer;
+        outline: none;
+        white-space: nowrap;
+
+        .o_studio_outline_caret {
+            flex: 0 0 auto;
+            width: 14px;
+            height: 24px;
+            border: 0;
+            background: none;
+            padding: 0;
+            color: rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+
+        .o_studio_outline_icon {
+            flex: 0 0 auto;
+            width: 16px;
+            text-align: center;
+            color: $o-studio-outline-brand;
+        }
+
+        .o_studio_outline_label {
+            flex: 0 1 auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .o_studio_outline_badge {
+            flex: 0 0 auto;
+            font-size: 10px;
+            color: rgba(0, 0, 0, 0.45);
+        }
+
+        &:hover,
+        &.o_studio_outline_hover {
+            background: rgba(113, 75, 103, 0.06);
+        }
+
+        &.o_studio_outline_selected {
+            background: rgba(113, 75, 103, 0.14);
+            box-shadow: inset 2px 0 0 $o-studio-outline-brand;
+        }
+
+        &:focus-visible {
+            outline: 2px solid $o-studio-outline-brand;
+            outline-offset: -2px;
+        }
+
+        &.o_studio_outline_hidden {
+            .o_studio_outline_icon,
+            .o_studio_outline_label {
+                opacity: 0.5;
+            }
+        }
+
+        &.o_studio_outline_pending .o_studio_outline_label {
+            font-style: italic;
+        }
+
+        &.o_studio_outline_fixed {
+            .o_studio_outline_icon {
+                color: rgba(0, 0, 0, 0.4);
+            }
+        }
+    }
+
+    .o_studio_outline_empty {
+        padding: 6px 12px;
+    }
+
+    // The zones the drag lays over the rows: a bar on the line between two
+    // rows is the whole width of the list, where a canvas bar is inset.
+    .o_studio_zones .o_studio_dropzone {
+        &.o_studio_dz_y::before {
+            left: 4px;
+            right: 4px;
+        }
+
+        &.o_studio_dz_inside {
+            border-radius: 3px;
+        }
+    }
+}
+
+.o_studio_outline_menu_popover .o_studio_outline_menu {
+    min-width: 180px;
+    padding: 4px 0;
+
+    .dropdown-item {
+        font-size: 12px;
+        padding: 4px 12px;
+    }
+}

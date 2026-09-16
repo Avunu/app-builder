@@ -38,7 +38,8 @@ import {
 import { View } from "@web/views/view";
 import * as compat from "@app_builder_view/console/compat";
 import { TAB_DWELL_MS, makeCanvasDrag } from "@app_builder_view/console/drag";
-import { Overlay } from "@app_builder_view/console/overlay";
+import { Overlay, ZoneLayer } from "@app_builder_view/console/overlay";
+import { OUTLINE_INDENT, OUTLINE_PAD } from "@app_builder_view/console/sidebar/outline";
 
 class Partner extends models.Model {
     name = fields.Char();
@@ -147,11 +148,39 @@ function fakeModel() {
 }
 
 const TILE = "display:flex;gap:6px;width:160px;height:32px;align-items:center;";
+const ROW = "display:block;height:24px;line-height:24px;font-size:12px;";
+
+// The outline's rows for the form above, as `sidebar/outline.js` lays
+// them out: one per node, depth first, the second page folded.
+const OUTLINE_ROWS = [
+    ["o_studio_n_0", 0],
+    ["o_studio_n_1", 1],
+    ["o_studio_n_2", 2],
+    ["o_studio_n_3", 3],
+    ["o_studio_n_4", 4],
+    ["o_studio_n_5", 4],
+    ["o_studio_n_6", 3],
+    ["o_studio_n_7", 2],
+    ["o_studio_n_8", 3],
+    ["o_studio_n_9", 4],
+    ["o_studio_n_10", 3, "o_studio_outline_collapsed"],
+];
 
 class Harness extends Component {
     static template = xml`
-        <div class="o_studio_console" style="display:flex;width:1000px">
+        <div class="o_studio_console" style="display:flex;flex-direction:row;align-items:flex-start;width:1000px;height:auto">
             <div class="o_studio_sidebar" style="width:200px;flex:0 0 200px">
+                <div t-if="props.outline" class="o_studio_outline">
+                    <ul class="o_studio_outline_list"
+                        style="position:relative;height:300px;overflow:auto;margin:0;padding:0;list-style:none">
+                        <li t-foreach="props.outline" t-as="row" t-key="row[0]"
+                            class="o_studio_outline_row" t-att-class="row[2] || ''"
+                            t-att-data-token="row[0]" t-att-data-depth="row[1]"
+                            t-att-style="'${ROW}padding-left:' + (${OUTLINE_PAD} + row[1] * ${OUTLINE_INDENT}) + 'px'">
+                            <span t-esc="row[0]"/>
+                        </li>
+                    </ul>
+                </div>
                 <button type="button" class="o_studio_tile o_studio_tile_field o_studio_draggable"
                         data-kind="existing_field" data-key="sequence" data-name="sequence"
                         data-label="Sequence" style="${TILE}">
@@ -178,13 +207,14 @@ class Harness extends Component {
     static props = ["*"];
 }
 
-async function mountConsole() {
+async function mountConsole({ outline = false } = {}) {
     if (!getMockEnv()) {
         await makeMockEnv();
     }
     const modelFields = MockServer.env.partner.fields_get();
     await mountWithCleanup(Harness, {
         props: {
+            outline: outline ? OUTLINE_ROWS : null,
             viewProps: {
                 type: "form",
                 resModel: "partner",
@@ -203,12 +233,58 @@ async function mountConsole() {
     const scrollEl = queryOne(".o_studio_canvas");
     const overlay = new Overlay(scrollEl);
     const model = fakeModel();
+    if (outline) {
+        model.outlineDrag = fakeOutline(queryOne(".o_studio_outline_list"));
+    }
     const dragger = makeCanvasDrag({ rootEl, scrollEl, overlay, model });
     after(() => {
         dragger.destroy();
         overlay.destroy();
     });
     return { rootEl, scrollEl, overlay, model, dragger };
+}
+
+/**
+ * What the outline leaves on the model for the drag, over a static list:
+ * `expand` unfolds the second page by hand -- the row loses its fold and
+ * its child row is appended -- which is what the component's re-render
+ * comes to, and what the drag's observer sees.
+ */
+function fakeOutline(list) {
+    const layer = new ZoneLayer(list);
+    const folded = new Set(["o_studio_n_10"]);
+    const provider = {
+        el: list,
+        layer,
+        expanded: [],
+        rows: () => [...list.querySelectorAll(".o_studio_outline_row")],
+        indentOf: (depth) => OUTLINE_PAD + depth * OUTLINE_INDENT,
+        isCollapsed: (token) => folded.has(token),
+        expand(token) {
+            this.expanded.push(token);
+            if (!folded.delete(token)) {
+                return;
+            }
+            const row = list.querySelector(`.o_studio_outline_row[data-token='${token}']`);
+            row.classList.remove("o_studio_outline_collapsed");
+            const child = document.createElement("li");
+            child.className = "o_studio_outline_row";
+            child.dataset.token = "o_studio_n_11";
+            child.dataset.depth = "4";
+            child.setAttribute("style", `${ROW}padding-left:${OUTLINE_PAD + 4 * OUTLINE_INDENT}px`);
+            child.textContent = "o_studio_n_11";
+            row.after(child);
+        },
+    };
+    after(() => layer.destroy());
+    return provider;
+}
+
+const OUTLINE_ZONE = ".o_studio_dropzone[data-layer='outline']";
+const CANVAS_ZONE = ".o_studio_overlay .o_studio_dropzone";
+
+function outlineRow(token) {
+    return queryOne(`.o_studio_outline_row[data-token='${token}']`);
 }
 
 /**
@@ -473,4 +549,183 @@ test("scrolling at the canvas's edge lets go of the zone that moved away", async
     // moved, and the hook was told anyway.
     expect(scrollEl.scrollTop).toBeGreaterThan(0);
     expect(zone).not.toHaveClass("o_studio_dz_active");
+});
+
+// -- the outline ------------------------------------------------------------------
+
+test("a row of the outline is picked up as a move and dropped on a gap of the tree", async () => {
+    const { model, dragger } = await mountConsole({ outline: true });
+    const row = outlineRow("o_studio_n_5");
+    const { moveTo, drop } = await pickUp(row);
+    expect(dragger.dragging).toBe(true);
+    expect(dragger.payload).toEqual({ kind: "move", token: "o_studio_n_5", label: "City" });
+    expect(row).toHaveClass("o_dragged");
+    // Zones in both layers: the canvas's in its overlay, the outline's in
+    // its list, each saying which it is.
+    expect(queryAll(CANVAS_ZONE).length).toBeGreaterThan(0);
+    expect(queryAll(OUTLINE_ZONE).length).toBeGreaterThan(0);
+    expect(queryAll(`.o_studio_outline_list ${OUTLINE_ZONE}`)).toHaveLength(queryAll(OUTLINE_ZONE).length);
+    // Not beside itself in the tree either.
+    expect(queryAll(`${OUTLINE_ZONE}[data-token='o_studio_n_5']`)).toHaveLength(0);
+    expect(queryAll(`${OUTLINE_ZONE}[data-token='o_studio_n_4'][data-position='after']`)).toHaveLength(0);
+    // Below Sequence, the last row of the first page: after it, in the page.
+    const zone = queryOne(`${OUTLINE_ZONE}[data-token='o_studio_n_9'][data-position='after']`);
+    expect(zone.dataset.container).toBe("o_studio_n_8");
+    await moveTo(zone, { position: "center" });
+    await animationFrame();
+    expect(zone).toHaveClass("o_studio_dz_active");
+    expect(model.drag.caption).toBe("at the end of One");
+    await drop();
+    await animationFrame();
+    expect(model.drops).toEqual([
+        { token: "o_studio_n_9", position: "after", payload: { kind: "move", token: "o_studio_n_5" } },
+    ]);
+    expect(queryAll(".o_studio_dropzone")).toHaveLength(0);
+    expect(model.drag).toBe(null);
+    expect(row).not.toHaveClass("o_dragged");
+});
+
+test("a container is picked up by its row, where a press on it means nothing else", async () => {
+    const { dragger } = await mountConsole({ outline: true });
+    expect(dragger.isDraggable(outlineRow("o_studio_n_3"))).toBe(true);
+    expect(dragger.isDraggable(queryFirst(".o_inner_group"))).toBe(false);
+    // What stays put stays put in the tree too.
+    expect(dragger.isDraggable(outlineRow("o_studio_n_1"))).toBe(false);
+    expect(dragger.isDraggable(outlineRow("o_studio_n_7"))).toBe(false);
+    const { cancel } = await pickUp(outlineRow("o_studio_n_3"));
+    expect(dragger.payload).toEqual({ kind: "move", token: "o_studio_n_3", label: "the group" });
+    // Nothing inside the moved group, in either layer.
+    expect(queryAll(".o_studio_dropzone[data-container='o_studio_n_3']")).toHaveLength(0);
+    await cancel();
+    await animationFrame();
+});
+
+test("a tile lands on a gap of the tree; the gap below a group's last row has two bands", async () => {
+    const { model } = await mountConsole({ outline: true });
+    const tile = queryOne(".o_studio_tile[data-key='sequence']");
+    const { moveTo, drop } = await pickUp(tile);
+    // Below City, the last field of the inner group: after City in the
+    // group, over the row's own text; after the group in its parent, at
+    // the left edge.
+    const deep = queryOne(`${OUTLINE_ZONE}[data-token='o_studio_n_5'][data-position='after']`);
+    const shallow = queryOne(`${OUTLINE_ZONE}[data-token='o_studio_n_3'][data-position='after']`);
+    const list = queryOne(".o_studio_outline_list").getBoundingClientRect();
+    expect(deep.getBoundingClientRect().left).toBe(list.left + OUTLINE_PAD + 4 * OUTLINE_INDENT);
+    expect(shallow.getBoundingClientRect().left).toBe(list.left);
+    expect(shallow.getBoundingClientRect().width).toBe(OUTLINE_PAD + 4 * OUTLINE_INDENT);
+    expect(deep.getBoundingClientRect().top).toBe(shallow.getBoundingClientRect().top);
+    await moveTo(deep, { position: "center" });
+    await animationFrame();
+    expect(model.drag.caption).toBe("after City");
+    await moveTo(shallow, { position: "center" });
+    await animationFrame();
+    expect(model.drag.caption).toBe("after the group");
+    await drop();
+    await animationFrame();
+    expect(model.drops).toEqual([
+        { token: "o_studio_n_3", position: "after", payload: { kind: "existing_field", name: "sequence" } },
+    ]);
+});
+
+test("a node of the view is dropped into the tree, and Escape over the tree drops nothing", async () => {
+    const { model, dragger } = await mountConsole({ outline: true });
+    const widget = queryOne(".o_field_widget[name='name']");
+    let helpers = await pickUp(widget);
+    const inside = queryOne(`${OUTLINE_ZONE}[data-token='o_studio_n_6'][data-position='inside']`);
+    await helpers.moveTo(inside, { position: "center" });
+    await animationFrame();
+    expect(model.drag.caption).toBe("into the group");
+    await press("Escape");
+    await animationFrame();
+    expect(dragger.dragging).toBe(false);
+    expect(model.drops).toEqual([]);
+    expect(queryAll(".o_studio_dropzone")).toHaveLength(0);
+    expect(queryAll(".o_studio_outline_list .o_studio_zones > *")).toHaveLength(0);
+
+    helpers = await pickUp(widget);
+    await helpers.moveTo(
+        queryOne(`${OUTLINE_ZONE}[data-token='o_studio_n_6'][data-position='inside']`),
+        { position: "center" }
+    );
+    await animationFrame();
+    await helpers.drop();
+    await animationFrame();
+    expect(model.drops).toEqual([
+        { token: "o_studio_n_6", position: "inside", payload: { kind: "move", token: "o_studio_n_4" } },
+    ]);
+});
+
+test("resting on a folded row unfolds it, and the zones follow", async () => {
+    const { model } = await mountConsole({ outline: true });
+    const tile = queryOne(".o_studio_tile[data-key='sequence']");
+    const { moveTo, drop } = await pickUp(tile);
+    expect(queryAll(`${OUTLINE_ZONE}[data-container='o_studio_n_10'][data-position='before']`)).toHaveLength(0);
+    const folded = outlineRow("o_studio_n_10");
+    // The folded page is itself a place: the chip says so while the
+    // pointer rests, and keeps saying so.
+    const into = queryOne(`${OUTLINE_ZONE}[data-token='o_studio_n_10'][data-position='inside']`);
+    await moveTo(into, { position: "center" });
+    await animationFrame();
+    expect(model.drag.caption).toBe("into Two");
+    await advanceTime(TAB_DWELL_MS + 10);
+    await animationFrame();
+    await animationFrame();
+    expect(model.outlineDrag.expanded).toEqual(["o_studio_n_10"]);
+    expect(folded).not.toHaveClass("o_studio_outline_collapsed");
+    // The page's rows are on screen now, and so are the gaps between them.
+    const before = queryOne(`${OUTLINE_ZONE}[data-container='o_studio_n_10'][data-position='before']`);
+    expect(before.dataset.token).toBe("o_studio_n_11");
+    // The unfolded page is no longer a box; its empty group is.
+    expect(queryAll(`${OUTLINE_ZONE}[data-token='o_studio_n_10'][data-position='inside']`)).toHaveLength(0);
+    const group = queryOne(`${OUTLINE_ZONE}[data-token='o_studio_n_11'][data-position='inside']`);
+    await moveTo(group, { position: "center" });
+    await animationFrame();
+    await drop();
+    await animationFrame();
+    expect(model.drops).toEqual([
+        { token: "o_studio_n_11", position: "inside", payload: { kind: "existing_field", name: "sequence" } },
+    ]);
+});
+
+test("a zone of the tree is found again after the zones were laid out again", async () => {
+    const { model, dragger } = await mountConsole({ outline: true });
+    const tile = queryOne(".o_studio_tile[data-key='sequence']");
+    const { moveTo, drop } = await pickUp(tile);
+    const zone = queryOne(`${OUTLINE_ZONE}[data-token='o_studio_n_9'][data-position='after']`);
+    await moveTo(zone, { position: "center" });
+    await animationFrame();
+    expect(zone).toHaveClass("o_studio_dz_active");
+    // The canvas re-rendered under the drag: every zone element is new,
+    // in both layers, and the same place in the tree is what counts --
+    // not the canvas's own "after Sequence", which is elsewhere.
+    dragger.onCanvasChanged();
+    await animationFrame();
+    expect(zone.isConnected).toBe(false);
+    await drop();
+    await animationFrame();
+    expect(model.drops).toEqual([
+        { token: "o_studio_n_9", position: "after", payload: { kind: "existing_field", name: "sequence" } },
+    ]);
+});
+
+test("rows the list has scrolled away get no zone over what is below the list", async () => {
+    const { model } = await mountConsole({ outline: true });
+    const list = queryOne(".o_studio_outline_list");
+    list.style.height = "100px";
+    const tile = queryOne(".o_studio_tile[data-key='sequence']");
+    const { cancel } = await pickUp(tile);
+    const box = list.getBoundingClientRect();
+    const zones = queryAll(OUTLINE_ZONE);
+    expect(zones.length).toBeGreaterThan(0);
+    for (const zone of zones) {
+        const rect = zone.getBoundingClientRect();
+        expect(rect.top).toBeGreaterThan(box.top - 1);
+        expect(rect.bottom).toBeLessThan(box.bottom + 1);
+    }
+    // The tiles below the list are under no zone.
+    const tileRect = tile.getBoundingClientRect();
+    expect(zones.some((zone) => zone.getBoundingClientRect().bottom > tileRect.top)).toBe(false);
+    expect(model.drops).toEqual([]);
+    await cancel();
+    await animationFrame();
 });

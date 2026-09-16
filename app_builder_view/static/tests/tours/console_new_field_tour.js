@@ -40,7 +40,7 @@ registry.category("web_tour.tours").add("app_builder_console_new_field_tour", {
         {
             content: "drag the Text tile to just after Job Position",
             trigger: ".o_studio_tile_new.o_studio_draggable[data-type='char']",
-            run: "drag_and_drop .o_studio_dropzone[data-name='function'][data-position='after']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-name='function'][data-position='after']",
         },
         {
             content: "the new field is on the canvas, right after Job Position",
@@ -115,7 +115,7 @@ registry.category("web_tour.tours").add("app_builder_console_new_field_tour", {
             // request at all -- the server never hears of it.
             content: "drag a Link tile, which needs its definition first",
             trigger: ".o_studio_tile_new.o_studio_draggable[data-type='many2one'][data-needs-dialog='1']:not(:disabled)",
-            run: "drag_and_drop .o_studio_dropzone[data-name='function'][data-position='after']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-name='function'][data-position='after']",
         },
         {
             content: "the field editor opened instead of a request being made",
@@ -191,7 +191,7 @@ registry.category("web_tour.tours").add("app_builder_console_staged_field_tour",
         {
             content: "drag the Decimal tile to just after the name",
             trigger: ".o_studio_tile_new.o_studio_draggable[data-type='float']:not(:disabled)",
-            run: "drag_and_drop .o_studio_dropzone[data-name='x_name'][data-position='after']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-name='x_name'][data-position='after']",
         },
         {
             content: "a ghost of the field is on the canvas, in the flow of the form",
@@ -222,7 +222,7 @@ registry.category("web_tour.tours").add("app_builder_console_staged_field_tour",
             // the staged field, and the canvas draws it at the new spot.
             content: "drag the ghost to after the note",
             trigger: ".o_studio_canvas .o_studio_pending",
-            run: "drag_and_drop .o_studio_dropzone[data-name='x_note'][data-position='after']",
+            run: "drag_and_drop .o_studio_overlay .o_studio_dropzone[data-name='x_note'][data-position='after']",
         },
         {
             content: "the ghost now sits after the note",

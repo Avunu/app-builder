@@ -47,7 +47,8 @@ import { View } from "@web/views/view";
 import { canvasJsClass } from "./canvas_views";
 import * as compat from "./compat";
 import { makeCanvasDrag } from "./drag";
-import { describeTab, findTab, ownToken, tokenOf } from "./identity";
+import { instanceOf } from "./geometry";
+import { describeTab, findTab, ownToken, tabFor, tokenOf } from "./identity";
 import { Overlay } from "./overlay";
 
 export class StudioCanvas extends Component {
@@ -63,6 +64,9 @@ export class StudioCanvas extends Component {
         this.drag = null;
         this.pendingPage = null;
         this.pendingScroll = null;
+        // A token to scroll into view once it is rendered: the outline
+        // asked for it, and its page may still be switching.
+        this.pendingReveal = null;
         this.savedScroll = 0;
         this.renderedVersion = null;
         this.restoringPage = false;
@@ -105,6 +109,49 @@ export class StudioCanvas extends Component {
                 this.model.showInvisible,
             ]
         );
+        useEffect(
+            (serial) => {
+                if (serial) {
+                    this.beginReveal(this.model.revealToken);
+                }
+            },
+            () => [this.model.revealSerial]
+        );
+    }
+
+    /**
+     * Bring a node on screen: the page it is on is switched to, and its
+     * element is scrolled to once the page has rendered. A node that is
+     * not rendered -- hidden by its groups, on no page that exists --
+     * leaves the request standing for the next reveal to overwrite.
+     */
+    beginReveal(token) {
+        const el = this.scrollRef.el;
+        const nodes = this.model.nodes;
+        if (!el || !token || !nodes[token]) {
+            return;
+        }
+        let page = nodes[token].kind === "page" ? token : null;
+        for (let cursor = nodes[token].parent; !page && cursor && nodes[cursor]; ) {
+            if (nodes[cursor].kind === "page") {
+                page = cursor;
+            }
+            cursor = nodes[cursor].parent;
+        }
+        const tab = page ? tabFor(page, el) : null;
+        if (tab && !tab.classList.contains("active")) {
+            // The switch is not the user choosing a page, and the selection
+            // is already what was asked for: the click must not re-select.
+            this.model.rememberPage(describeTab(tab));
+            this.restoringPage = true;
+            try {
+                tab.click();
+            } finally {
+                this.restoringPage = false;
+            }
+        }
+        this.pendingReveal = token;
+        this.alignSoon();
     }
 
     // -- listeners --------------------------------------------------------
@@ -239,6 +286,13 @@ export class StudioCanvas extends Component {
         if (this.pendingScroll !== null && el.scrollHeight - el.clientHeight >= this.pendingScroll) {
             el.scrollTop = this.pendingScroll;
             this.pendingScroll = null;
+        }
+        if (this.pendingReveal) {
+            const instance = instanceOf(this.pendingReveal, el, this.model.nodes, this.selectionPoint);
+            if (instance) {
+                this.pendingReveal = null;
+                instance.scrollIntoView({ block: "nearest", inline: "nearest" });
+            }
         }
         this.drawOverlay();
         // A drag in flight lays its zones out again for the canvas as it

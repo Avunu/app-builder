@@ -8,9 +8,12 @@
  * edges, and matches a helper against drop zones by geometry alone -- and
  * geometry is the only thing that works, since the body takes no pointer
  * events while a drag is on. What is dragged is a palette tile, a leaf of
- * the view, a list heading or the grip of a selected container; where it
- * can land is the set of zones `zones.js` lays out from the node table
- * the moment the drag starts. Nothing is re-rendered until it ends.
+ * the view, a list heading, the grip of a selected container or a row of
+ * the outline; where it can land is the set of zones `zones.js` lays out
+ * from the node table the moment the drag starts -- and, when the outline
+ * is open, the set `outline_zones.js` lays over its rows, in a layer of
+ * the outline's own. One drag, one chip, one drop, whichever layer takes
+ * it. Nothing is re-rendered until it ends.
  *
  * Five things the hook does not say out loud, and this module answers:
  *
@@ -71,6 +74,7 @@ import {
     firstVisibleCard,
     ownToken,
 } from "./identity";
+import { outlineZones } from "./outline_zones";
 import { TYPE_ICONS } from "./pending_widget";
 import { buildZones, labelOf, payloadTag } from "./zones";
 
@@ -80,7 +84,11 @@ export const DRAG_SOURCES = [
     "[class*='o_studio_n_']",
     "th[data-name]",
     ".o_studio_grip",
+    ".o_studio_outline_row",
 ].join(", ");
+
+/** What a press on is never a pick-up: the sidebar's handles, the outline's caret. */
+const DRAG_IGNORE = ".o_resize, .o_studio_outline_caret, .o_studio_outline_divider";
 
 /** How long the pointer rests on a tab before the notebook switches to it. */
 export const TAB_DWELL_MS = 250;
@@ -140,6 +148,16 @@ export class CanvasDrag {
         this.zoneOf = new Map();
         this.tabs = [];
         this.dwell = null;
+        // The outline's provider (`sidebar/outline.js`), taken from the
+        // model when a drag starts and held until it ends; `null` when
+        // there is no outline to drop on.
+        this.outline = null;
+        this.outlineObserver = null;
+        this.rowDwell = null;
+        // The scroll container being edge-scrolled, the canvas or the
+        // outline's list, for as long as the pointer stays at its edge.
+        this.edgeEl = null;
+        this.onOutlineScroll = () => this.onCanvasChanged();
         this.pointer = { x: 0, y: 0 };
         this.cancelled = false;
         this.dragging = false;
@@ -176,7 +194,7 @@ export class CanvasDrag {
         this.hook = useDragAndDrop({
             ref: compat.dragRef({ el: rootEl }),
             elements: DRAG_SOURCES,
-            ignore: ".o_resize",
+            ignore: DRAG_IGNORE,
             preventDrag: (el) => !this.isDraggable(el),
             tolerance: 5,
             delay: 0,
@@ -218,7 +236,9 @@ export class CanvasDrag {
      * A tile, unless disabled. A heading, when its column is movable. The
      * grip, when the selection is a movable container. A node of the view
      * when it is movable and a leaf: a container is picked up by its grip,
-     * so that a press on it is a click on what it holds.
+     * so that a press on it is a click on what it holds. A row of the
+     * outline when its node is movable, container or not: a row holds
+     * nothing a press could mean instead.
      */
     isDraggable(el) {
         if (!el || !this.model.canWrite) {
@@ -233,11 +253,17 @@ export class CanvasDrag {
         }
         const token = this.tokenOfSource(el);
         const node = token ? this.nodes[token] : null;
+        if (el.classList.contains("o_studio_outline_row")) {
+            return Boolean(node && node.movable);
+        }
         return Boolean(node && node.movable && !node.container);
     }
 
-    /** The token a canvas element stands for: its own, or its column's. */
+    /** The token a source element stands for: its own, its column's, its row's. */
     tokenOfSource(el) {
+        if (el.classList.contains("o_studio_outline_row")) {
+            return el.dataset.token || null;
+        }
         if (el.matches("th[data-name]")) {
             return columnToken(el.dataset.name, this.nodes);
         }
@@ -352,18 +378,39 @@ export class CanvasDrag {
         this.rootEl.classList.add("o_studio_dragging");
         this.model.beginDrag(this.payload.label);
         this.card = this.startingCard();
+        // The outline, as it is now: its provider is taken once, since a
+        // pane cannot change under a drag -- that takes a click, which
+        // ends it -- and a half-registered one is not to be trusted.
+        const outline = this.model.outlineDrag;
+        this.outline = outline && outline.el && outline.el.isConnected ? outline : null;
         this.buildZones();
         // The canvas re-renders under the drag when a tab switches; the
         // zones follow. Watched from here, for the drag's own duration,
         // so the drag does not depend on who else is watching the canvas.
         // The overlay's own changes -- the zones being drawn -- are not
         // what is watched for.
-        this.observer = new MutationObserver((records) => {
-            if (records.some((r) => !r.target.closest || !r.target.closest(".o_studio_overlay"))) {
+        this.observer = this.watch(this.scrollEl, ".o_studio_overlay");
+        if (this.outline) {
+            // The outline re-renders when a row unfolds, and its rows move
+            // when its list scrolls: either way the zones over it are laid
+            // out again.
+            this.outlineObserver = this.watch(this.outline.el, ".o_studio_zones");
+            this.outline.el.addEventListener("scroll", this.onOutlineScroll);
+        }
+    }
+
+    /**
+     * Lay the zones out again whenever `el` changes under the drag, its
+     * own zone layer -- `layerSelector` -- excepted.
+     */
+    watch(el, layerSelector) {
+        const observer = new MutationObserver((records) => {
+            if (records.some((r) => !r.target.closest || !r.target.closest(layerSelector))) {
                 this.onCanvasChanged();
             }
         });
-        this.observer.observe(this.scrollEl, { childList: true, subtree: true });
+        observer.observe(el, { childList: true, subtree: true });
+        return observer;
     }
 
     /**
@@ -391,6 +438,16 @@ export class CanvasDrag {
      * -- not the arch -- says which way its parts flow.
      */
     buildZones() {
+        const canvas = this.buildCanvasZones();
+        const outline = this.outline ? this.buildOutlineZones() : [];
+        // Kept across rebuilds, not replaced: the hook may still hold a
+        // zone from before, and what it stood for has to be answerable.
+        this.zones = [...canvas, ...outline];
+        this.tabs = tabsOf(this.scrollEl);
+    }
+
+    /** The canvas's zones, drawn in its overlay; the elements, in order. */
+    buildCanvasZones() {
         const root = this.scrollEl;
         const nodes = this.nodes;
         if (this.card && !this.card.isConnected) {
@@ -415,11 +472,46 @@ export class CanvasDrag {
             flowOf: flow,
         });
         const template = this.card ? plain(this.card.getBoundingClientRect()) : null;
-        this.zones = this.overlay.setZones(zones, containers, template);
-        // Kept across rebuilds, not replaced: the hook may still hold a
-        // zone from before, and what it stood for has to be answerable.
-        this.zones.forEach((el, index) => this.zoneOf.set(el, zones[index]));
-        this.tabs = tabsOf(root);
+        const els = this.overlay.setZones(zones, containers, template);
+        els.forEach((el, index) => this.zoneOf.set(el, zones[index]));
+        return els;
+    }
+
+    /**
+     * The outline's zones, drawn in its own layer over the rows that are
+     * on screen -- the list clips what it scrolls away, and the hook
+     * measures boxes that clipping does not shrink.
+     */
+    buildOutlineZones() {
+        const outline = this.outline;
+        if (!outline.el.isConnected) {
+            return [];
+        }
+        const box = plain(outline.el.getBoundingClientRect());
+        const rows = [];
+        for (const el of outline.rows()) {
+            const rect = plain(el.getBoundingClientRect());
+            if (rect.top + rect.height <= box.top || rect.top >= box.top + box.height) {
+                continue;
+            }
+            rows.push({
+                token: el.dataset.token,
+                depth: Number(el.dataset.depth) || 0,
+                rect,
+                collapsed: el.classList.contains("o_studio_outline_collapsed"),
+            });
+        }
+        const { zones, containers } = outlineZones({
+            nodes: this.nodes,
+            tag: this.tag,
+            moving: this.moving,
+            rows,
+            indentOf: outline.indentOf,
+            box,
+        });
+        const els = outline.layer.setZones(zones, containers);
+        els.forEach((el, index) => this.zoneOf.set(el, zones[index]));
+        return els;
     }
 
     /**
@@ -435,6 +527,10 @@ export class CanvasDrag {
             this.rebuildFrame = null;
             if (this.dragging) {
                 this.buildZones();
+                // What is under a still pointer may have changed -- a row
+                // unfolded, the list scrolled -- and only a pointer event
+                // has the hook look again.
+                this.nudge();
             }
         });
     }
@@ -445,8 +541,69 @@ export class CanvasDrag {
             return;
         }
         this.watchTab(x, y);
+        this.watchRow(x, y);
         this.watchCard(x, y);
         this.watchEdge();
+    }
+
+    /**
+     * The pointer resting on a folded row of the outline for
+     * `TAB_DWELL_MS` unfolds it, as resting on a tab switches to it: what
+     * is inside becomes a place to drop. The row is itself a zone -- into
+     * it -- so the chip keeps saying so; the unfold re-renders the list,
+     * and the zones follow.
+     */
+    watchRow(x, y) {
+        if (!this.outline) {
+            return;
+        }
+        const row = this.rowAt({ x, y });
+        const token = row && row.dataset.token;
+        const folds = Boolean(
+            token &&
+                row.classList.contains("o_studio_outline_collapsed") &&
+                this.outline.isCollapsed(token)
+        );
+        if (!folds) {
+            this.clearRowDwell();
+            return;
+        }
+        if (this.rowDwell && this.rowDwell.token === token) {
+            return;
+        }
+        this.clearRowDwell();
+        this.rowDwell = {
+            token,
+            timer: window.setTimeout(() => {
+                this.rowDwell = null;
+                const still = this.rowAt(this.pointer);
+                if (this.dragging && still && still.dataset.token === token) {
+                    this.outline.expand(token);
+                    this.onCanvasChanged();
+                }
+            }, TAB_DWELL_MS),
+        };
+    }
+
+    /** The outline row under a viewport point, or `null`. */
+    rowAt(point) {
+        if (!this.outline || !this.outline.el.isConnected) {
+            return null;
+        }
+        if (!contains(plain(this.outline.el.getBoundingClientRect()), point)) {
+            return null;
+        }
+        return (
+            this.outline.rows().find((row) => contains(plain(row.getBoundingClientRect()), point)) ||
+            null
+        );
+    }
+
+    clearRowDwell() {
+        if (this.rowDwell) {
+            window.clearTimeout(this.rowDwell.timer);
+            this.rowDwell = null;
+        }
     }
 
     /**
@@ -466,28 +623,38 @@ export class CanvasDrag {
     }
 
     /**
-     * Scroll the canvas while the pointer is over it and near its top or
-     * bottom, and keep scrolling until it moves away: the zones travel
-     * with the content, so nothing has to be laid out again for it. What
-     * is under the pointer changes, though, and only a pointer event has
-     * the hook look again.
+     * Scroll the canvas -- or the outline's list -- while the pointer is
+     * over it and near its top or bottom, and keep scrolling until it
+     * moves away: the canvas's zones travel with its content, so nothing
+     * has to be laid out again for it, and the outline's are laid out
+     * again on its scroll. What is under the pointer changes either way,
+     * and only a pointer event has the hook look again.
      */
     watchEdge() {
-        const el = this.scrollEl;
-        const rect = el.getBoundingClientRect();
         const { x, y } = this.pointer;
+        const candidates = [this.scrollEl, this.outline && this.outline.el].filter(Boolean);
+        let el = this.edgeEl && candidates.includes(this.edgeEl) ? this.edgeEl : null;
         let step = 0;
-        if (x >= rect.left && x <= rect.right) {
+        for (const candidate of el ? [el] : candidates) {
+            const rect = candidate.getBoundingClientRect();
+            if (x < rect.left || x > rect.right) {
+                continue;
+            }
             if (y >= rect.top && y < rect.top + EDGE) {
                 step = -EDGE_SPEED * (1 - (y - rect.top) / EDGE);
             } else if (y <= rect.bottom && y > rect.bottom - EDGE) {
                 step = EDGE_SPEED * (1 - (rect.bottom - y) / EDGE);
             }
+            if (step) {
+                el = candidate;
+                break;
+            }
         }
-        if (!step) {
+        if (!step || !el) {
             this.stopEdge();
             return;
         }
+        this.edgeEl = el;
         if (this.edgeFrame) {
             return;
         }
@@ -518,6 +685,7 @@ export class CanvasDrag {
     }
 
     stopEdge() {
+        this.edgeEl = null;
         if (this.edgeFrame) {
             window.cancelAnimationFrame(this.edgeFrame);
             this.edgeFrame = null;
@@ -612,7 +780,11 @@ export class CanvasDrag {
         const payload = this.payload;
         this.teardown();
         if (zone && payload) {
-            this.pointAt({ x, y });
+            if (zone.layer !== "outline") {
+                // A point in the sidebar says nothing about which card the
+                // frame should be drawn in.
+                this.pointAt({ x, y });
+            }
             this.drop(zone, payload);
         }
     }
@@ -647,10 +819,20 @@ export class CanvasDrag {
         const wasDragging = this.dragging;
         this.dragging = false;
         this.clearDwell();
+        this.clearRowDwell();
         this.stopEdge();
         if (this.observer) {
             this.observer.disconnect();
             this.observer = null;
+        }
+        if (this.outlineObserver) {
+            this.outlineObserver.disconnect();
+            this.outlineObserver = null;
+        }
+        if (this.outline) {
+            this.outline.el.removeEventListener("scroll", this.onOutlineScroll);
+            this.outline.layer.clearZones();
+            this.outline = null;
         }
         if (this.rebuildFrame) {
             window.cancelAnimationFrame(this.rebuildFrame);
@@ -689,10 +871,16 @@ export class CanvasDrag {
     }
 }
 
-/** Whether two zone descriptors name the same place, across a rebuild. */
+/**
+ * Whether two zone descriptors name the same place, across a rebuild --
+ * in the same layer: the canvas and the outline both offer "after City
+ * in the group", and a zone the outline held is found again in the
+ * outline, not under the pointer's old spot on the canvas.
+ */
 function samePlace(a, b) {
     return (
         Boolean(a && b) &&
+        (a.layer || "canvas") === (b.layer || "canvas") &&
         a.container === b.container &&
         a.token === b.token &&
         a.position === b.position

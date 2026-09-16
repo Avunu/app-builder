@@ -34,6 +34,7 @@ import { useService } from "@web/core/utils/hooks";
 import { optionsFor, visibleRows, writeValue } from "../options";
 import { iconForType } from "../pending_widget";
 import { useFieldEditor } from "./field_editor_fallback";
+import { removeWithConfirm } from "./remove_flow";
 
 /**
  * The rows a manual field's definition can offer, in this order; which
@@ -203,14 +204,7 @@ export class PropertiesTab extends Component {
         if (!label || !this.token) {
             return;
         }
-        const shown = ev.target.checked;
-        if (label.in_group) {
-            await this.model.setAttributes(this.token, { nolabel: shown ? null : "1" });
-        } else if (shown) {
-            await this.model.showLabel(this.token);
-        } else if (label.token) {
-            await this.model.hideLabel(label.token);
-        }
+        await this.model.setLabelShown(this.token, ev.target.checked);
     }
 
     /** The editable rows of a manual field's definition, with their values. */
@@ -587,16 +581,6 @@ export class PropertiesTab extends Component {
         if (!this.token) {
             return;
         }
-        const token = this.token;
-        const result = await this.model.remove(token, false);
-        if (result && result.confirm) {
-            this.dialog.add(ConfirmationDialog, {
-                title: _t("Remove from view"),
-                body: result.confirm,
-                confirmLabel: _t("Remove"),
-                confirm: () => this.model.remove(token, true),
-                cancel: () => {},
-            });
-        }
+        await removeWithConfirm({ model: this.model, dialog: this.dialog, token: this.token });
     }
 }
