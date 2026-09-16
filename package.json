@@ -1,0 +1,22 @@
+{
+  "name": "odoo-studio-typecheck",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Type-checking and TS->JS build tooling for the console. Not published; not part of the addons' runtime.",
+  "scripts": {
+    "build": "node scripts/build_ts.mjs",
+    "build:watch": "node scripts/build_ts.mjs --watch",
+    "typecheck": "node scripts/typecheck.mjs",
+    "lint": "eslint '**/*.ts'",
+    "format": "prettier --check '**/*.ts'"
+  },
+  "devDependencies": {
+    "@odoo/owl": "2.8.3",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.15.0",
+    "prettier": "^3.3.3",
+    "pyright": "^1.1.389",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.15.0"
+  }
+}

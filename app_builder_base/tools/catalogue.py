@@ -1,5 +1,6 @@
 # Copyright 2026 Avunu LLC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
+# pyright: strict
 """One vocabulary for "what can be configured", shared by both builders.
 
 Field types were declared here in Python (``modelspec.FIELD_TYPES``) while
@@ -24,14 +25,52 @@ breaking anything.
 
 ``types`` below is transcribed from core's own ``supportedTypes`` declarations
 and is the fallback for a client that cannot ask -- not the authority.
+
+Every ``to_json`` below is a wire type: the shape a ``TypedDict`` here
+promises is the shape the console's TypeScript actually receives. Until the
+generator in TYPING.md's Phase 2d exists to check the two stay matched,
+that is a promise this file keeps by hand -- change one side, change the
+other in the same commit.
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as dc_field
+from typing import TYPE_CHECKING, TypeAlias, TypedDict, TypeVar
+
+if TYPE_CHECKING:
+    # Only for the annotation below -- real callers (`view_options.py`
+    # throughout) build every `Row`/`Section`/`Widget`/`OptionGroup` label
+    # from `_lt(...)`, never a plain `str`, which is exactly why `identity`
+    # cannot resolve one: no environment is in scope to pick a language.
+    # This file stays free of a *runtime* `odoo` import (module docstring);
+    # `TYPE_CHECKING` is erased before Python ever executes it.
+    from odoo.tools.translate import LazyGettext
+
+_T = TypeVar("_T")
+
+#: A label as this file's own dataclasses carry it, before ``to_json``
+#: resolves it: a plain string, or a lazy translation waiting for a
+#: language.
+Label: TypeAlias = "str | LazyGettext"
+
+#: What every ``to_json`` takes to resolve a label: ``env._`` in practice.
+#: Every real caller passes one explicitly (``studio_record_surface.py``,
+#: ``studio_view_editor.py``); nothing in this file's own tree calls
+#: ``to_json``/``catalogue_json`` without one, which is what makes
+#: ``_default_translate`` below a safe default rather than a silent trap.
+Translator = Callable[[Label], str]
 
 
-def identity(value):
-    """The default resolver: leave the value exactly as declared.
+def identity(value: _T) -> _T:
+    """Leave the value exactly as declared. A general-purpose no-op, not a
+    ``Translator``: it hands a ``LazyGettext`` straight back rather than
+    resolving it, which is only sound where nothing passed to it is ever
+    lazy. ``view_options.py`` and ``modelspec.py`` still default to this
+    for the same reason ``to_json`` used to; annotating those files is
+    future work (TYPING.md, Phase 1b).
 
     Labels here are lazy translations, which resolve by inspecting the calling
     frame for a language (``translate.py:614``). A pure data module has no
@@ -40,6 +79,27 @@ def identity(value):
     knows which language was asked for -- which is the idiom ``LazyGettext``'s
     own docstring recommends.
     """
+    return value
+
+
+def _default_translate(value: Label) -> str:
+    """The ``to_json``/``catalogue_json`` default: correct exactly when
+    every label reaching it is already a plain ``str`` (a catalogue built
+    entirely from string literals, e.g. in a test).
+
+    Unlike ``identity``, this does not hand an unresolved ``LazyGettext``
+    back for a ``TypedDict`` typed ``str`` to carry silently into a JSON
+    payload that would fail to serialise several layers away from here.
+    Every real call site already passes a resolving ``translate=env._``
+    (see ``Translator``'s docstring); reaching this branch with a lazy
+    label means one does not, which is the bug this raises instead of
+    hiding.
+    """
+    if not isinstance(value, str):
+        raise TypeError(
+            f"catalogue: no translator was given and this label is "
+            f"unresolved ({value!r}); pass translate=env._"
+        )
     return value
 
 
@@ -54,6 +114,34 @@ ATTRIBUTE = "attribute"
 OPTION = "option"
 
 
+class RowJSON(TypedDict):
+    """What ``Row.to_json`` sends: a plain dict, since dataclass field order
+    is not JSON's to keep, but every key below is one of ``Row``'s own.
+    A pair travels as a two-element JSON array; ``tuple[...]`` names that
+    fixed shape on the Python side, the same way a hand-written ``.d.ts``
+    would name it a 2-tuple rather than an open-ended array."""
+
+    name: str
+    label: str
+    type: str
+    target: str
+    help: str
+    invert: bool
+    choices: list[tuple[str, str]]
+    source: str
+    field_types: list[str]
+    only_for: list[str]
+    placeholder_from: str
+    allow_empty: bool
+    empty_label: str
+    comodel: str
+    comodel_domain: str
+    selection_from: str
+    visible_when: list[tuple[str, list[str]]]
+    required: bool
+    language: str
+
+
 @dataclass(frozen=True, slots=True)
 class Row:
     """One editable line in the properties panel.
@@ -64,19 +152,19 @@ class Row:
     """
 
     name: str
-    label: str
+    label: Label
     # A renderer the client supplies. For an arch node: text | toggle |
     # select | groups | condition | field. A record pane adds textarea |
     # integer | domain | field_path | fields | code | many2one | many2many |
     # selection | readonly, each still nothing but data about the value.
     type: str = "text"
     target: str = ATTRIBUTE
-    help: str = ""
+    help: Label = ""
     # A toggle whose attribute exists to switch something *off*: create="0"
     # means "no creating", so the checkbox reads the other way round and an
     # absent attribute means allowed.
     invert: bool = False
-    choices: tuple[tuple[str, str], ...] = ()
+    choices: tuple[tuple[str, Label], ...] = ()
     # Choices the client computes: "widgets" from the registry, "fields" from
     # the model, "groups" from res.groups.
     source: str = ""
@@ -86,7 +174,7 @@ class Row:
     only_for: tuple[str, ...] = ()
     placeholder_from: str = ""
     allow_empty: bool = True
-    empty_label: str = ""
+    empty_label: Label = ""
     # -- record panes ----------------------------------------------------
     # many2one / many2many: the model to pick from, and a domain string in
     # which "{model}" and "{model_id}" stand for the subject model.
@@ -101,7 +189,7 @@ class Row:
     # For type="code": the editor's language.
     language: str = ""
 
-    def to_json(self, translate=identity):
+    def to_json(self, translate: Translator = _default_translate) -> RowJSON:
         # Built by hand rather than with `asdict`, which deep-copies every
         # value: a lazy translation is not an ordinary object -- its `__eq__`
         # raises on purpose -- and there is no reason to copy it when it is
@@ -113,7 +201,7 @@ class Row:
             "target": self.target,
             "help": translate(self.help) if self.help else "",
             "invert": self.invert,
-            "choices": [[value, translate(label)] for value, label in self.choices],
+            "choices": [(value, translate(label)) for value, label in self.choices],
             "source": self.source,
             "field_types": list(self.field_types),
             "only_for": list(self.only_for),
@@ -123,10 +211,19 @@ class Row:
             "comodel": self.comodel,
             "comodel_domain": self.comodel_domain,
             "selection_from": self.selection_from,
-            "visible_when": [[row, list(values)] for row, values in self.visible_when],
+            "visible_when": [(row, list(values)) for row, values in self.visible_when],
             "required": self.required,
             "language": self.language,
         }
+
+
+class SectionJSON(TypedDict):
+    """What ``Section.to_json`` sends."""
+
+    id: str
+    title: str
+    rows: list[RowJSON]
+    visible_when: list[tuple[str, list[str]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,17 +236,26 @@ class Section:
     """
 
     id: str
-    title: str
+    title: Label
     rows: tuple[Row, ...] = dc_field(default_factory=tuple)
     visible_when: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
-    def to_json(self, translate=identity):
+    def to_json(self, translate: Translator = _default_translate) -> SectionJSON:
         return {
             "id": self.id,
             "title": translate(self.title),
             "rows": [row.to_json(translate) for row in self.rows],
-            "visible_when": [[row, list(values)] for row, values in self.visible_when],
+            "visible_when": [(row, list(values)) for row, values in self.visible_when],
         }
+
+
+class WidgetJSON(TypedDict):
+    """What ``Widget.to_json`` sends."""
+
+    value: str
+    label: str
+    types: list[str]
+    rows: list[RowJSON]
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,11 +263,11 @@ class Widget:
     """A widget offered for a field, and whatever configures it."""
 
     value: str
-    label: str
+    label: Label
     types: tuple[str, ...]
     rows: tuple[Row, ...] = ()
 
-    def to_json(self, translate=identity):
+    def to_json(self, translate: Translator = _default_translate) -> WidgetJSON:
         return {
             "value": self.value,
             "label": translate(self.label),
@@ -170,17 +276,27 @@ class Widget:
         }
 
 
+class OptionGroupJSON(TypedDict):
+    """What ``OptionGroup.to_json`` sends."""
+
+    id: str
+    title: str
+    view_types: list[str]
+    kinds: list[str]
+    rows: list[RowJSON]
+
+
 @dataclass(frozen=True, slots=True)
 class OptionGroup:
     """The rows shown for one kind of selection in one kind of view."""
 
     id: str
-    title: str
+    title: Label
     view_types: tuple[str, ...]
     kinds: tuple[str, ...]
     rows: tuple[Row, ...] = dc_field(default_factory=tuple)
 
-    def to_json(self, translate=identity):
+    def to_json(self, translate: Translator = _default_translate) -> OptionGroupJSON:
         return {
             "id": self.id,
             "title": translate(self.title),
@@ -344,7 +460,7 @@ RELATIONAL_ROWS = (
 )
 
 
-def widgets_for(ttype):
+def widgets_for(ttype: str) -> tuple[Widget, ...]:
     """Every curated widget that core says applies to ``ttype``.
 
     Advisory: the client intersects this with the live registry, because a
@@ -354,16 +470,24 @@ def widgets_for(ttype):
     return tuple(entry for entry in WIDGETS if ttype in entry.types)
 
 
-def widget_rows(widget):
+def widget_rows(widget: str) -> tuple[Row, ...]:
     """The extra rows a chosen widget brings with it."""
     entry = WIDGETS_BY_VALUE.get(widget)
     return entry.rows if entry else ()
 
 
-def catalogue_json(translate=identity):
+class CatalogueJSON(TypedDict):
+    """What ``catalogue_json`` sends: the whole vocabulary, one round trip."""
+
+    widgets: list[WidgetJSON]
+    image_sizes: list[tuple[str, str]]
+    relational_rows: list[RowJSON]
+
+
+def catalogue_json(translate: Translator = _default_translate) -> CatalogueJSON:
     """The whole vocabulary, for one round trip."""
     return {
         "widgets": [entry.to_json(translate) for entry in WIDGETS],
-        "image_sizes": [[value, translate(label)] for value, label in IMAGE_SIZES],
+        "image_sizes": [(value, translate(label)) for value, label in IMAGE_SIZES],
         "relational_rows": [row.to_json(translate) for row in RELATIONAL_ROWS],
     }

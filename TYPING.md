@@ -73,8 +73,9 @@ viable on Odoo 18 with zero change to the asset pipeline.
   Hook it into odoo-nix's `ideSetup` later, the same way it seeds
   `.vscode/settings.json`.
 - **Node deps**: `package.json` at the addon repo root with `typescript`,
-  `esbuild`, `@odoo/owl@2.8.4` (types only -- must match the vendored Owl),
-  `prettier`, `typescript-eslint`. `npm ci` in the shell hook.
+  `esbuild`, `pyright`, `@odoo/owl@2.8.3` (types only; see "Implemented so
+  far" for why not `2.8.4`), `prettier`, `typescript-eslint`. `npm ci` in
+  the shell hook (or just `npm install`, done for now).
 - **Transpiler guard test**: `app_builder_base/tests/test_assets.py` runs
   `transpile_javascript` over every `static/**/*.js` and fails on any
   surviving `^import|^export` line (catches the one known trap: esbuild
@@ -199,8 +200,33 @@ hoot `onRpc` mocks typed against the same map.
 
 - `export {};` from type-only modules -> `test_assets.py` (Phase 0).
   Type-only modules should be `.d.ts` anyway (`wire.d.ts`).
-- `@odoo/owl` npm version must track the vendored `owl.js` (`2.8.4` now);
-  pin exactly and note it in `FORWARD_COMPAT.md`.
+- `@odoo/owl`'s npm version trails the vendored `owl.js`, which OCB
+  patches ahead of the npm tag (`2.8.4` in the vendored file, `2.8.3` the
+  latest ever published) -- pin the npm package to whatever is actually
+  published, not what the vendored file's own `version` constant says,
+  and expect the two to disagree. Re-check both when bumping OCB series.
+- Two of Odoo's own core files opt into per-file checking with a
+  `//@ts-check` pragma (`model/relational_model/{relational_model,
+  dynamic_group_list}.js`, as of this OCB checkout), which **overrides**
+  the project's `checkJs: false` for that file alone -- a documented but
+  easy-to-forget TS behavior. Anything that imports `@web/views/view`
+  (nearly everything here) pulls these in transitively via `allowJs`, so
+  `tsc --noEmit` reports their pre-existing errors as if they were ours.
+  `scripts/typecheck.mjs` groups tsc's output into diagnostic blocks and
+  drops every block whose file path leaves this repo (always via a `../`
+  path-alias hop) -- not a path allowlist, a "did tsc have to leave this
+  repo to find it" test. Re-run `npm run typecheck` after any OCB bump to
+  confirm the split still holds; a new `//@ts-check` file inside a path
+  this repo *does* own would need a different fix.
+- Odoo's own ambient `@types/*.d.ts` files are not all safe to bulk
+  `include`: `services.d.ts` and most of `@types/registries/*.d.ts` exist
+  specifically to `import` real service/registry *implementation* modules
+  and take their type with `typeof` -- which pulls those real `.js` files
+  into the program too. `owl.d.ts`, `odoo.d.ts`, `hoot.d.ts`, `libs.d.ts`,
+  `qunit.d.ts`, `registry.d.ts` and
+  `registries/services_registry.d.ts` do not do this and are the ones
+  `tsconfig.json` includes; `useService`/`services` gets its own narrow,
+  hand-written facade instead (Phase 2c), never Odoo's auto-generated one.
 - Typed relational fields + circular imports: annotation syntax +
   `from __future__ import annotations`, never `fields.Many2one[Cls]` (that
   evaluates at import).
@@ -208,10 +234,109 @@ hoot `onRpc` mocks typed against the same map.
   `record.name` needs narrowing. That is the ORM's real contract; the
   `tools/` boundary should take `str`, not `str | False`, and models
   narrow before calling.
+- A dataclass field typed `str` that is actually built from `_lt(...)`
+  (`LazyGettext`) throughout its real call sites is not a hypothetical --
+  it is what `catalogue.py`'s `Row.label` etc. turned out to be (see
+  "Implemented so far"). Before trusting a plain-looking field type in
+  `tools/`, grep every constructor call, not just the file's own
+  defaults.
 - pyright over the merged 906-addon tree: keep `include` to the addon
   repo; the tree is `extraPaths` only, loaded on import.
 - OCA CI is py3.10 while the workspace is 3.11: run pyright with
   `pythonVersion = "3.10"` so 3.11-only syntax fails locally, not in CI.
+- The OCA CI container's addon layout (`oca_install_addons`) is not the
+  odoo-nix workspace layout `tsconfig.json`/`pyrightconfig.json`'s
+  relative paths assume -- see "CI: what still needs the OCA container's
+  real layout" above. Don't assume the `pre-commit.yml` `SKIP=` treatment
+  generalizes to `test.yml` without checking that container directly.
+
+## Implemented so far
+
+Phase 0 is done, with three corrections to the plan above that real tool
+output forced (each is also in "Known traps" below):
+
+- **No `scripts/typecheck_paths.py` generator.** The addon repo is always
+  checked out at `modules/odoo-studio` in an odoo-nix workspace (README),
+  so `tsconfig.json`'s `paths` (`@web/*` -> `../../odoo/addons/web/static/src/*`,
+  etc.) and `pyrightconfig.json`'s `extraPaths`
+  (`../../.devenv/state/pythonpath`, odoo-nix's own merged tree) are just
+  committed, static, relative paths -- nothing to generate. The merged
+  tree is still needed on the Python side (OCA repos like `web` are
+  physically separate directories odoo-nix symlinks together), but not on
+  the TS side: every `@web`/`@html_editor`/`@web_tour` import resolves
+  under OCB's own single `odoo/addons/` tree.
+- **pyright installed via npm, not uv/pip.** `uv add --group dev pyright`
+  tries to resolve and build the *entire* workspace's dependency graph
+  (including `psycopg2` from source, which needs `pg_config` outside
+  Nix's own build environment) just to add one dev tool. The PyPI
+  `pyright` package is itself a thin wrapper around the same npm package,
+  so `package.json` (Phase 0's Node deps) lists `pyright` alongside
+  `typescript`/`esbuild` and none of that resolution ever happens.
+- **`@odoo/owl@2.8.3`, not `2.8.4`.** The vendored `web/static/lib/owl/owl.js`
+  reports version `2.8.4`, but that has never been published to npm
+  (latest is `2.8.3`); OCB ships a patched build ahead of the npm tag.
+  `2.8.3` is the closest real package and ships the exact
+  `dist/types/owl.d.ts` that `web/static/src/@types/owl.d.ts` re-exports,
+  so it is the correct pin despite the version not matching exactly --
+  noted for whoever next bumps it expecting a clean match.
+
+Landed: `package.json`, `tsconfig.json`, `pyrightconfig.json`,
+`scripts/typecheck.mjs` (tsc, filtered), `scripts/build_ts.mjs` (esbuild
+emit, drift-checking), `.gitattributes` (per converted file),
+`app_builder_base/tests/test_assets.py` (the transpiler guard), local
+pre-commit hooks + `SKIP=` in `pre-commit.yml`.
+
+First real conversions, both verified against the actual tools rather
+than reasoned about:
+
+- **Python (1b):** `app_builder_base/tools/catalogue.py` is `# pyright:
+  strict` clean, with `TypedDict`s for every `to_json()` (`RowJSON`,
+  `SectionJSON`, `WidgetJSON`, `OptionGroupJSON`, `CatalogueJSON`) -- the
+  first real wire types. Annotating it surfaced a genuine latent gap, not
+  just a missing annotation: `Row.label`/`help`/`Section.title`/etc. were
+  typed (informally, by every literal in the file) as plain `str`, but
+  every real caller (`app_builder_view/tools/view_options.py`, extensively)
+  builds them from `_lt(...)` (`LazyGettext`), and the default
+  `translate=identity` handed one straight through into a dict a
+  `TypedDict` promises is `str` -- a value that would fail to
+  JSON-serialize, several call frames away from here. Fixed by widening
+  the fields to a `Label = str | LazyGettext` alias (imported only under
+  `TYPE_CHECKING`, so the module keeps its own "free of any `odoo`
+  import" guarantee) and replacing the default with `_default_translate`,
+  which raises immediately naming the unresolved label instead of
+  passing it on. No real call site was relying on the old silent
+  behavior (every one already passes `translate=env._`); confirmed by
+  grepping every `.to_json(`/`catalogue_json(` call site before making
+  the change.
+- **TypeScript (2b, cluster 1, partial):** `compat.ts`, `identity.ts`,
+  `geometry.ts` converted (leaf-first, as planned), plus a new
+  `types.ts` for the node-table shapes (`StudioNode`, `NodeTable`,
+  `PlainRect`, `BoxRect`, `Point`, `Token`) they all share --
+  transcribed from `canvas_stamp.py`'s actual construction of a node,
+  not guessed from usage. `noUncheckedIndexedAccess`,
+  `exactOptionalPropertyTypes` and the rest of `strict` are on and
+  clean for all three. Remaining leaves in cluster 1 (`options`,
+  `zones`, `outline_zones`, `outline_tree`, `canvas_views`, and their
+  `.test.js` files) are still JS.
+
+## CI: what still needs the OCA container's real layout
+
+Phase 3 planned a `typecheck` job in `test.yml`'s OCB container, alongside
+`pyright`/`tsc-typecheck`/`build-ts` skipped in `pre-commit.yml`'s plain
+checkout job. The `pre-commit.yml` half is done. The `test.yml` half is
+**not**: that job's `ghcr.io/oca/oca-ci/py3.10-*` containers resolve
+addons with `oca_install_addons`, a layout this was not able to inspect
+from here, and it is very unlikely to match the odoo-nix workspace's
+`modules/odoo-studio` + sibling `odoo/` submodule that
+`tsconfig.json`/`pyrightconfig.json`'s relative paths assume. Adding that
+job means first finding out where `oca_install_addons` actually puts OCB
+and this repo relative to each other in that container, then pointing a
+second, CI-specific tsconfig/pyrightconfig at it (or generating one --
+this may be where a small path-resolution script earns its keep after
+all, scoped to CI rather than the dev shell). Filed here rather than
+guessed at, since a wrong path config that happens to not error (e.g.
+resolving nothing and reporting zero diagnostics) would be worse than no
+job at all.
 
 ## Order of work and rough size
 

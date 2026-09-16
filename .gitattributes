@@ -1,0 +1,15 @@
+# The console's .js is emitted from .ts by esbuild (scripts/build_ts.mjs,
+# TYPING.md) and committed so the addon installs with no node toolchain.
+# It is real, reviewable output -- not minified, not bundled -- but the
+# .ts next to it is what changes hands-on; mark it for tools that care
+# (diff collapsing, blame, GitHub's language stats).
+#
+# Named per file, not by a directory glob: most of `console/` is still
+# hand-authored .js (TYPING.md Phase 2b converts it leaf-first), and
+# marking an entire directory generated before it actually is would be
+# false for every file not yet converted. Add a line here in the same PR
+# that converts a file's .ts, drop it if a file is ever converted back.
+app_builder_view/static/src/console/compat.js linguist-generated
+app_builder_view/static/src/console/geometry.js linguist-generated
+app_builder_view/static/src/console/identity.js linguist-generated
+app_builder_view/static/src/console/types.js linguist-generated

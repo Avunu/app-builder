@@ -86,3 +86,9 @@ docs/_build/
 
 # OCA rules
 !static/lib/
+
+# TypeScript/typecheck tooling (TYPING.md): installed locally with npm,
+# not vendored via Nix/uv -- pyright and esbuild's own npm packages are the
+# upstream distribution, not a Python rebuild of the whole workspace.
+# package-lock.json IS committed, same as uv.lock, for a reproducible install.
+/node_modules

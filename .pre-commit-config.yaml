@@ -63,3 +63,32 @@ repos:
       - id: ruff-check
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
+
+  # TYPING.md. Local, not a hosted repo: each needs this workspace's own
+  # .venv (pyright) or node_modules (tsc/esbuild), neither of which the
+  # plain `pre-commit run --all-files` job in pre-commit.yml has -- that
+  # job SKIPs all three by name; test.yml's `typecheck` job is where they
+  # actually run, inside the OCB container that has both. The transpiler
+  # guard (`app_builder_base/tests/test_assets.py`) needs a real Odoo
+  # checkout, not just node, so it runs only as part of the Python suite
+  # (README's `--test-tags`), not here.
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: npx pyright
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: tsc-typecheck
+        name: tsc --noEmit (own sources only, see scripts/typecheck.mjs)
+        entry: node scripts/typecheck.mjs
+        language: system
+        files: \.ts$
+        pass_filenames: false
+      - id: build-ts
+        name: esbuild .ts -> .js (fails if the emitted .js is out of date)
+        entry: node scripts/build_ts.mjs
+        language: system
+        files: \.ts$
+        pass_filenames: false

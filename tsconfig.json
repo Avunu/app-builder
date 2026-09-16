@@ -1,0 +1,65 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom", "dom.iterable"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true,
+
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@odoo_studio_base/*": ["app_builder_base/static/src/*"],
+      "@app_builder_model/*": ["app_builder_model/static/src/*"],
+      "@app_builder_view/*": ["app_builder_view/static/src/*"],
+      "@app_builder_ui/*": ["app_builder_ui/static/src/*"],
+      "@app_builder_report/*": ["app_builder_report/static/src/*"],
+      "@app_builder_approval/*": ["app_builder_approval/static/src/*"],
+      "@web/*": ["../../odoo/addons/web/static/src/*"],
+      "@html_editor/*": ["../../odoo/addons/html_editor/static/src/*"],
+      "@web_tour/*": ["../../odoo/addons/web_tour/static/src/*"],
+      "@mail/*": ["../../odoo/addons/mail/static/src/*"]
+    }
+  },
+  // Relative to the addon repo (this file's directory), which is always
+  // checked out at `modules/odoo-studio` in an odoo-nix workspace — see
+  // TYPING.md. No path-generation step needed: OCB's `addons/*/static/src`
+  // layout and this repo's own position are both fixed by that convention.
+  "include": [
+    "*/static/src/**/*",
+    "*/static/tests/**/*",
+    // Only the ambient .d.ts files that declare pure types (@odoo/owl,
+    // @odoo/hoot*, the global `odoo` loader var, third-party libs). Odoo's
+    // `services.d.ts` and most of `@types/registries/*.d.ts` instead
+    // *import concrete service/registry implementation modules* to derive
+    // their types (`import { commandService } from "@web/core/commands/..."`),
+    // which pulls those real .js files into the program -- and a few of
+    // them opt into per-file checking with `//@ts-check`, which overrides
+    // our `checkJs: false` and surfaces pre-existing errors in vendored
+    // code we do not own and cannot fix here. `services`/`useService` gets
+    // its own narrow, hand-written ambient module in console/odoo.ts
+    // instead (Phase 2c) -- see TYPING.md.
+    "../../odoo/addons/web/static/src/@types/owl.d.ts",
+    "../../odoo/addons/web/static/src/@types/odoo.d.ts",
+    "../../odoo/addons/web/static/src/@types/hoot.d.ts",
+    "../../odoo/addons/web/static/src/@types/libs.d.ts",
+    "../../odoo/addons/web/static/src/@types/qunit.d.ts",
+    "../../odoo/addons/web/static/src/@types/registry.d.ts",
+    "../../odoo/addons/web/static/src/@types/registries/services_registry.d.ts"
+  ],
+  "exclude": ["node_modules", "**/static/lib/**", "**/static/description/**"]
+}
