@@ -1,7 +1,10 @@
 /** @odoo-module **/
 /**
  * The shapes the canvas payload and node table carry, shared by every
- * console module that reads them.
+ * console module that reads them. Not just the canvas: `PaneContext`
+ * needs `PackageEntryJSON` for its own `package` field, hence the one
+ * import from `wire.ts` below -- the two files' concerns overlap exactly
+ * there and nowhere else.
  *
  * Transcribed from the server's own construction of a node
  * (`app_builder_view/tools/canvas_stamp.py:stamp`, `KIND_BY_TAG`,
@@ -18,6 +21,8 @@
  * generator exists, a change to the node shape there must be mirrored
  * here by hand.
  */
+
+import type { PackageEntryJSON } from "./wire";
 
 /** A node's role in the arch. One tag can be several kinds (`div` is
  * `label`, `button_box` or `html`); `_kind()` is the single source. */
@@ -329,4 +334,126 @@ export interface OutlineZoneRow {
      * reads it (a caller has already left a collapsed row's children out
      * of `rows` by the time it gets here). */
     collapsed?: boolean;
+}
+
+// -- errors ---------------------------------------------------------------
+
+/**
+ * What an Odoo RPC error carries that the console reads, across every
+ * file that catches one: `data.name` (`compat.ts:isStaleError`, the
+ * exception's Python class name), `data.context.confirm_required`
+ * (`compat.ts:isConfirmError`), and `data.message`/`message`
+ * (`shell/draft_model.ts:messageOf`, the sentence to show). Real errors
+ * carry plenty else (a traceback, an arguments list); this names only
+ * what the console itself ever reads off one.
+ */
+export interface OdooRpcError {
+    message?: string;
+    data?: {
+        name?: string;
+        message?: string;
+        context?: { confirm_required?: boolean };
+    };
+}
+
+// -- panes ------------------------------------------------------------------
+//
+// `shell/pane_registry.js`'s own module docstring names this shape
+// (`label, icon, sequence... scope... a custom pane: Component, sidebar,
+// makeModel(shell)...`); transcribed from there and from
+// `shell_model.ts`'s own reads, not yet from `pane_registry.ts` itself
+// (still JS -- outside this migration's leaf-first cluster 2).
+
+/** What a pane needs in hand to decide it can be shown
+ * (`pane_registry.js:paneAvailable`, `shell_model.ts:paneContext`). */
+export interface PaneContext {
+    packageId: number | false;
+    package: PackageEntryJSON | null;
+    modelName: string;
+    view: { view_id: number | false; view_type: string | false; res_id: number | false };
+    pane: string;
+    inventory: unknown;
+    pythonOwned: boolean;
+}
+
+/**
+ * A registered pane, resolved (`pane_registry.js:resolvePane`). Every
+ * variant (`Component`, `surface`, `flow`) is folded into one loose
+ * shape here -- `shell_model.ts` only ever reads `key`/`scope`/`label`/
+ * `makeModel`/`isAvailable`/`tab`, never picks a variant apart itself,
+ * so the rest stays `unknown` through the index signature rather than
+ * modeled ahead of a real reader (Owl components and flow steps belong
+ * to files this migration has not reached yet).
+ */
+export interface PaneEntry {
+    key: string;
+    label: string;
+    icon?: string;
+    sequence?: number;
+    scope?: "package" | "model" | "view";
+    isAvailable?: (ctx: PaneContext) => boolean;
+    /** `false` for a pane the top bar does not list (a flow). */
+    tab?: false;
+    /** `(shell) => new SomeModel(...)` at every real registration
+     * (`record_pane.js`, `views_pane.js`, `home_pane.js`,
+     * `changes_pane.js`, `flow.js`) -- never null, so this is not typed
+     * as one. `shell` is deliberately `unknown` here rather than a
+     * `StudioShell` this file would have to import -- `shell_model.ts`
+     * is the only caller, and it already knows what it is passing. */
+    makeModel?: (shell: unknown) => PaneModel;
+    [key: string]: unknown;
+}
+
+// -- services -----------------------------------------------------------
+//
+// Narrow facades for the two `env.services` every plain (Owl-free) model
+// class in `console/` is handed (`DraftModel`, `StudioShell`, and every
+// pane model besides). Each names only what these files actually call;
+// the real services (`@web/core/orm_service`, `@web/core/notifications/
+// notification_service`) take a context, extra kwargs, more notification
+// options. A single narrow facade module (TYPING.md Phase 2c,
+// `console/odoo.ts`) is where these belong once one exists.
+
+export interface OrmService {
+    call<T = unknown>(
+        model: string,
+        method: string,
+        args?: unknown[],
+        kwargs?: Record<string, unknown>,
+    ): Promise<T>;
+}
+
+export interface NotificationService {
+    add(message: string, options?: { type?: string; sticky?: boolean }): void;
+}
+
+/** What the status pill reads (`shell_model.ts`'s `NEUTRAL_ACTIVITY`
+ * names every key and its neutral value). */
+export interface PaneActivity {
+    busy: boolean;
+    status: string;
+    error: string;
+    drag: unknown;
+    applying: boolean;
+}
+
+/**
+ * The contract every pane's own model is expected to answer to, traced
+ * from every `this.activeModel.xxx`/`model.xxx` `shell_model.ts` reads or
+ * sets. `console_model.ts`'s `ConsoleModel` (the Views pane) and
+ * `record_pane_model.ts`'s `RecordPaneModel` are each expected to satisfy
+ * this structurally once converted, not literally implement it -- there
+ * is no base class here, by the module's own "No Owl... plain so it can
+ * be tested and ported" rule.
+ */
+export interface PaneModel {
+    /** Set by the shell itself after the first `open()`; read before
+     * deciding whether to `open()` or `reactivate()`. */
+    opened: boolean;
+    open(target: unknown): void | Promise<void>;
+    reactivate?(): void | Promise<void>;
+    activity?: PaneActivity;
+    history?: unknown;
+    afterApply?(): void | Promise<void>;
+    refresh?(): void | Promise<void>;
 }

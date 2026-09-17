@@ -534,6 +534,75 @@ than reasoned about:
     to the Node-20 `fs.globSync` trap already on this list, just the
     same file catching a second, independent bug.
 
+- **TypeScript (2b, cluster 2: three of four done).**
+  `shell/draft_model.ts`, `shell/shell_model.ts`,
+  `record_pane/record_pane_model.ts` -- converted in their real
+  dependency order (`grep -n "^import"` on all four cluster-2 files
+  first: `draft_model.js` has no cluster-2 deps, `shell_model.js`
+  imports `draft_model` + `pane_registry`, `record_pane_model.js`
+  imports `compat` + `shell_model`'s `draft_model`; `console_model.js`,
+  the fourth and largest at 1634 lines, is not yet started). Each is
+  `noUncheckedIndexedAccess`-clean and transpile-equivalence-checked
+  against its pre-conversion original the same way as cluster 1.
+
+  Unlike cluster 1's node/zone vocabulary, this cluster's wire types are
+  server RPC payloads, so `wire.ts` grew a new block traced straight to
+  their Python construction rather than to client usage --
+  `studio_model_draft.py`'s `load`/`_own_changes`/`pending_changes`,
+  `modelspec.py`'s `FieldSpec`/`SelectionSpec` dataclasses (`asdict()`,
+  so every field is always present, `None` becomes `null` rather than an
+  absent key), `studio_workspace.py`'s `_package_dict`/`_apply_dict`/
+  `user_prefs`, and `studio_record_surface.py`'s `catalogue`/`rows`/
+  `describe` (plus `studio_automation_surface.py`'s `_describe_extra`
+  override for the recursive `children` shape). `DraftPayload.spec`/
+  `view`/`anchors` are deliberately left `unknown` -- nothing converted
+  so far reads them; narrow when a real reader appears, per this
+  migration's own rule against typing ahead of a consumer.
+
+  `types.ts` also grew this cluster's shared vocabulary: `PaneEntry`/
+  `PaneModel`/`PaneActivity`/`PaneContext` (the pane-registry contract
+  every pane implements, traced to `shell/pane_registry.js`'s own
+  docstring, not converted itself this turn), `OrmService`/
+  `NotificationService` (promoted out of `draft_model.ts`'s first-draft
+  local interfaces once `shell_model.ts` needed the same ones), and
+  `OdooRpcError` (promoted out of `compat.ts`'s previously-private copy,
+  which now imports it back). This is the first place `types.ts` imports
+  from `wire.ts` (`PackageEntryJSON`, for `PaneContext.package`) --
+  one-directional, and the module docstring now says so: the two files'
+  concerns overlap exactly there and nowhere else.
+
+  Two real fixes, not just missing annotations:
+
+  - `OrmService.call` was first typed with three parameters
+    (`model, method, args?`), matching every cluster-1-adjacent call
+    site seen so far. `record_pane_model.ts` calls it with a fourth,
+    `kwargs` (`this.orm.call(this.surface, "rows", [...], {...
+    this.surfaceArgs})`), which does not fit a three-parameter
+    signature. Checked against the real
+    `web/static/src/core/orm_service.js` rather than widening blind:
+    its actual signature is `call(model, method, args=[], kwargs={})`,
+    four parameters. Widened `OrmService.call<T>` to match, which also
+    retroactively validated every earlier three-argument call site (a
+    strict subset of the real signature, not a coincidence).
+  - `shell_model.ts`'s `paneModel()` first draft defensively
+    null-checked `entry.makeModel(this)`'s result, because
+    `PaneEntry.makeModel` was typed `(shell: unknown) => PaneModel |
+    null`. Checked against every real registration
+    (`grep -rn "makeModel:"` across `record_pane.js`, `views_pane.js`,
+    `home_pane.js`, `changes_pane.js`, `flow.js`): every one is
+    `(shell) => new SomeModel(...)`, never null -- an invariant the
+    original JS relied on directly, not a case it guarded. Tightened
+    `PaneEntry.makeModel` to drop `| null` and simplified `paneModel()`
+    back to the original's own structure instead of adding a
+    defensive branch the real code never had.
+
+  One behavior-neutral fix forced by strict mode rather than found by
+  it: `record_pane_model.ts`'s `moveChild` returned bare `undefined` on
+  one early-exit path and a `Promise` on another, which a non-`async`
+  function can't unify (`Type 'undefined' is not assignable to type
+  'Promise<unknown>'`). Added `async`, matching how every sibling method
+  (`_childMutate` etc.) is already declared.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was

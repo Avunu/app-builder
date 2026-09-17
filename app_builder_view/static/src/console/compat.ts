@@ -28,14 +28,8 @@
 
 import { rpcBus } from "@web/core/network/rpc";
 import { session } from "@web/session";
-import type { BoxRect } from "./types";
+import type { BoxRect, OdooRpcError } from "./types";
 
-/**
- * `session.server_version_info`, narrowly: element 0 (the major, sometimes
- * a `saas~xx` string per `odoo/release.py`) and element 1 (the minor),
- * both read by digits alone. The rest of `session` is untyped Odoo global
- * state this file has no business widening.
- */
 /** A digit-bearing primitive, the only shape a version part is ever
  * spelled as (a number, or a `saas~xx` string). Narrower than `unknown`
  * so `String(...)` on one is never the "[object Object]" `no-base-to-string`
@@ -43,6 +37,12 @@ import type { BoxRect } from "./types";
  * in `odoo/release.py`'s own version tuple is ever an object. */
 type VersionPart = string | number;
 
+/**
+ * `session.server_version_info`, narrowly: element 0 (the major, sometimes
+ * a `saas~xx` string per `odoo/release.py`) and element 1 (the minor),
+ * both read by digits alone. The rest of `session` is untyped Odoo global
+ * state this file has no business widening.
+ */
 interface VersionInfo {
     server_version_info?: readonly [VersionPart, VersionPart, ...VersionPart[]];
 }
@@ -229,15 +229,6 @@ export const TAB_SELECTOR = ".o_notebook .nav-link";
  * `f"{module}.{name}"` in all three (`odoo/http.py` 18:432-441, 19:469-478;
  * `odoo/http/dispatcher.py` master:78-91).
  */
-/** The shape of an RPC error's `data` this file reads, whatever else it
- * carries (the message, the traceback -- none of that is our business). */
-interface OdooRpcError {
-    data?: {
-        name?: string;
-        context?: { confirm_required?: boolean };
-    };
-}
-
 export function isStaleError(err: unknown): boolean {
     const name = (err as OdooRpcError | undefined)?.data?.name || "";
     return name.endsWith(".StudioStaleView");
