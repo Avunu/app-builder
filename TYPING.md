@@ -417,6 +417,123 @@ than reasoned about:
   package's types with an empty one. Dropped from `include`; `@odoo/owl`
   now resolves on its own, as it should.
 
+- **TypeScript (2b, cluster 1's tests: done).** The seven `.test.js`
+  hoot files exercising cluster 1's modules -- `compat`, `identity`,
+  `geometry`, `zones`, `outline_zones`, `outline_tree`, `canvas_views` --
+  are now `.test.ts`, strict-clean, with the same emitted-`.js`
+  transpile-equivalence check applied as every other file. Drafted by a
+  seven-agent Workflow fan-out (one file each, read-only, full context on
+  the already-converted source modules and this migration's own house
+  patterns), then applied and brought to a real, verified `tsc`-clean
+  state by hand -- the parallel step is genuinely embarrassingly
+  parallel (each file only reads), but the *verification* step is not:
+  `scripts/typecheck.mjs` type-checks the whole project in one pass, so
+  seven agents each running it mid-edit on a shared tree would have
+  raced and misattributed each other's in-progress errors. Applying
+  centrally, once, after every draft landed, avoided that without
+  needing per-agent worktree isolation (whose own story is murky here
+  anyway -- this repo is a submodule, and isolation semantics for a
+  submodule nested under the outer workspace were not confirmed before
+  the draft step, so drafting was kept read-only specifically to sidestep
+  needing an answer).
+
+  The agents' own drafts were unusually well-instrumented: each ran its
+  own isolated `tsc` probes against hand-extracted fragments of the real
+  vendor sources to test a hypothesis before committing to it in its
+  draft, and flagged exactly where it could not verify something against
+  a real compiler (drafting was read-only, so none of them could run the
+  project's own `tsc`). That discipline paid off -- every one of their
+  flagged uncertainties turned out to be a real, reproducible issue once
+  checked for real, and none of their *confident* claims turned out
+  wrong. Fixed centrally, all recurring across multiple files:
+
+  - `mock_fields.js`'s `makeFieldGenerator` (`web/static/tests/
+    _framework/mock_server/mock_fields.js`) returns `{ [name](props)
+    {...} }[name]` -- a self-indexing extraction, named that way on
+    purpose so the function's own `.name` shows up right in a
+    stack trace. Because the property key is a non-literal `string`
+    variable, TS infers the *object's* type with an index signature, and
+    indexing it with another non-literal `string` (even one that happens
+    to equal a real key at runtime) reads as `T | undefined` under
+    `noUncheckedIndexedAccess` -- so every `fields.Char`/`fields.Integer`
+    a mock model's field initializers call is typed as possibly
+    undefined, even though the function always exists. `fields.Char!()`
+    at each call site, with one shared comment per file explaining why.
+  - `queryFirst` (`hoot-dom/helpers/dom.js`) has the same
+    JSDoc-vs-runtime-arity mismatch `Registry.get` already had:
+    `@param {QueryOptions} options` (no `[options]` brackets) makes tsc
+    treat a second argument as required, but the real function
+    destructures `arguments` itself and never branches on its length. A
+    local `const findFirst = queryFirst as (target: string) => Element |
+    null;` per file, not a passed-`undefined` workaround (confirmed by
+    testing it: `QueryOptions` itself does not accept `undefined`, so an
+    explicit `undefined` argument fails a plain type check even though
+    it is fine at runtime -- the cast is what actually works, and is
+    what `canvas_views.ts` already does for `Registry.get`).
+  - `Object.fromEntries(rows.map((row) => [row.token, row]))`-style
+    lookups (`outline_tree.test.ts`) resolve to the loose
+    `(Iterable<readonly any[]>) => any` overload unless the `.map`
+    callback's return is annotated as a real tuple. Typing it
+    (`(row): [Token, OutlineRow] => [row.token, row]`) moves
+    `Object.fromEntries` onto its real generic overload -- but that
+    still returns a plain `Record<string, OutlineRow>`, an index
+    signature, so ~19 `by.xxx.yyy` dot-accesses would each need bracket
+    notation and a `!`. Since the fixture's tokens are a known, fixed
+    set, naming them as a literal union (`type ByToken = "n0" | "n1" |
+    ...`) and casting the `Record` to `Record<ByToken, OutlineRow>`
+    turns every one into a real, always-present named property instead
+    -- the same reasoning `identity.test.ts`'s un-annotated `NODES`
+    already relies on for its own dot access, just asserted by hand here
+    since `Object.fromEntries`'s return type can't carry literal keys on
+    its own.
+  - `mockSendBeacon`'s callback must return `boolean`
+    (`Navigator["sendBeacon"]`'s real DOM signature) -- a test callback
+    that only calls `expect.step(...)` (returning `void`) needs an
+    explicit `return true;` (a mock "the beacon was queued" result,
+    matching what a real success looks like; nothing reads the value
+    besides the type checker).
+  - `@odoo/hoot-mock` has no ambient module declaration at all --
+    `hoot.d.ts` declares `@odoo/hoot` and `@odoo/hoot-dom` (each
+    re-exporting a real lib file) but not their sibling
+    `hoot/hoot-mock.js`, even though several tests import
+    `animationFrame`/`mockSendBeacon`/etc. from it. A vendored gap, not
+    fixable at the source; `app_builder_view/static/tests/hoot-mock.d.ts`
+    is the same one-line re-export pattern `hoot.d.ts` uses for its two
+    siblings, kept in our own tree, picked up by tsconfig's existing
+    `*/static/tests/**` include entry with no new include line needed
+    (ambient declarations are global to the program once loaded
+    anywhere in it).
+  - `identity.test.ts`'s first draft cast a *partial* node-table literal
+    (`{kind, name}` per entry) directly `as NodeTable` -- exactly the
+    `LabelStyle`-style shortcut this file's own "house patterns" section
+    warns test drafts away from, and it does not typecheck (`neither
+    type sufficiently overlaps with the other`): a raw `as` needs the
+    source and target to already resemble each other, which a two-field
+    literal and a fourteen-field interface do not, no matter how many of
+    those fields the code under test actually reads. Fixed the same way
+    `zones.test.ts`/`outline_tree.test.ts`'s siblings independently
+    arrived at: a `node()` builder function with inert defaults for
+    every `StudioNode` field the test never reads, called for each
+    table entry -- a *declared function return type* gets the more
+    lenient literal-assignability tsc uses for a `return` statement,
+    which is why the same shape works through a function but not as a
+    bare `as` on the object literal itself.
+  - One file (`outline_tree.test.ts`) was written directly to disk by
+    its drafting agent despite being told this was a read-only pass --
+    caught by `git status` before applying anything, and its content
+    matched the structured-output draft exactly (diffed byte-for-byte),
+    so nothing was lost or inconsistent; treated as a harmless one-off
+    rather than a sign the other six needed re-checking for the same
+    thing (`git status` after the whole batch showed no other stray
+    writes).
+  - `scripts/build_ts.mjs` emitted an empty `hoot-mock.d.js` for the new
+    ambient declaration file before this was caught: its `.ts`-suffix
+    filter matches `.d.ts` too (`"hoot-mock.d.ts".endsWith(".ts")` is
+    true), and esbuild happily "compiles" a type-only file into nothing
+    rather than refusing. `.d.ts` excluded explicitly now -- unrelated
+    to the Node-20 `fs.globSync` trap already on this list, just the
+    same file catching a second, independent bug.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was

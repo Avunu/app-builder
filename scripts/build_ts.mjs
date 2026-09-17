@@ -45,7 +45,12 @@ const entryPoints = readdirSync(repoRoot, { withFileTypes: true })
                 return [];
             }
             return readdirSync(dir, { recursive: true })
-                .filter((relative) => relative.endsWith(".ts"))
+                // `.d.ts` matches `.endsWith(".ts")` too, but a pure
+                // ambient declaration has no runtime code to emit --
+                // esbuild would still happily turn one into an empty
+                // `.d.js`, a nonsense extension pairing that shipped once
+                // (`hoot-mock.d.ts`) before this exclusion existed.
+                .filter((relative) => relative.endsWith(".ts") && !relative.endsWith(".d.ts"))
                 .map((relative) => path.join(dir, relative));
         })
     );

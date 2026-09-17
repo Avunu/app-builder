@@ -19,3 +19,10 @@ app_builder_view/static/src/console/outline_zones.js linguist-generated
 app_builder_view/static/src/console/types.js linguist-generated
 app_builder_view/static/src/console/wire.js linguist-generated
 app_builder_view/static/src/console/zones.js linguist-generated
+app_builder_view/static/tests/canvas_views.test.js linguist-generated
+app_builder_view/static/tests/compat.test.js linguist-generated
+app_builder_view/static/tests/geometry.test.js linguist-generated
+app_builder_view/static/tests/identity.test.js linguist-generated
+app_builder_view/static/tests/outline_tree.test.js linguist-generated
+app_builder_view/static/tests/outline_zones.test.js linguist-generated
+app_builder_view/static/tests/zones.test.js linguist-generated
