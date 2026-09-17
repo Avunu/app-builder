@@ -971,6 +971,93 @@ than reasoned about:
     call site -- every `"center"` in this file goes through `pickUp`'s
     returned helpers.
 
+- **Phase 2c: the framework boundary, fenced in one place (`console/odoo.ts`).**
+  Built ahead of cluster 4 itself, at the user's own request, rather than
+  discovered lazily as each component needed a piece of it -- grounded in
+  real usage across the whole not-yet-converted tree
+  (`grep -rn 'useService("'`/`"Dialog"` across every remaining `.js`) the
+  same way every other file in this migration has been, not guessed from
+  the plan's own one-line description of it.
+
+  What actually landed, and why each piece is there:
+
+  - **`useService`, overloaded per service name** (`orm`, `notification`,
+    `dialog`, `action` -- the four real names `useService("...")` is
+    called with anywhere in this tree, confirmed by grep before adding a
+    fourth or a fifth). Reuses `types.ts`'s own `OrmService`/
+    `NotificationService` rather than redeclaring them, so a component
+    and the model it hands a service to agree on the same shape. Odoo's
+    own `useService` is generic over `keyof import("services").ServiceFactories`
+    -- the exact `@types/services.d.ts` cascade this file's own docstring,
+    and TYPING.md's "Known traps" before it, explain this whole module
+    exists to avoid pulling into the program.
+  - **`DialogService`**, with `add`'s `props` parameter widened from the
+    vendor's own `DialogServiceInterface` typedef (`props: {}`, an
+    uncorrelated bare object) to a generic tied to whichever dialog class
+    is actually passed: `Component<P>`'s own constructor takes
+    `props: P`, so `add<P>(dialogClass: new (...) => Component<P>, props: P, ...)`
+    makes a mismatched props object a real compile error, not just
+    Owl's own runtime prop validation. A genuine improvement over the
+    vendor's own looser typing, confirmed correct with a standalone
+    probe (a real dialog class with a required prop, `@ts-expect-error`
+    on a call missing it) before it went into the file -- and confirmed
+    a second time when the obvious-looking `new (...args: unknown[]) =>
+    Component<P>` form was tried first and turned out to reject the
+    *valid* call: TS cannot unify a rest parameter typed `unknown[]`
+    with a real constructor's own specific first parameter the way it
+    can with `any[]`, which turns the check off for the constructor's
+    parameter list specifically while still fully checking `props`
+    against `P` at the call site. `any[]` it is, with a
+    `typescript-eslint/no-explicit-any` disable comment on that one line
+    (the project's `recommendedTypeChecked` preset enables that rule,
+    unlike the five `no-unsafe-*` ones TYPING.md's own Phase 2c note
+    already expected) -- placement matters: `eslint-disable-next-line`
+    disables the *next* line only, so it has to sit directly above the
+    `dialogClass:` parameter itself, not above the enclosing `add<P>(`
+    a few lines higher, which silently disables nothing and reports its
+    own "unused directive" warning instead.
+  - **`DialogProps`**, transcribed directly from `@web/core/dialog/dialog.js`'s
+    own `static props` runtime-validation schema. The one place in this
+    file that types something ahead of a real consumer in this tree (no
+    file has converted yet), but deliberately: unlike this addon's own
+    wire shapes, a fixed, stable *vendor* component's props carry none of
+    the "guessed wrong" risk that rule otherwise guards against here, and
+    nine real files (`grep -rln "Dialog"`) render or wrap this one
+    component, so one shared shape is worth having before the first of
+    them converts.
+  - **`ActionService`/`ActionDescription`/`ActionController`**, narrowed
+    to exactly what the two real callers (`cog_menu_item.js`,
+    `systray_item.js`) construct and read -- a plain `ir.actions.client`
+    descriptor (never `ActionRequest`'s other variants: a numeric id, an
+    xml id, a bare tag string) and `currentController.action.res_model`/
+    `.currentState.resId` off a real `Controller` object far larger than
+    what either file reads.
+  - **`app_builder.panes`/`app_builder.console_tabs`'s `GlobalRegistryCategories`
+    augmentation, moved here from `shell/pane_registry.ts`.** That file
+    carried the identical `declare module "registries"` block for one
+    commit (cluster 3), specifically because `console/odoo.ts` -- its
+    real, planned home -- did not exist yet; `pane_registry.ts`'s own
+    comment said so at the time. No import needed to bring the
+    declaration into `pane_registry.ts`'s scope: a `declare module`
+    augmentation merges into the whole program once any file carrying it
+    is part of the compilation, regardless of which file that is, and
+    both files sit under the same `tsconfig.json` `include` glob.
+  - **`rpc` and a stringifying `_t` wrapper were deliberately left out**,
+    both explained in the file's own docstring rather than just omitted
+    silently: `rpc` (`@web/core/network/rpc`) has no real caller anywhere
+    in this tree (every server round trip already goes through
+    `orm.call`; `compat.ts`'s own mention of `core/network/rpc.js` is
+    about that module's cache-invalidation bus, not a call site) -- typing
+    a facade nothing calls would be typing ahead of a reader for the
+    first time in this migration's own Phase 2c note, not the last.
+    A `_t` wrapper that eagerly stringified (`String(_t(...))`, the
+    pattern every file so far already writes at the point it is needed)
+    would be the wrong *default* for a future file that wants to hand a
+    *lazy* translated value to a component prop instead, so Owl's own
+    reactivity can re-render it on a language change -- nothing in this
+    tree does that yet, but a facade cannot un-invent a wrong default
+    once files start depending on it.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was

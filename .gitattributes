@@ -15,6 +15,7 @@ app_builder_view/static/src/console/console_model.js linguist-generated
 app_builder_view/static/src/console/drag.js linguist-generated
 app_builder_view/static/src/console/geometry.js linguist-generated
 app_builder_view/static/src/console/identity.js linguist-generated
+app_builder_view/static/src/console/odoo.js linguist-generated
 app_builder_view/static/src/console/options.js linguist-generated
 app_builder_view/static/src/console/outline_tree.js linguist-generated
 app_builder_view/static/src/console/outline_zones.js linguist-generated

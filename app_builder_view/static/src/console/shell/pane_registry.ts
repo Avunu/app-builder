@@ -42,23 +42,14 @@ import type { PaneContext, PaneEntry, PaneModel, PaneRegistration } from "../typ
 // all, let alone typed on the far side. Odoo's own `views`/`fields`
 // categories get this via `views_registry.d.ts`/`fields_registry.d.ts`
 // (both in `tsconfig.json`'s `include`); `app_builder.panes` and
-// `app_builder.console_tabs` are ours, declared nowhere yet -- Phase 2c's
-// planned `console/odoo.ts` facade is where TYPING.md says this
-// declaration eventually belongs, but that file does not exist yet, and
-// this is the one file that creates both categories, so it is declared
-// here for now rather than leaving `registry.category("app_builder.panes")`
-// unable to compile at all. `PaneRegistration` (not `PaneEntry`): this
-// names the *stored* shape, before `resolvePane` merges in `key`.
-declare module "registries" {
-    interface GlobalRegistryCategories {
-        "app_builder.panes": PaneRegistration;
-        // Nothing registers here any more (`warnLegacyTabs` below exists
-        // to say so) -- no real shape to name, and nothing here reads
-        // more than an entry's own key.
-        "app_builder.console_tabs": unknown;
-    }
-}
-
+// `app_builder.console_tabs` are ours, declared in `../odoo.ts` now
+// (Phase 2c's facade, "fenced in one place" -- this file carried that
+// declaration itself for one commit, before `odoo.ts` existed to hold
+// it). No import needed here to bring it into scope: a `declare module`
+// augmentation merges into the whole program once any file in it is
+// compiled, regardless of which file declares it -- `odoo.ts` is picked
+// up by this same `tsconfig.json`'s own `include` glob, same as this
+// file is.
 export const paneRegistry = registry.category("app_builder.panes");
 
 // The tab registry the panes replace. Its only verb was `open(env, ctx)`,
