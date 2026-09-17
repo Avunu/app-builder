@@ -89,7 +89,12 @@ export interface ShellLearnedContext {
     python_owned?: boolean;
     python_owner_id?: number | false;
     suggested_package_id?: number | false;
-    view?: { model?: string; id?: number | false; type?: string | false };
+    // `model: string | false`, not just `string`: traced against the real
+    // `editing_context()` now that `console_model.ts` carries the whole
+    // shape (`wire.ts:EditingContext`) -- `view.model` is a plain Char
+    // field read off `ir.ui.view`, `False` for a model-less view (a QWeb
+    // report template).
+    view?: { model?: string | false; id?: number | false; type?: string | false };
     draft_id?: number | false;
     reload_mode?: string | false;
 }

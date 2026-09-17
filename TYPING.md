@@ -534,16 +534,17 @@ than reasoned about:
     to the Node-20 `fs.globSync` trap already on this list, just the
     same file catching a second, independent bug.
 
-- **TypeScript (2b, cluster 2: three of four done).**
+- **TypeScript (2b, cluster 2: done).**
   `shell/draft_model.ts`, `shell/shell_model.ts`,
-  `record_pane/record_pane_model.ts` -- converted in their real
-  dependency order (`grep -n "^import"` on all four cluster-2 files
-  first: `draft_model.js` has no cluster-2 deps, `shell_model.js`
+  `record_pane/record_pane_model.ts`, `console_model.ts` -- converted in
+  their real dependency order (`grep -n "^import"` on all four cluster-2
+  files first: `draft_model.js` has no cluster-2 deps, `shell_model.js`
   imports `draft_model` + `pane_registry`, `record_pane_model.js`
-  imports `compat` + `shell_model`'s `draft_model`; `console_model.js`,
-  the fourth and largest at 1634 lines, is not yet started). Each is
-  `noUncheckedIndexedAccess`-clean and transpile-equivalence-checked
-  against its pre-conversion original the same way as cluster 1.
+  imports `compat` + `shell_model`'s `draft_model`, `console_model.js`
+  imports `compat` + `draft_model` directly -- the fourth and largest at
+  1634 lines, done last). Each is `noUncheckedIndexedAccess`-clean and
+  transpile-equivalence-checked against its pre-conversion original the
+  same way as cluster 1.
 
   Unlike cluster 1's node/zone vocabulary, this cluster's wire types are
   server RPC payloads, so `wire.ts` grew a new block traced straight to
@@ -602,6 +603,89 @@ than reasoned about:
   function can't unify (`Type 'undefined' is not assignable to type
   'Promise<unknown>'`). Added `async`, matching how every sibling method
   (`_childMutate` etc.) is already declared.
+
+  `console_model.ts` is the Views pane's own model and this cluster's
+  largest file by a wide margin (1634 lines of source, the console's
+  central RPC surface) -- most of the wire tracing this turn was reading
+  `studio_view_editor.py`/`studio_view_canvas.py`/`studio_view_new_field.py`
+  (`canvas`, `editing_context`, `describe_node`, `drop_at`,
+  `apply_operation`, `field_types_for`, `search_elements`, `add_view`,
+  ...) to give every RPC an exact answer shape rather than the widest
+  type that would compile. Two module-placement and one wire-shape
+  decision came out of that:
+
+  - **`CanvasPayload` (and anything else that carries a `Token` or a
+    `NodeTable`) lives in `types.ts`, not `wire.ts`**, discovered
+    immediately -- `CanvasPendingEntry.token: Token` does not compile in
+    `wire.ts`, since `Token`/`NodeTable` are `types.ts`'s own. Rather
+    than open a second, reverse `wire.ts -> types.ts` import (breaking
+    the one-directional rule cluster 2's own earlier findings just
+    established), `CanvasPayload`, `DropSuccessResult` and their small
+    helper shapes moved to `types.ts` instead -- which is where they
+    belong anyway, per that module's own docstring ("the shapes the
+    canvas payload and node table carry"). `wire.ts` keeps the rest of
+    this same RPC surface (`EditingContext`, `OperationResult`,
+    `NewFieldPlan`, ...), none of which touches a `Token`.
+  - **`drop_at`'s three real return sites all answer the same
+    `{stale, select, created, staged, canvas, history, draft}` shape**
+    (`studio_view_editor.py:drop_at`, `studio_view_new_field.py:
+    _drop_live_field`/`_drop_field_definition`) -- but a fourth site,
+    the version check at the top of `drop_at`, answers only
+    `{stale: true, canvas}`. `_mutate` unwraps that stale case
+    internally and always resolves to `undefined` instead of handing it
+    to its caller (already true before this turn, just not yet typed),
+    so `DropSuccessResult` -- what a caller of `dropAt`/`drop` actually
+    receives -- was named and typed *without* a `stale: true` member,
+    rather than as the full four-shape union `drop_at` can literally
+    answer. Typing ahead of what a reader gets, the same rule
+    `DraftPayload.spec` already follows, just from the answer side this
+    time instead of the request side.
+  - **`_mutate`'s own generic signature can't be `<T extends
+    MutateResult>`**, confirmed with a standalone probe before writing
+    it into the file: TS's "weak type" check rejects a primitive (like
+    the bare `true`/`true` `action_undo`/`action_redo` answer) against
+    an all-optional interface with zero properties in common --
+    `Type 'true' has no properties in common with type 'MutateResult'`.
+    `_mutate<T>` is unconstrained instead, and reads the handful of
+    fields it inspects (`stale`, `canvas`, `draft`, `created_name`,
+    `select`) through a single cast of the opaque `result: T` to a
+    local `RawMutateFields` interface (every field optional) -- proven
+    by the same probe to type-check regardless of what `T` is
+    instantiated to, including `boolean`, since the cast happens from
+    an abstract generic parameter rather than from a known concrete
+    type. `T` itself stays accurate to what each caller's `orm.call<T>`
+    actually declares (`OperationResult`, `DropSuccessResult`, `boolean`
+    for undo/redo); `RawMutateFields` is `_mutate`'s own internal
+    escape hatch, not something any caller sees.
+
+  One more small, real correction, caught the same way as the
+  `PaneEntry.makeModel`/`OrmService.call` ones above -- widening rather
+  than guessing narrower: `shell_model.ts`'s `ShellLearnedContext.view.model`
+  was typed as bare `string`, accurate to every caller *at the time it
+  was written*, before `editing_context()` itself had been traced.
+  `console_model.ts` now carries that whole shape (`wire.ts:
+  EditingContext`), which shows `view.model` is a plain Char field on
+  `ir.ui.view` -- `False` for a model-less view, a QWeb report template
+  being the one `editing_context` itself already handles. Widened to
+  `string | false` to match; `learnContext`'s own read of it
+  (`context.view && context.view.model`, used behind a truthy check) did
+  not need to change.
+
+  Also new this file: `_carryTarget`'s `this[key]` (`key:
+  "buttonTarget" | "fieldTarget"`) writing back a value shaped
+  differently per key does not compile -- TS resolves a generic-keyed
+  write's target type as the *intersection* of every property the key
+  could name, so a `ButtonDropTarget`-shaped value fails against
+  `ButtonDropTarget & FieldDropTarget` even on the `"buttonTarget"`
+  branch. Fixed by giving both properties the same `DropTarget` type,
+  with the field-only members (`ttype`, `label`) optional -- confirmed
+  compiling with a standalone probe first, the same way as the
+  `_mutate` generic above, before it went into the file. `env.services.field`
+  (`@web/core/field_service.js`, used by `inverseOptions`/`resolveRelated`
+  on a live, non-Python-owned model) got the same narrow-facade
+  treatment as `orm`/`notification` (`FieldService`, `FieldDefLite` in
+  `types.ts`) since the vendor file's own JSDoc types every return as a
+  bare `object`.
 
 ## CI: the OCA container's real layout
 

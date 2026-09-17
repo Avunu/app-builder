@@ -22,7 +22,7 @@
  * here by hand.
  */
 
-import type { PackageEntryJSON } from "./wire";
+import type { DraftPayload, PackageEntryJSON } from "./wire";
 
 /** A node's role in the arch. One tag can be several kinds (`div` is
  * `label`, `button_box` or `html`); `_kind()` is the single source. */
@@ -203,6 +203,19 @@ export interface FieldDefinition {
  * table's own `field` when `describe_node` found none of its own, which
  * is why it is typed the same `CanvasFieldInfo | null` either way.
  */
+/** `describe_node`'s own raw RPC answer (`studio_view_canvas.py:
+ * describe_node`) -- before `describe()` merges in the node table's own
+ * `kind`/`name`/`token` to build a `DescribedTarget`. */
+export type DescribeNodeAnswer =
+    | { found: false }
+    | {
+          found: true;
+          tag: string;
+          attrs: Readonly<Record<string, string>>;
+          field: CanvasFieldInfo | null;
+          definition: FieldDefinition | null;
+      };
+
 export interface DescribedTarget {
     kind: NodeKind;
     name: string | null;
@@ -336,6 +349,121 @@ export interface OutlineZoneRow {
     collapsed?: boolean;
 }
 
+// -- the canvas payload ---------------------------------------------------
+//
+// `app_builder_view/models/studio_view_canvas.py`,
+// `app_builder_view/models/studio_view_editor.py`,
+// `app_builder_view/models/studio_view_new_field.py` -- the Views pane's
+// own RPC surface (`console_model.ts`). Kept here rather than in
+// `wire.ts` since every one of these carries a `Token` or a `NodeTable`,
+// this module's own concern per the docstring above; `wire.ts` has the
+// rest of this RPC surface (`EditingContext`, `OperationResult`, ...),
+// which does not.
+
+/** One row of `canvas()`'s `history` (`studio_view_edit.py:_entry`). */
+export interface HistoryEntry {
+    id: number;
+    summary: string;
+    author: string;
+}
+
+/** `canvas()`'s `package` -- who a drop here would record into
+ * (`studio_view_canvas.py:_canvas_package`), a narrower vocabulary than
+ * `PackageEntryJSON` (`studio.workspace`'s own, unrelated `package`). */
+export interface CanvasPackageSummary {
+    id: number;
+    name: string;
+    writable: boolean;
+}
+
+/** A field staged on the draft this canvas shows, drawn as a ghost or not
+ * (`studio_view_canvas.py:_splice_pending`, `_pending_anchored`'s own
+ * `{name, label, ttype, widget, anchor}` plus what splicing adds). Not
+ * `StudioNode.pending` (`PendingFieldInfo`, the ghost *node's* own entry
+ * in the node table) -- this is the tray's flat list, one per staged
+ * field whether or not it has a place to draw. */
+export interface CanvasPendingEntry {
+    name: string;
+    label: string;
+    ttype: string;
+    widget: string;
+    /** `p_<name>` -- the ghost's own token, whether or not it was placed. */
+    token: Token;
+    /** Whether a ghost was actually spliced into `nodes` under `token`. */
+    placed: boolean;
+    /** Whether the anchor resolved to a real neighbour, as opposed to the
+     * balanced fallback spot. */
+    resolved: boolean;
+    view_id: number | false;
+}
+
+/**
+ * `canvas()`'s whole return (`studio_view_canvas.py:canvas`) -- everything
+ * the console needs to render one view and address it. `models`/`source`
+ * are left `unknown`: nothing converted so far reads either (the field
+ * descriptions of inline subviews, and "what the studio wrote" for a View
+ * tab neither pane model owns); narrow when a real reader appears.
+ */
+export interface CanvasPayload {
+    view: {
+        id: number;
+        name: string;
+        type: string;
+        model: string | false;
+        mode: string;
+        js_class: string | null;
+    };
+    arch: string | null;
+    models: unknown;
+    arch_version: string;
+    res_id: number | false;
+    root: Token | null;
+    nodes: NodeTable;
+    pending: CanvasPendingEntry[];
+    draft_id: number | false;
+    editable_as: "canvas" | "report" | "search_lists";
+    source: unknown;
+    history: { undo: HistoryEntry[]; redo: HistoryEntry[] };
+    package: CanvasPackageSummary | null;
+    record_count: number;
+}
+
+/** What a live-created field's `created` names, on a `drop_at` answer
+ * (`studio_view_new_field.py:_drop_live_field`). */
+export interface DropCreatedField {
+    name: string;
+    label: string;
+    live: true;
+}
+
+/** What a staged field's `staged` names, on a `drop_at` answer
+ * (`studio_view_new_field.py:_drop_field_definition`). */
+export interface DropStagedField {
+    name: string;
+    label: string;
+    draft_id: number;
+}
+
+/**
+ * `drop_at`'s settled answer -- what a caller of `ConsoleModel`'s own
+ * mutators actually receives (`studio_view_editor.py:drop_at`,
+ * `studio_view_new_field.py:_drop_live_field`/`_drop_field_definition`,
+ * the three return sites that are not the stale one). `_mutate` peels the
+ * stale answer (`{stale: true, canvas}`, no other key) off internally and
+ * resolves to `undefined` instead of handing it on, so nothing that
+ * reaches a caller of `dropAt`/`drop` needs to carry `stale: true` --
+ * seeing it here would be typing ahead of what any reader actually gets.
+ */
+export interface DropSuccessResult {
+    stale: false;
+    select: Token | null;
+    created: DropCreatedField | null;
+    staged: DropStagedField | null;
+    canvas: CanvasPayload;
+    history: CanvasPayload["history"];
+    draft: DraftPayload | null;
+}
+
 // -- errors ---------------------------------------------------------------
 
 /**
@@ -421,10 +549,50 @@ export interface OrmService {
         args?: unknown[],
         kwargs?: Record<string, unknown>,
     ): Promise<T>;
+    /** `@web/core/orm_service.js:searchRead` -- `console_model.ts`'s own
+     * server-actions list is the one caller so far (the others go through
+     * `call`, whose method name and args vary too much to lift into its
+     * own facade member). */
+    searchRead<T = unknown>(
+        model: string,
+        domain: unknown[],
+        fields: string[],
+        kwargs?: Record<string, unknown>,
+    ): Promise<T[]>;
 }
 
 export interface NotificationService {
     add(message: string, options?: { type?: string; sticky?: boolean }): void;
+}
+
+/** As much of a field's definition as `console_model.ts:resolveRelated`/
+ * `inverseOptions` read off `@web/core/field_service`'s own answer
+ * (`fields_get`'s dict, wrapped in a cache) -- that service's own JSDoc
+ * types every one of its returns as a bare `object`, so this is traced to
+ * the two call sites' actual property reads (`def.type`, `def.relation`,
+ * `def.string`, `def.store`) rather than to a vendor type that does not
+ * exist. */
+export interface FieldDefLite {
+    type: string;
+    relation?: string | false;
+    string?: string;
+    store?: boolean;
+}
+
+/** `@web/core/field_service`'s own two calls, narrowed the same way
+ * (`loadPath`'s `modelsInfo`/`isInvalid`, `loadFields`'s dict by name). */
+export interface FieldService {
+    loadFields(
+        resModel: string,
+        options?: { fieldNames?: string[] | false; attributes?: string[] },
+    ): Promise<Record<string, FieldDefLite>>;
+    loadPath(
+        resModel: string,
+        path: string,
+    ): Promise<{
+        isInvalid?: string;
+        modelsInfo: { resModel: string | null; fieldDefs: Record<string, FieldDefLite> }[];
+    }>;
 }
 
 /** What the status pill reads (`shell_model.ts`'s `NEUTRAL_ACTIVITY`

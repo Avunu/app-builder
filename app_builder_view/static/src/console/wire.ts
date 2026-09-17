@@ -362,3 +362,169 @@ export interface RecordDescription {
     children?: RecordChildrenJSON;
     [key: string]: unknown;
 }
+
+// -- studio.view.editor / studio.view.canvas -----------------------------
+//
+// `app_builder_view/models/studio_view_editor.py`,
+// `app_builder_view/models/studio_view_canvas.py`,
+// `app_builder_view/models/studio_view_new_field.py`. The Views pane's own
+// RPC surface (`console_model.ts`) -- every mutator funnels through
+// `apply_operation` or `drop_at`, so their two answer shapes
+// (`OperationResult`, `DropSuccessResult`) cover every edit the canvas
+// makes. `CanvasPayload` itself, and everything that carries a `Token` or
+// a `NodeTable`, lives in `types.ts` instead -- that module's own concern,
+// per its docstring, and where `Token`/`NodeTable` are already declared.
+
+/** One view of a model, as `_views_of` picks it (`editing_context`'s own
+ * `views`, the console's switcher). */
+export interface ViewOfEntry {
+    type: string;
+    view_id: number;
+    name: string;
+    owned: boolean;
+}
+
+/** A field entry `_model_fields` builds for options that name one
+ * (`studio_view_editor.py:_model_fields`, `editing_context`'s `fields`). */
+export interface EditingContextFieldEntry {
+    name: string;
+    string: string;
+    type: string;
+}
+
+/**
+ * `editing_context()`'s whole return (`studio_view_editor.py:
+ * editing_context`) -- everything the editor needs to open on a view.
+ * `preview`/`options`/`catalogue`/`groups`/`packages` are left `unknown`:
+ * nothing converted so far reads them (they belong to components this
+ * migration has not reached); narrow when a real reader appears, per this
+ * migration's own rule against typing ahead of a consumer.
+ */
+export interface EditingContext {
+    view: { id: number; name: string; type: string; model: string | false; mode: string };
+    views: ViewOfEntry[];
+    python_owned: boolean;
+    python_owner_id: number | false;
+    field_types: AvailableFieldTypeJSON[];
+    draft_id: number | false;
+    reload_mode: string | false;
+    record_count: number;
+    fields: EditingContextFieldEntry[];
+    preview: unknown;
+    options: unknown;
+    catalogue: unknown;
+    groups: unknown;
+    owned: boolean;
+    packages: unknown;
+    suggested_package_id: number | false;
+}
+
+/** The picker's tile for one field type, as `field_types_for` augments
+ * `AvailableFieldTypeJSON` with two facts only the model decides
+ * (`studio_view_new_field.py:field_types_for`). An older server's
+ * fallback (`editing_context().field_types`, read when `field_types_for`
+ * itself refuses) carries neither key, hence `loadFieldTypes`'s own
+ * `!== undefined` check before trusting them -- so the *input* to that
+ * check is `Partial`, and only the client-augmented `FieldTypeEntry`
+ * (below) guarantees both. */
+export type FieldTypeRawEntry = AvailableFieldTypeJSON & {
+    live?: boolean;
+    needs_dialog?: boolean;
+};
+
+/** `ConsoleModel.fieldTypes`'s own entries, every one carrying both flags
+ * the picker needs (`console_model.ts:loadFieldTypes`). */
+export type FieldTypeEntry = AvailableFieldTypeJSON & {
+    live: boolean;
+    needs_dialog: boolean;
+};
+
+/** Which of the two new-field answers applies to a view, and what to say
+ * about it (`studio_view_new_field.py:new_field_plan`). */
+export interface NewFieldPlan {
+    can_create: boolean;
+    reason?: string;
+    handoff?: number;
+    model?: string;
+    prefix?: string;
+}
+
+/** One field `get_addable_fields` offers: not already in the arch, with
+ * enough to show and place it (`studio_view_editor.py:get_addable_fields`). */
+export interface AddableFieldEntry {
+    name: string;
+    string: string;
+    type: string;
+    required: boolean;
+    readonly: boolean;
+    manual: boolean;
+}
+
+/** A field the picker offers for a date or a group-by, when creating
+ * another kind of view (`studio_view_editor.py:_placeable_fields`). */
+export interface PlaceableFieldEntry {
+    name: string;
+    string: string;
+}
+
+/** One kind of view `addable_view_types` offers, and why not when it does
+ * not (`studio_view_editor.py:addable_view_types`). */
+export interface AddableViewTypeEntry {
+    type: string;
+    label: string;
+    icon: string;
+    enabled: boolean;
+    reason: string;
+    date_fields: PlaceableFieldEntry[];
+    group_fields: PlaceableFieldEntry[];
+}
+
+/** One row of `search_elements()`'s `filters`/`group_bys`
+ * (`studio_view_editor.py:search_elements`). */
+export interface SearchFilterEntry {
+    name: string;
+    string: string;
+    domain: string;
+}
+
+/** `search_elements()`'s whole return: what a search view offers, in the
+ * three groups the sidebar shows (`studio_view_editor.py:search_elements`). */
+export interface SearchElements {
+    fields: { name: string; string: string }[];
+    filters: SearchFilterEntry[];
+    group_bys: SearchFilterEntry[];
+    addable: AddableFieldEntry[];
+}
+
+/** What could link a comodel back to this one, for the relation picker
+ * (`studio_model_draft.py:inverse_options`, and the live-model path
+ * `console_model.ts:inverseOptions` builds the same shape for by hand). */
+export interface InverseOptions {
+    candidates: { name: string; string: string }[];
+    can_create: boolean;
+    suggested: string;
+    reason: string;
+}
+
+/** What a related path points at, or why it does not lead anywhere
+ * (`studio_model_draft.py:resolve_related`, and the live-model path
+ * `console_model.ts:resolveRelated` builds the same shape for by hand). */
+export type ResolveRelatedResult =
+    | { ok: true; ttype: string; comodel: string; string: string; stored: boolean }
+    | { ok: false; reason: string };
+
+/**
+ * What `apply_operation` answers -- every structural edit that is not a
+ * drop (`apply_at`, `remove_at`, `show_label_at`, `add_container_at`,
+ * `add_search_element`, `remove_search_element`, all of which funnel
+ * through it). Never carries `canvas`, so `_mutate` always follows it
+ * with a `refresh()` -- `created_name` is the one thing it can select
+ * without one.
+ */
+export interface OperationResult {
+    view_id: number;
+    arch: string;
+    combined_arch: string;
+    arch_version: string;
+    created_name?: string | null;
+}
