@@ -55,7 +55,6 @@
 import { useDragAndDrop } from "@html_editor/utils/drag_and_drop";
 import { _t } from "@web/core/l10n/translation";
 import * as compat from "./compat";
-import type { ConsoleModel } from "./console_model";
 import {
     childEntries,
     contains,
@@ -86,8 +85,10 @@ import type {
     OutlineZoneRow,
     PlainRect,
     Point,
+    StudioNode,
     Token,
     Zone,
+    ZonePosition,
 } from "./types";
 import { buildZones, labelOf, payloadTag } from "./zones";
 
@@ -215,9 +216,11 @@ const dragAndDrop = useDragAndDrop as (params: CanvasDragHookParams) => DragHook
  * `ConsoleModel.outlineDrag`'s own declared `unknown` (`console_model.ts`,
  * left untyped since nothing converted before this file ever read it).
  * This file's own narrow reading of an untyped vendor shape, not promoted
- * to `types.ts`: no other converted file reads `outlineDrag` yet.
+ * to `types.ts`: no other converted file reads `outlineDrag` yet. Exported
+ * so `drag.test.ts`'s own fake outline provider is checked against the
+ * real contract rather than duck-typed blind.
  */
-interface OutlineDragProvider {
+export interface OutlineDragProvider {
     el: HTMLElement;
     layer: ZoneLayer;
     rows(): HTMLElement[];
@@ -245,6 +248,40 @@ interface RowDwell {
     timer: number;
 }
 
+/**
+ * What `CanvasDrag` reads off the model it is handed -- narrow, not the
+ * real `ConsoleModel`, mirroring `console_model.ts`'s own
+ * `ConsoleModelOwner`: this class's own docstring makes the identical
+ * promise (`console_model.ts`'s, `draft_model.ts`'s) -- "No Owl... so it
+ * can be tested and ported as it is" -- which a constructor pinned to
+ * the real, far larger `ConsoleModel` class would not keep. `grep -n
+ * "this\.model\."` names exactly these ten members and nothing else.
+ * The real `ConsoleModel` satisfies this structurally with no change on
+ * its own side; `drop`'s return type is narrowed to the one field this
+ * file reads (`created_field`) rather than repeating `ConsoleModel.drop`'s
+ * full `DropSuccessResult` union.
+ */
+export interface CanvasDragModel {
+    nodes: NodeTable;
+    canWrite: boolean;
+    selectedNode: StudioNode | null;
+    selection: { token: Token } | null;
+    /** Read only in `startingCard`'s kanban check; a model with no
+     * notion of a view type (a test double, say) can leave this out. */
+    viewType?: string | false | undefined;
+    /** `console_model.ts` declares this `unknown` too -- nothing
+     * converted before `drag.ts` had a real reader. */
+    outlineDrag: unknown;
+    beginDrag(label: string): void;
+    setDragCaption(text: string): void;
+    endDrag(): void;
+    drop(
+        token: Token | null,
+        position: ZonePosition,
+        payload: DragPayload,
+    ): Promise<{ created_field?: boolean } | undefined>;
+}
+
 /** What `CanvasDrag`'s constructor takes. */
 export interface CanvasDragParams {
     /** the console element, holding both the sidebar and the canvas */
@@ -254,7 +291,7 @@ export interface CanvasDragParams {
     /** the canvas's overlay */
     overlay: Overlay;
     /** the console model */
-    model: ConsoleModel;
+    model: CanvasDragModel;
     /** the last pointer position the canvas saw, for a node rendered more
      * than once */
     point: () => Point | null;
@@ -271,7 +308,7 @@ export interface MakeCanvasDragParams {
     rootEl: HTMLElement;
     scrollEl: HTMLElement;
     overlay: Overlay;
-    model: ConsoleModel;
+    model: CanvasDragModel;
     point?: () => Point | null;
     pointAt?: (point: Point) => void;
 }
@@ -291,7 +328,7 @@ export class CanvasDrag {
     rootEl: HTMLElement;
     scrollEl: HTMLElement;
     overlay: Overlay;
-    model: ConsoleModel;
+    model: CanvasDragModel;
     point: () => Point | null;
     pointAt: (point: Point) => void;
 

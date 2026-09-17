@@ -904,6 +904,73 @@ than reasoned about:
   `exactOptionalPropertyTypes` treats as a different, stricter case than
   the key being merely absent).
 
+- **TypeScript (2b, cluster 3's own test: `drag.test.ts`).** Converted
+  right after cluster 3 itself, since `drag.test.js` imports `drag.js`
+  and `overlay.js` directly (`makeCanvasDrag`, `Overlay`, `ZoneLayer`) --
+  both just landed -- unlike the other cluster-3-adjacent test files
+  (`outline.test.js`, `record_sidebar.test.js`, `systray_item.test.js`),
+  which exercise Owl components still `.js` (cluster 4). The largest and
+  most involved test converted so far: real Owl component mounting
+  (`Harness`, `View`), a mock server model (`Partner`), and real drag
+  gestures via `@odoo/hoot-dom`'s own `drag`/`hover`/`press` helpers.
+
+  Real design fix, found the identical way `ConsoleModelOwner` was:
+  `fakeModel()`'s own hand-written fake already matched a member-for-
+  member subset of `CanvasDrag`'s real needs, and `grep -n
+  "this\.model\."` on `drag.ts` confirmed exactly ten reads and nothing
+  else (`nodes`, `canWrite`, `selectedNode`, `selection.token`,
+  `viewType`, `outlineDrag`, `beginDrag`, `setDragCaption`, `endDrag`,
+  `drop`) -- `CanvasDrag`'s constructor took the real `ConsoleModel`
+  class regardless, the same gap `ConsoleModelOwner` closed for
+  `console_model.ts` itself. Added `CanvasDragModel`, a narrow interface
+  naming only those ten, mirroring `ConsoleModelOwner`'s own reasoning
+  word for word (this class's docstring makes the identical "so it can
+  be tested and ported as it is" promise). The real `ConsoleModel`
+  satisfies it structurally with one real fix needed along the way:
+  `viewType` had to be `string | false | undefined`, not just
+  `string | false` -- `ConsoleModel.viewType`'s own real getter type
+  includes `undefined` (from `ViewSummary`'s optional `type` field,
+  `console_model.ts`), confirmed by the same kind of standalone
+  structural-assignment probe used for `ConsoleModelOwner`
+  (`const dragModel: CanvasDragModel = model` where `model: ConsoleModel`,
+  run for real through `tsc` before trusting it). `OutlineDragProvider`
+  was also exported from `drag.ts` for the same reason: the test's own
+  `fakeOutline()` needed to be checked against the real contract rather
+  than duck-typed blind.
+
+  Three more real JSDoc-vs-runtime-arity/shape gaps in `@odoo/hoot-dom`,
+  the same class of trap `Registry.get`/`queryFirst`/`useDragAndDrop`
+  already established, found while typing this file specifically:
+
+  - `queryOne`/`queryAll`/`queryFirst` (`hoot-dom/helpers/dom.js`) are
+    none of them generic in their real signatures, despite their own
+    JSDoc examples using them as tagged templates in a way that reads
+    as if they were parameterized -- confirmed by `tsc` flatly rejecting
+    `queryOne<HTMLElement>(...)` ("Expected 0 type arguments, but got 1").
+    They return the DOM lib's
+    own `Element`/`Element[]`, not `HTMLElement`. Since every element
+    this fixture's own form/palette/outline ever produces genuinely is
+    an `HTMLElement` (inputs, buttons, tabs, rows -- no SVG anywhere in
+    it), narrowed once via three small wrapper functions
+    (`queryOneEl`/`queryAllEl`/`queryFirstEl`) rather than an `as
+    HTMLElement` at each of this file's several dozen call sites.
+  - `queryFirst`'s own JSDoc marks `options` without `[brackets]`
+    (required), so TS infers it as a mandatory second parameter -- the
+    same `Registry.get`-style mismatch, confirmed here at a third real
+    call site of the identical pattern; fixed the same way, a cast to
+    the real one-argument-capable signature.
+  - `moveTo`'s real position union (`Side | "${Side}-${Side}" | Position`,
+    `hoot-dom/helpers/events.js`) has no `"center"` literal, but the real
+    implementation (`getPosition`) computes the exact visual centre for
+    any position string that names neither a horizontal
+    (`"left"`/`"right"`) nor a vertical (`"top"`/`"bottom"`) side -- a
+    real, working, undocumented fallback this file relies on at every
+    one of its many `moveTo(..., { position: "center" })` calls. Fixed
+    once, on `pickUp`'s own return type (a small `DragHelpersWithCenter`
+    interface widening `moveTo`'s second parameter), rather than at each
+    call site -- every `"center"` in this file goes through `pickUp`'s
+    returned helpers.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was
