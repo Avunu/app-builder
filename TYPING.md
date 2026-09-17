@@ -297,6 +297,38 @@ hoot `onRpc` mocks typed against the same map.
   (`scripts/build_ts.mjs`, rewritten to `readdirSync(...,
   { recursive: true })`, stable since 20.1); check any new Node API
   the same way before relying on it.
+- Reading a nullable `this.<field>` again after a null-check loses the
+  narrowing the moment any method/function call runs in between, even
+  though the field itself was never reassigned -- distinct from the
+  repeated-bracket-index trap above (that one is about index-signature/
+  array reads, this one about instance properties and plain variables).
+  `Boolean(a && b)` has the identical problem for a free function's own
+  parameters: it does not narrow `a`/`b` for what follows, since
+  `Boolean(...)` is an opaque call as far as control-flow analysis goes,
+  same as any other function reference. Fix every time: capture the
+  narrowed value into a local `const` right after the check, before
+  anything else runs, or (for the `Boolean(a && b)` shape specifically)
+  rewrite as an early `if (!a || !b) return ...;` guard instead
+  (`drag.ts`: `onDragStart`, `watchRow`/`rowAt`, `teardown`; `samePlace`).
+- TS interface extension requires an *overriding* property to be
+  narrower than (or equal to) what it overrides, never wider -- so
+  `interface B extends A { x: T | null }` does not compile if
+  `A.x: T` (no `| null`). When a "resolved" shape and a "stored" shape
+  genuinely need to disagree on a field's nullability (a resolver's own
+  defaulting can produce `null`; nothing that builds the stored shape
+  ever writes a literal `null`), the fix is one shared, wider type on
+  *both* interfaces rather than fighting the extension direction
+  (`pane_registry.ts`'s `PaneRegistration`/`PaneEntry`, `makeModel`).
+- A category name registered with Odoo's generic `Registry` (`registry.category(name)`)
+  does not compile unless `name` is a known key of `GlobalRegistryCategories`
+  (`registries.d.ts`) -- core's own categories (`views`, `fields`, ...)
+  get this via a `.d.ts` under `@types/registries/`; a category this repo
+  invents (`app_builder.panes`) needs the identical `declare module
+  "registries" { interface GlobalRegistryCategories { "the.category":
+  ItemShape } }` augmentation, legal from any real `.ts` module, not only
+  a `.d.ts` -- put it in the one file that creates the category until
+  Phase 2c's `console/odoo.ts` facade exists to hold it instead
+  (`pane_registry.ts`).
 
 ## Implemented so far
 
@@ -759,6 +791,118 @@ than reasoned about:
     subview field, a pending ghost); cast to `Record<Token, StudioNode>`
     at those two construction sites only, not a change to the type
     itself.
+
+- **TypeScript (2b, cluster 3: done).** `overlay.ts`, `split.ts`,
+  `shell/pane_registry.ts`, `drag.ts` -- the first cluster done with a
+  Workflow (four read-only draft agents, `overlay`/`split`/`pane_registry`
+  in parallel since none of the four import each other, `drag` afterward
+  fed the finished `overlay.ts` draft since it needs `Overlay`'s real
+  type for its own `overlay` constructor param). Applying, reconciling
+  and verifying centrally against the real `tsc`/`eslint`/`prettier`/
+  `esbuild`/transpiler-guard toolchain was still this session's own job,
+  same division of labor as cluster 1's test conversions. One stray
+  direct write (`split.ts`, despite the read-only instruction) recurred
+  -- same as cluster 1's `outline_tree.test.ts` -- caught by `git status`
+  and confirmed byte-identical to the structured-output draft before
+  anything was applied.
+
+  `pane_registry.ts` is the one file whose own shape had already been
+  *guessed* from the outside, in cluster 2, before it existed as real
+  code (`types.ts`'s `PaneEntry`/`PaneContext`, transcribed from the
+  module's own docstring and from `shell_model.ts`'s reads). Converting
+  the real file surfaced two genuine corrections to that guess:
+
+  - **`sequence` was never a field of the stored entry.** The docstring
+    lists it beside `label`/`icon` as if part of the value, but its own
+    parenthetical already said otherwise ("sequence (add() option)") --
+    every real `paneRegistry.add(key, value, options)` call passes it as
+    `add()`'s own third-argument option, never inside `value`. Dropped.
+  - **`Component`/`sidebar`/`makeModel`/`surface`/`flow` need to be named
+    explicitly, not left to the index signature** -- `pane_registry.ts`
+    itself reads all five by dot access in `resolvePane`'s own
+    three-way branch, which `noPropertyAccessFromIndexSignature`
+    disallows against a bare `[key: string]: unknown`. Renamed the guess
+    `PaneEntry` to `PaneRegistration` (the *stored* shape) with
+    `PaneEntry extends PaneRegistration { key: string }` for the
+    *resolved* one, matching `resolvePane`'s own `{ key, ...registered }`
+    construction.
+
+  One correction to a **cluster 2 decision**, caught only once
+  `pane_registry.ts`'s real `resolvePane` was in hand: `PaneEntry.makeModel`
+  had been tightened to drop `| null` in cluster 2, reasoning that every
+  real registration provides one. `resolvePane`'s own Component-branch
+  default (`{ sidebar: null, makeModel: null, ...entry }` in the
+  original JS) shows the *function* genuinely can produce a `null`
+  `makeModel` on the resolved entry -- true today only because every
+  actual registration happens to supply one, not because the function
+  cannot do otherwise, and `shell_model.ts`'s own `paneModel()` already
+  defends against exactly `!entry.makeModel`. Re-widened to
+  `((shell: unknown) => PaneModel) | null` on both `PaneRegistration` and
+  `PaneEntry` (one shared type, not two: TS interface extension requires
+  an overriding property to be *narrower*, not wider, than what it
+  overrides, so `PaneEntry` alone could not add `| null` back once
+  `PaneRegistration` was declared without it). The general lesson this
+  reversal confirms: typing to a function's *real, full* behavior can
+  overturn an earlier decision made from a narrower vantage point, the
+  same way `ShellLearnedContext.view.model` was widened in cluster 2
+  itself once `EditingContext`'s real shape became available -- a
+  decision is only as good as how much of the real source was visible
+  when it was made, and revisiting one under fuller information is not
+  churn.
+
+  A new, real ambient-module pattern, not previously needed:
+  `registry.category()`'s own real signature constrains its argument to
+  a *known* key of `GlobalRegistryCategories` (the same interface
+  `views_registry.d.ts`/`fields_registry.d.ts` already augment for core's
+  own categories) -- `app_builder.panes`/`app_builder.console_tabs` are
+  ours and were declared nowhere, so `registry.category("app_builder.panes")`
+  could not compile at all. Fixed with a `declare module "registries" {
+  interface GlobalRegistryCategories { "app_builder.panes": PaneRegistration;
+  ... } }` block directly in `pane_registry.ts` -- legal from any real
+  `.ts` module, not only a `.d.ts` (confirmed by a clean `tsc` run, the
+  agent's own biggest flagged uncertainty). TYPING.md's Phase 2c
+  `console/odoo.ts` facade is the eventual home for this declaration;
+  until it exists, the one file that creates a category is where its
+  augmentation lives.
+
+  `drag.ts` (913 lines, the largest single file converted so far) found
+  the same class of JSDoc-vs-runtime mismatch `Registry.get`/`queryFirst`
+  already established, at the scale of a whole hook instead of one
+  method: `useDragAndDrop`'s own JSDoc (`html_editor/utils/drag_and_drop.js`)
+  types `helper` as zero-argument and a handler's `dropzone` as a bare
+  `HTMLElement`, but the hook's real implementation always calls `helper`
+  with one argument and hands handlers `ctx.current.dropzone` itself, an
+  `{el, rect}` pair -- exactly what this file's original JS already read
+  it as. Fixed the same way, at the scale of the whole hook: one cast,
+  `useDragAndDrop as (params: CanvasDragHookParams) => DragHook`, traced
+  to the real behavior rather than the JSDoc, confirmed compiling clean
+  (the agent's own second-biggest flagged uncertainty).
+
+  A genuinely new trap, distinct from the already-documented
+  repeated-bracket-index one (which is about index-signature/array reads)
+  and from `Overlay.align()`'s own precedent (a `NodeTable` index read) --
+  add to "Known traps" below: **reading a nullable `this.<field>` after a
+  null-check loses the narrowing the moment any method/function call
+  intervenes before the later read**, even though the field itself was
+  never reassigned. Hit repeatedly in `drag.ts` (`onDragStart`, `watchRow`/
+  `rowAt`, `teardown`'s outline branch) and once on a free function's
+  parameters (`samePlace`'s `Boolean(a && b)`, which does not narrow `a`/
+  `b` for what follows since `Boolean(...)` is opaque to control-flow
+  analysis). Fixed every time the same way: capture the narrowed value
+  into a local `const` right after the check, before anything else runs.
+
+  Two more, smaller: `DragPayload` gained `label?: string` (the chip/
+  status-pill text `drag.ts:payloadFor` always sets, but `console_model.ts`'s
+  own click-to-add construction sites never do -- optional, not required,
+  a distinction the drafting agent's own research missed since it was
+  scoped to `drag.ts`'s dependencies and did not cross-check
+  `console_model.ts`'s *own* `DragPayload` literals; caught centrally by
+  grepping every construction site before trusting the "always set" claim)
+  and `component?: string | undefined` (a component tile's `payloadFor`
+  can legitimately build one with `component: undefined` when the
+  element's markup sets neither `data-key` nor `data-name`, which
+  `exactOptionalPropertyTypes` treats as a different, stricter case than
+  the key being merely absent).
 
 ## CI: the OCA container's real layout
 

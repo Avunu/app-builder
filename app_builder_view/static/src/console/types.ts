@@ -22,6 +22,7 @@
  * here by hand.
  */
 
+import type { Component } from "@odoo/owl";
 import type { DraftPayload, PackageEntryJSON } from "./wire";
 
 /** A node's role in the arch. One tag can be several kinds (`div` is
@@ -281,10 +282,24 @@ export interface ZoneContainer {
 export interface DragPayload {
     kind: "existing_field" | "new_field" | "move_pending" | "component" | "move";
     /** For `kind: "component"`: the palette's name for it
-     * (`zones.js:COMPONENT_TAGS`). */
-    component?: string;
+     * (`zones.js:COMPONENT_TAGS`). `| undefined`, not just optional: a
+     * component tile's `payloadFor` (`drag.ts`) builds this from
+     * `el.dataset["key"] || el.dataset["name"]`, which is legitimately
+     * `undefined` when a tile's markup sets neither -- an explicit
+     * `component: undefined` on the built payload, which
+     * `exactOptionalPropertyTypes` treats differently from the key being
+     * absent altogether. */
+    component?: string | undefined;
     /** For `kind: "move"`: the node being moved. */
     token?: Token;
+    /** What a drag's own chip and status pill show while it is in the
+     * air (`zones.ts:labelOf`, or a tile's own `dataset.label`/text) --
+     * always set by `drag.ts:payloadFor`, the one builder that constructs
+     * a payload for an actual drag. Optional, not required: the other
+     * `DragPayload` construction sites (`console_model.ts`'s own
+     * `addNewField`/`addButton`, the click-to-add path with no chip to
+     * label) never set it. */
+    label?: string;
     [key: string]: unknown;
 }
 
@@ -486,14 +501,50 @@ export interface OdooRpcError {
 
 // -- panes ------------------------------------------------------------------
 //
-// `shell/pane_registry.js`'s own module docstring names this shape
-// (`label, icon, sequence... scope... a custom pane: Component, sidebar,
-// makeModel(shell)...`); transcribed from there and from
-// `shell_model.ts`'s own reads, not yet from `pane_registry.ts` itself
-// (still JS -- outside this migration's leaf-first cluster 2).
+// Traced against `shell/pane_registry.ts`'s real implementation
+// (`resolvePane`/`paneAvailable`/`paneTabs`/`paneFlows`), reconciled
+// against the earlier guess this section held (transcribed only from the
+// module's own docstring and from `shell_model.ts`'s reads, before
+// `pane_registry.ts` itself existed). Two real differences turned up:
+//
+//   - `sequence` was never a field of the *stored* entry -- despite the
+//     module docstring listing it beside `label`/`icon` as if it were
+//     one, every real `paneRegistry.add(key, value, options)` call
+//     (`views_pane.js`, `changes_pane.js`, `home_pane.js`, the
+//     addon-owned `console_items.js` files) passes it as `add()`'s own
+//     third-argument *option* (`{ sequence: 10 }`), never inside the
+//     registered value -- the docstring's own parenthetical ("sequence
+//     (add() option)") already said so. `resolvePane`'s `paneRegistry.get()`
+//     read never carries it, and nothing in this tree has ever read
+//     `entry.sequence`. Dropped from both interfaces below.
+//   - `Component`/`sidebar`/`makeModel`/`surface`/`flow` are read
+//     directly by dot access inside `pane_registry.ts` itself
+//     (`resolvePane`'s three-way branch), which `noPropertyAccessFromIndexSignature`
+//     does not allow against a bare index signature -- named explicitly
+//     below instead of left for the index signature to cover, the same
+//     kind of extra field a from-the-outside guess misses. `sidebar`/
+//     `makeModel` both need `| null`, not just optionality: no real
+//     registration ever writes a literal `sidebar`/`makeModel: null`
+//     itself (`home_pane.js`'s own `sidebar: null` is the one exception
+//     -- see `sidebar`'s own comment below), but `resolvePane`'s
+//     Component-branch default (`entry.makeModel ?? null`) genuinely
+//     produces a `null` value on the *resolved* entry when a
+//     Component-bearing registration supplies neither -- a real,
+//     reachable state the function itself handles -- `shell_model.ts`'s
+//     `paneModel()` already defends against exactly `!entry.makeModel`
+//     being true. One shared type carries `| null` on both `PaneRegistration`
+//     and `PaneEntry` rather than narrowing it away on the stored side:
+//     `PaneEntry extends PaneRegistration`, and TypeScript's interface
+//     extension requires an overriding property to be *narrower* than
+//     what it overrides, not wider, so a `PaneEntry`-only `| null` would
+//     not compile against a non-nullable `PaneRegistration.makeModel`.
+//     `surfaceArgs`/`rowActions`/`empty`/`newFlow` stay under the index
+//     signature -- `pane_registry.ts` never reads them (only
+//     `record_pane_model.ts`/`record_pane.js` do), so they remain
+//     unmodeled until one of those is converted.
 
 /** What a pane needs in hand to decide it can be shown
- * (`pane_registry.js:paneAvailable`, `shell_model.ts:paneContext`). */
+ * (`pane_registry.ts:paneAvailable`, `shell_model.ts:paneContext`). */
 export interface PaneContext {
     packageId: number | false;
     package: PackageEntryJSON | null;
@@ -505,31 +556,64 @@ export interface PaneContext {
 }
 
 /**
- * A registered pane, resolved (`pane_registry.js:resolvePane`). Every
- * variant (`Component`, `surface`, `flow`) is folded into one loose
- * shape here -- `shell_model.ts` only ever reads `key`/`scope`/`label`/
- * `makeModel`/`isAvailable`/`tab`, never picks a variant apart itself,
- * so the rest stays `unknown` through the index signature rather than
- * modeled ahead of a real reader (Owl components and flow steps belong
- * to files this migration has not reached yet).
+ * What a module hands `paneRegistry.add(key, value, options)` -- the
+ * *stored* shape, before `resolvePane` merges in `key`. Also the item
+ * shape `app_builder.panes` itself is declared with (`pane_registry.ts`'s
+ * own `declare module "registries"` augmentation), since nothing else in
+ * this tree names that category yet.
  */
-export interface PaneEntry {
-    key: string;
+export interface PaneRegistration {
     label: string;
     icon?: string;
-    sequence?: number;
     scope?: "package" | "model" | "view";
     isAvailable?: (ctx: PaneContext) => boolean;
     /** `false` for a pane the top bar does not list (a flow). */
     tab?: false;
-    /** `(shell) => new SomeModel(...)` at every real registration
-     * (`record_pane.js`, `views_pane.js`, `home_pane.js`,
-     * `changes_pane.js`, `flow.js`) -- never null, so this is not typed
-     * as one. `shell` is deliberately `unknown` here rather than a
-     * `StudioShell` this file would have to import -- `shell_model.ts`
-     * is the only caller, and it already knows what it is passing. */
-    makeModel?: (shell: unknown) => PaneModel;
+    /** A custom pane's own component (`ViewsPane`, `HomePane`,
+     * `ChangesPane`, ...) -- the first of `resolvePane`'s three
+     * discriminators. Only ever checked for truthiness and passed
+     * through untouched by `pane_registry.ts`; never instantiated or
+     * read for its `Props` there, so this names the class and nothing
+     * more. */
+    Component?: typeof Component;
+    /** The custom pane's sidebar, or `null` for none (`home_pane.js`
+     * sets this explicitly; every other `Component`-bearing entry
+     * supplies a real one). */
+    sidebar?: typeof Component | null;
+    /** `(shell) => new SomeModel(...)` at every real registration that
+     * has one (`record_pane.js`, `views_pane.js`, `home_pane.js`,
+     * `changes_pane.js`, `flow.js` -- never a literal `null` on this
+     * side); `resolvePane`'s own Component-branch default can still
+     * produce `null` on the *resolved* `PaneEntry` when an entry
+     * supplies none, which is why `null` is part of this shared type at
+     * all (see this section's own header comment). */
+    makeModel?: ((shell: unknown) => PaneModel) | null;
+    /** A record pane's surface name -- the second discriminator.
+     * `surfaceArgs`/`rowActions`/`empty`/`newFlow`, the rest of "a
+     * record pane"'s own vocabulary, are read by
+     * `record_pane_model.ts`/`record_pane.js`, never by
+     * `pane_registry.ts`, so they stay under the index signature below. */
+    surface?: string;
+    /** A flow pane's spec -- the third discriminator. Only ever checked
+     * for truthiness in `pane_registry.ts`; `flow.js` (`FlowModel`,
+     * still `.js`) is the real reader of its `title`/`steps`/`onDone`/
+     * `onCancel`, so its shape is not modeled ahead of that conversion. */
+    flow?: unknown;
     [key: string]: unknown;
+}
+
+/**
+ * A registered pane, resolved (`pane_registry.ts:resolvePane`): the
+ * stored `PaneRegistration` with its `key` merged in, and -- for a
+ * `surface`/`flow` entry -- the record/flow resolver's own additions
+ * folded on top. `shell_model.ts` only ever reads `key`/`scope`/`label`/
+ * `makeModel`/`isAvailable`/`tab` off the result, never picks a variant
+ * apart itself, so the rest stays under the index signature rather than
+ * modeled ahead of a real reader (Owl components and flow steps belong
+ * to files this migration has not reached yet).
+ */
+export interface PaneEntry extends PaneRegistration {
+    key: string;
 }
 
 // -- services -----------------------------------------------------------
