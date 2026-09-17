@@ -92,3 +92,12 @@ repos:
         language: system
         files: \.ts$
         pass_filenames: false
+      - id: prettier-ts
+        name: prettier --write (.ts, see .prettierrc.json)
+        entry: npx prettier --write
+        language: system
+        files: \.ts$
+      # No eslint hook: eslint.config.mjs's own top-of-file comment (and
+      # TYPING.md, Known traps) explain why it is not enforced yet -- it
+      # currently reports spurious findings that npm run typecheck (the
+      # real checker) does not.

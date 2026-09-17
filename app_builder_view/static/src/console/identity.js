@@ -168,9 +168,7 @@ function findTab(root, page) {
     return null;
   }
   if (page.name) {
-    const byName = root.querySelector(
-      `${compat.TAB_SELECTOR}[name="${cssEscape(page.name)}"]`
-    );
+    const byName = root.querySelector(`${compat.TAB_SELECTOR}[name="${cssEscape(page.name)}"]`);
     if (byName) {
       return byName;
     }

@@ -55,14 +55,21 @@
     "*/static/src/**/*",
     "*/static/tests/**/*",
     // See tsconfig.json's `include` for why this list is cherry-picked
-    // rather than a blanket `@types/**/*.d.ts` glob.
-    "/opt/odoo/addons/web/static/src/@types/owl.d.ts",
+    // rather than a blanket `@types/**/*.d.ts` glob, and why there is no
+    // owl.d.ts here: @odoo/owl is a real npm dependency (package.json:
+    // types -> dist/types/owl.d.ts) that resolves on its own; the
+    // ambient re-export OCB ships for it does not survive
+    // moduleResolution: bundler resolving its own wildcard `exports`
+    // subpath, and ends up empty, shadowing the real one for nothing.
     "/opt/odoo/addons/web/static/src/@types/odoo.d.ts",
     "/opt/odoo/addons/web/static/src/@types/hoot.d.ts",
     "/opt/odoo/addons/web/static/src/@types/libs.d.ts",
     "/opt/odoo/addons/web/static/src/@types/qunit.d.ts",
+    "/opt/odoo/addons/web/static/src/@types/fields.d.ts",
     "/opt/odoo/addons/web/static/src/@types/registry.d.ts",
-    "/opt/odoo/addons/web/static/src/@types/registries/services_registry.d.ts"
+    "/opt/odoo/addons/web/static/src/@types/registries/services_registry.d.ts",
+    "/opt/odoo/addons/web/static/src/@types/registries/views_registry.d.ts",
+    "/opt/odoo/addons/web/static/src/@types/registries/fields_registry.d.ts"
   ],
   "exclude": ["node_modules", "**/static/lib/**", "**/static/description/**"]
 }

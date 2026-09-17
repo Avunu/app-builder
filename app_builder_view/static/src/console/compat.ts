@@ -36,8 +36,15 @@ import type { BoxRect } from "./types";
  * both read by digits alone. The rest of `session` is untyped Odoo global
  * state this file has no business widening.
  */
+/** A digit-bearing primitive, the only shape a version part is ever
+ * spelled as (a number, or a `saas~xx` string). Narrower than `unknown`
+ * so `String(...)` on one is never the "[object Object]" `no-base-to-string`
+ * warns about -- and genuinely narrower, not a lint workaround: nothing
+ * in `odoo/release.py`'s own version tuple is ever an object. */
+type VersionPart = string | number;
+
 interface VersionInfo {
-    server_version_info?: readonly [unknown, unknown, ...unknown[]];
+    server_version_info?: readonly [VersionPart, VersionPart, ...VersionPart[]];
 }
 
 /** `[major, minor]`, both numbers. */
@@ -62,7 +69,7 @@ export function serverVersion(): ServerVersion {
 }
 
 /** The integer spelled by the digits of `value`, or `NaN` when there are none. */
-function digitsOf(value: unknown): number {
+function digitsOf(value: VersionPart | undefined): number {
     if (value === undefined || value === null) {
         return NaN;
     }
@@ -278,7 +285,7 @@ export function clearViewCaches(env: EnvWithBus): void {
  * checkout; it is assumed to be on the 18 side until it is.
  */
 export function fieldSelectorFollow(
-    follow = true
+    follow = true,
 ): { followRelation: boolean } | { followRelations: boolean } {
     if (versionAtLeast(19, 5)) {
         return { followRelation: follow };

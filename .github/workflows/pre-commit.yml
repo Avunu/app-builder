@@ -33,4 +33,4 @@ jobs:
         run: >-
           pre-commit run --all-files --show-diff-on-failure --color=always
         env:
-          SKIP: pyright,tsc-typecheck,build-ts
+          SKIP: pyright,tsc-typecheck,build-ts,prettier-ts

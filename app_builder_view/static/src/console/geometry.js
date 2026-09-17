@@ -84,9 +84,7 @@ function childEntries(token, root, nodes, container) {
     if (childNode.kind === "page") {
       el = tabFor(child, root);
     } else {
-      el = elementsFor(child, root, nodes).find(
-        (candidate) => container.contains(candidate)
-      );
+      el = elementsFor(child, root, nodes).find((candidate) => container.contains(candidate));
     }
     if (!el || !container.contains(el)) {
       continue;

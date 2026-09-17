@@ -150,7 +150,7 @@ export function columnToken(name: string, nodes: NodeTable | null | undefined): 
 export function elementsFor(
     token: Token,
     root: Element | null,
-    nodes: NodeTable | null | undefined
+    nodes: NodeTable | null | undefined,
 ): Element[] {
     if (!root || !token) {
         return [];
@@ -172,7 +172,10 @@ export function elementsFor(
  * DOM is its tab. Each is widened or narrowed to the shape a person would
  * point at.
  */
-export function rectFor(node: StudioNode | null | undefined, instance: Element | null): BoxRect | null {
+export function rectFor(
+    node: StudioNode | null | undefined,
+    instance: Element | null,
+): BoxRect | null {
     if (!instance) {
         return null;
     }
@@ -208,7 +211,7 @@ export function instanceAt(
     token: Token,
     root: Element | null,
     nodes: NodeTable | null | undefined,
-    point: Point | null
+    point: Point | null,
 ): Element | null {
     const instances = elementsFor(token, root, nodes);
     if (!point || instances.length <= 1) {
@@ -251,7 +254,10 @@ export function cardOf(el: MaybeElement): Element | null {
  * container's, else the first there is. What a drag from the palette
  * lays its zones out on, since the pointer has not been over any card.
  */
-export function firstVisibleCard(root: Element | null, scrollEl: Element | null = root): Element | null {
+export function firstVisibleCard(
+    root: Element | null,
+    scrollEl: Element | null = root,
+): Element | null {
     const cards = cardsOf(root);
     if (!cards.length) {
         return null;
@@ -270,7 +276,9 @@ export function firstVisibleCard(root: Element | null, scrollEl: Element | null 
                 r.right > view.left &&
                 r.left < view.right
             );
-        }) ?? cards[0] ?? null
+        }) ??
+        cards[0] ??
+        null
     );
 }
 
@@ -312,9 +320,7 @@ export function findTab(root: Element | null, page: TabMemory | null): Element |
         return null;
     }
     if (page.name) {
-        const byName = root.querySelector(
-            `${compat.TAB_SELECTOR}[name="${cssEscape(page.name)}"]`
-        );
+        const byName = root.querySelector(`${compat.TAB_SELECTOR}[name="${cssEscape(page.name)}"]`);
         if (byName) {
             return byName;
         }

@@ -224,11 +224,48 @@ hoot `onRpc` mocks typed against the same map.
   `include`: `services.d.ts` and most of `@types/registries/*.d.ts` exist
   specifically to `import` real service/registry *implementation* modules
   and take their type with `typeof` -- which pulls those real `.js` files
-  into the program too. `owl.d.ts`, `odoo.d.ts`, `hoot.d.ts`, `libs.d.ts`,
-  `qunit.d.ts`, `registry.d.ts` and
-  `registries/services_registry.d.ts` do not do this and are the ones
-  `tsconfig.json` includes; `useService`/`services` gets its own narrow,
-  hand-written facade instead (Phase 2c), never Odoo's auto-generated one.
+  into the program too. `tsconfig.json`'s own `include` comment has the
+  current, authoritative list and why each entry is there (it has grown
+  past the original "pure types only" rule as real files needed more --
+  `views_registry.d.ts`/`fields_registry.d.ts` for `ViewsRegistryItemShape`/
+  `FieldsRegistryItemShape`, `fields.d.ts` for the field-definition types
+  those need); do not duplicate that list here where it will go stale.
+  `useService`/`services` (`services.d.ts` itself) still gets its own
+  narrow, hand-written facade instead (Phase 2c), never Odoo's
+  auto-generated one -- that one cascade really is the whole webclient,
+  unlike a single view/field descriptor shape.
+- No `owl.d.ts` in `include`, on either tsconfig: `@odoo/owl` is a real
+  npm dependency (`package.json: types`) that resolves on its own, and
+  OCB's ambient re-export of it (`declare module "@odoo/owl" { export *
+  from "@odoo/owl/dist/types/owl"; }`) does not survive
+  `moduleResolution: bundler` resolving its own wildcard `exports`
+  subpath -- it silently resolves to nothing and shadows the real
+  package's types with an empty ambient module. Symptom: `Module
+  '"@odoo/owl"' has no exported member 'Component'` (or anything else
+  real) the moment a file actually needs a named export from it, with no
+  hint that the ambient file is the cause. Confirmed by removing it and
+  watching the error disappear -- if it ever needs to come back for a
+  different reason, re-test that resolution first.
+- eslint's `no-unsafe-*` rules (Phase 2c) are configured
+  (`eslint.config.mjs`) but **not enforced** -- not in the pre-commit
+  hooks, not in CI. typescript-eslint's own program construction
+  (tried `project` as both a relative and an absolute path, and
+  `projectService: true` -- all three, same result) fails to resolve
+  `tsconfig.json`'s ambient `registries`/other literal, non-glob
+  `include` entries that reach outside this directory via `../../odoo/...`,
+  and reports spurious `no-unsafe-*` findings on any file that touches a
+  type from one of them. `npm run typecheck` (the real, enforced
+  checker) and the TypeScript compiler API's own
+  `getParsedCommandLineOfConfigFile` (what `tsc -p` itself calls) both
+  pass the same code cleanly; narrowed as far as confirming
+  `ts.parseJsonConfigFileContent` called directly with a *relative* base
+  path silently drops those same entries, while an absolute one or
+  `getParsedCommandLineOfConfigFile` does not -- typescript-eslint
+  evidently still hits the relative-basePath path somewhere internal
+  that no public `parserOptions` changes. `eslint.config.mjs`'s own
+  top-of-file comment has the full account. Don't trust an eslint
+  finding without cross-checking it against `npm run typecheck` first;
+  don't wire eslint into a hook or CI job until this is actually fixed.
 - Typed relational fields + circular imports: annotation syntax +
   `from __future__ import annotations`, never `fields.Many2one[Cls]` (that
   evaluates at import).
@@ -294,8 +331,12 @@ output forced (each is also in "Known traps" below):
 Landed: `package.json`, `tsconfig.json`, `pyrightconfig.json`,
 `scripts/typecheck.mjs` (tsc, filtered), `scripts/build_ts.mjs` (esbuild
 emit, drift-checking), `.gitattributes` (per converted file),
-`app_builder_base/tests/test_assets.py` (the transpiler guard), local
-pre-commit hooks + `SKIP=` in `pre-commit.yml`.
+`.prettierrc.json` (`tabWidth: 4`, matching `.editorconfig` -- prettier's
+own defaults are 2, and would have fought every `.ts` file's actual
+style), `eslint.config.mjs` (typescript-eslint, configured but **not**
+enforced yet -- see "Known traps"), `app_builder_base/tests/test_assets.py`
+(the transpiler guard), local pre-commit hooks + `SKIP=` in
+`pre-commit.yml`.
 
 First real conversions, both verified against the actual tools rather
 than reasoned about:
@@ -319,16 +360,62 @@ than reasoned about:
   behavior (every one already passes `translate=env._`); confirmed by
   grepping every `.to_json(`/`catalogue_json(` call site before making
   the change.
-- **TypeScript (2b, cluster 1, partial):** `compat.ts`, `identity.ts`,
-  `geometry.ts` converted (leaf-first, as planned), plus a new
-  `types.ts` for the node-table shapes (`StudioNode`, `NodeTable`,
-  `PlainRect`, `BoxRect`, `Point`, `Token`) they all share --
-  transcribed from `canvas_stamp.py`'s actual construction of a node,
-  not guessed from usage. `noUncheckedIndexedAccess`,
-  `exactOptionalPropertyTypes` and the rest of `strict` are on and
-  clean for all three. Remaining leaves in cluster 1 (`options`,
-  `zones`, `outline_zones`, `outline_tree`, `canvas_views`, and their
-  `.test.js` files) are still JS.
+- **TypeScript (2b, cluster 1: done except tests).** `compat.ts`,
+  `identity.ts`, `geometry.ts`, `options.ts`, `zones.ts`,
+  `outline_zones.ts`, `outline_tree.ts`, `canvas_views.ts` -- every
+  planned file in the cluster, leaf-first as planned (`options`/`zones`
+  before `outline_zones`/`outline_tree`, both before `canvas_views`,
+  which turned out independent of the rest and was done first). Two new
+  shared files: `types.ts` for the node-table and drop-zone shapes
+  (`StudioNode`, `NodeTable`, `DescribedTarget`, `Zone`, `DragPayload`,
+  `OutlineRow`, ...) and `wire.ts`, the hand-kept TS mirror of
+  `catalogue.py`'s `TypedDict`s (`RowJSON`, `WidgetJSON`, ...) that
+  Phase 2d's generator will eventually replace. Every file is
+  `noUncheckedIndexedAccess`/`exactOptionalPropertyTypes`-clean, and
+  every one's emitted `.js` was checked against transpiling its
+  pre-conversion original -- same `odoo.define` name and dependency
+  list every time, confirming the conversion never widened or narrowed
+  what a file actually imports. Left in JS: the `.test.js` hoot tests
+  for these modules (still to convert) and everything outside cluster 1.
+
+  Two more real bugs typing surfaced, on top of catalogue.py's
+  `LazyGettext` one:
+
+  - `StudioNode.label`/`node.pending` were flat wrong in `types.ts`'s
+    first draft -- `label_of()` (`canvas_stamp.py`) returns a dict
+    (`{shown, by, token, in_group}`), not the bare `"group"`/`"label"`
+    string its `by` key holds; a first-pass misreading of the function
+    that nothing caught until `outline_tree.ts` actually needed
+    `.label.token`. Fixed as `FieldLabel`, with `pending` (a
+    `kind: "pending"` ghost's staged-field info, previously not modeled
+    at all) added alongside it, both transcribed from the real Python
+    construction rather than the earlier guess.
+  - `row.placeholder` in `options.js`'s `resolve()` was never a real
+    field -- `RowJSON`/the Python `Row` dataclass have only
+    `placeholder_from`. Every row whose `placeholder_from` was not
+    `"field.string"` has therefore always resolved to `""`, silently,
+    since before this migration. Left as-is (not this migration's bug
+    to fix behavior for) but now a comment instead of a silent
+    always-empty read.
+  - `canvas_views.ts`'s first draft extracted `Registry.get` as a bare
+    method reference to work around its two-argument JSDoc (see the
+    file itself) -- `const oneArgGet = viewRegistry.get as ...`, then
+    called it later. That unbinds `this`, and the real `get()` reads
+    `this.content` -- a genuine latent bug the `unbound-method` lint
+    rule caught before it ever ran, not a style complaint. Fixed with
+    `.call(viewRegistry, ...)`.
+
+  Also caught, and not a bug: `@odoo/owl` shadowed by its own ambient
+  re-export. `tsconfig.json` originally included OCB's
+  `@types/owl.d.ts` (`declare module "@odoo/owl" { export * from
+  "@odoo/owl/dist/types/owl"; }`); once `canvas_views.ts` needed
+  `Component`'s type, that import resolved to nothing (`Module
+  '"@odoo/owl"' has no exported member 'Component'`). `@odoo/owl` is a
+  real npm dependency with its own `package.json: types`, and OCB's
+  ambient re-export does not survive `moduleResolution: bundler`
+  resolving its own wildcard `exports` subpath -- it shadows the real
+  package's types with an empty one. Dropped from `include`; `@odoo/owl`
+  now resolves on its own, as it should.
 
 ## CI: the OCA container's real layout
 

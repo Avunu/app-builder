@@ -39,7 +39,7 @@ export function instanceOf(
     token: Token,
     root: Element | null,
     nodes: NodeTable,
-    point: Point | null = null
+    point: Point | null = null,
 ): Element | null {
     const node = nodes[token];
     if (!node || !root) {
@@ -61,7 +61,7 @@ export function outlineRect(
     token: Token,
     root: Element | null,
     nodes: NodeTable,
-    point: Point | null = null
+    point: Point | null = null,
 ): PlainRect | null {
     const instance = instanceOf(token, root, nodes, point);
     if (!instance) {
@@ -84,7 +84,7 @@ export function contentElement(
     token: Token,
     root: Element | null,
     nodes: NodeTable,
-    point: Point | null = null
+    point: Point | null = null,
 ): Element | null {
     const node = nodes[token];
     const instance = instanceOf(token, root, nodes, point);
@@ -102,9 +102,7 @@ export function contentElement(
             return null;
         }
         const notebook = instance.closest(".o_notebook");
-        return notebook
-            ? notebook.querySelector(":scope > .o_notebook_content > .tab-pane")
-            : null;
+        return notebook ? notebook.querySelector(":scope > .o_notebook_content > .tab-pane") : null;
     }
     if (node.kind === "card") {
         return instance.closest(".o_kanban_record") || instance;
@@ -117,7 +115,7 @@ export function contentRect(
     token: Token,
     root: Element | null,
     nodes: NodeTable,
-    point: Point | null = null
+    point: Point | null = null,
 ): PlainRect | null {
     const el = contentElement(token, root, nodes, point);
     if (!el) {
@@ -183,7 +181,7 @@ export function childEntries(
     token: Token,
     root: Element | null,
     nodes: NodeTable,
-    container: Element | null
+    container: Element | null,
 ): ChildEntry[] {
     const node = nodes[token];
     if (!node || !container) {
@@ -199,9 +197,7 @@ export function childEntries(
         if (childNode.kind === "page") {
             el = tabFor(child, root);
         } else {
-            el = elementsFor(child, root, nodes).find((candidate) =>
-                container.contains(candidate)
-            );
+            el = elementsFor(child, root, nodes).find((candidate) => container.contains(candidate));
         }
         if (!el || !container.contains(el)) {
             continue;

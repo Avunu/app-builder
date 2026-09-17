@@ -42,24 +42,40 @@
   "include": [
     "*/static/src/**/*",
     "*/static/tests/**/*",
-    // Only the ambient .d.ts files that declare pure types (@odoo/owl,
-    // @odoo/hoot*, the global `odoo` loader var, third-party libs). Odoo's
-    // `services.d.ts` and most of `@types/registries/*.d.ts` instead
+    // Cherry-picked, not a blanket `@types/**/*.d.ts` glob. No owl.d.ts:
+    // @odoo/owl is a real npm dependency (package.json: types ->
+    // dist/types/owl.d.ts) that resolves on its own, and OCB's own
+    // ambient re-export of it does not survive moduleResolution: bundler
+    // resolving its wildcard `exports` subpath -- ends up empty,
+    // shadowing the real one for nothing (confirmed with a probe import;
+    // "Module has no exported member" until owl.d.ts was dropped here).
+    //
+    // Odoo's `services.d.ts` and most of `@types/registries/*.d.ts`
     // *import concrete service/registry implementation modules* to derive
     // their types (`import { commandService } from "@web/core/commands/..."`),
-    // which pulls those real .js files into the program -- and a few of
-    // them opt into per-file checking with `//@ts-check`, which overrides
-    // our `checkJs: false` and surfaces pre-existing errors in vendored
-    // code we do not own and cannot fix here. `services`/`useService` gets
-    // its own narrow, hand-written ambient module in console/odoo.ts
-    // instead (Phase 2c) -- see TYPING.md.
-    "../../odoo/addons/web/static/src/@types/owl.d.ts",
+    // which pulls those real .js files into the program -- and a couple
+    // of them opt into per-file checking with `//@ts-check`, overriding
+    // `checkJs: false` and surfacing errors in vendored code we do not
+    // own (scripts/typecheck.mjs filters those out; see its own
+    // docstring). Included anyway where the accuracy is worth the extra
+    // vendor noise -- `views_registry.d.ts` for `ViewsRegistryItemShape`
+    // (`canvas_views.ts` derives real view descriptors, not a shape
+    // reinvented here), `fields_registry.d.ts` for `FieldsRegistryItemShape`
+    // (`options.ts`'s `supportedTypes` check against `registry.category("fields")`),
+    // and `fields.d.ts` for the field-definition types both of those need.
+    // `services`/`useService` still gets its own narrow, hand-written
+    // facade instead (Phase 2c, console/odoo.ts) rather than pulling in
+    // `services.d.ts` itself -- that one's cascade is the webclient's
+    // entire service registry, not one view-descriptor shape.
     "../../odoo/addons/web/static/src/@types/odoo.d.ts",
     "../../odoo/addons/web/static/src/@types/hoot.d.ts",
     "../../odoo/addons/web/static/src/@types/libs.d.ts",
     "../../odoo/addons/web/static/src/@types/qunit.d.ts",
+    "../../odoo/addons/web/static/src/@types/fields.d.ts",
     "../../odoo/addons/web/static/src/@types/registry.d.ts",
-    "../../odoo/addons/web/static/src/@types/registries/services_registry.d.ts"
+    "../../odoo/addons/web/static/src/@types/registries/services_registry.d.ts",
+    "../../odoo/addons/web/static/src/@types/registries/views_registry.d.ts",
+    "../../odoo/addons/web/static/src/@types/registries/fields_registry.d.ts"
   ],
   "exclude": ["node_modules", "**/static/lib/**", "**/static/description/**"]
 }

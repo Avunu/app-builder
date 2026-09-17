@@ -110,3 +110,7 @@ jobs:
         run: TSC_PROJECT=tsconfig.ci.json node scripts/typecheck.mjs
       - name: esbuild .ts -> .js is up to date
         run: node scripts/build_ts.mjs
+      - name: prettier
+        run: npx prettier --check '**/*.ts'
+      # No eslint step: see eslint.config.mjs's own top-of-file comment
+      # and TYPING.md, Known traps -- not enforced anywhere yet.

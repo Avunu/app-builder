@@ -8,7 +8,8 @@
     "build:watch": "node scripts/build_ts.mjs --watch",
     "typecheck": "node scripts/typecheck.mjs",
     "lint": "eslint '**/*.ts'",
-    "format": "prettier --check '**/*.ts'"
+    "format": "prettier --check '**/*.ts'",
+    "format:fix": "prettier --write '**/*.ts'"
   },
   "devDependencies": {
     "@odoo/owl": "2.8.3",
