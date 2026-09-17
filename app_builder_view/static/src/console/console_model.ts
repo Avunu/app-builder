@@ -50,7 +50,7 @@ import { _t } from "@web/core/l10n/translation";
 import * as compat from "./compat";
 import { messageOf } from "./shell/draft_model";
 import type { ApplyResult, DraftFieldWithPending, DraftModel } from "./shell/draft_model";
-import type { OpenViewTarget, StudioShell } from "./shell/shell_model";
+import type { OpenViewTarget } from "./shell/shell_model";
 import type {
     CanvasPackageSummary,
     CanvasPayload,
@@ -126,6 +126,25 @@ interface ConsoleEnv {
         field: FieldService;
     };
     bus: { trigger: (name: string) => void };
+}
+
+/**
+ * What `ConsoleModel` reads off the shell it is handed: the package in the
+ * top bar, the model's label on the crumb, the model's draft, and the one
+ * call that hands the shell what the editing context learned. A narrow
+ * interface rather than `StudioShell` itself, mirroring `DraftModelOwner`
+ * (`shell/draft_model.ts`) -- this class's own docstring makes the same
+ * promise DraftModel's does ("so it can be tested and ported as it is"),
+ * which a constructor pinned to the real, thirty-member `StudioShell`
+ * class would not keep: a unit test would have to stub every member
+ * `ConsoleModel` never reads just to construct one. The real `StudioShell`
+ * satisfies this structurally without any change on its side.
+ */
+export interface ConsoleModelOwner {
+    packageId: number | false;
+    modelLabel: string;
+    draft: DraftModel;
+    learnContext(context: EditingContext): Promise<void>;
 }
 
 /** `this.params`: what `open()` was told, filled in by the server where
@@ -211,7 +230,7 @@ export class ConsoleModel implements PaneModel {
     env: ConsoleEnv;
     orm: OrmService;
     notification: NotificationService;
-    shell: StudioShell;
+    shell: ConsoleModelOwner;
     params: ConsoleViewParams;
 
     context: EditingContext | null;
@@ -266,7 +285,7 @@ export class ConsoleModel implements PaneModel {
     /** Set by the shell itself after the first `open()`. */
     opened: boolean;
 
-    constructor(env: ConsoleEnv, shell: StudioShell) {
+    constructor(env: ConsoleEnv, shell: ConsoleModelOwner) {
         this.env = env;
         this.orm = env.services.orm;
         this.notification = env.services.notification;

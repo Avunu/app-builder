@@ -687,6 +687,79 @@ than reasoned about:
   `types.ts`) since the vendor file's own JSDoc types every return as a
   bare `object`.
 
+- **TypeScript (2b, cluster 2's own test: `console_model.test.ts`).**
+  Of the five `.test.js` files a cluster-1 drafting agent had earlier
+  flagged as candidates ("likely the same `makeFieldGenerator`/`override`
+  patterns"), only this one actually imports cluster 2's own converted
+  modules (`ConsoleModel`, `DraftModel`); `drag.test.js`, `outline.test.js`,
+  `record_sidebar.test.js` and `systray_item.test.js` all import Owl
+  components that are still `.js` (`drag.js`, `overlay.js`,
+  `sidebar/outline.js`, `record_pane/record_pane.js`, `systray_item.js` --
+  cluster 3/4 subjects), so converting their tests now would mean typing a
+  test file whose subject is still untyped, ahead of the leaf-first order
+  this migration has followed throughout. Left for their own clusters;
+  only `console_model.test.ts` converted this turn.
+
+  Real design finding, not just annotation: `console_model.ts`'s
+  constructor originally took `shell: StudioShell` (the real ~30-member
+  class, matching `record_pane_model.ts`'s own precedent of importing the
+  real class for an accurate `shell` param). Writing this test surfaced
+  that this contradicts `ConsoleModel`'s *own* docstring, word for word
+  the same promise `DraftModel`'s makes ("so it can be tested and ported
+  as it is") -- a constructor pinned to the full class would force a unit
+  test to stub every member `ConsoleModel` never reads just to construct
+  one. `grep -n "this\.shell\."` showed exactly four reads:
+  `packageId`, `modelLabel`, `draft`, `learnContext(...)`. Added
+  `ConsoleModelOwner`, a narrow interface naming only those four --
+  mirroring `DraftModelOwner`'s own already-established pattern in
+  `shell/draft_model.ts` -- and changed the constructor's `shell` param
+  to it. The real `StudioShell` satisfies it structurally with no change
+  on its own side (confirmed with a standalone probe: `const owner:
+  ConsoleModelOwner = shell` where `shell: StudioShell`, compiles clean),
+  so production wiring (`views_pane.js`'s `new ConsoleModel(shell.env,
+  shell)`) is unaffected; the test can now build a plain object literal
+  instead of a `StudioShell` stand-in.
+
+  Every other finding was a mechanical consequence of the same strict
+  flags cluster 1's tests already met, applied to a much larger fixture
+  set (`node()`/`canvas()`/`editingContext()`/`draftPayload()` builder
+  functions with inert defaults, the established fix for a partial
+  literal not "sufficiently overlapping" its full interface on a bare
+  `as`) -- with two new ones:
+
+  - **A non-generic replacement function cannot be assigned to a
+    generic method property.** Several tests reassign `model.orm.call`
+    mid-test to record calls differently; `OrmService.call<T>` is
+    generic, and TS checks a replacement against *every* instantiation
+    of `T`, which a function returning one concrete shape cannot
+    satisfy (`Type '{...}' is not assignable to type 'T': 'T' could be
+    instantiated with an arbitrary type`) -- confirmed with a
+    standalone probe before writing the real fix. Every mock now
+    replaces `model.orm` wholesale with a properly generic
+    `async call<T = unknown>(...): Promise<T>` method (`return X as T`
+    internally, the same trust-the-caller escape hatch any mock of a
+    generic method needs), rather than patching just `.call` on the
+    existing object.
+  - **`unbound-method` (the same rule that caught a real bug in
+    `canvas_views.ts`, cluster 1) flagged `const original =
+    model.orm.call`** at the three sites that capture the previous
+    mock before installing a new one. This mock genuinely never reads
+    `this` (its body only closes over `calls`/`model` from the
+    enclosing test scope), so extraction is safe here -- unlike the
+    `Registry.get` case -- but `.bind()` was not the fix: `Function.prototype
+    .bind`'s own stdlib typing is not generic-preserving, which would have
+    silently erased `<T>` from every later explicit-type-argument call.
+    Wrapped in a small arrow function that closes over the captured
+    `orm` object and calls `orm.call<T>(...)` explicitly instead --
+    nothing is "unbound" because nothing is extracted, and the wrapper
+    declares its own `<T>`.
+  - Also, `NodeTable`/`CanvasPayload.nodes` is `Readonly` in production
+    (the client never writes it), but two fixtures need to splice in one
+    more node than `canvas()`'s own `entries` list can express (a nested
+    subview field, a pending ghost); cast to `Record<Token, StudioNode>`
+    at those two construction sites only, not a change to the type
+    itself.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was
