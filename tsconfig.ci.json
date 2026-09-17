@@ -1,0 +1,68 @@
+{
+  // For the OCA CI container only (ghcr.io/oca/oca-ci/py3.10-odoo18.0 and
+  // its OCB sibling) -- see tsconfig.json for local dev. A full
+  // standalone config rather than `"extends": "./tsconfig.json"`:
+  // `paths`/`include` are exactly the parts that differ here, and
+  // whether `extends` merges or replaces an object-valued key like
+  // `paths` has changed across TypeScript versions, so this spells out
+  // every option rather than depending on that.
+  //
+  // The one thing that changes from tsconfig.json: OCB core
+  // (`@web`/`@html_editor`/`@web_tour`) lives at the absolute,
+  // Dockerfile-documented `/opt/odoo/addons`, not a relative `../../odoo`
+  // sibling -- there is no odoo-nix workspace in this container, just
+  // this repo's own checkout plus whatever `pip install`ed into the
+  // venv. This repo's own `@app_builder_*` aliases are unchanged: they
+  // are relative to this file, which sits at the repo root in both
+  // places.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom", "dom.iterable"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true,
+
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@odoo_studio_base/*": ["app_builder_base/static/src/*"],
+      "@app_builder_model/*": ["app_builder_model/static/src/*"],
+      "@app_builder_view/*": ["app_builder_view/static/src/*"],
+      "@app_builder_ui/*": ["app_builder_ui/static/src/*"],
+      "@app_builder_report/*": ["app_builder_report/static/src/*"],
+      "@app_builder_approval/*": ["app_builder_approval/static/src/*"],
+      "@web/*": ["/opt/odoo/addons/web/static/src/*"],
+      "@html_editor/*": ["/opt/odoo/addons/html_editor/static/src/*"],
+      "@web_tour/*": ["/opt/odoo/addons/web_tour/static/src/*"],
+      "@mail/*": ["/opt/odoo/addons/mail/static/src/*"]
+    }
+  },
+  "include": [
+    "*/static/src/**/*",
+    "*/static/tests/**/*",
+    // See tsconfig.json's `include` for why this list is cherry-picked
+    // rather than a blanket `@types/**/*.d.ts` glob.
+    "/opt/odoo/addons/web/static/src/@types/owl.d.ts",
+    "/opt/odoo/addons/web/static/src/@types/odoo.d.ts",
+    "/opt/odoo/addons/web/static/src/@types/hoot.d.ts",
+    "/opt/odoo/addons/web/static/src/@types/libs.d.ts",
+    "/opt/odoo/addons/web/static/src/@types/qunit.d.ts",
+    "/opt/odoo/addons/web/static/src/@types/registry.d.ts",
+    "/opt/odoo/addons/web/static/src/@types/registries/services_registry.d.ts"
+  ],
+  "exclude": ["node_modules", "**/static/lib/**", "**/static/description/**"]
+}

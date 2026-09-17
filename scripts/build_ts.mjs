@@ -22,16 +22,33 @@
  */
 
 import { context, build } from "esbuild";
-import { globSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const watch = process.argv.includes("--watch");
 
-const entryPoints = globSync("*/static/{src,tests}/**/*.ts", { cwd: repoRoot }).map((file) =>
-    path.join(repoRoot, file)
-);
+// `fs.globSync` needs Node 22; the OCA CI container (test.yml's
+// `typecheck` job) ships Node 20 (jammy's nodesource package, per the
+// Dockerfile this was checked against). Plain `readdirSync(...,
+// { recursive: true })` (relative path strings, no Dirent) needs only
+// Node 20.1+, comfortably inside that. Walked per addon's own
+// `static/src`/`static/tests` -- never from the repo root, which would
+// also recurse through node_modules for no reason.
+const entryPoints = readdirSync(repoRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith("app_builder"))
+    .flatMap((addon) =>
+        ["static/src", "static/tests"].flatMap((sub) => {
+            const dir = path.join(repoRoot, addon.name, sub);
+            if (!existsSync(dir)) {
+                return [];
+            }
+            return readdirSync(dir, { recursive: true })
+                .filter((relative) => relative.endsWith(".ts"))
+                .map((relative) => path.join(dir, relative));
+        })
+    );
 
 if (entryPoints.length === 0) {
     console.log("build_ts: no .ts sources yet.");

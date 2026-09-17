@@ -1,0 +1,50 @@
+{
+  // For the OCA CI container only (ghcr.io/oca/oca-ci/py3.10-odoo18.0 and
+  // its OCB sibling), not local dev -- see pyrightconfig.json for that.
+  // `test.yml`'s `typecheck` job runs `scripts/ci_addons_mirror.py` first,
+  // then `npx pyright -p pyrightconfig.ci.json`. The two things local
+  // dev's config gets from being inside an odoo-nix workspace, this one
+  // gets from the container's own documented layout instead (read from
+  // its actual Dockerfile/bin scripts, not assumed):
+  //
+  //  - Odoo core (`/opt/odoo`) is `pip install -e`'d straight into the
+  //    venv, so `odoo`/`odoo.addons.web` resolve from the venv alone --
+  //    no extraPaths entry needed for it, unlike local dev's OCB
+  //    submodule.
+  //  - Every OCA addon this repo actually depends on gets pip-installed
+  //    for real too, as a side effect of resolving this repo's own
+  //    addons' dependency metadata (`oca_install_addons`) -- so it also
+  //    needs no extraPaths entry.
+  //  - What neither of those covers is THIS repo's own addons resolving
+  //    as `odoo.addons.<name>` from each other (`app_builder_view`
+  //    importing `app_builder_base`'s tools, etc.): the container only
+  //    tells Odoo's *runtime* loader about `$ADDONS_DIR` (a plain
+  //    `addons_path=...,.` line), which a standalone `pyright` run never
+  //    executes. `scripts/ci_addons_mirror.py` covers exactly that gap,
+  //    the same way odoo-nix's own `ide.enable` mirror covers the
+  //    equivalent gap for local dev's sibling OCA repos.
+  "include": [
+    "app_builder",
+    "app_builder_base",
+    "app_builder_model",
+    "app_builder_view",
+    "app_builder_ui",
+    "app_builder_report",
+    "app_builder_approval",
+    "app_builder_approval_formula",
+    "app_builder_mail"
+  ],
+  "exclude": ["**/static", "**/migrations", "**/__pycache__"],
+
+  "extraPaths": ["/tmp/app-builder-addons-mirror"],
+
+  // The container's venv (Dockerfile: `python$python_version -m venv
+  // /opt/odoo-venv`); absolute, so venvPath/venv aren't relative to this
+  // file the way local dev's are.
+  "venvPath": "/opt",
+  "venv": "odoo-venv",
+
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "standard",
+  "reportMissingModuleSource": false
+}

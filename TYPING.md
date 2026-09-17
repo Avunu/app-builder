@@ -179,10 +179,12 @@ hoot `onRpc` mocks typed against the same map.
 - **pre-commit** (addon repo): local hooks for `pyright`, `tsc --noEmit`,
   the esbuild build, wire generation, `prettier`/`typescript-eslint` on
   `.ts` -- each "generated" hook fails when it modifies the tree, so a
-  stale `.js` or `wire.d.ts` cannot be committed. In the pre-commit CI job
-  (no Odoo checkout) skip the checker hooks via `SKIP=`; run them in a
-  `typecheck` job inside the OCB container in `test.yml`, where
-  `import odoo` resolves and node is present.
+  stale `.js` or `wire.d.ts` cannot be committed. Skipped in the
+  pre-commit CI job (no Odoo checkout, no node_modules) via `SKIP=`;
+  running for real in `test.yml`'s `typecheck` job, inside the OCB
+  container -- see "CI: the OCA container's real layout" for exactly how
+  that job resolves imports pyright/tsc need that a plain checkout
+  cannot answer alone. Done, unlike the rest of Phase 3 below.
 - **Workspace**: `.gitattributes`, `.vscode/settings.json` already seeded
   by odoo-nix -- add `typescript.tsdk`/`eslint.validate` and
   `python.analysis.typeCheckingMode` matching `pyrightconfig` (pyright's
@@ -246,9 +248,18 @@ hoot `onRpc` mocks typed against the same map.
   `pythonVersion = "3.10"` so 3.11-only syntax fails locally, not in CI.
 - The OCA CI container's addon layout (`oca_install_addons`) is not the
   odoo-nix workspace layout `tsconfig.json`/`pyrightconfig.json`'s
-  relative paths assume -- see "CI: what still needs the OCA container's
-  real layout" above. Don't assume the `pre-commit.yml` `SKIP=` treatment
-  generalizes to `test.yml` without checking that container directly.
+  relative paths assume -- see "CI: the OCA container's real layout"
+  above for the CI-specific configs and the mirror script that cover the
+  difference. Don't assume the `pre-commit.yml` `SKIP=` treatment
+  generalizes to `test.yml` without checking a container's own layout
+  directly, the way that section did.
+- Any script under `scripts/` has to run on Node 20, not just whatever
+  local dev happens to have (odoo-nix pins `nodejs_22`): the OCA CI
+  container's Node comes from jammy's nodesource package, pinned at 20.
+  `fs.globSync` (Node 22+) is the one this already caught
+  (`scripts/build_ts.mjs`, rewritten to `readdirSync(...,
+  { recursive: true })`, stable since 20.1); check any new Node API
+  the same way before relying on it.
 
 ## Implemented so far
 
@@ -319,24 +330,68 @@ than reasoned about:
   `zones`, `outline_zones`, `outline_tree`, `canvas_views`, and their
   `.test.js` files) are still JS.
 
-## CI: what still needs the OCA container's real layout
+## CI: the OCA container's real layout
 
-Phase 3 planned a `typecheck` job in `test.yml`'s OCB container, alongside
-`pyright`/`tsc-typecheck`/`build-ts` skipped in `pre-commit.yml`'s plain
-checkout job. The `pre-commit.yml` half is done. The `test.yml` half is
-**not**: that job's `ghcr.io/oca/oca-ci/py3.10-*` containers resolve
-addons with `oca_install_addons`, a layout this was not able to inspect
-from here, and it is very unlikely to match the odoo-nix workspace's
-`modules/odoo-studio` + sibling `odoo/` submodule that
-`tsconfig.json`/`pyrightconfig.json`'s relative paths assume. Adding that
-job means first finding out where `oca_install_addons` actually puts OCB
-and this repo relative to each other in that container, then pointing a
-second, CI-specific tsconfig/pyrightconfig at it (or generating one --
-this may be where a small path-resolution script earns its keep after
-all, scoped to CI rather than the dev shell). Filed here rather than
-guessed at, since a wrong path config that happens to not error (e.g.
-resolving nothing and reporting zero diagnostics) would be worse than no
-job at all.
+Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was
+first filed as open ("this was not able to inspect [the layout] from
+here") and then actually built once the real sources
+(`Avunu/oca-ci`'s `Dockerfile` and `bin/*` scripts) were available to read
+directly. Read, not guessed:
+
+- **Odoo core is at `/opt/odoo`**, `pip install -e`'d straight into
+  `/opt/odoo-venv` (the Dockerfile's own README affirms both: "Odoo source
+  code is in `/opt/odoo`", "Odoo is installed in editable mode"). So
+  `odoo`/`odoo.addons.web` resolve from the venv alone -- no `extraPaths`
+  needed for core, unlike local dev's `odoo/` submodule.
+- **`$ADDONS_DIR` is `.`** -- this repo's own checkout root, the same
+  directory `pyrightconfig.json`/`tsconfig.json` already sit in.
+  `oca_install_addons` only tells Odoo's *runtime* loader about it (a
+  plain `addons_path=...,.` line in `odoo.cfg`); it does nothing for a
+  standalone `pyright`/`tsc` run, which never executes that runtime.
+  Whatever this repo's OWN addons depend on *each other* for gets
+  pip-installed for real as a side effect of resolving dependency
+  metadata (`oca_list_addons_to_test_as_url_reqs` turns each into a
+  `file://` constraint), but nothing guarantees every addon here is such
+  a dependency of another. `scripts/ci_addons_mirror.py` closes exactly
+  that gap: one symlink per addon (anything with a `__manifest__.py`)
+  into a synthetic `odoo/addons/` tree, the same trick odoo-nix's own
+  `ide.enable` mirror uses locally for sibling OCA repos, just scoped to
+  this repo's own addons since everything else is already resolvable one
+  way or the other.
+- **TS only ever imports OCB core** (`@web`, `@html_editor`, `@web_tour`
+  -- no OCA JS), so the TS side needs nothing beyond the one absolute
+  prefix, `/opt/odoo/addons`.
+
+`pyrightconfig.ci.json` and `tsconfig.ci.json` are full standalone
+configs, not `"extends": "./..."` variants of the local ones -- checked
+directly against this repo's own installed `typescript`, `extends` does
+**not** merge an object-valued key like `compilerOptions.paths`, it
+replaces it outright, which would have silently dropped every
+`@app_builder_*` alias the moment a CI-only override touched `@web/*`.
+`scripts/typecheck.mjs` takes `TSC_PROJECT` so the same script drives
+both (`TSC_PROJECT=tsconfig.ci.json` in CI); the vendor/ours split
+(previously "does the path start with `../`") was rewritten to actually
+resolve each reported path against the repo root, since CI's vendor
+paths are absolute (`/opt/odoo/...`), not relative.
+
+One more container fact worth having found before it broke silently:
+`codename` for `py3.10-*18.0` is **jammy** (`oca-ci`'s own build matrix),
+which ships **Node 20**, not 22 -- unlike odoo-nix's local dev shell,
+pinned to `nodejs_22`. `scripts/build_ts.mjs` originally used
+`fs.globSync`, added in Node 22; rewritten to a plain
+`readdirSync(..., { recursive: true })` walk (stable since 20.1) so the
+same script runs unmodified in both places. Filed as a "Known trap"
+below too, since the next script added under `scripts/` will hit the
+same ceiling if it reaches for a glob helper without checking.
+
+None of this has been run inside the actual container -- there was no
+way to do that from here. It is grounded in the container's real,
+directly-inspected sources rather than assumed, and every path/script
+that could be exercised locally was (the mirror script actually makes
+`odoo.addons.app_builder_base` importable; both tsconfigs parse and
+resolve exactly as expected, failing only on the container-specific
+absolute paths that do not exist in this sandbox). The first real CI run
+is still the first real verification.
 
 ## Order of work and rough size
 

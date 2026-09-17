@@ -15,12 +15,13 @@
  * code we do not own would make every future OCB bump a typecheck outage
  * we cannot resolve from this repo.
  *
- * tsc reports every path relative to this file's directory (tsconfig.json
- * lives at the repo root next to this script's parent). Anything this
- * repo owns resolves without a leading "../"; anything reached through an
- * alias into ../../odoo always has one. That is the split this script
- * enforces -- not a path allowlist, a "did tsc have to leave this repo to
- * find it" test.
+ * "Ours" is anything tsc resolves to a path inside this repo's own
+ * directory, checked by actually resolving each reported path against
+ * this file's directory -- not by pattern-matching a leading "../", which
+ * only holds for tsconfig.json's *relative* `@web/*` aliases. In CI
+ * (`TSC_PROJECT=tsconfig.ci.json`, TYPING.md) those aliases point at the
+ * container's absolute `/opt/odoo/addons/*` instead, which tsc reports
+ * as-is, with no leading ".." to match.
  */
 
 import { spawnSync } from "node:child_process";
@@ -28,10 +29,15 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+// TYPING.md: local dev uses tsconfig.json (the default tsc picks up on its
+// own); the OCA CI container's typecheck job sets this to point at
+// tsconfig.ci.json instead, whose `@web/*` etc. resolve to the
+// container's absolute /opt/odoo/addons rather than a relative ../../odoo.
+const project = process.env.TSC_PROJECT ?? "tsconfig.json";
 
 const result = spawnSync(
   process.platform === "win32" ? "npx.cmd" : "npx",
-  ["tsc", "--noEmit", "--pretty", "false"],
+  ["tsc", "-p", project, "--noEmit", "--pretty", "false"],
   { cwd: repoRoot, encoding: "utf8" }
 );
 
@@ -56,8 +62,13 @@ for (const line of lines) {
   }
 }
 
-const vendored = blocks.filter((b) => b.file.startsWith(".."));
-const ours = blocks.filter((b) => !b.file.startsWith(".."));
+// path.relative(repoRoot, X) starts with ".." exactly when X lies outside
+// repoRoot -- true whether tsc reported X as a relative "../../odoo/..."
+// (local dev) or an absolute "/opt/odoo/..." (CI): both resolve() to the
+// same real path either way, so one check covers both configs.
+const isOurs = (file) => !path.relative(repoRoot, path.resolve(repoRoot, file)).startsWith("..");
+const vendored = blocks.filter((b) => !isOurs(b.file));
+const ours = blocks.filter((b) => isOurs(b.file));
 
 if (vendored.length > 0) {
   console.error(
