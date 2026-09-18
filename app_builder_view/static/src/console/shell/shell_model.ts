@@ -30,6 +30,7 @@ import { DraftModel, messageOf } from "./draft_model";
 import type { ApplyResult } from "./draft_model";
 import { paneAvailable, paneRegistry, resolvePane, warnLegacyTabs } from "./pane_registry";
 import type {
+    FieldService,
     NotificationService,
     OdooRpcError,
     OrmService,
@@ -119,8 +120,19 @@ export interface ShellUrlState {
     rec: string | false | undefined;
 }
 
+/** `env.services`, plus `bus` -- the real Owl `env` every real caller
+ * constructs `StudioShell` with (`shell.ts`'s own `new StudioShell(this.env,
+ * ...)`) carries both, though this type named only `orm`/`notification`
+ * until `panes/views_pane.ts` needed `field`/`bus` too, to construct a
+ * `ConsoleModel`. The same shape `console_model.ts`'s own (unexported)
+ * `ConsoleEnv` already names for the identical real object. */
+interface ShellEnv {
+    services: { orm: OrmService; notification: NotificationService; field: FieldService };
+    bus: { trigger: (name: string) => void };
+}
+
 export class StudioShell {
-    env: { services: { orm: OrmService; notification: NotificationService } };
+    env: ShellEnv;
     orm: OrmService;
     notification: NotificationService;
     hooks: ShellHooks;
@@ -150,11 +162,7 @@ export class StudioShell {
     callout: { key: string; title: string; lines: string[] } | null;
     _changesTimer?: ReturnType<typeof setTimeout>;
 
-    constructor(
-        env: { services: { orm: OrmService; notification: NotificationService } },
-        params: ShellParams,
-        hooks: ShellHooks = {},
-    ) {
+    constructor(env: ShellEnv, params: ShellParams, hooks: ShellHooks = {}) {
         this.env = env;
         this.orm = env.services.orm;
         this.notification = env.services.notification;

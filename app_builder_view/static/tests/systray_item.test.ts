@@ -97,6 +97,11 @@ function stubActionService(controller: ActionController | null): ActionHolder {
             holder.actions.push(action);
             return Promise.resolve(true);
         },
+        // Not exercised by any test here (`systray_item.ts` itself never
+        // calls it) -- present only to satisfy `ActionService`'s shape.
+        restore() {
+            return Promise.resolve(undefined);
+        },
     }));
     return holder;
 }

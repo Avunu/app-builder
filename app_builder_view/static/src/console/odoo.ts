@@ -66,6 +66,18 @@ declare module "registries" {
          * only ever stores component classes. */
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "app_builder.field_editor": typeof Component<any, any>;
+        /** The component the Views pane renders for a view's
+         * `editable_as` (`panes/views_pane.ts`'s own `canvasComponent`) --
+         * registered into by `canvas.ts` (`"canvas"`),
+         * `canvases/search_lists_canvas.ts` (`"search_lists"`) and
+         * `app_builder_report`'s own `report_canvas.js` (`"report"`, still
+         * `.js`). A plain component-class registry, taken only for
+         * identity (`canvasRegistry.contains`/`.get`, compared against a
+         * known class) and handed straight to the template's
+         * `t-component`, the same shape as `app_builder.field_editor`/
+         * `cogMenu`/`systray`. */
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        "app_builder.canvas": typeof Component<any, any>;
         cogMenu: CogMenuItem;
         systray: SystrayRegistryItemShape;
         // Odoo's own category, not ours -- see the "-- view widgets --"
@@ -258,7 +270,22 @@ export interface ActionController {
 }
 
 export interface ActionService {
-    doAction(action: ActionDescription, options?: Record<string, unknown>): Promise<unknown>;
+    /** `action_service.js`'s own real first-parameter type is `ActionId
+     * | ActionXMLId | ActionTag | ActionDescription` (its own
+     * `ActionRequest` typedef); widened here from `ActionDescription`
+     * alone to also cover `number` (a plain action id) once `shell.ts`
+     * needed it (`_loadAction`'s own `typeof actionRequest === "number"`
+     * branch) -- the `string` variants stay unadded until a real caller
+     * needs one, per this interface's own original note. */
+    doAction(
+        action: ActionDescription | number,
+        options?: Record<string, unknown>,
+    ): Promise<unknown>;
+    /** `action_service.js`'s own `restore(jsId)` -- `jsId` genuinely
+     * optional (`if (!jsId) { ... }` falls back to the previous
+     * controller in the stack), confirmed against the real source
+     * rather than guessed. */
+    restore(jsId?: string): Promise<unknown>;
     readonly currentController: ActionController | undefined;
 }
 

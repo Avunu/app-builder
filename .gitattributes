@@ -27,12 +27,15 @@ app_builder_view/static/src/console/outline_tree.js linguist-generated
 app_builder_view/static/src/console/outline_zones.js linguist-generated
 app_builder_view/static/src/console/overlay.js linguist-generated
 app_builder_view/static/src/console/panes/changes_pane.js linguist-generated
+app_builder_view/static/src/console/panes/home_pane.js linguist-generated
+app_builder_view/static/src/console/panes/views_pane.js linguist-generated
 app_builder_view/static/src/console/pending_widget.js linguist-generated
 app_builder_view/static/src/console/record_pane/record_pane.js linguist-generated
 app_builder_view/static/src/console/record_pane/record_pane_model.js linguist-generated
 app_builder_view/static/src/console/record_pane/row_editor.js linguist-generated
 app_builder_view/static/src/console/shell/draft_model.js linguist-generated
 app_builder_view/static/src/console/shell/pane_registry.js linguist-generated
+app_builder_view/static/src/console/shell/shell.js linguist-generated
 app_builder_view/static/src/console/shell/shell_model.js linguist-generated
 app_builder_view/static/src/console/sidebar/add_tab.js linguist-generated
 app_builder_view/static/src/console/sidebar/field_editor_fallback.js linguist-generated

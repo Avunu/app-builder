@@ -150,10 +150,9 @@ const HEALTH_DOT: Record<string, string> = {
 
 /** The colour a package's health dot takes: the worst thing wins.
  * `info` stays `| null | undefined`, matching this function's own
- * defensive `info &&` read below -- `home_pane.js` (still untyped) is a
- * second real caller besides this file's own two, so nothing here
- * asserts a stronger guarantee than the function's own body already
- * relies on. */
+ * defensive `info &&` read below -- `panes/home_pane.ts` is a second real
+ * caller besides this file's own two, so nothing here asserts a stronger
+ * guarantee than the function's own body already relies on. */
 export function healthDot(info: PackageEntryJSON | null | undefined): string {
     const flags = (info && info.health) || [];
     if (flags.some((f) => HEALTH_DOT[f] === "red")) {

@@ -1485,6 +1485,93 @@ than reasoned about:
   dependency-list shift to expect here the way wave 1/2's production
   files had. Full tree-wide transpiler guard passed clean.
 
+- **TypeScript (2b, cluster 4, wave 3: panes/home_pane, panes/views_pane,
+  shell/shell).** The last three components before cluster 4's own final
+  file (`console.js`, wave 4). All three drafted in parallel with no
+  tooling trouble; `home_pane.ts`'s own drafting agent went a step
+  further than any prior wave and built a throwaway scratch overlay of
+  the whole repo under `/tmp` (real `node_modules`/`odoo` symlinked back
+  in) to run `npm run typecheck`/`build_ts`/`eslint`/`prettier` against
+  its own draft directly, rather than only reasoning about whether it
+  would compile -- confirmed clean before ever returning it.
+
+  Three real, load-bearing gaps found only in central reconciliation
+  (`shell.ts` itself, once applied, did not compile clean on the first
+  pass -- the other two files did):
+
+  - `static override props = { "*": true }` (`shell.ts`'s own
+    `StudioConsole`, "accept any prop" for an action-framework host
+    component) failed against `Schema`: TS widens the object literal's
+    `true` to `boolean` by default, and `boolean` is not assignable to
+    `BaseType` (`true | "*" | {new (...): any}`, `validation.d.ts`) --
+    only the *literal* `true` is. Fixed with `as const` on the object
+    literal, which changes nothing about the emitted `.js` (an object
+    literal compiles identically either way) -- purely a type-level
+    fix, the first time this migration has hit "the value's own literal
+    type, not its declared type, is what a vendor schema actually
+    needs."
+  - `odoo.ts`'s `ActionService` was missing `restore()` entirely, and
+    `doAction`'s own first parameter was typed `ActionDescription` only
+    -- `shell.ts` is the first real caller anywhere in this tree to call
+    `doAction` with a plain action id (`number`) or call `restore()` at
+    all. Traced directly against `action_service.js`'s own real
+    `ActionRequest` typedef (`ActionId | ActionXMLId | ActionTag |
+    ActionDescription`) and `restore(jsId)`'s real implementation
+    (`jsId` genuinely optional, falling back to "the previous
+    controller"): widened `doAction`'s parameter to `ActionDescription
+    | number` (the `string` variants stay unadded until a real caller
+    needs one) and added `restore(jsId?: string): Promise<unknown>`.
+    `systray_item.test.ts`'s own `ActionService` stub needed a matching
+    no-op `restore()` added to stay structurally complete.
+  - `shell/shell_model.ts`'s `StudioShell.env` (cluster 2) was typed
+    `{services: {orm, notification}}` -- narrower than the real Owl
+    `env` every caller actually constructs `StudioShell` with
+    (`shell.ts`'s own `new StudioShell(this.env, ...)`, which does
+    carry `services.field` and `bus`), because `StudioShell` itself
+    never previously read either. `panes/views_pane.ts` is the first
+    real file to construct a *different* class (`ConsoleModel`) from
+    `StudioShell.env`, and `ConsoleModel`'s own constructor needs both.
+    Widened `StudioShell.env`/its constructor parameter to a new,
+    exported `ShellEnv` (services `orm`/`notification`/`field` plus
+    `bus`) -- the same shape `console_model.ts`'s own private
+    `ConsoleEnv` already names for the identical real object -- which
+    let `shell.ts`'s own local `ConsoleEnv` interface (a different,
+    unrelated type of the same name, `services.field` added to match)
+    and `views_pane.ts`'s `makeModel` both simplify: the latter's own
+    `ConstructorParameters<typeof ConsoleModel>[0]` cast-through-an-
+    unexported-type workaround is now a plain, direct pass-through.
+
+  **Shared-type growth, the same "reconcile a locally-carried registry
+  category into `odoo.ts`" move wave 1 first made for
+  `cogMenu`/`systray`/`view_widgets`:** `views_pane.ts` is the first
+  real reader of `app_builder.canvas` (the registry `canvas.ts`/
+  `canvases/search_lists_canvas.ts` already register into, and
+  `app_builder_report`'s own still-`.js` `report_canvas.js` also uses) --
+  carried its own local `declare module` block, per the established
+  "carry it locally until the facade exists" precedent, reconciled into
+  `odoo.ts` centrally and dropped from `views_pane.ts`.
+
+  **Real, behavior-relevant findings, none of them fixed:**
+  `home_pane.ts`'s own `onModelFields` method is genuinely dead code
+  (grepped the whole tree -- no template, no other caller); its own
+  `this.orm = useService("orm")` is set but never read (every real RPC
+  in that class goes through `this.model.xxx` instead). `top_bar.ts`'s
+  own `healthDot()` doc comment named `home_pane.js` as "still
+  untyped" -- a one-line touch-up now that it is not, applied
+  centrally since it was flagged as out of the drafting file's own
+  scope to fix.
+
+  Verification: `tsc`/`eslint`/`prettier` clean (same triage policy as
+  every prior wave -- no new real findings beyond the three gaps
+  above). `build_ts.mjs` re-run to confirm idempotency.
+  Transpile-equivalence: all three show the same dependency-list-only
+  shift every production file in cluster 4 has shown since wave 1
+  (`@web/core/utils/hooks` lost, `@app_builder_view/console/odoo`
+  gained) -- module identity unchanged. Full tree-wide transpiler guard
+  passed clean across all 74 shipped `.js` files. With this wave, every
+  file in `console/` is converted except `console.js` itself (wave 4,
+  the entry point).
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was
