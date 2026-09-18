@@ -25,16 +25,24 @@ that to a boolean would make ``parse(render(spec)) == spec`` false for every
 field that relies on a default.
 """
 
+from __future__ import annotations
+
 import ast
 import io
 import keyword
 import tokenize
 from dataclasses import asdict, dataclass, replace
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from . import catalogue
 
+if TYPE_CHECKING:
+    # Only for annotations below; with `from __future__ import annotations`
+    # (above) nothing here needs these at runtime.
+    from collections.abc import Collection, Mapping, Sequence
 
-def canonical_source(text):
+
+def canonical_source(text: str) -> str:
     """One spelling per expression, so verbatim source can round-trip.
 
     Anything that does not parse is left alone: it will be caught by the
@@ -47,7 +55,7 @@ def canonical_source(text):
         return text
 
 
-def _prefer_double_quotes(source):
+def _prefer_double_quotes(source: str) -> str:
     """Re-quote string literals the way the rest of the generated file is quoted.
 
     ``ast.unparse`` always emits single quotes. That is not cosmetic here: the
@@ -66,7 +74,7 @@ def _prefer_double_quotes(source):
         return source
 
     lines = source.splitlines(keepends=True)
-    edits = []
+    edits: list[tuple[int, int, int, str]] = []
     for token in tokens:
         if token.type != tokenize.STRING:
             continue
@@ -90,7 +98,7 @@ def _prefer_double_quotes(source):
 # odoo.models.MAGIC_COLUMNS plus display_name. Inlined rather than imported so
 # this module stays database-free; pinned by a test that compares it against
 # the real thing.
-MAGIC_COLUMNS = (
+MAGIC_COLUMNS: tuple[str, ...] = (
     "id",
     "create_uid",
     "create_date",
@@ -102,7 +110,7 @@ MAGIC_COLUMNS = (
 # Field attributes that mixins bring with them. A studio field colliding with
 # one of these does not fail loudly -- it shadows a mixin field and breaks
 # something far away -- so validate_spec refuses it up front.
-MIXIN_FIELDS = {
+MIXIN_FIELDS: dict[str, tuple[str, ...]] = {
     "mail.thread": (
         "message_ids",
         "message_follower_ids",
@@ -169,18 +177,18 @@ class FieldType:
     preset: tuple[tuple[str, object], ...] = ()
 
     @property
-    def picker_key(self):
+    def picker_key(self) -> str:
         return self.key or self.ttype
 
     @property
-    def supported(self):
+    def supported(self) -> bool:
         return self.unsupported is None
 
 
 # The four values Odoo's own priority fields use. Three stars, because the
 # first value is "no stars" -- which is the part everybody gets wrong when
 # building one by hand.
-PRIORITY_VALUES = (
+PRIORITY_VALUES: tuple[dict[str, str | int], ...] = (
     {"value": "0", "label": "Normal", "sequence": 10},
     {"value": "1", "label": "Low", "sequence": 20},
     {"value": "2", "label": "High", "sequence": 30},
@@ -307,12 +315,20 @@ FIELD_TYPES = (
     ),
 )
 
-FIELD_TYPES_BY_KEY = {entry.picker_key: entry for entry in FIELD_TYPES}
+FIELD_TYPES_BY_KEY: dict[str, FieldType] = {
+    entry.picker_key: entry for entry in FIELD_TYPES
+}
 
 # First entry wins, which is the plain one: a *field* of type selection is a
 # "Selection", even when it was built through the Priority entry. What the entry
 # added is a widget and some values, and neither changes what the field is.
-FIELD_TYPES_BY_TTYPE = {}
+#
+# An explicit annotation, not left to inference: an empty-dict-literal-then-
+# mutate pattern (`.setdefault` in the loop below) infers `dict[Unknown,
+# Unknown]` the same way `field(default_factory=dict)` does (TYPING.md's
+# "Known traps") -- the loop body is invisible to the initializer's own
+# inference.
+FIELD_TYPES_BY_TTYPE: dict[str, FieldType] = {}
 for _entry in FIELD_TYPES:
     FIELD_TYPES_BY_TTYPE.setdefault(_entry.ttype, _entry)
 
@@ -324,16 +340,24 @@ SUPPORTED_TTYPES = tuple(dict.fromkeys(e.ttype for e in FIELD_TYPES if e.support
 UNSUPPORTED_TTYPES = {e.ttype: e.unsupported for e in FIELD_TYPES if not e.supported}
 
 
-def field_type_for(key):
+def field_type_for(key: str | None) -> FieldType | None:
     """The picker entry for ``key``, falling back to the plain type.
 
     Both are accepted because a stored draft predates the presets and names a
     ttype where a picker now sends an entry key.
     """
+    if key is None:
+        # A stored draft (or a picker payload with no chosen type yet) can
+        # legitimately hand this a missing key -- `apply_preset` calls this
+        # with `values.get("ttype")`, unguarded. `dict.get(None)` on either
+        # table below would answer the same `None` this returns directly; the
+        # early return only exists because `dict[str, FieldType].get` is typed
+        # against a `str` key, not `str | None`.
+        return None
     return FIELD_TYPES_BY_KEY.get(key) or FIELD_TYPES_BY_TTYPE.get(key)
 
 
-def apply_preset(values):
+def apply_preset(values: Mapping[str, Any] | None) -> tuple[dict[str, Any], str]:
     """Expand a picker entry into the spec values it stands for.
 
     The entry key never reaches the spec: a ``FieldSpec`` describes a field, and
@@ -341,68 +365,36 @@ def apply_preset(values):
     values and a star. Resolving it here keeps that distinction where it can be
     seen, rather than teaching the code generator about picker affordances.
     """
-    values = dict(values or {})
-    entry = field_type_for(values.get("ttype"))
+    resolved: dict[str, Any] = dict(values) if values else {}
+    entry = field_type_for(resolved.get("ttype"))
     if entry is None:
-        return values, ""
-    values["ttype"] = entry.ttype
+        return resolved, ""
+    resolved["ttype"] = entry.ttype
     for name, preset in entry.preset:
         # Only where the user has not already said something. A preset is a
         # starting point, and re-editing a field must not undo their answer.
-        if not values.get(name):
-            values[name] = preset
-    return values, entry.widget
-
-
-def available_field_types(spec=None, translate=catalogue.identity):
-    """The picker's contents, with each entry's availability decided here.
-
-    Shown-but-disabled beats hidden: a manager who wants an amount field and
-    cannot find one learns nothing, whereas one who sees *Amount* greyed out
-    with "needs a Currency field on this model" knows what to do next.
-    """
-    currency_present = bool(
-        spec
-        and any(
-            f.ttype == "many2one" and f.comodel == "res.currency" for f in spec.fields
-        )
-    )
-    out = []
-    for entry in FIELD_TYPES:
-        enabled, tooltip = entry.supported, entry.unsupported or ""
-        if enabled and entry.ttype == "monetary" and not currency_present:
-            enabled = False
-            tooltip = (
-                "An amount needs a Currency field on this model. Add a "
-                '"Link to one record" pointing at res.currency first.'
-            )
-        out.append(
-            {
-                "value": entry.picker_key,
-                "ttype": entry.ttype,
-                "widget": entry.widget,
-                "label": entry.label,
-                "group": entry.group,
-                "params": list(entry.params),
-                "enabled": enabled,
-                "tooltip": tooltip,
-                "placement": default_placement(entry.picker_key),
-                # The same widget table the view editor reads. The point of
-                # sharing it is that a type cannot offer a widget here that the
-                # view editor would refuse to set, or the other way round --
-                # which is what two tables would eventually produce.
-                "widgets": [
-                    w.to_json(translate) for w in catalogue.widgets_for(entry.ttype)
-                ],
-            }
-        )
-    return out
+        if not resolved.get(name):
+            resolved[name] = preset
+    return resolved, entry.widget
 
 
 # Where a field of each type goes in the scaffolded views, unless the user says
 # otherwise. These are the defaults a developer would pick by hand: a name or a
 # link is worth a column and worth searching; a long note is not.
 PLACEMENT_SLOTS = ("form", "list", "search", "group_by")
+
+
+class PlacementJSON(TypedDict):
+    """What ``default_placement``/``clean_placement`` send: which of the
+    scaffolded views a field appears in, plus the widget its picker entry
+    implies. The same shape the console's TypeScript reads back."""
+
+    form: bool
+    list: bool
+    search: bool
+    group_by: bool
+    widget: str
+
 
 _LIST_BY_DEFAULT = frozenset(
     {
@@ -420,7 +412,7 @@ _LIST_BY_DEFAULT = frozenset(
 _SEARCH_BY_DEFAULT = frozenset({"char", "text", "many2one"})
 
 
-def default_placement(key):
+def default_placement(key: str) -> PlacementJSON:
     """Which views a newly added field should appear in.
 
     Takes a picker key or a plain ttype, because a preset can want different
@@ -452,19 +444,114 @@ def default_placement(key):
 _NEVER_A_COLUMN = frozenset({"daterange"})
 
 
-def clean_placement(values, key=None):
+def clean_placement(
+    values: Mapping[str, object] | None, key: str | None = None
+) -> PlacementJSON:
     """Coerce whatever the client sent into exactly the known slots."""
-    base = default_placement(key) if key else dict.fromkeys(PLACEMENT_SLOTS, False)
-    cleaned = {slot: bool(base.get(slot)) for slot in PLACEMENT_SLOTS}
-    cleaned["widget"] = base.get("widget", "")
+    # `Mapping[str, object]`, not the narrower `Mapping[str, bool | str]` its
+    # two branches both actually are: a `TypedDict` (`PlacementJSON`, from
+    # `default_placement`) is only ever structurally compatible with
+    # `Mapping[str, object]`, never a Mapping of a more specific value type,
+    # since pyright cannot confirm per-field variance through a `Mapping`
+    # view. The `bool(...)`/`str(...)` calls below narrow each read back down
+    # to what it actually is.
+    base: Mapping[str, object] = (
+        default_placement(key) if key else dict.fromkeys(PLACEMENT_SLOTS, False)
+    )
+    cleaned: dict[str, bool | str] = {
+        slot: bool(base.get(slot)) for slot in PLACEMENT_SLOTS
+    }
+    cleaned["widget"] = str(base.get("widget", ""))
     if not values:
-        return cleaned
+        # `cleaned` is built from exactly `PLACEMENT_SLOTS` plus `widget`
+        # above -- the same fixed shape `PlacementJSON` names -- but as a
+        # plain `dict[str, bool | str]` rather than the TypedDict itself,
+        # since the loop below writes through a dynamic (non-literal) key,
+        # which a TypedDict does not accept. The cast is the honest way to
+        # say "the keys are fixed by construction, pyright just cannot see
+        # that through a `for slot in (...)` loop."
+        return cast("PlacementJSON", cleaned)
     for slot in PLACEMENT_SLOTS:
         if slot in values:
             cleaned[slot] = bool(values[slot])
     if values.get("widget"):
         cleaned["widget"] = str(values["widget"])
-    return cleaned
+    return cast("PlacementJSON", cleaned)
+
+
+class FieldTypeJSON(TypedDict):
+    """What ``available_field_types`` sends: one entry per row the field
+    picker renders."""
+
+    value: str
+    ttype: str
+    widget: str
+    label: str
+    group: str
+    params: list[str]
+    enabled: bool
+    tooltip: str
+    placement: PlacementJSON
+    widgets: list[catalogue.WidgetJSON]
+
+
+def available_field_types(
+    spec: ModelSpec | None = None,
+    # `identity` does not satisfy `Translator`: it hands a `LazyGettext`
+    # straight back rather than resolving it to `str` (`catalogue.identity`'s
+    # own docstring). Deliberate here, not an oversight, and for the same
+    # reason `view_options.py`'s own `groups_json` keeps the identical
+    # default: this is a pure-data module with no Odoo environment in scope
+    # to resolve a lazy translation, so there is nothing correct `identity`
+    # could be replaced with here. `catalogue._default_translate` (`to_json`'s
+    # own default) would be a real behavior change, not a type-adding one --
+    # it raises the moment a caller relies on the untranslated default, and
+    # this module has real callers (`available_field_types()`, with no
+    # `translate` argument) that do exactly that today.
+    translate: catalogue.Translator = catalogue.identity,  # pyright: ignore[reportArgumentType]
+) -> list[FieldTypeJSON]:
+    """The picker's contents, with each entry's availability decided here.
+
+    Shown-but-disabled beats hidden: a manager who wants an amount field and
+    cannot find one learns nothing, whereas one who sees *Amount* greyed out
+    with "needs a Currency field on this model" knows what to do next.
+    """
+    currency_present = bool(
+        spec
+        and any(
+            f.ttype == "many2one" and f.comodel == "res.currency" for f in spec.fields
+        )
+    )
+    out: list[FieldTypeJSON] = []
+    for entry in FIELD_TYPES:
+        enabled, tooltip = entry.supported, entry.unsupported or ""
+        if enabled and entry.ttype == "monetary" and not currency_present:
+            enabled = False
+            tooltip = (
+                "An amount needs a Currency field on this model. Add a "
+                '"Link to one record" pointing at res.currency first.'
+            )
+        out.append(
+            {
+                "value": entry.picker_key,
+                "ttype": entry.ttype,
+                "widget": entry.widget,
+                "label": entry.label,
+                "group": entry.group,
+                "params": list(entry.params),
+                "enabled": enabled,
+                "tooltip": tooltip,
+                "placement": default_placement(entry.picker_key),
+                # The same widget table the view editor reads. The point of
+                # sharing it is that a type cannot offer a widget here that the
+                # view editor would refuse to set, or the other way round --
+                # which is what two tables would eventually produce.
+                "widgets": [
+                    w.to_json(translate) for w in catalogue.widgets_for(entry.ttype)
+                ],
+            }
+        )
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -501,7 +588,7 @@ GENERATED_OVERRIDES = frozenset(
 )
 
 
-def is_builder_method(name):
+def is_builder_method(name: str) -> bool:
     return name.startswith(STUDIO_METHOD_PREFIX) or name in GENERATED_OVERRIDES
 
 
@@ -577,7 +664,7 @@ class FieldSpec:
     # anything we round-trip but do not model
     extra: tuple[tuple[str, str], ...] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # `default` and `extra` hold verbatim Python source, because a default
         # may be a lambda we must not try to interpret. Source text has more
         # than one spelling for the same expression, though, and the parser
@@ -597,7 +684,7 @@ class FieldSpec:
             )
 
     @property
-    def is_stored(self):
+    def is_stored(self) -> bool:
         """Whether this field has a column, for destructive-diff purposes."""
         if self.related is not None or self.compute is not None:
             return self.store is True
@@ -640,7 +727,7 @@ class ModelSpec:
     sequence_code: str | None = None
     sequence_field: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Sorted, so `parse(render(spec)) == spec` cannot depend on the order a
         # caller happened to build them in.
         if self.class_attrs:
@@ -650,18 +737,18 @@ class ModelSpec:
                 tuple(sorted((k, canonical_source(v)) for k, v in self.class_attrs)),
             )
 
-    def field(self, name):
+    def field(self, name: str) -> FieldSpec | None:
         return next((f for f in self.fields if f.name == name), None)
 
     @property
-    def field_names(self):
+    def field_names(self) -> tuple[str, ...]:
         return tuple(f.name for f in self.fields)
 
 
 # -- json ----------------------------------------------------------------
 
 
-def spec_to_json(spec):
+def spec_to_json(spec: ModelSpec) -> dict[str, Any]:
     """Plain-dict form, for the transient edit buffer."""
     return asdict(spec)
 
@@ -669,15 +756,17 @@ def spec_to_json(spec):
 FIELD_ATTRS = frozenset(FieldSpec.__slots__)
 
 
-def field_spec_from_json(data):
+def field_spec_from_json(data: Mapping[str, Any]) -> FieldSpec:
     """A ``FieldSpec`` from whatever the client sent.
 
     Unknown keys are dropped rather than raising: the editor sends a whole form
     payload, and a stray ``id`` or display value should not be an error.
     """
-    values = {k: v for k, v in data.items() if k in FIELD_ATTRS}
+    values: dict[str, Any] = {k: v for k, v in data.items() if k in FIELD_ATTRS}
     values["selection"] = tuple(
-        SelectionSpec(**s) if isinstance(s, dict) else SelectionSpec(*s)
+        SelectionSpec(**cast("dict[str, Any]", s))
+        if isinstance(s, dict)
+        else SelectionSpec(*s)
         for s in values.get("selection") or ()
     )
     values["depends"] = tuple(values.get("depends") or ())
@@ -689,20 +778,42 @@ def field_spec_from_json(data):
     return FieldSpec(**values)
 
 
-def spec_from_json(data):
+def _field_from_stored(f: Mapping[str, Any]) -> FieldSpec:
+    """One ``FieldSpec`` from ``spec_from_json``'s own stored shape.
+
+    Unlike ``field_spec_from_json``, nothing here is filtered against
+    ``FIELD_ATTRS``: this reads a spec this module itself wrote out through
+    ``spec_to_json``, not a client payload, so every key is already one
+    ``FieldSpec`` accepts and dropping an unrecognised one would hide real
+    data loss instead of trusting it.
+
+    Built as a separate, explicitly annotated ``dict[str, Any]`` rather than
+    the inline ``FieldSpec(**{**f, ...})`` merge this replaced: pyright loses
+    track of the merged dict-display's value type through that spread, even
+    though ``f`` itself is a clean ``Mapping[str, Any]``, and reports every
+    ``FieldSpec`` keyword as unknown. A plain ``dict(f)`` copy, mutated by
+    key, keeps the same "spread everything, then override four keys"
+    behaviour with a type pyright can actually carry through the call.
+    """
+    payload: dict[str, Any] = dict(f)
+    payload["selection"] = tuple(SelectionSpec(**s) for s in f.get("selection", ()))
+    payload["depends"] = tuple(f.get("depends", ()))
+    payload["extra"] = tuple(tuple(pair) for pair in f.get("extra", ()))
+    payload["digits"] = tuple(f["digits"]) if f.get("digits") else None
+    return FieldSpec(**payload)
+
+
+def spec_from_json(data: Mapping[str, Any]) -> ModelSpec:
     data = dict(data)
-    data["fields"] = tuple(
-        FieldSpec(
-            **{
-                **f,
-                "selection": tuple(SelectionSpec(**s) for s in f.get("selection", ())),
-                "depends": tuple(f.get("depends", ())),
-                "extra": tuple(tuple(pair) for pair in f.get("extra", ())),
-                "digits": tuple(f["digits"]) if f.get("digits") else None,
-            }
-        )
-        for f in data.get("fields", ())
-    )
+    # An explicit cast, not left to inference: unlike `values.get(...)` in
+    # `field_spec_from_json` (a `dict[str, Any]` read, which stays cleanly
+    # `Any`), the narrowed type of `data` does not survive into this
+    # generator's own iterable expression cleanly enough for pyright to keep
+    # `f` at plain `Any` -- it otherwise reports every `FieldSpec` keyword
+    # below as "unknown". The real shape is exactly this: a JSON array of
+    # field-shaped objects, or absent.
+    fields_payload = cast("Sequence[Mapping[str, Any]]", data.get("fields", ()))
+    data["fields"] = tuple(_field_from_stored(f) for f in fields_payload)
     data["inherit"] = tuple(data.get("inherit", ()))
     data["methods"] = tuple(MethodSpec(**m) for m in data.get("methods", ()))
     data["class_attrs"] = tuple(tuple(pair) for pair in data.get("class_attrs", ()))
@@ -727,11 +838,11 @@ class SpecDiff:
     model_changed: tuple[str, ...] = ()
 
     @property
-    def destructive(self):
+    def destructive(self) -> bool:
         return bool(self.dropped_columns)
 
     @property
-    def empty(self):
+    def empty(self) -> bool:
         return not (self.added or self.removed or self.changed or self.model_changed)
 
 
@@ -753,7 +864,7 @@ MODEL_ATTRS = (
 )
 
 
-def diff_specs(before, after):
+def diff_specs(before: ModelSpec | None, after: ModelSpec | None) -> SpecDiff:
     """What changed, and which of it destroys a column."""
     if before is None:
         return SpecDiff(added=after.field_names if after else ())
@@ -789,7 +900,7 @@ def diff_specs(before, after):
 _IDENT = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_")
 
 
-def _valid_identifier(name):
+def _valid_identifier(name: str) -> bool:
     """Postgres-safe and Python-safe: what check_pg_name accepts."""
     if not name or len(name) > 63:
         return False
@@ -798,14 +909,16 @@ def _valid_identifier(name):
     return all(c in _IDENT for c in name)
 
 
-def _valid_model_name(name):
+def _valid_model_name(name: str) -> bool:
     if not name or len(name) > 63:
         return False
     parts = name.split(".")
     return all(_valid_identifier(p) for p in parts)
 
 
-def validate_spec(spec, taken_model_names=()):
+def validate_spec(
+    spec: ModelSpec, taken_model_names: Collection[str] = ()
+) -> list[str]:
     """Everything Odoo will no longer check for us.
 
     Reflection writes ``ir_model.order`` through ``upsert_en`` -- raw SQL that
@@ -814,7 +927,7 @@ def validate_spec(spec, taken_model_names=()):
     to ``state='manual'`` rows. This validator is the only thing standing
     between a typo and a model that raises on every ``search``.
     """
-    errors = []
+    errors: list[str] = []
 
     if spec.extends and spec.name in taken_model_names:
         # Extending is the one case where the name existing is the *point*, so
@@ -840,8 +953,8 @@ def validate_spec(spec, taken_model_names=()):
     for mixin in spec.inherit:
         reserved.update(MIXIN_FIELDS.get(mixin, ()))
 
-    seen = set()
-    stored = set()
+    seen: set[str] = set()
+    stored: set[str] = set()
     for spec_field in spec.fields:
         name = spec_field.name
         errors.extend(_validate_field_name(name, reserved, seen))
@@ -865,9 +978,9 @@ def validate_spec(spec, taken_model_names=()):
     return errors
 
 
-def _validate_field_name(name, reserved, seen):
+def _validate_field_name(name: str, reserved: set[str], seen: set[str]) -> list[str]:
     label = "Field '%s'" % name
-    errors = []
+    errors: list[str] = []
     if not _valid_identifier(name):
         errors.append(
             "%s is not a usable field name: lowercase letters, digits and "
@@ -884,11 +997,11 @@ def _validate_field_name(name, reserved, seen):
     return errors
 
 
-def _validate_field_type(spec_field):
+def _validate_field_type(spec_field: FieldSpec) -> list[str]:
     """Whatever the chosen type cannot do without."""
     label = "Field '%s'" % spec_field.name
     ttype = spec_field.ttype
-    errors = []
+    errors: list[str] = []
 
     if ttype in UNSUPPORTED_TTYPES:
         errors.append("%s: %s" % (label, UNSUPPORTED_TTYPES[ttype]))
@@ -916,11 +1029,11 @@ def _validate_field_type(spec_field):
     return errors
 
 
-def _validate_order(spec, stored):
+def _validate_order(spec: ModelSpec, stored: set[str]) -> list[str]:
     """_order may only name stored fields, or Odoo raises on every search."""
     if not spec.order:
         return []
-    errors = []
+    errors: list[str] = []
     for term in spec.order.split(","):
         parts = term.split()
         if not parts:
@@ -943,7 +1056,7 @@ def _validate_order(spec, stored):
 # -- convenience ---------------------------------------------------------
 
 
-def with_field(spec, spec_field):
+def with_field(spec: ModelSpec, spec_field: FieldSpec) -> ModelSpec:
     """Add or replace one field, preserving declaration order."""
     names = spec.field_names
     if spec_field.name in names:
@@ -955,5 +1068,5 @@ def with_field(spec, spec_field):
     return replace(spec, fields=fields_)
 
 
-def without_field(spec, name):
+def without_field(spec: ModelSpec, name: str) -> ModelSpec:
     return replace(spec, fields=tuple(f for f in spec.fields if f.name != name))

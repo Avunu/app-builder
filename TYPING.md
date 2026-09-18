@@ -2022,6 +2022,83 @@ than reasoned about:
   four others depend on), then `pycodegen`, then `pyparse`/`scaffold`/
   `manualfield` together.
 
+- **Python (1b: `modelspec.py`, the shared foundation).** 959 lines, the
+  one `tools/` file `pycodegen.py`, `pyparse.py`, `scaffold.py` and
+  `app_builder_view/tools/manualfield.py` all import from -- converted
+  alone rather than alongside another file, both for its size and
+  because getting its public dataclass/function shapes right matters
+  more than usual (four still-untyped readers already depend on them).
+  Its six `@dataclass(frozen=True, slots=True)` classes already carried
+  real field-level annotations before this pass (this file's own floor
+  is already py3.10, which evaluates `X | None` at runtime with no
+  `from __future__ import annotations`) -- what was missing was
+  `from __future__ import annotations` itself plus every plain function/
+  method signature.
+
+  Reused, rather than rediscovered, `view_options.py`'s own precedent
+  (wave 1) for `available_field_types(spec=None, translate=catalogue
+  .identity)`: `catalogue.identity` does not satisfy `catalogue
+  .Translator` (`Callable[[Label], str]`) as a default value --
+  specializing `identity`'s `Callable[[_T], _T]` at `_T = Label` gives
+  `Callable[[Label], Label]`, and `Label = str | LazyGettext` is wider
+  than `str` -- deliberately, per `catalogue.identity`'s own docstring
+  (which already named both `view_options.py` and `modelspec.py` as
+  intended to keep this default: both are pure-data modules with no
+  Odoo environment in scope to resolve a lazy translation, so `catalogue
+  ._default_translate`, which raises on an unresolved one, would be a
+  real behavior change here, not a type-adding one). Same fix, same
+  reasoning: `# pyright: ignore[reportArgumentType]` on that one
+  parameter line.
+
+  Two new `TypedDict`s, both real, already-shipped wire data (sent to
+  the console verbatim, not internal-only): `PlacementJSON` (`{form,
+  list, search, group_by, widget}`, what `default_placement`/
+  `clean_placement` build) and `FieldTypeJSON` (`available_field_types`'
+  per-entry shape, embedding both `PlacementJSON` and `catalogue
+  .WidgetJSON`). `clean_placement`'s own construction needed a `cast`
+  back to `PlacementJSON`, not because the dict is wrong -- it is built
+  from exactly `PLACEMENT_SLOTS` plus `widget`, the identical fixed
+  shape -- but because it writes through a `for slot in (...)` loop's
+  dynamic key, which a `TypedDict` does not accept as a write target;
+  the loop's own guarantee is invisible to pyright, so the cast says by
+  hand what construction already proves.
+
+  One small, deliberate helper added -- `_field_from_stored`, factoring
+  `spec_from_json`'s per-field `FieldSpec(**{**f, ...})` merge-splat out
+  to its own function: pyright loses track of a merged dict-display's
+  value type through that spread even when the source is a clean
+  `Mapping[str, Any]`, and reports every `FieldSpec` keyword as unknown.
+  Confirmed behavior-neutral (see verification below), a type-only
+  extraction, not a new code path.
+
+  Considered and deliberately **not** added: a `FieldSpecJSON`/
+  `ModelSpecJSON` TypedDict for `spec_to_json`'s `asdict()` output --
+  genuinely `Any`-shaped both ways (arbitrary `asdict()` output in, an
+  arbitrary client payload out), and TYPING.md's own TS-side "Implemented
+  so far" already tracks `FieldSpec`/`SelectionSpec` themselves as the
+  wire-shape source of truth for that boundary; a second TypedDict here
+  would describe the same shape twice instead of once.
+
+  **Verification, including a check beyond what any prior wave in this
+  migration ran:** `pyright`/`ruff check`/`ruff format --diff` clean;
+  full-tree `pyright` over both `tools/` directories dropped from
+  wave-1's 2032 errors to 1561, with the only surviving hit outside the
+  four still-untyped files (`scaffold.py`/`pycodegen.py`/`pyparse.py`/
+  `manualfield.py`) being the pre-existing, already-documented
+  `tools/__init__.py` `reportUnusedImport` backlog item. Beyond the
+  usual sys.path smoke test (no Odoo DB needed -- this file has zero
+  odoo imports), a **byte-for-byte behavioral-equivalence check**: the
+  original, pre-typing file (`git show HEAD:...`) and the newly-typed
+  one loaded as two isolated packages side by side, both exercised
+  through an identical script -- `FieldSpec`/`ModelSpec` construction,
+  `spec_to_json`/`spec_from_json`/`field_spec_from_json` round-trips,
+  `validate_spec` (clean and invalid specs), `diff_specs` (normal,
+  `before=None`, `after=None`), `available_field_types()` (with and
+  without a currency field present), `apply_preset`, `default_placement`/
+  `clean_placement`, `is_builder_method`, `field_type_for(None)`,
+  `canonical_source` -- with both runs' JSON-serialized output diffed.
+  Identical. Next: `pycodegen.py`.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was
