@@ -441,6 +441,36 @@ hoot `onRpc` mocks typed against the same map.
   and not fixed by it (flag, don't fix). The type-level fix at each real
   opener: `Omit<FieldEditorProps, "close">` for the props object, not the
   full shape.
+- `field(default_factory=list)`/`field(default_factory=dict)` (dataclasses)
+  infer `list[Unknown]`/`dict[Unknown, Unknown]` even when the field's own
+  annotation says `list[SomeClass]`/`dict[K, V]` -- pyright does not
+  propagate the field's declared type into the zero-arg factory's own
+  return type. Fix: `field(default_factory=list[SomeClass])` /
+  `field(default_factory=dict[K, V])` -- the parametrized generic itself a
+  real, callable, zero-arg factory at runtime (Python 3.9+), behaviorally
+  identical to the bare form (confirmed both by pyright, 0 errors, and by
+  actually running it: `Term().occurrences == []`). Hit twice independently
+  in the same wave (`pogen.py`'s `Term.occurrences`, `canvas_stamp.py`'s
+  `StampResult.nodes`/`.elements`), so treated as a general trap rather
+  than a one-off.
+- lxml ships no type stubs in this environment (a compiled extension with
+  no `.pyi`/`py.typed` marker; `lxml-stubs`/`types-lxml` is not an
+  installed dependency here) -- `from lxml import etree` alone reports
+  both `reportMissingTypeStubs` and `reportAttributeAccessIssue`. The
+  obvious rewrite, `import lxml.etree as etree`, trades this for a worse
+  problem: ruff's own `PLR0402` (`fix = true` project-wide) silently
+  auto-fixes it straight back to the broken `from lxml import etree` form
+  on every save. Fix: keep `from lxml import (etree,)`, with
+  `# pyright: ignore[reportMissingTypeStubs]` on the `from lxml import (`
+  line and `# pyright: ignore[reportAttributeAccessIssue,
+  reportUnknownVariableType]` on the `etree,` line -- both required, both
+  on those exact physical lines (confirmed a `# pyright: ignore` on a
+  *preceding* comment line does not suppress the diagnostic below it).
+  For the element type itself, `app_builder_base/tools/lxml_types.py`'s
+  `LxmlElement` is the one shared, hand-traced `Protocol` every real
+  `tools/` reader imports rather than re-declaring -- three independent
+  local copies existed briefly before being reconciled into it (see
+  "Implemented so far").
 
 ## Implemented so far
 
@@ -1898,6 +1928,99 @@ than reasoned about:
   `manifest`, `pogen`, `xml_writer`, `pycodegen`, `pyparse`, `scaffold`,
   `gitrepo`, `migrationgen`, then `app_builder_view/tools/`'s own
   `view_options`, `canvas_stamp`, `manualfield`).
+
+- **Python (1b wave 1: nine independent `tools/` leaves).** Built a real
+  dependency graph first (`grep` for internal imports): `modelspec` is
+  the one file four others (`pycodegen`, `pyparse`, `scaffold`,
+  `app_builder_view/tools/manualfield`) depend on, so it was left for its
+  own focused pass; the remaining nine `tools/` files -- `domainspec`,
+  `placement`, `manifest`, `pogen`, `xml_writer`, `gitrepo`,
+  `migrationgen` (all `app_builder_base`), `view_options`, `canvas_stamp`
+  (both `app_builder_view`) -- have no internal dependency on each other
+  or on `modelspec`, so they were drafted in parallel as one wave.
+
+  New `TypedDict` wire types, the same `to_json()`-mirroring pattern
+  `catalogue.py` established: `ConditionJSON` (`domainspec.py`'s
+  `Condition.to_json`), `LogEntryJSON` (`gitrepo.py`'s `log()`, proposed
+  as the eventual `wire.ts` mirror once a console file consumes
+  `studio_workspace.changes()`). `manifest.py` proposed `Manifest`/
+  `ManifestValue` type aliases for `studio_package.py`'s own eventual
+  reuse, not yet claimed by a second reader.
+
+  **`pogen.py`**, beyond the `field(default_factory=list[Occurrence])`
+  fix ("Known traps"), needed one more real fix: `polib`'s own real
+  runtime accepts `None` for an occurrence's line number (confirmed by
+  constructing one directly and rendering it -- produces `#: <path>`
+  with no trailing `:<line>`), but its inferred signature (built from an
+  untyped `**kwargs`, `polib.py` ships no stub either) resolves
+  `occurrences` to `list[tuple[str, str]]`, rejecting `None` for the
+  second element. A narrow, inline
+  `# pyright: ignore[reportAttributeAccessIssue]` on that one
+  assignment, deliberately keeping the original `None` value rather than
+  substituting `""` -- a stub-vs-runtime gap local to this one line, not
+  a tree-wide pattern, so not promoted to "Known traps" the way the
+  lxml gap was (`polib` has exactly one reader in this tree).
+
+  **lxml Protocol reconciliation.** All three files that touch an arch
+  element (`xml_writer.py`, `placement.py`, `canvas_stamp.py`) hit the
+  "lxml ships no stubs" trap independently; two of the three
+  (`xml_writer.py`'s `XmlElement`/`XmlAttrib`, `canvas_stamp.py`'s own
+  `LxmlElement`) each hand-rolled an almost-identical local `Protocol`
+  before this was noticed, and the third (`placement.py`) had aliased
+  the element type to bare `Any` instead, which is strictly weaker under
+  strict mode than a real `Protocol`: `Any` silently permits any typo'd
+  attribute or wrong-shaped call anywhere in the file, defeating the
+  point of `reportUnknownMemberType`/friends for the entirety of a file
+  that has *no* real reason to lose that checking. Reconciled into one
+  canonical `app_builder_base/tools/lxml_types.py` (`app_builder_base` is
+  the lower addon in the dependency direction -- `app_builder_view`
+  already depends on it, not the reverse -- so this is the correct home
+  even though `canvas_stamp.py` lives in the other addon), covering the
+  union of every method the three real readers call, including
+  `placement.py`'s own `find`/`findall`/`remove`/`insert`/`xpath`
+  surface that neither of the other two touched.
+
+  `tag`'s own type needed a real, non-mechanical decision, not a
+  straight merge: `xml_writer.py`'s version used the more precise
+  `str | Callable[..., object]` (a comment or processing-instruction
+  node's tag is one of lxml's own factory callables, not a string), and
+  a first instinct was to adopt that as the canonical, stricter choice
+  everywhere. Tracing `canvas_stamp.py`'s own real call sites first
+  (per this migration's standing rule, verify against real usage before
+  generalizing a type) found a genuine reason its own author chose
+  `Any` instead: `stamp()` assigns `element.tag` straight into
+  `StudioNode["tag"]` (declared plain `str`) at a point already
+  guaranteed safe by an invariant `_walk` established earlier (every
+  listed element already passed `isinstance(child.tag, str)`) -- but
+  that guarantee lives in a plain `list[tuple[...]]` pyright cannot
+  carry narrowing through, so the union type would fail that assignment
+  without an extra, runtime-unnecessary `cast`. `Any` is the one type
+  honest enough to satisfy both files' real constraints simultaneously
+  (confirmed directly: `pyright` on all four files together, `0 errors`,
+  after standardizing on `Any`), so that is what the canonical
+  `LxmlElement.tag` uses -- `xml_writer.py`'s narrower alternative was a
+  nice-to-have with no real call site that needed it, not a requirement.
+
+  Verification: `pyright`/`ruff check`/`ruff format --diff` clean across
+  all ten files (the nine wave-1 files plus `lxml_types.py`); a
+  full-tree `pyright` run over both `tools/` directories together
+  confirms zero errors attributable to any of them (the remaining 2032
+  errors are entirely `modelspec.py`/`pycodegen.py`/`pyparse.py`/
+  `scaffold.py`/`manualfield.py`, the not-yet-converted backlog, plus 13
+  pre-existing `reportUnusedImport` findings in the two `tools/
+  __init__.py` files' own registration-style re-exports -- a Phase 1b
+  cleanup item, not something this wave introduced or fixed).
+  `domainspec.py`/`pogen.py`/`placement.py`/`xml_writer.py` were also
+  smoke-tested against real runtime behavior directly: real project
+  tests use `odoo.tests.TransactionCase`, which needs a full Odoo test
+  database, but these four import cleanly with a plain `sys.path` insert
+  and no Odoo bootstrapping at all, so a direct import plus manual
+  function calls gave real-runtime confidence without standing up a DB.
+  `view_options.py` could not be (needs full
+  Odoo bootstrapping for `odoo.tools.translate`) but pyright already
+  validated its types. Next: `modelspec.py` (959 lines, the one file
+  four others depend on), then `pycodegen`, then `pyparse`/`scaffold`/
+  `manualfield` together.
 
 ## CI: the OCA container's real layout
 

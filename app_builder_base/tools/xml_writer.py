@@ -16,7 +16,27 @@ Two rules do the heavy lifting:
   byte-for-byte alone, because reflowing it would change its rendered meaning.
 """
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Protocol, cast
+
+if TYPE_CHECKING:
+    # Only used inside annotations (`from __future__ import annotations`
+    # defers all of them to strings), never at runtime -- flake8-type-checking
+    # (TC001/TC003) wants typing-only imports guarded exactly like this,
+    # same as the odoo-only import in catalogue.py's own precedent.
+    from collections.abc import Iterable
+
+    from .lxml_types import LxmlElement as XmlElement
+
+from lxml import (  # pyright: ignore[reportMissingTypeStubs] -- lxml ships no type stubs in this environment (no `lxml-stubs`; the compiled `etree`/`_elementpath` extensions carry no `.pyi`/`py.typed`). `XmlElement` (`lxml_types.py`, the module three `tools/` readers share) hand-declares the small slice of the real `_Element` API this file touches, so the rest of the file is genuinely typed rather than `Any`-contaminated from this one boundary outward.
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType] -- same gap as the `from lxml import` line above; pyright cannot resolve `etree` as a symbol at all without a stub.
+)
+
+
+class XmlParser(Protocol):
+    """The parser instance ``parse_arch`` builds and hands to ``fromstring``."""
+
 
 # Attributes a reader expects first, in the order an Odoo developer writes them.
 # Anything not listed sorts alphabetically after these.
@@ -53,12 +73,12 @@ INDENT = "    "
 _ORDER_INDEX = {name: i for i, name in enumerate(ATTRIBUTE_ORDER)}
 
 
-def _attr_sort_key(item):
+def _attr_sort_key(item: tuple[str, str]) -> tuple[int, str]:
     name = item[0]
     return (_ORDER_INDEX.get(name, len(ATTRIBUTE_ORDER)), name)
 
 
-def canonicalize_attributes(elem):
+def canonicalize_attributes(elem: XmlElement) -> None:
     """Reorder every attribute in ``elem`` and its subtree, in place.
 
     lxml preserves attribute insertion order, so the only way to reorder is to
@@ -80,11 +100,11 @@ def canonicalize_attributes(elem):
 LAYOUT_WHITESPACE = " \t\r\n\f\v"
 
 
-def _is_blank(text):
+def _is_blank(text: str | None) -> bool:
     return not text or not text.strip(LAYOUT_WHITESPACE)
 
 
-def _has_mixed_content(elem):
+def _has_mixed_content(elem: XmlElement) -> bool:
     """True when ``elem`` interleaves text with child elements."""
     if len(elem) == 0:
         return False
@@ -93,7 +113,7 @@ def _has_mixed_content(elem):
     return any(not _is_blank(child.tail) for child in elem)
 
 
-def indent(elem, level=0, unit=INDENT):
+def indent(elem: XmlElement, level: int = 0, unit: str = INDENT) -> None:
     """Re-indent structural elements, leaving mixed content untouched.
 
     Returning early on mixed content is what makes this safe to run over a QWeb
@@ -114,41 +134,47 @@ def indent(elem, level=0, unit=INDENT):
         child.tail = own_pad if i == last else child_pad
 
 
-def build_document(record_nodes, noupdate_nodes=()):
+def build_document(
+    record_nodes: Iterable[XmlElement],
+    noupdate_nodes: Iterable[XmlElement] = (),
+) -> XmlElement:
     """Assemble ``<odoo>`` from already-ordered record nodes.
 
     ``noupdate_nodes`` land in a trailing ``<data noupdate="1">`` block; keeping
     it last (rather than interleaving) is another ordering rule that keeps
     output stable as records move in and out of the noupdate set.
     """
-    root = etree.Element("odoo")
+    root = cast("XmlElement", etree.Element("odoo"))  # pyright: ignore[reportUnknownMemberType] -- see the `lxml` import's own ignore comment above.
     for node in record_nodes:
         root.append(node)
     if noupdate_nodes:
-        data = etree.SubElement(root, "data")
+        data = cast("XmlElement", etree.SubElement(root, "data"))  # pyright: ignore[reportUnknownMemberType] -- see the `lxml` import's own ignore comment above.
         data.set("noupdate", "1")
         for node in noupdate_nodes:
             data.append(node)
     return root
 
 
-def serialize_document(root):
+def serialize_document(root: XmlElement) -> str:
     """Render a document root to the exact bytes we write to disk."""
     canonicalize_attributes(root)
     indent(root)
-    body = etree.tostring(root, encoding="unicode", pretty_print=False)
+    body = cast("str", etree.tostring(root, encoding="unicode", pretty_print=False))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType] -- see the `lxml` import's own ignore comment above; `root` satisfies `etree.tostring`'s real signature even though pyright cannot see that signature to confirm it.
     return '<?xml version="1.0" encoding="utf-8"?>\n' + body + "\n"
 
 
-def parse_arch(arch):
+def parse_arch(arch: str | bytes) -> XmlElement:
     """Parse a view arch string into an element, tolerating a leading decl."""
-    parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
+    parser = cast(
+        "XmlParser",
+        etree.XMLParser(remove_blank_text=False, resolve_entities=False),  # pyright: ignore[reportUnknownMemberType] -- see the `lxml` import's own ignore comment above.
+    )
     if isinstance(arch, str):
         arch = arch.encode("utf-8")
-    return etree.fromstring(arch, parser=parser)
+    return cast("XmlElement", etree.fromstring(arch, parser=parser))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType] -- see the `lxml` import's own ignore comment above; `parser` satisfies `etree.fromstring`'s real signature even though pyright cannot see that signature to confirm it.
 
 
-def normalize_arch(arch):
+def normalize_arch(arch: str | bytes) -> str:
     """Return a canonical string form of a view arch.
 
     Used both when writing files and when comparing DB state to disk state, so
@@ -157,4 +183,4 @@ def normalize_arch(arch):
     node = parse_arch(arch)
     canonicalize_attributes(node)
     indent(node)
-    return etree.tostring(node, encoding="unicode", pretty_print=False)
+    return cast("str", etree.tostring(node, encoding="unicode", pretty_print=False))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType] -- see the `lxml` import's own ignore comment above.

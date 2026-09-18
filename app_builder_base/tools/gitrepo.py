@@ -10,16 +10,35 @@ Every helper degrades to a benign value when git is missing or the path is not
 a repository -- the studio must remain usable outside version control.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import subprocess
+from typing import Literal, TypedDict
 
 _logger = logging.getLogger(__name__)
 
 TIMEOUT = 30
 
 
-def _run(args, cwd):
+class LogEntryJSON(TypedDict):
+    """One commit as ``log`` sends it.
+
+    Not a dataclass's own ``to_json`` (``log`` builds this dict directly,
+    there is no ``LogEntry`` class), but a wire type all the same:
+    ``studio_workspace.changes()`` serves this list straight through as
+    ``git.log`` in that RPC's own payload, with no further reshaping.
+    """
+
+    sha: str
+    short: str
+    author: str
+    date: str
+    subject: str
+
+
+def _run(args: list[str], cwd: str) -> str | None:
     try:
         result = subprocess.run(
             ["git", *args],
@@ -38,13 +57,13 @@ def _run(args, cwd):
     return result.stdout
 
 
-def is_repo(path):
+def is_repo(path: str) -> bool:
     if not path or not os.path.isdir(path):
         return False
     return _run(["rev-parse", "--is-inside-work-tree"], path) is not None
 
 
-def toplevel(path):
+def toplevel(path: str) -> str | Literal[False]:
     """The repository root ``path`` sits in, or ``False``.
 
     Porcelain paths are relative to this, not to ``path``: a package that is
@@ -55,7 +74,7 @@ def toplevel(path):
     return (out or "").strip() or False
 
 
-def init(path):
+def init(path: str) -> bool:
     """Make ``path`` a repository. True when it is one afterwards."""
     if not path or not os.path.isdir(path):
         return False
@@ -64,7 +83,9 @@ def init(path):
     return _run(["init", "-q"], path) is not None
 
 
-def log(path, limit=20, paths=None):
+def log(
+    path: str, limit: int = 20, paths: list[str] | None = None
+) -> list[LogEntryJSON]:
     """The last ``limit`` commits touching ``paths``, newest first."""
     out = _run(
         [
@@ -77,7 +98,7 @@ def log(path, limit=20, paths=None):
         ],
         path,
     )
-    entries = []
+    entries: list[LogEntryJSON] = []
     for line in (out or "").splitlines():
         parts = line.split("\x1f")
         if len(parts) == 5:
@@ -94,12 +115,12 @@ def log(path, limit=20, paths=None):
     return entries
 
 
-def current_branch(path):
+def current_branch(path: str) -> str | Literal[False]:
     out = _run(["rev-parse", "--abbrev-ref", "HEAD"], path)
     return (out or "").strip() or False
 
 
-def status(path, paths=None):
+def status(path: str, paths: list[str] | None = None) -> list[tuple[str, str]]:
     """Porcelain status limited to ``paths``, as a list of ``(code, path)``."""
     out = _run(
         ["status", "--porcelain", "--untracked-files=all", "--", *(paths or ["."])],
@@ -107,25 +128,27 @@ def status(path, paths=None):
     )
     if out is None:
         return []
-    entries = []
+    entries: list[tuple[str, str]] = []
     for line in out.splitlines():
         if len(line) > 3:
             entries.append((line[:2].strip(), line[3:]))
     return entries
 
 
-def diff(path, paths=None):
+def diff(path: str, paths: list[str] | None = None) -> str:
     """Combined staged + unstaged diff, which is what a reviewer wants to see."""
     unstaged = _run(["diff", "--", *(paths or ["."])], path) or ""
     staged = _run(["diff", "--cached", "--", *(paths or ["."])], path) or ""
     return (staged + unstaged).strip()
 
 
-def add(path, paths):
+def add(path: str, paths: list[str]) -> bool:
     return _run(["add", "--", *paths], path) is not None
 
 
-def commit(path, message, paths=None):
+def commit(
+    path: str, message: str, paths: list[str] | None = None
+) -> str | Literal[False]:
     """Stage ``paths`` and commit. Returns the new sha, or False.
 
     Nothing-to-commit is a success with no sha, not a failure -- the builder

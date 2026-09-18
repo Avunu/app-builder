@@ -2,8 +2,44 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Read and write ``__manifest__.py`` deterministically."""
 
+from __future__ import annotations
+
 import ast
 import json
+from typing import TypeAlias, Union
+
+# A manifest value as Python literal source can hold it. Odoo manifests only
+# ever nest strings, bools, numbers, lists, tuples and dicts (``assets``'s
+# per-bundle lists, ``external_dependencies``'s per-interpreter lists) --
+# genuinely varies per key, the same situation ``compat.py``'s own
+# ``_fields: dict[str, Field[Any]]`` documents for a different kind of
+# heterogeneity, but here the actual set of shapes involved is small and
+# nameable, so a recursive alias is honest where a bare ``Any`` would not be.
+#
+# ``Union[...]`` rather than ``X | Y`` on purpose: a real ``types.UnionType``
+# does not accept a plain ``str`` operand to its own ``|`` (confirmed with a
+# standalone probe -- ``str | int | ... | "list[ManifestValue]"`` raises
+# ``TypeError: unsupported operand type(s) for |`` at import time, since the
+# left side is already a built ``UnionType`` by the time it reaches the
+# quoted, self-referencing member). ``Union[...]`` accepts a forward-ref
+# string as any one of its members with no such crash.
+ManifestValue: TypeAlias = Union[
+    str,
+    int,
+    float,
+    bool,
+    None,
+    "list[ManifestValue]",
+    "tuple[ManifestValue, ...]",
+    "dict[str, ManifestValue]",
+]
+
+#: A manifest dict as ``ast.literal_eval``/this module's own writer trade in.
+#: Deliberately a plain ``dict[str, ManifestValue]``, not a ``TypedDict``:
+#: a hand-edited manifest may carry keys this module has never heard of
+#: (``post_init_hook``, a custom flag, ...) and ``merge_manifest`` exists
+#: specifically to preserve those, which a closed ``TypedDict`` would reject.
+Manifest: TypeAlias = "dict[str, ManifestValue]"
 
 # Emission order for manifest keys. Anything not listed follows, alphabetically.
 KEY_ORDER = (
@@ -35,13 +71,13 @@ HEADER = (
 )
 
 
-def read_manifest(path):
+def read_manifest(path: str) -> Manifest:
     """Parse a manifest with ``ast.literal_eval``, as Odoo itself does."""
     with open(path, encoding="utf-8") as handle:
         return ast.literal_eval(handle.read())
 
 
-def _py(value):
+def _py(value: object) -> str:
     """Render a literal with double quotes.
 
     Matters more than it looks: a project that runs ``ruff format`` (this one
@@ -54,7 +90,7 @@ def _py(value):
     return repr(value)
 
 
-def _format_value(value, level=1):
+def _format_value(value: ManifestValue, level: int = 1) -> str:
     pad = "    " * level
     inner_pad = "    " * (level + 1)
     if isinstance(value, list | tuple):
@@ -75,7 +111,7 @@ def _format_value(value, level=1):
     return _py(value)
 
 
-def render_manifest(values):
+def render_manifest(values: Manifest) -> str:
     """Render a manifest dict to source text.
 
     ``data`` is emitted in the order given (load order is semantic and must not
@@ -91,7 +127,7 @@ def render_manifest(values):
     return "%s{\n%s}\n" % (HEADER, body)
 
 
-def merge_manifest(existing, generated):
+def merge_manifest(existing: Manifest | None, generated: Manifest) -> Manifest:
     """Overlay generated keys onto a hand-edited manifest.
 
     Keys the builder does not own (``post_init_hook``, custom flags, ...) are

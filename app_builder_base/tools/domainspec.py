@@ -18,8 +18,16 @@ Pure, like the rest of ``tools/``: no ``odoo.osv.expression`` and no registry, s
 it is unit-testable and the round trip can be asserted directly.
 """
 
+from __future__ import annotations
+
 import ast
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, cast
+
+if TYPE_CHECKING:
+    # `render`'s own parameter type only; with `from __future__ import
+    # annotations` nothing here needs `Sequence` at runtime.
+    from collections.abc import Sequence
 
 ALL = "all"
 ANY = "any"
@@ -33,10 +41,29 @@ _OPERATOR_OF = {ALL: "&", ANY: "|"}
 # the parser cannot disagree about which ones skip the value box.
 VALUELESS = {"set", "not set"}
 
-_VALUELESS_DOMAIN = {
+_VALUELESS_DOMAIN: dict[str, tuple[str, bool]] = {
     "set": ("!=", False),
     "not set": ("=", False),
 }
+
+#: One leaf of Odoo's own prefix-notation domain: ``(field, operator, value)``.
+#: ``value`` is honestly ``object``, not a narrower type -- a leaf's value is
+#: whatever the field and operator call for (a string, a number, a bool, a
+#: list of ids, ...), and nothing here inspects it beyond passing it through
+#: or comparing it by identity against the two valueless sentinels above.
+DomainLeaf: TypeAlias = tuple[str, str, object]
+
+
+class ConditionJSON(TypedDict):
+    """What ``Condition.as_dict`` sends: the wire shape ``read_domain``
+    (``studio_domain.py``) returns a list of, one per row. ``value`` stays
+    ``object`` for the same reason ``DomainLeaf.value`` does -- it is
+    whatever the field's own type and the chosen operator call for.
+    """
+
+    field: str
+    operator: str
+    value: object
 
 
 @dataclass
@@ -45,16 +72,20 @@ class Condition:
     operator: str
     value: object = False
 
-    def as_leaf(self):
+    def as_leaf(self) -> DomainLeaf:
         if self.operator in VALUELESS:
             return (self.field, *_VALUELESS_DOMAIN[self.operator])
         return (self.field, self.operator, self.value)
 
-    def as_dict(self):
+    def as_dict(self) -> ConditionJSON:
         return {"field": self.field, "operator": self.operator, "value": self.value}
 
 
-def render(conditions, joiner=ALL):
+#: ``parse``'s success shape: the flat conditions, and which joiner binds them.
+ParsedDomain: TypeAlias = tuple[list[Condition], str]
+
+
+def render(conditions: Sequence[Condition], joiner: str = ALL) -> str:
     """Conditions -> a domain string Odoo will accept.
 
     An empty list is ``[]``, which every caller means as "no restriction" --
@@ -69,7 +100,7 @@ def render(conditions, joiner=ALL):
     return repr([*prefix, *[list(leaf) for leaf in leaves]])
 
 
-def parse(domain):
+def parse(domain: str | None) -> ParsedDomain | None:
     """A domain string -> ``(conditions, joiner)``, or ``None``.
 
     None means "this is not a flat list of conditions", which is a statement
@@ -81,16 +112,31 @@ def parse(domain):
     if not text:
         return [], ALL
     try:
-        parsed = ast.literal_eval(text)
+        # `ast.literal_eval` is typed to return `Any`: the whole point of this
+        # function is to make no assumption about what a person actually wrote,
+        # so everything below re-derives its shape from scratch via `isinstance`
+        # rather than trusting a static type for it.
+        parsed_raw: Any = ast.literal_eval(text)
     except (ValueError, SyntaxError):
         return None
-    if not isinstance(parsed, (list, tuple)):
+    if not isinstance(parsed_raw, (list, tuple)):
         return None
+    # `isinstance` against a bare, unparameterized `(list, tuple)` narrows an
+    # `Any` to `list[Unknown] | tuple[Unknown, ...]`, not `list[Any] |
+    # tuple[Any, ...]` -- pyright fills an unparameterized generic's type
+    # argument with `Unknown` rather than `Any` when narrowing a
+    # dynamically-typed value, and that `Unknown` survives even an explicit
+    # re-annotation of a new variable (confirmed empirically: only `cast`
+    # clears it). Nothing below is less safe for admitting the container is
+    # honestly `Any`-shaped -- every element is re-validated by hand anyway.
+    parsed = cast("list[Any] | tuple[Any, ...]", parsed_raw)
     if not parsed:
         return [], ALL
 
-    operators = [t for t in parsed if isinstance(t, str)]
-    leaves = [t for t in parsed if isinstance(t, (list, tuple))]
+    operators: list[str] = [t for t in parsed if isinstance(t, str)]
+    leaves: list[list[Any] | tuple[Any, ...]] = [
+        t for t in parsed if isinstance(t, (list, tuple))
+    ]
     if not leaves or len(leaves) + len(operators) != len(parsed):
         return None
     if any(op not in _JOINER_OF for op in operators):
@@ -104,7 +150,7 @@ def parse(domain):
         # Grouped: ['&', '|', a, b, c] binds differently from a flat list.
         return None
 
-    conditions = []
+    conditions: list[Condition] = []
     for leaf in leaves:
         if len(leaf) != 3:
             return None
@@ -116,7 +162,7 @@ def parse(domain):
     return conditions, joiner
 
 
-def _condition(field, operator, value):
+def _condition(field: str, operator: str, value: object) -> Condition:
     """Fold the two spellings of emptiness back into their names."""
     for name, (op, val) in _VALUELESS_DOMAIN.items():
         if operator == op and value is val:

@@ -25,12 +25,17 @@ Adding "kanban card options" is still an entry rather than a component. It is
 just an entry in Python now, and the same entry can feed the composer.
 """
 
+from __future__ import annotations
+
 from odoo.tools.translate import LazyTranslate
 
 from odoo.addons.app_builder_base.tools.catalogue import (
     OPTION,
+    Label,
     OptionGroup,
+    OptionGroupJSON,
     Row,
+    Translator,
     identity,
 )
 
@@ -63,7 +68,7 @@ GROUPABLE = ("many2one", "selection", "boolean")
 DATE_TYPES = ("date", "datetime")
 
 
-def _label_row(label, help_=""):
+def _label_row(label: Label, help_: Label = "") -> Row:
     return Row(
         name="string",
         label=label,
@@ -524,12 +529,24 @@ OPTION_GROUPS = (
 )
 
 
-def groups_for(view_type):
+def groups_for(view_type: str) -> tuple[OptionGroup, ...]:
     """Every option group that could apply in ``view_type``."""
     return tuple(g for g in OPTION_GROUPS if view_type in g.view_types)
 
 
-def groups_json(view_type=None, translate=identity):
+def groups_json(
+    view_type: str | None = None,
+    # `identity` does not satisfy `Translator`: it hands a `LazyGettext`
+    # straight back rather than resolving it to `str` (`catalogue.identity()`'s
+    # own docstring). That is deliberate here, not an oversight -- leaving a
+    # label unresolved when nobody supplies a real translator is exactly what
+    # `test_the_default_resolver_does_not_guess` (`test_view_options.py`)
+    # asserts on purpose, unlike `to_json`'s own default (`_default_translate`,
+    # which raises instead). So `OptionGroupJSON`'s `str`-typed fields are only
+    # accurate once a real `translate` is passed in; the default path hands
+    # back unresolved `Label`s that happen to still fit in the same dict shape.
+    translate: Translator = identity,  # pyright: ignore[reportArgumentType]
+) -> list[OptionGroupJSON]:
     source = groups_for(view_type) if view_type else OPTION_GROUPS
     return [group.to_json(translate) for group in source]
 
@@ -543,7 +560,14 @@ __all__ = ["OPTION", "OPTION_GROUPS", "groups_for", "groups_json"]
 # aggregates and a timeline draws bars, so there is no per-node DOM that maps
 # back to the arch. What each one *is* lives in its root attributes.
 
-OPTION_GROUPS += (
+# `OPTION_GROUPS` is genuinely reassigned here (not redeclared): the two
+# blocks are deliberately separate, each with its own "why these live apart"
+# comment, predating any typing work on this file. Pyright's own
+# `reportConstantRedefinition` reads the all-uppercase name as a promise of a
+# single assignment, which this file has never made -- restructuring into one
+# combined literal to satisfy that reading would be exactly the kind of
+# behavior/structure change a type-adding pass should not make.
+OPTION_GROUPS += (  # pyright: ignore[reportConstantRedefinition]
     OptionGroup(
         id="pivot_root",
         title=_lt("This pivot"),

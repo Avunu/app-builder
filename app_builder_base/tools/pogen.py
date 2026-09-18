@@ -16,9 +16,34 @@ it, including using polib so the escaping and wrapping are the ones Odoo's own
 importer round-trips.
 """
 
-from dataclasses import dataclass, field
+from __future__ import annotations
 
-import polib
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Only for `merge_terms`'s own parameter annotation below -- `rows` is
+    # never mutated, only iterated once, so `Iterable` is the honest,
+    # minimal type rather than the concrete `list` every real caller
+    # happens to pass (`studio_package.py`'s `rows[lang]`). `from __future__
+    # import annotations` (above) means the annotation is never evaluated
+    # at runtime, so this stays out of the real import list.
+    from collections.abc import Iterable
+
+# polib ships as one unstubbed ``polib.py`` -- no ``py.typed`` marker, no
+# companion ``.pyi``, checked directly in this project's own site-packages --
+# so pyright falls back to inferring from polib's own unannotated source
+# rather than a real stub. That source builds every entry from a bare
+# ``**kwargs`` (``_BaseEntry.__init__``), which taints ``msgid``/``msgstr``/
+# ``msgctxt``/``occurrences``/``obsolete`` as partially unknown even on a
+# freshly constructed instance, and ``pofile()`` routes through a parser
+# whose own return type is built the same untyped way. Not something this
+# file can fix from its own side -- the same "narrow, not blanket" vendor-gap
+# precedent ``compat.py`` established for OCB's own bare ``Field`` generic,
+# applied here at each of the handful of lines that actually touch a value
+# polib handed back (never a config-level suppression: this is local to
+# polib, not a tree-wide pattern the way ``reportPrivateUsage`` is).
+import polib  # pyright: ignore[reportMissingTypeStubs]
 
 
 @dataclass(frozen=True)
@@ -37,7 +62,7 @@ class Occurrence:
     fname: str
     xmlid: str
 
-    def render(self):
+    def render(self) -> str:
         return "%s:%s,%s:%s" % (self.kind, self.model, self.fname, self.xmlid)
 
 
@@ -45,7 +70,12 @@ class Occurrence:
 class Term:
     msgid: str
     msgstr: str
-    occurrences: list = field(default_factory=list)
+    # `field(default_factory=list)` alone infers `list[Unknown]` here, not
+    # `list[Occurrence]` -- a real pyright/dataclasses quirk, confirmed in
+    # isolation, unrelated to polib's own untyped taint above. The
+    # subscripted generic itself (`list[Occurrence]`) is a real, callable
+    # factory at runtime (Python 3.9+) and produces the identical `[]`.
+    occurrences: list[Occurrence] = field(default_factory=list[Occurrence])
 
 
 # No timestamps, for the reason in the module docstring. The rest matches what
@@ -62,7 +92,9 @@ METADATA = {
 }
 
 
-def merge_po(existing, module, lang, terms):
+def merge_po(
+    existing: str | None, module: str, lang: str, terms: list[Term]
+) -> str | None:
     """Fold generated terms into whatever is already in the file.
 
     Every other generated file is read before it is written -- the Python is
@@ -83,33 +115,29 @@ def merge_po(existing, module, lang, terms):
         return generated
 
     try:
-        before = polib.pofile(existing)
+        before = polib.pofile(existing)  # pyright: ignore[reportUnknownVariableType]
     except OSError:  # pragma: no cover - polib raises this on malformed input
         return generated
 
-    ours = {(entry.msgid, entry.msgctxt) for entry in polib.pofile(generated or "")}
-    kept = [
-        entry
-        for entry in before
-        if not entry.obsolete and (entry.msgid, entry.msgctxt) not in ours
-    ]
+    ours = {(entry.msgid, entry.msgctxt) for entry in polib.pofile(generated or "")}  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    kept = [e for e in before if not e.obsolete and (e.msgid, e.msgctxt) not in ours]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
     if not kept:
         return generated
     if generated is None:
         # Nothing of ours left to say, but somebody else's entries are still
         # in the file. Keep it rather than pruning it out from under them.
-        merged = polib.pofile(existing)
+        merged = polib.pofile(existing)  # pyright: ignore[reportUnknownVariableType]
         merged[:] = kept
-        return str(merged)
+        return str(merged)  # pyright: ignore[reportUnknownArgumentType]
 
-    merged = polib.pofile(generated)
-    for entry in kept:
+    merged = polib.pofile(generated)  # pyright: ignore[reportUnknownVariableType]
+    for entry in kept:  # pyright: ignore[reportUnknownVariableType]
         merged.append(entry)
-    merged.sort(key=lambda e: (e.msgid, e.msgstr))
-    return str(merged)
+    merged.sort(key=lambda e: (e.msgid, e.msgstr))  # pyright: ignore[reportUnknownLambdaType, reportUnknownMemberType]
+    return str(merged)  # pyright: ignore[reportUnknownArgumentType]
 
 
-def render_po(module, lang, terms):
+def render_po(module: str, lang: str, terms: list[Term]) -> str | None:
     """Render one language's PO file, or ``None`` when there is nothing to say.
 
     Returning None rather than an empty file matters: an addon with no
@@ -120,7 +148,7 @@ def render_po(module, lang, terms):
     if not terms:
         return None
 
-    po = polib.POFile()
+    po = polib.POFile()  # pyright: ignore[reportUnknownVariableType]
     po.header = (
         "Translation of Odoo Server.\n"
         "This file contains the translation of the following modules:\n"
@@ -135,24 +163,36 @@ def render_po(module, lang, terms):
     # Sorted, and one entry per source term with its occurrences gathered, so
     # the output depends on content rather than on database iteration order.
     for term in sorted(terms, key=lambda t: (t.msgid, t.msgstr)):
-        entry = polib.POEntry(msgid=term.msgid, msgstr=term.msgstr)
+        entry = polib.POEntry(  # pyright: ignore[reportUnknownVariableType]
+            msgid=term.msgid, msgstr=term.msgstr
+        )
         entry.comment = "module: %s" % module
-        entry.occurrences = [
+        # `polib`'s own real (unstubbed, see the `import polib` comment
+        # above) implementation accepts `None` for "no line number" here --
+        # confirmed by constructing one directly and rendering it, which
+        # produces `#: <path>` with no trailing `:<line>` -- but its
+        # inferred signature (built from an untyped `**kwargs`) resolves
+        # `occurrences` to `list[tuple[str, str]]`, which rejects `None`
+        # for the second element. A stub-vs-runtime gap local to this one
+        # assignment, not a tree-wide pattern; kept as `None` rather than
+        # substituted with `""` to avoid a real, if likely inconsequential,
+        # value change for a type-adding pass.
+        entry.occurrences = [  # pyright: ignore[reportAttributeAccessIssue]
             (occurrence, None)
             for occurrence in sorted({o.render() for o in term.occurrences})
         ]
         po.append(entry)
-    return str(po)
+    return str(po)  # pyright: ignore[reportUnknownArgumentType]
 
 
-def merge_terms(rows):
+def merge_terms(rows: Iterable[tuple[str, str, Occurrence]]) -> list[Term]:
     """Collapse ``(msgid, msgstr, Occurrence)`` rows into one Term per source.
 
     Two records with the same label and the same translation are one PO entry
     with two ``#:`` lines -- which is what Odoo's exporter does, and what makes
     a generated file look like a hand-written one.
     """
-    merged = {}
+    merged: dict[tuple[str, str], Term] = {}
     for msgid, msgstr, occurrence in rows:
         if not msgid or not msgstr or msgstr == msgid:
             continue
