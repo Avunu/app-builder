@@ -15,6 +15,7 @@ app_builder_view/static/src/console/canvas_views.js linguist-generated
 app_builder_view/static/src/console/canvases/search_lists_canvas.js linguist-generated
 app_builder_view/static/src/console/cog_menu_item.js linguist-generated
 app_builder_view/static/src/console/compat.js linguist-generated
+app_builder_view/static/src/console/console.js linguist-generated
 app_builder_view/static/src/console/console_model.js linguist-generated
 app_builder_view/static/src/console/drag.js linguist-generated
 app_builder_view/static/src/console/flows/create_package_flow.js linguist-generated

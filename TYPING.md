@@ -1572,6 +1572,52 @@ than reasoned about:
   file in `console/` is converted except `console.js` itself (wave 4,
   the entry point).
 
+- **TypeScript (2b, cluster 4, wave 4: `console.ts`).** The last file --
+  a 25-line entry point (registers `StudioConsole` into core's own
+  `registry.category("actions")`, twice, under two tags, and imports
+  every pane/flow module so their own registrations run). Small enough
+  to convert directly rather than through a drafting agent.
+
+  One real gap, the same class already established for `cogMenu`/
+  `systray`/`view_widgets`/`app_builder.canvas`: `"actions"` is core
+  Odoo's own registry category, and this is the first file in the tree
+  to register into it, so `registry.category("actions")` did not
+  compile at all until declared. Transcribed
+  `ActionsRegistryItemShape` in full from the real vendor
+  `@types/registries/registries.d.ts` (not in `tsconfig.json`'s
+  `include`, the same reason as its siblings) -- a union of a plain
+  handler function or a component class, intersected with
+  `displayName?`/`path?`/`target?`, matching `shell.ts`'s own
+  `static target`/`static path` (neither a `Component` class-body
+  member, so neither needs `override` -- already established, not a
+  new finding). One vendor type could not be transcribed faithfully:
+  `target`'s own real type (`ActionMode`) is referenced in the vendor
+  `.d.ts` but not declared anywhere findable in the vendor's own
+  `@types` tree -- typed as the plain `string` `shell.ts` actually
+  assigns instead of guessing at an unlocatable type.
+
+  Verification: `tsc`/`eslint`/`prettier` clean. `build_ts.mjs`
+  idempotent. Transpile-equivalence: an exact `OK` match, name and
+  dependency list both unchanged -- `console.ts` does not call
+  `useService`/`ConfirmationDialog`/etc. itself, so it never routes
+  anything through `odoo.ts` and has no dependency-list shift to show
+  the way every other cluster-4 production file did. Full tree-wide
+  transpiler guard passed clean across all 74 shipped `.js` files.
+
+  **Cluster 4 is complete.** Every file under `app_builder_view/static/
+  src/console/` is now TypeScript; the only `.js` left anywhere in this
+  addon's `static/` tree is `linguist-generated` esbuild output sitting
+  beside its real `.ts` source. Fourteen waves' worth of work across
+  four commits (wave 1: 11 files, wave 2: 7 files, cluster 4's own
+  tests: 3 files, wave 3: 3 files, wave 4: 1 file -- 25 real files plus
+  three test files, 28 total), every one drafted read-only (mostly in
+  parallel via the Workflow tool, three directly), reconciled and
+  verified centrally against the real `tsc`/`eslint`/`prettier`/
+  `build_ts`/transpile-equivalence/tree-wide-transpiler-guard toolchain
+  the same way every earlier cluster was. Next: `app_builder_model`,
+  `app_builder_ui`, `app_builder_report`, `app_builder_approval` static
+  (2b's own plan, step 4's second half), then tours (2b step 5).
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was

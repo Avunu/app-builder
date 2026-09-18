@@ -84,6 +84,9 @@ declare module "registries" {
         // section below for why it is transcribed here instead of
         // imported from the real vendor `.d.ts`.
         view_widgets: ViewWidgetsRegistryItemShape;
+        // Odoo's own category (`console.ts` is the first real registrant
+        // in this tree) -- see the "-- actions registry --" section below.
+        actions: ActionsRegistryItemShape;
     }
 }
 
@@ -394,6 +397,43 @@ export interface ViewWidgetsRegistryItemShape {
     fieldDependencies?:
         Partial<StaticWidgetInfo>[] | ((baseInfo: StaticWidgetInfo) => Partial<StaticWidgetInfo>[]);
 }
+
+// -- actions registry -------------------------------------------------------
+//
+// `registry.category("actions")` -- core Odoo's own category, registered
+// into by `console.ts` (`StudioConsole`, under two tags: the console's
+// own and a legacy one kept for old bookmarks/callers). Transcribed from
+// the real vendor `@types/registries/registries.d.ts` -- not in
+// `tsconfig.json`'s `include` (unlike its `fields_registry.d.ts`/
+// `views_registry.d.ts` siblings; the same reason `cogMenu`/`systray`/
+// `view_widgets` are transcribed here rather than imported). A real
+// registrant is either a plain handler function or a component class
+// (`StudioConsole` is the latter); `target`/`path`/`displayName` are the
+// action-framework's own convention, read off the registered class/
+// function by `action_service.js`, matching `shell.ts`'s own doc comment
+// on why `static target`/`static path` need no `override` (neither is a
+// `Component` class-body member). `target`'s own vendor type (`ActionMode`)
+// could not be found declared anywhere in the vendor's own `@types` tree
+// (a loose reference in the vendor `.d.ts` itself); typed as the plain
+// `string` `shell.ts`'s own `static target = "fullscreen"` actually is,
+// rather than a vendor type this repo cannot locate to transcribe.
+
+/** A registrant is either a plain handler function (given the console's
+ * `env` and an `ActionDescription`) or a component class -- no real
+ * registration in this tree uses the function arm (`StudioConsole` is a
+ * component), but the vendor category accepts both, so both are named
+ * here rather than narrowed to just this addon's own usage, the same
+ * "transcribe the whole real shape" choice already made for `cogMenu`/
+ * `systray`/`view_widgets`. */
+export type ActionsRegistryItemShape = (
+    | ((env: unknown, action: ActionDescription) => void)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    | typeof Component<any, any>
+) & {
+    displayName?: string;
+    path?: string;
+    target?: string;
+};
 
 // -- useService -----------------------------------------------------------
 
