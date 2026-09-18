@@ -84,8 +84,10 @@ export function warnLegacyTabs(): void {
  * on its own.
  */
 export interface PaneResolverResult {
-    Component: typeof Component;
-    sidebar: typeof Component | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Component: typeof Component<any, any>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sidebar: typeof Component<any, any> | null;
     makeModel: (shell: unknown) => PaneModel;
 }
 

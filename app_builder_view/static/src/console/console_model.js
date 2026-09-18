@@ -51,7 +51,11 @@ class ConsoleModel {
   status;
   statusError;
   showInvisible;
-  /** The notebook page the user is looking at, so a remount lands on it. */
+  /** The notebook page the user is looking at, so a remount lands on it.
+   * `TabMemory | null`, not `unknown`: `rememberPage` (below) only ever
+   * stores what `identity.ts:describeTab` builds, and `canvas.ts`'s
+   * `onPatched` -- the first real reader -- reads it back as exactly
+   * that shape. */
   activePage;
   palette;
   addable;

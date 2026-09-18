@@ -329,6 +329,93 @@ hoot `onRpc` mocks typed against the same map.
   a `.d.ts` -- put it in the one file that creates the category until
   Phase 2c's `console/odoo.ts` facade exists to hold it instead
   (`pane_registry.ts`).
+- **Owl components, four facts cluster 4 (the first real components
+  converted) established, all confirmed directly against
+  `node_modules/@odoo/owl/dist/types/runtime/component.d.ts` rather than
+  guessed:**
+  - `override` is needed for *any* class member sharing a name with one
+    declared in `Component`'s own class body -- `static template`
+    (required, `string`), `static props`/`static defaultProps` (both
+    optional) and the instance method `setup(): void` all four need it.
+    An earlier framing of this rule as "needed because the base member
+    is optional" is imprecise (two independent agents caught and
+    corrected it identically): `template` is *required* and still needs
+    `override`. `static components` needs *no* `override` because it is
+    not a `Component` class-body member at all -- it lives on the
+    separate `StaticComponentProperties`/`ComponentConstructor` types
+    Owl's registry/`xml` machinery uses instead.
+  - Owl components initialize fields in `setup()`, called synchronously
+    right after construction, never in a constructor this code writes
+    its own. TS's `strictPropertyInitialization` only inspects a real
+    constructor, so it cannot see that `setup()` always runs first --
+    every field `setup()` unconditionally assigns (even to a literal
+    `null`/`false`) needs a definite-assignment assertion (`field!: T`);
+    a field only ever assigned later, in a lifecycle method like
+    `attach()`, is instead typed `T | undefined` with no assertion,
+    since that genuinely is its state before that method first runs.
+  - `typeof Component` (Owl's bare, unparameterized component-class
+    type) is **not** assignable from a concrete `Props`-parameterized
+    subclass, in either direction: assigning a real component class to a
+    field/parameter typed `typeof Component` fails ("Two different types
+    with this name exist, but they are unrelated" -- contravariant
+    constructor-parameter checking against the generic
+    `new <Props=any,Env=any>(...)` signature). Fix: write the field as
+    `typeof Component<any, any>` instead of the bare form, with an
+    `eslint-disable-next-line @typescript-eslint/no-explicit-any` on
+    that line -- confirmed with a standalone probe before applying it
+    tree-wide, to every registry-item-shape field that names a component
+    class (`PaneRegistration.Component`/`.sidebar`,
+    `PaneResolverResult.Component`/`.sidebar`, `CogMenuItem.Component`,
+    `SystrayRegistryItemShape.Component`,
+    `ViewWidgetsRegistryItemShape.component`,
+    `fieldEditorComponent()`'s own return type) and to `odoo.ts`'s new
+    `"app_builder.field_editor"` category entry.
+  - `ev.target` is `EventTarget | null`, not `Element` -- the JS idiom
+    `target.closest && target.closest(...)` (checking whether
+    `.closest` exists at all) does not translate, since `EventTarget`
+    has no `.closest` property, not even an optional one. Fix: `const
+    target = ev.target instanceof Element ? ev.target : null;`, then
+    plain `target && target.closest(...)` from there.
+- A vendor `.js` component class with no `@extends {Component<Props>}`
+  JSDoc (e.g. `@web/core/confirmation_dialog/confirmation_dialog.js`)
+  does not carry `Component`'s own instance members into TS's inferred
+  type at all under this project's `checkJs: false` -- `InstanceType<typeof
+  ConfirmationDialog>` has no `.render`/`.props`/`.env`, confirmed with a
+  standalone probe (the identical class, declared directly in a `.ts`
+  file instead, infers correctly). Surfaces as `DialogService.add`
+  rejecting the vendor class against *any* `Component<P>` instantiation,
+  `P = any` included, with the confusing message "is missing the
+  following properties from type 'Component<...>': props, env, __owl__,
+  render". Not fixable by widening `P` -- the vendor class itself is
+  what fails the structural check. Fix: a narrow, hand-typed re-export
+  of the vendor class, cast once (`ConfirmationDialogImpl as unknown as
+  new (...args: any[]) => Component<ConfirmationDialogProps>`), the same
+  "narrow, hand-traced facade over a vendor boundary" move `odoo.ts`
+  already makes for `OrmService`/`NotificationService`/`ActionService` --
+  every real caller then imports the typed re-export from `odoo.ts`
+  instead of the vendor module directly.
+- `Domain.toList(context)` (`@web/core/domain.js`) is JSDoc'd with
+  `context` unbracketed (`@param {Object} context`, meaning required),
+  and TS enforces that -- but plenty of real vendor callers
+  (`field.js`, `utils.js`, several in `search_model.js`) call it with
+  zero arguments anyway. The same JSDoc-vs-runtime looseness already
+  tracked for `Registry.get`/`queryFirst`/`useDragAndDrop`/`moveTo`, now
+  on a required-vs-effectively-optional parameter rather than an arity
+  or shape mismatch. Fix at the call site: pass `{}` explicitly, the
+  same "evaluate without context" idiom `domain.js`'s own `toJson()`
+  uses internally.
+- `querySelector`/`querySelectorAll` infer their default, non-generic
+  return type as the DOM lib's own `Element`, which has no `.click()` --
+  a real gap only surfaces once a real caller needs a DOM method
+  `Element` does not have (`identity.ts`'s `tabFor`/`findTab`, both
+  genuinely always finding a `<a class="nav-link">`, widened to
+  `HTMLElement` with an explicit `querySelector<HTMLElement>(...)` once
+  `canvas.ts` needed `.click()` on what they return). A test written
+  against the old, wider return type may need a matching `as
+  HTMLElement` at its own comparison site (`identity.test.ts`), since
+  `@odoo/hoot-dom`'s own `queryOne` stays the plain, non-generic
+  `Element` it has always been (see cluster-3's own `drag.test.ts`
+  finding on this).
 
 ## Implemented so far
 
@@ -1057,6 +1144,165 @@ than reasoned about:
     reactivity can re-render it on a language change -- nothing in this
     tree does that yet, but a facade cannot un-invent a wrong default
     once files start depending on it.
+
+- **TypeScript (2b, cluster 4, wave 1: cog_menu_item, systray_item,
+  pending_widget, apply_dialog, canvas, flows/{create_package_flow,flow},
+  record_pane/row_editor, sidebar/{field_editor_fallback,remove_flow},
+  canvases/search_lists_canvas).** The first real Owl components
+  converted in this migration -- eleven files, drafted in parallel (a
+  Workflow, ultracode being on for the session) against a hand-built
+  leaf-first dependency graph, then reconciled and verified centrally
+  against the real `tsc`/`eslint`/`prettier`/`build_ts`/transpile-guard
+  toolchain the same way every earlier cluster was. The four new,
+  general Owl-component facts this wave established (the `override`
+  rule's correction, `setup()`-field initialization,
+  `typeof Component<any, any>`, `ev.target instanceof Element`) are in
+  "Known traps" above rather than repeated here, since every later
+  cluster's own components will hit all four.
+
+  **Shared-type growth**, every one landing in `console/odoo.ts`/`types.ts`
+  because a real file in this wave needed it, none invented ahead of a
+  reader:
+
+  - `odoo.ts`'s `ActionController` -- Phase 2c's own cut covered only
+    `cog_menu_item`'s reads (`.action.res_model`, `.currentState.resId`);
+    `systray_item.ts` needed real `currentController` fields Phase 2c's
+    note had simply not traced against that file (`.virtual`,
+    `.props.resModel`/`.type`/`.resId`, `.action.type`/`.views`/`.id`),
+    confirmed against `action_service.js`'s own `_makeController`/
+    `_getViewInfo`/`_controllersFromState` directly. A type-accuracy gap
+    in already-landed shared code, not a runtime bug -- nothing shipped
+    broken, but the narrower type would have rejected this file's real,
+    correct reads the moment it converted.
+  - `odoo.ts` gained three new registry categories this wave's files
+    are the first real registrants of: `cogMenu` (core's own category;
+    `CogMenuItem`, with the same "vendor `.d.ts` says sync `boolean`,
+    every real registration is actually `async`" JSDoc-vs-runtime gap
+    already catalogued for `Registry.get`/`queryFirst`), `systray`
+    (core's own; `SystrayRegistryItemShape`), and `view_widgets` (core's
+    own; `ViewWidgetsRegistryItemShape`/`StaticWidgetInfo`/
+    `DynamicWidgetInfo`, transcribed from the real vendor
+    `view_widgets_registry.d.ts` -- not in `tsconfig.json`'s `include`,
+    unlike its `fields_registry.d.ts`/`views_registry.d.ts` siblings --
+    with one correction to that file's own imprecise `extractProps`
+    parameter naming, confirmed against `widget.js`'s real call). Plus
+    one category this addon owns: `"app_builder.field_editor"`
+    (`typeof Component<any, any>`, `field_editor_fallback.ts`'s
+    fallback and `app_builder_model`'s own full popover both register
+    into it -- whichever registers first wins). Each of the three core
+    categories was hit by a *different* file in this wave independently
+    proposing the identical augmentation locally (the same "carry it in
+    the one file that needs it until the facade exists" precedent
+    `pane_registry.ts` set in cluster 3) -- reconciled centrally into
+    `odoo.ts` rather than kept as three separate, duplicate `declare
+    module` blocks.
+  - `odoo.ts` gained a typed re-export of `ConfirmationDialog`
+    (`@web/core/confirmation_dialog/confirmation_dialog.js`) plus
+    `ConfirmationDialogProps`, for the reason in "Known traps" above
+    (the vendor class's own inferred type does not carry `Component`'s
+    members under `checkJs: false`) -- the first vendor *component*, not
+    just vendor *service*, this migration has needed to re-export typed.
+    Both real callers (`apply_dialog.ts`'s `onDiscard`, `sidebar/
+    remove_flow.ts`) now import it from `odoo.ts` instead of the vendor
+    module directly.
+  - `types.ts` gained a `FlowSpec`/`FlowStep`/`FlowValues` family
+    (`PaneRegistration.flow` was left `unknown` specifically pending
+    this conversion, its own comment said so) and a
+    `FieldEditorInitial`/`FieldEditorProps` family (the whole-tree
+    contract `field_editor_fallback.ts`'s own module docstring names in
+    full -- `app_builder_model`'s still-`.js` full popover builds the
+    identical shape, confirmed by reading `field_popover.js` directly,
+    so this lives in `types.ts` rather than the fallback component's
+    own module for the same cross-addon-importability reason
+    `PaneRegistration`/`PaneContext` already do). Both families were
+    proposed by the file that needed them and consumed as anticipated by
+    a sibling file in the same wave (`flow.ts` importing `FlowSpec`/
+    `FlowStep`/`FlowValues`, `field_editor_fallback.ts` importing
+    `FieldEditorProps`) -- real, same-wave cross-consumption, not typing
+    ahead of a reader.
+  - `console_model.ts`'s `activePage`/`rememberPage(page)` were widened
+    from `unknown` to `TabMemory | null` (`identity.ts`) -- `canvas.ts`'s
+    own `onPatched` is the first real reader, and both of `activePage`'s
+    only writers (`rememberPage`, and the `null` it starts as) already
+    proved the shape unambiguously; narrowed centrally, dropping the
+    per-file cast the drafting agent used instead (a difference from
+    `CanvasPayload.models`, below, where the same "first real reader"
+    situation was judged too speculative a shape to promote yet).
+  - `identity.ts`'s `tabFor`/`findTab` were widened from `Element | null`
+    to `HTMLElement | null` (see "Known traps" above) once `canvas.ts`
+    needed `.click()` on what they return; `identity.test.ts`'s own
+    `tabFor(...)).toBe(link)` assertion needed a matching `link as
+    HTMLElement` cast at the one call site this touched, `link` itself
+    still being `@odoo/hoot-dom`'s plain, non-generic `queryOne` result.
+  - `shell/pane_registry.ts`'s `PaneResolverResult.Component`/`.sidebar`
+    got the `typeof Component<any, any>` fix (see "Known traps") --
+    `flow.ts`'s own `setPaneResolver("flow", ...)` return value is the
+    first real assignment of a concrete component class into either
+    field.
+  - `drag.ts`'s local `const ICONS = TYPE_ICONS as Record<string,
+    string>;` cast was dropped once `pending_widget.ts` (this wave)
+    started exporting `TYPE_ICONS` with a real `Record<string, string>`
+    annotation at the source -- the cast existed only because the
+    export was untyped JS before.
+
+  **Not promoted, deliberately, despite a real first reader**:
+  `CanvasPayload.models` stays `unknown` in `types.ts`; `canvas.ts`'s
+  `computeViewProps` is its first real reader (traced to
+  `studio_view_canvas.py:canvas`'s own per-model `{fields: fields_get(...)}`
+  dict), but the shape is typed locally in `canvas.ts` itself
+  (`CanvasModelEntry`, cast at the one read site) rather than promoted
+  to shared vocabulary -- unlike `activePage` above, a dict keyed by
+  arbitrary model names with exactly one real reader is exactly the kind
+  of shape this migration has repeatedly preferred to let a *second*,
+  independent caller confirm before naming centrally, rather than widen
+  a shared cross-addon type from a single file's own usage.
+
+  **Real, behavior-relevant findings, none of them latent bugs worth
+  fixing**: `field_editor_fallback.ts`'s `get inverse()` fallback object
+  was missing `suggested` from `InverseOptions`, a real (if unreached in
+  practice -- the branch that would read it is gated behind
+  `can_create`, which the same fallback also sets `false`) shape
+  mismatch against the real contract, fixed to match `console_model.ts`'s
+  own canonical empty `InverseOptions`. `record_pane/row_editor.ts`'s
+  `fieldSelectorProps` read `this.row.follow !== false`, but `row.follow`
+  was never a real field of `Row`/`RowJSON` (`catalogue.py` has no such
+  member) -- the same class of finding as cluster 1's `row.placeholder`:
+  always `undefined`, so the check has always unconditionally resolved
+  to `true` (which also happens to be `ModelFieldSelector`'s own
+  `defaultProps.followRelations`). Typed to what it actually, always
+  evaluates to, with a comment, rather than widening `RowJSON` for a
+  field with no real Python source. Left untouched, out of this
+  migration's own scope: `search_lists_canvas.xml`'s "Group by" row's
+  remove button calls `removeSearchElement('filter', entry.name)` for an
+  entry drawn from `search.group_bys` -- looks like a genuine
+  pre-existing bug (removing a group-by asks the server to remove a
+  same-named *filter* instead), found while tracing this file's own
+  types, but it lives in the `.xml` template, not the file converted, so
+  it is flagged here rather than silently fixed.
+
+  Verification for all eleven files: `tsc`/`eslint`/`prettier` clean
+  (eslint findings triaged against the same "cross-check against
+  `tsc`/pre-existing-baseline first" policy "Known traps" already
+  documents -- the only real, fixable findings were `no-floating-promises`/
+  `no-misused-promises` on a fire-and-forget `doAction`/`discard`/`remove`
+  call, fixed with the same `void` operator already established in
+  `console_model.ts`/`drag.ts`; `no-unused-expressions` on four `a &&
+  a.method()` guards in `canvas.ts`'s `detach()`, fixed with optional
+  chaining; `no-empty-object-type`/`no-base-to-string`/
+  `no-unnecessary-type-assertion`/`unbound-method`/`require-await`, one
+  each, fixed locally). `build_ts.mjs` re-run to confirm idempotency.
+  Every file's emitted `.js` checked against transpiling its
+  pre-conversion original: five of the eleven show a *dependency-list*
+  difference from before conversion (never a name difference) --
+  `apply_dialog`/`cog_menu_item`/`create_package_flow`/`remove_flow`/
+  `systray_item` all lose a direct vendor import (`@web/core/utils/hooks`
+  for `useService`, `@web/core/confirmation_dialog/confirmation_dialog`
+  for `ConfirmationDialog`) and gain `@app_builder_view/console/odoo` in
+  its place -- the deliberate Phase 2c "route framework-boundary imports
+  through one facade" policy working as intended, not a regression. The
+  full tree-wide transpiler guard (`test_assets.py`'s own check, run
+  directly rather than through Odoo's test runner) passed clean across
+  all 74 shipped `.js` files.
 
 ## CI: the OCA container's real layout
 

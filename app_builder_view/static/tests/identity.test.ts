@@ -218,7 +218,10 @@ test("form: a notebook page is its tab link", async () => {
     expect(link).toHaveAttribute("name", "notes");
     expect(ownToken(link)).toBe("o_studio_n_6");
     expect(tokenOf(link, FORM_NODES)).toEqual({ token: "o_studio_n_6", el: link });
-    expect(tabFor("o_studio_n_6", root)).toBe(link);
+    // `tabFor` returns `HTMLElement | null` now (`identity.ts`, widened for
+    // `canvas.ts`'s own `.click()`); `queryOne` itself stays the plain,
+    // non-generic `Element` hoot-dom always returns.
+    expect(tabFor("o_studio_n_6", root)).toBe(link as HTMLElement);
     expect(elementsFor("o_studio_n_6", root, FORM_NODES)).toEqual([link]);
     expect(ownToken(queryOne(".o_notebook"))).toBe("o_studio_n_5");
     // The field on the page resolves like any other.

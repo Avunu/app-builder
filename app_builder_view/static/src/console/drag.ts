@@ -121,16 +121,6 @@ const EDGE = 30;
 const EDGE_SPEED = 10;
 
 /**
- * `TYPE_ICONS` (`./pending_widget`, still `.js`, outside this cluster) is a
- * plain object literal with a fixed, known key set, so TS infers a closed
- * literal-key type for it -- indexing it with an arbitrary runtime string
- * (`node.field.type: string`) does not type-check against that under
- * strict/`noImplicitAny`. Re-bound once, here, as the open dictionary it is
- * actually used as; `pending_widget.js` itself is untouched.
- */
-const ICONS = TYPE_ICONS as Record<string, string>;
-
-/**
  * `useDragAndDrop`'s own JSDoc (`html_editor/utils/drag_and_drop.js`)
  * infers a shape that is, in two places, inaccurate to what the hook
  * actually does -- the same class of JSDoc-vs-runtime mismatch this
@@ -586,11 +576,12 @@ export class CanvasDrag {
     iconFor(el: HTMLElement): string {
         const token = this.payload && this.payload.kind === "move" ? this.payload.token : null;
         const node = token ? this.nodes[token] : null;
-        // Captured once: a second `ICONS[node.field.type]` below would not
-        // re-narrow to the same result under `noUncheckedIndexedAccess`,
-        // the same repeated-bracket-index trap this migration has already
-        // hit on index-signature reads elsewhere.
-        const icon = node && node.field ? ICONS[node.field.type] : undefined;
+        // Captured once: a second `TYPE_ICONS[node.field.type]` below
+        // would not re-narrow to the same result under
+        // `noUncheckedIndexedAccess`, the same repeated-bracket-index
+        // trap this migration has already hit on index-signature reads
+        // elsewhere.
+        const icon = node && node.field ? TYPE_ICONS[node.field.type] : undefined;
         if (icon) {
             return icon;
         }

@@ -37,7 +37,6 @@ const DROP_SLACK = HIT;
 const MODIFIER_KEYS = ["Alt", "Control", "Meta", "Shift"];
 const EDGE = 30;
 const EDGE_SPEED = 10;
-const ICONS = TYPE_ICONS;
 const dragAndDrop = useDragAndDrop;
 function makeCanvasDrag({
   rootEl,
@@ -279,7 +278,7 @@ class CanvasDrag {
   iconFor(el) {
     const token = this.payload && this.payload.kind === "move" ? this.payload.token : null;
     const node = token ? this.nodes[token] : null;
-    const icon = node && node.field ? ICONS[node.field.type] : void 0;
+    const icon = node && node.field ? TYPE_ICONS[node.field.type] : void 0;
     if (icon) {
       return icon;
     }

@@ -135,7 +135,7 @@ function editingContext(overrides: Partial<EditingContext> = {}): EditingContext
         reload_mode: false,
         record_count: 0,
         fields: [],
-        preview: null,
+        preview: { type: "form", view_id: false, search_view_id: false },
         options: null,
         catalogue: null,
         groups: null,

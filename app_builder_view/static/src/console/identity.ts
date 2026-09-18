@@ -292,12 +292,16 @@ function within(r: BoxRect, point: Point): boolean {
     return point.x >= r.left && point.x <= r.right && point.y >= r.top && point.y <= r.bottom;
 }
 
-/** The `.nav-link` of a notebook page node, if that page is rendered. */
-export function tabFor(token: Token, root: Element | null): Element | null {
+/** The `.nav-link` of a notebook page node, if that page is rendered.
+ * `HTMLElement`, not the bare `Element` a plain `querySelector` infers:
+ * `compat.TAB_SELECTOR` only ever matches a rendered tab's anchor/button,
+ * never an `SVGElement` -- widened once `canvas.ts` needed `.click()` on
+ * what this returns, `Element` having no such method of its own. */
+export function tabFor(token: Token, root: Element | null): HTMLElement | null {
     if (!root || !token) {
         return null;
     }
-    return root.querySelector(`${compat.TAB_SELECTOR}.${token}`);
+    return root.querySelector<HTMLElement>(`${compat.TAB_SELECTOR}.${token}`);
 }
 
 /** What a tab click means for remembering the active page. */
@@ -314,18 +318,21 @@ export function describeTab(tab: Element): TabMemory {
     return { name, index: tabs.indexOf(tab) };
 }
 
-/** The rendered tab a remembered page maps to now, or `null`. */
-export function findTab(root: Element | null, page: TabMemory | null): Element | null {
+/** The rendered tab a remembered page maps to now, or `null`. `HTMLElement`
+ * for the same reason `tabFor` is -- `canvas.ts` calls `.click()` on it. */
+export function findTab(root: Element | null, page: TabMemory | null): HTMLElement | null {
     if (!root || !page) {
         return null;
     }
     if (page.name) {
-        const byName = root.querySelector(`${compat.TAB_SELECTOR}[name="${cssEscape(page.name)}"]`);
+        const byName = root.querySelector<HTMLElement>(
+            `${compat.TAB_SELECTOR}[name="${cssEscape(page.name)}"]`,
+        );
         if (byName) {
             return byName;
         }
     }
-    const tabs = root.querySelectorAll(compat.TAB_SELECTOR);
+    const tabs = root.querySelectorAll<HTMLElement>(compat.TAB_SELECTOR);
     return tabs[page.index] || null;
 }
 

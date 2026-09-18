@@ -9,10 +9,16 @@
 # marking an entire directory generated before it actually is would be
 # false for every file not yet converted. Add a line here in the same PR
 # that converts a file's .ts, drop it if a file is ever converted back.
+app_builder_view/static/src/console/apply_dialog.js linguist-generated
+app_builder_view/static/src/console/canvas.js linguist-generated
 app_builder_view/static/src/console/canvas_views.js linguist-generated
+app_builder_view/static/src/console/canvases/search_lists_canvas.js linguist-generated
+app_builder_view/static/src/console/cog_menu_item.js linguist-generated
 app_builder_view/static/src/console/compat.js linguist-generated
 app_builder_view/static/src/console/console_model.js linguist-generated
 app_builder_view/static/src/console/drag.js linguist-generated
+app_builder_view/static/src/console/flows/create_package_flow.js linguist-generated
+app_builder_view/static/src/console/flows/flow.js linguist-generated
 app_builder_view/static/src/console/geometry.js linguist-generated
 app_builder_view/static/src/console/identity.js linguist-generated
 app_builder_view/static/src/console/odoo.js linguist-generated
@@ -20,11 +26,16 @@ app_builder_view/static/src/console/options.js linguist-generated
 app_builder_view/static/src/console/outline_tree.js linguist-generated
 app_builder_view/static/src/console/outline_zones.js linguist-generated
 app_builder_view/static/src/console/overlay.js linguist-generated
+app_builder_view/static/src/console/pending_widget.js linguist-generated
 app_builder_view/static/src/console/record_pane/record_pane_model.js linguist-generated
+app_builder_view/static/src/console/record_pane/row_editor.js linguist-generated
 app_builder_view/static/src/console/shell/draft_model.js linguist-generated
 app_builder_view/static/src/console/shell/pane_registry.js linguist-generated
 app_builder_view/static/src/console/shell/shell_model.js linguist-generated
+app_builder_view/static/src/console/sidebar/field_editor_fallback.js linguist-generated
+app_builder_view/static/src/console/sidebar/remove_flow.js linguist-generated
 app_builder_view/static/src/console/split.js linguist-generated
+app_builder_view/static/src/console/systray_item.js linguist-generated
 app_builder_view/static/src/console/types.js linguist-generated
 app_builder_view/static/src/console/wire.js linguist-generated
 app_builder_view/static/src/console/zones.js linguist-generated

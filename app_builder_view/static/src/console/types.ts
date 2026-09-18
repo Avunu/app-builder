@@ -23,7 +23,14 @@
  */
 
 import type { Component } from "@odoo/owl";
-import type { DraftPayload, PackageEntryJSON } from "./wire";
+import type {
+    DraftFieldJSON,
+    DraftPayload,
+    FieldTypeEntry,
+    InverseOptions,
+    PackageEntryJSON,
+    ResolveRelatedResult,
+} from "./wire";
 
 /** A node's role in the arch. One tag can be several kinds (`div` is
  * `label`, `button_box` or `html`); `_kind()` is the single source. */
@@ -575,11 +582,13 @@ export interface PaneRegistration {
      * through untouched by `pane_registry.ts`; never instantiated or
      * read for its `Props` there, so this names the class and nothing
      * more. */
-    Component?: typeof Component;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Component?: typeof Component<any, any>;
     /** The custom pane's sidebar, or `null` for none (`home_pane.js`
      * sets this explicitly; every other `Component`-bearing entry
      * supplies a real one). */
-    sidebar?: typeof Component | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sidebar?: typeof Component<any, any> | null;
     /** `(shell) => new SomeModel(...)` at every real registration that
      * has one (`record_pane.js`, `views_pane.js`, `home_pane.js`,
      * `changes_pane.js`, `flow.js` -- never a literal `null` on this
@@ -595,10 +604,10 @@ export interface PaneRegistration {
      * `pane_registry.ts`, so they stay under the index signature below. */
     surface?: string;
     /** A flow pane's spec -- the third discriminator. Only ever checked
-     * for truthiness in `pane_registry.ts`; `flow.js` (`FlowModel`,
-     * still `.js`) is the real reader of its `title`/`steps`/`onDone`/
-     * `onCancel`, so its shape is not modeled ahead of that conversion. */
-    flow?: unknown;
+     * for truthiness in `pane_registry.ts`; `console/flows/flow.ts`'s own
+     * `FlowModel` is the real reader of it -- modeled now that this
+     * conversion has happened, per this comment's own earlier promise. */
+    flow?: FlowSpec;
     [key: string]: unknown;
 }
 
@@ -614,6 +623,123 @@ export interface PaneRegistration {
  */
 export interface PaneEntry extends PaneRegistration {
     key: string;
+}
+
+// -- flows ----------------------------------------------------------------
+//
+// `console/flows/flow.ts`'s own vocabulary (`FlowModel`, `Flow`), named
+// here rather than there so `PaneRegistration.flow` (above) can reference
+// it without `types.ts` importing from `flow.ts` -- the same reverse-
+// import problem `CanvasPayload`/`Token` hit in cluster 2, solved the
+// same way (the shared shape lives at the lower layer). `shell`/`flow`
+// stay `unknown` in every function signature here for the identical
+// reason `PaneRegistration.makeModel` already does: this module does not
+// import the concrete shell class (`shell/shell_model.ts`) or `FlowModel`
+// itself, to stay a leaf the rest of `console/` can depend on without a
+// cycle. `flow.ts`'s own `FlowModel` narrows `shell` back to the real
+// `StudioShell` on its own fields; nothing here needs to.
+
+/** One value a flow's steps read and write, keyed by name. A plain bag
+ * rather than a per-flow union: `create_package_flow.js` keys it
+ * `name`/`root_dir`/`git_init`, `build_app_flow.js` keys it
+ * `model_name`/`features`/`groups`, `adopt_model_flow.js` keys it
+ * `models`/`previews` -- nothing here could name a shape common to
+ * flows that have not been converted yet, let alone ones not written. */
+export type FlowValues = Record<string, unknown>;
+
+/** One step of a flow, as `flow.ts:FlowModel` reads it off `spec.steps`. */
+export interface FlowStep {
+    key: string;
+    /** `_t(...)`'s own return type (`string | Markup | LazyTranslatedString`)
+     * is what every real registration actually builds this from -- `unknown`
+     * rather than `string`, the same correction `console_model.ts`'s
+     * `KIND_LABELS` already made for the identical situation, since this
+     * module has no ambient declaration for `Markup`/`LazyTranslatedString`
+     * to name more precisely. */
+    label: unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Component: typeof Component<any, any>;
+    validate?(values: FlowValues, shell: unknown): string;
+    onEnter?(values: FlowValues, shell: unknown, flow: unknown): void | Promise<void>;
+}
+
+/**
+ * A flow's own spec -- what `paneRegistry.add(key, { flow: {...} })`
+ * carries under `flow` (`flow.ts`'s own module docstring, and every real
+ * registration). `PaneRegistration.flow` was typed no more precisely
+ * than `unknown` until this shape existed for real (that field's own
+ * comment said so); it is `FlowSpec` now.
+ */
+export interface FlowSpec {
+    /** Set by every real registration, matching the registry's own key;
+     * read only by the template (`flow.xml`'s `t-att-data-flow`), never
+     * by `FlowModel` itself. */
+    key?: string;
+    title: unknown;
+    doneLabel?: unknown;
+    initial?: FlowValues;
+    steps: FlowStep[];
+    onOpen?(shell: unknown, flow: unknown): void | Promise<void>;
+    onDone(shell: unknown, flow: unknown): Promise<unknown>;
+    onCancel?(shell: unknown, flow: unknown): void | Promise<void>;
+}
+
+// -- field editor -----------------------------------------------------------
+//
+// The field editor contract every registrant of `app_builder.field_editor`
+// implements alike -- `field_editor_fallback.ts`'s own module docstring,
+// the load-bearing source for every key below. `app_builder_model`
+// registers its own full popover against this exact same shape
+// (`console_items.js`'s `ConsoleFieldEditor`, `field_popover.js`), so this
+// is a whole-tree contract, not just `field_editor_fallback.ts`'s own
+// usage of a subset of it. Named here rather than in
+// `field_editor_fallback.ts` itself because two wave-2 files in this
+// addon build these props directly (`sidebar/add_tab.ts`,
+// `sidebar/properties_tab.ts`), so it needs to be importable without
+// depending on the fallback component's own module.
+
+/** What a brand new field starts from -- the palette tile's own
+ * `{ttype, string}` (`sidebar/add_tab.js`'s new-field tiles); given
+ * instead of `field` when there is nothing staged yet to edit. */
+export interface FieldEditorInitial {
+    ttype?: string;
+    string?: string;
+}
+
+/**
+ * The field editor contract every registrant of `app_builder.field_editor`
+ * implements alike.
+ */
+export interface FieldEditorProps {
+    /** The staged definition to edit, or `null`/absent for a new field
+     * with nothing chosen yet -- every real opener passes a
+     * `DraftFieldJSON` (`console_model.ts:stagedField`), never a live
+     * `ir.model.fields` row directly. */
+    field?: DraftFieldJSON | null;
+    initial?: FieldEditorInitial;
+    /** `live` (an `ir.model.fields` row) or `staged` (a draft) -- absent
+     * only on the one call site (`view_tab.js`'s model-field editor) that
+     * never varies it, always effectively `"staged"`. */
+    mode?: "live" | "staged";
+    /** The picker's entries for this model, each saying whether it can be
+     * made live here and whether it needs this editor first
+     * (`console_model.ts`'s own `ConsoleModel.fieldTypes`, the one real
+     * builder every call site hands through unchanged). */
+    fieldTypes: FieldTypeEntry[];
+    existingNames: string[];
+    modelName: string;
+    inverseOptions: (comodel: string) => Promise<InverseOptions>;
+    resolveRelated: (path: string) => Promise<ResolveRelatedResult>;
+    /** The draft's spec shape: `string`, `ttype`, `comodel`, `inverse_name`,
+     * `selection`, `related`, ... -- every real handler forwards this
+     * straight into one of `ConsoleModel`'s own mutators (`addNewField`,
+     * `updateStaged`, `addModelField`), all three of which already take
+     * the same `Record<string, unknown>`. */
+    onSave: (values: Record<string, unknown>) => void;
+    /** Offered only for a staged field that can be removed; `null` or
+     * absent when there is nothing to delete (a brand new field). */
+    onDelete?: (() => void) | null;
+    close: () => void;
 }
 
 // -- services -----------------------------------------------------------

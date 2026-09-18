@@ -51,6 +51,7 @@ import * as compat from "./compat";
 import { messageOf } from "./shell/draft_model";
 import type { ApplyResult, DraftFieldWithPending, DraftModel } from "./shell/draft_model";
 import type { OpenViewTarget } from "./shell/shell_model";
+import type { TabMemory } from "./identity";
 import type {
     CanvasPackageSummary,
     CanvasPayload,
@@ -265,8 +266,12 @@ export class ConsoleModel implements PaneModel {
     status: string;
     statusError: string;
     showInvisible: boolean;
-    /** The notebook page the user is looking at, so a remount lands on it. */
-    activePage: unknown;
+    /** The notebook page the user is looking at, so a remount lands on it.
+     * `TabMemory | null`, not `unknown`: `rememberPage` (below) only ever
+     * stores what `identity.ts:describeTab` builds, and `canvas.ts`'s
+     * `onPatched` -- the first real reader -- reads it back as exactly
+     * that shape. */
+    activePage: TabMemory | null;
     palette: AddableFieldEntry[];
     addable: AddableViewTypeEntry[];
     fieldPlan: NewFieldPlan | null;
@@ -891,7 +896,7 @@ export class ConsoleModel implements PaneModel {
         }
     }
 
-    rememberPage(page: unknown): void {
+    rememberPage(page: TabMemory | null): void {
         this.activePage = page;
     }
 

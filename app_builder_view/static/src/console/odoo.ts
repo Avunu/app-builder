@@ -55,6 +55,23 @@ declare module "registries" {
         // `warnLegacyTabs` exists to say so) -- no real shape to name,
         // and nothing here reads more than an entry's own key.
         "app_builder.console_tabs": unknown;
+        /** `field_editor_fallback.ts`'s own fallback, and
+         * `app_builder_model`'s full popover (`console_items.js`) --
+         * whichever registers first wins (`fieldEditorComponent()`'s own
+         * `entries[0]`). Every registrant is a plain component class
+         * taking `FieldEditorProps` (`types.ts`); typed as the bare
+         * class (never instantiated or read for its own `Props` by this
+         * registry itself, only passed on to `usePopover`), the same way
+         * core's own `DialogsRegistryItemShape` types a category that
+         * only ever stores component classes. */
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        "app_builder.field_editor": typeof Component<any, any>;
+        cogMenu: CogMenuItem;
+        systray: SystrayRegistryItemShape;
+        // Odoo's own category, not ours -- see the "-- view widgets --"
+        // section below for why it is transcribed here instead of
+        // imported from the real vendor `.d.ts`.
+        view_widgets: ViewWidgetsRegistryItemShape;
     }
 }
 
@@ -130,6 +147,54 @@ export interface DialogProps {
     onExpand?(): void;
 }
 
+// -- confirmation dialog ----------------------------------------------------
+//
+// `@web/core/confirmation_dialog/confirmation_dialog.js`, rendered via
+// `DialogService.add` by two real files (`apply_dialog.ts`, `sidebar/
+// remove_flow.ts`). Re-exported here, typed, rather than imported directly
+// from the vendor module: this project builds with `checkJs: false`
+// (`tsconfig.json`'s own comment on why), and a plain, untyped `.js` class
+// extending a generic TS class with no `@extends {Component<Props>}`
+// JSDoc does not carry its base class's members into TS's inferred type
+// under that setting -- confirmed with a standalone probe (`inst.render()`/
+// `inst.props` both fail to resolve on `InstanceType<typeof
+// ConfirmationDialog>` the same way they do not on an identical class
+// declared directly in a `.ts` file). `DialogService.add`'s own generic
+// constructor check then reports the vendor class as "missing props, env,
+// __owl__, render" against *any* `Component<P>` instantiation, `P = any`
+// included -- not fixable by widening `P`, since the vendor class itself
+// is what fails the check. Cast once here instead of at every call site,
+// the same "narrow, hand-traced facade over a vendor boundary" move this
+// file already makes for `OrmService`/`NotificationService`/`ActionService`.
+
+import { ConfirmationDialog as ConfirmationDialogImpl } from "@web/core/confirmation_dialog/confirmation_dialog";
+
+/** What a real caller supplies to `dialog.add(ConfirmationDialog, {...})`
+ * -- `close` is not among them: the dialog service injects it itself
+ * before constructing (`dialog_service.js`), never supplied by a caller
+ * of `DialogService.add`. `title`/`body`/`confirmLabel`/`cancelLabel` are
+ * `_t(...)`'s own lazy return type: the vendor's own `title` validator
+ * accepts `typeof m === "string" || typeof m.toString === "function"`
+ * (a lazy translated value), and both real callers pass `_t(...)` for
+ * `body` too despite its schema's plainer-looking `{ type: String }` --
+ * Owl's own prop validation does not enforce that distinction at
+ * runtime. */
+export interface ConfirmationDialogProps {
+    title?: unknown;
+    body?: unknown;
+    confirm?: () => void;
+    confirmLabel?: unknown;
+    confirmClass?: string;
+    cancel?: () => void;
+    cancelLabel?: unknown;
+    dismiss?: () => void;
+}
+
+export const ConfirmationDialog = ConfirmationDialogImpl as unknown as new (
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...args: any[]
+) => Component<ConfirmationDialogProps>;
+
 // -- action -------------------------------------------------------------
 //
 // `@web/core/actions/action_service.js`, `useService("action")`, called
@@ -151,17 +216,156 @@ export interface ActionDescription {
     params?: Record<string, unknown>;
 }
 
-/** The one field both real callers read off `currentController`'s real,
- * much larger shape (`action_service.js`'s internal `Controller`):
- * `.action.res_model` and `.currentState.resId`. */
+/**
+ * `currentController`'s real shape (`action_service.js`'s own `Controller`,
+ * built by `_makeController` from whichever `_execute*` function ran --
+ * far larger than what any one file here reads). Widened past the
+ * original Phase 2c cut -- which named only `.action.res_model` and
+ * `.currentState.resId`, the two fields `cog_menu_item.js` reads -- to
+ * also cover `systray_item.ts`'s own reads, traced against the same real
+ * file: `.virtual` (`_controllersFromState`, a restored-from-router
+ * placeholder whose `action`/`props` may still be empty objects) and
+ * `.props.resModel`/`.props.type`/`.props.resId` plus `.action.type`/
+ * `.action.views`/`.action.id` (`_getViewInfo`, called from
+ * `_createController` for every `ir.actions.act_window` controller: the
+ * loaded action record is assigned whole onto `controller.action`, not
+ * copied, and `resModel`/`type` are written onto `controller.props`
+ * unconditionally for a real window-action controller). `action.views`
+ * is the action's own `[view_id, view_type]` pair list, the same shape
+ * `_getViewInfo`'s own `action.views.some(...)` reads it as elsewhere in
+ * that file.
+ */
 export interface ActionController {
-    action: { res_model?: string; [key: string]: unknown };
+    /** Set only on a restored-from-router placeholder
+     * (`_controllersFromState`), whose `action`/`props` may still be
+     * empty objects -- every real caller bails out on this before
+     * reading anything else off the controller. */
+    virtual?: boolean;
+    action: {
+        type?: string;
+        id?: number | false;
+        views?: Array<[number | false, string]>;
+        res_model?: string;
+        [key: string]: unknown;
+    };
+    props?: {
+        resModel?: string;
+        type?: string;
+        resId?: number | false;
+        [key: string]: unknown;
+    };
     currentState?: { resId?: number | false };
 }
 
 export interface ActionService {
     doAction(action: ActionDescription, options?: Record<string, unknown>): Promise<unknown>;
     readonly currentController: ActionController | undefined;
+}
+
+// -- cog menu -------------------------------------------------------------
+//
+// `registry.category("cogMenu")`, Odoo's own category (`cog_menu_item.ts`).
+
+/**
+ * The slice of Odoo's own per-view `env.config` this addon actually reads
+ * (`cog_menu_item.ts`, `app_builder_ui/static/src/automations_menu_item.js`).
+ * Traced to the real construction (`@web/views/view.js:148`) rather than
+ * guessed: `actionId` is the one member of that file's own `Config`
+ * typedef this addon touches, always present (`getDefaultConfig()`
+ * defaults it to `false`). `viewId`/`viewType` are **not** part of the
+ * formal `Config` typedef at all -- `View#loadView` adds both
+ * dynamically, via `Object.assign(this.env.config, {..., viewId:
+ * viewDescription.id, viewType: type, ...})`, inside `onWillStart`. Typed
+ * as always-present (not optional) because Owl always resolves a
+ * parent's `onWillStart` before any child -- a cog menu item included --
+ * starts rendering, so by the time either `isDisplayed` or a real click
+ * handler runs, that assignment has already happened. `resModel` is the
+ * one genuinely optional member: grepping every `config.resModel =`/
+ * `config = {...resModel...}` site under `web/static/src` turns up none
+ * -- `view.js` never writes it onto `config` itself; `cog_menu_item.ts`'s
+ * own `onEdit` falls back to the current controller's action for exactly
+ * this reason. */
+export interface ViewEnvConfig {
+    resModel?: string;
+    viewId: number | false;
+    viewType: string;
+    actionId: number | false;
+}
+
+export interface ViewEnv {
+    config: ViewEnvConfig;
+}
+
+/**
+ * `registry.category("cogMenu")`'s real item shape. Declared here (rather
+ * than reused from OCB's own `@types/registries/registries.d.ts`) because
+ * that file is deliberately outside this repo's `tsconfig.json` `include`
+ * (cherry-picked, not a blanket glob), and because its
+ * `isDisplayed?: (env: OdooEnv) => boolean` does not match how every real
+ * registration in this tree actually implements it: an `async` function,
+ * so really `Promise<boolean>` -- the same class of JSDoc-vs-runtime gap
+ * TYPING.md's "Known traps" already tracks for
+ * `Registry.get`/`queryFirst`/`useDragAndDrop`/`moveTo`.
+ */
+export interface CogMenuItem {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Component: typeof Component<any, any>;
+    groupNumber: number;
+    isDisplayed?: (env: ViewEnv) => boolean | Promise<boolean>;
+}
+
+// -- systray ----------------------------------------------------------------
+//
+// `registry.category("systray")`, Odoo's own category (`systray_item.ts`).
+
+export interface SystrayRegistryItemShape {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Component: typeof Component<any, any>;
+    isDisplayed?: (env: unknown) => boolean;
+}
+
+// -- view widgets ---------------------------------------------------------
+//
+// `@web/core/registry`'s `"view_widgets"` category (registered into by
+// `pending_widget.ts`'s own `<widget name="app_builder_pending">`), and the
+// per-node info `Widget` (`views/widgets/widget.js`) hands a registered
+// widget's `extractProps`. Transcribed from the real vendor
+// `@types/registries/view_widgets_registry.d.ts` -- not in tsconfig.json's
+// `include` (unlike its `fields_registry.d.ts`/`views_registry.d.ts`
+// siblings) -- with one correction to that vendor file's own imprecise
+// `extractProps` parameter naming: the real runtime call
+// (`views/widgets/widget.js`'s `widgetProps` getter,
+// `this.widget.extractProps(widgetInfo, dynamicInfo)`) passes the *full*
+// per-node info object, not its `options` sub-field alone as the vendor
+// `.d.ts`'s own parameter name ("options") implies.
+
+/** The second argument every registered widget's `extractProps` receives:
+ * only `readonly`, resolved from the node's own modifiers, unlike
+ * `StaticWidgetInfo`'s raw, unevaluated `attrs.readonly`. */
+export interface DynamicWidgetInfo {
+    readonly: boolean;
+}
+
+/** One `<widget>` arch node, as `Widget.parseWidgetNode` (`widget.js`)
+ * always builds it: `options` is that node's own `options="{...}"`
+ * attribute, evaluated -- a plain `object`, since its real shape is
+ * entirely up to whichever widget declares it (a caller narrows it, the
+ * way `pending_widget.ts`'s own `PendingWidgetInfo` does). */
+export interface StaticWidgetInfo {
+    attrs: Record<string, string>;
+    name: string;
+    options: object;
+    widget: ViewWidgetsRegistryItemShape;
+}
+
+/** A `"view_widgets"` registry entry. */
+export interface ViewWidgetsRegistryItemShape {
+    additionalClasses?: string[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    component: typeof Component<any, any>;
+    extractProps?(options: StaticWidgetInfo, dynamicInfo: DynamicWidgetInfo): object;
+    fieldDependencies?:
+        Partial<StaticWidgetInfo>[] | ((baseInfo: StaticWidgetInfo) => Partial<StaticWidgetInfo>[]);
 }
 
 // -- useService -----------------------------------------------------------

@@ -393,11 +393,32 @@ export interface EditingContextFieldEntry {
 }
 
 /**
+ * `_preview_for`'s whole return (`studio_view_editor.py:_preview_for`,
+ * called from `editing_context()`'s own `"preview": self._preview_for(view)`) --
+ * how to render the view being edited. Every type previews itself, so
+ * `view_id` is that same view and `unavailable` is never set -- except a
+ * search view, which has no rendering of its own and previews as the
+ * model's list with this search view attached instead (`search_view_id`),
+ * and can point at no list at all (`unavailable: true`) when the model
+ * has none. `search_view_id` is always present, `false` when not
+ * applicable -- not absent -- matching the non-search branch's own
+ * `{"type": view.type, "view_id": view.id, "search_view_id": False}`
+ * literal exactly. `canvases/search_lists_canvas.ts` is the first real
+ * reader.
+ */
+export interface PreviewInfo {
+    type: string;
+    view_id: number | false;
+    search_view_id: number | false;
+    unavailable?: boolean;
+}
+
+/**
  * `editing_context()`'s whole return (`studio_view_editor.py:
  * editing_context`) -- everything the editor needs to open on a view.
- * `preview`/`options`/`catalogue`/`groups`/`packages` are left `unknown`:
- * nothing converted so far reads them (they belong to components this
- * migration has not reached); narrow when a real reader appears, per this
+ * `options`/`catalogue`/`groups`/`packages` are left `unknown`: nothing
+ * converted so far reads them (they belong to components this migration
+ * has not reached); narrow when a real reader appears, per this
  * migration's own rule against typing ahead of a consumer.
  */
 export interface EditingContext {
@@ -410,7 +431,7 @@ export interface EditingContext {
     reload_mode: string | false;
     record_count: number;
     fields: EditingContextFieldEntry[];
-    preview: unknown;
+    preview: PreviewInfo;
     options: unknown;
     catalogue: unknown;
     groups: unknown;
