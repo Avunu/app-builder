@@ -1428,6 +1428,63 @@ than reasoned about:
   routing working as intended. Full tree-wide transpiler guard passed
   clean across all 74 shipped `.js` files.
 
+- **TypeScript (2b, cluster 4's own tests: `outline.test.ts`,
+  `record_sidebar.test.ts`, `systray_item.test.ts`).** Converted right
+  after cluster 4's two waves, the same "cluster's own tests as a
+  distinct follow-up step" rhythm clusters 2/3 already used --
+  `systray_item.test.ts` was in fact unblocked as soon as wave 1 landed
+  (it only exercises `systray_item.ts`), but bundled with the other two
+  for one pass rather than split further. All three drafted in parallel
+  with no tooling trouble this time (contrast wave 2's two recovered
+  agents) and reconciled with **zero** real `tsc`/production-code fixes
+  needed -- every type each test needed already existed, confirming
+  `odoo.ts`'s `ActionController`/`ActionService` (wave 1) and
+  `record_pane_model.ts`'s widened `RecordPaneEntry` (wave 2) are
+  complete for what their own tests exercise, not just for production.
+
+  A real design-consistency gap flagged, not fixed (out of each test's
+  own scope): `record_pane.ts`'s `RecordSidebar`/`RecordPane` both type
+  `Props.model`/`Props.shell` to the full `RecordPaneModel`/`StudioShell`
+  classes rather than a narrow owner interface the way `ConsoleModel`
+  (`ConsoleModelOwner`, cluster 2) and `CanvasDrag` (`CanvasDragModel`,
+  cluster 3) were each narrowed specifically so their own tests could
+  build a minimal fake. `record_sidebar.test.ts` worked around it the
+  same way `record_pane.ts` itself already works around an analogous
+  mismatch (`entry as unknown as RecordPaneEntry`): a local `FakeModel`
+  interface (grepped from `record_pane.ts`'s own `this.model.` reads),
+  cast `as unknown as RecordPaneModel`/`as unknown as StudioShell` at
+  the `mountWithCleanup` boundary. Worth a `RecordPaneModelOwner`-style
+  interface the day a second caller (a `RecordPane` test, say) needs the
+  same narrowing -- not done now, since `record_pane.ts` itself is
+  already-converted, real code outside a test file's own scope to edit.
+
+  Two small, genuine, behavior-neutral completeness gaps in the original
+  JS fixtures, found only because the type is now enforced (neither is a
+  bug in the component under test, both in test-fixture data the
+  component never actually reads): `record_sidebar.test.ts`'s fixture
+  record never set `sentence` (required on `RecordDescription`, but
+  `RecordSidebar` reads a *different* field of the same name on
+  `RecordRowJSON` instead) or `advanced.context.studio_package_id`
+  (never read since no test clicks "Advanced…") -- both given inert
+  defaults rather than left to a bare `as`.
+
+  Verification: `tsc` clean with no fixes; `eslint` findings all in the
+  two already-accepted noise categories (`no-unsafe-*`, and
+  `require-await` on a fake's own async method that satisfies an async
+  interface without needing to await anything -- the identical, already
+  pre-existing pattern `console_model.test.ts`'s own eleven
+  `require-await` findings are, not new noise); one real,
+  worth-documenting `no-base-to-string` in `record_sidebar.test.ts`'s
+  own `visible()` fake fixed with a targeted disable comment, matching
+  the same finding already accepted in the real
+  `RecordPaneModel.visible` this fixture stands in for.
+  Transpile-equivalence: all three are an exact `OK` match against their
+  pre-conversion originals, name *and* dependency list -- tests call
+  vendor hooks directly rather than through `odoo.ts` (that routing
+  policy is for production console files only), so there was no
+  dependency-list shift to expect here the way wave 1/2's production
+  files had. Full tree-wide transpiler guard passed clean.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was

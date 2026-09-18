@@ -52,6 +52,9 @@ app_builder_view/static/tests/console_model.test.js linguist-generated
 app_builder_view/static/tests/drag.test.js linguist-generated
 app_builder_view/static/tests/geometry.test.js linguist-generated
 app_builder_view/static/tests/identity.test.js linguist-generated
+app_builder_view/static/tests/outline.test.js linguist-generated
 app_builder_view/static/tests/outline_tree.test.js linguist-generated
 app_builder_view/static/tests/outline_zones.test.js linguist-generated
+app_builder_view/static/tests/record_sidebar.test.js linguist-generated
+app_builder_view/static/tests/systray_item.test.js linguist-generated
 app_builder_view/static/tests/zones.test.js linguist-generated
