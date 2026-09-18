@@ -1698,6 +1698,133 @@ than reasoned about:
   (now genuinely covering all `app_builder*` addons, not just
   `app_builder_view`) passed clean across all 74 shipped `.js` files.
 
+- **TypeScript (2b step 5: tours).** The last step of Phase 2b -- twelve
+  `web_tour` files across all five addons, ~2350 lines total. Converted
+  in two parts: `app_builder_approval/approvals_pane_tour.ts` directly
+  first, specifically to validate a new shared type before committing to
+  a parallel wave of the other eleven (the same "probe first, then fan
+  out" caution used earlier in this migration for the
+  `typeof Component<any, any>` variance fix) -- it turned out to need
+  the fix as-is, with zero further iteration, so the remaining eleven
+  were then drafted in parallel with high confidence.
+
+  **One real, necessary shared-type gap, found before any file could
+  compile at all**: `registry.category("web_tour.tours")` is core
+  Odoo's own category, and nothing in this tree had registered into it
+  yet -- the identical "core category outside `tsconfig.json`'s
+  `include`" situation already hit for `cogMenu`/`systray`/
+  `view_widgets`/`actions`. Transcribed `TourStep`/`ToursRegistryShape`
+  from the real vendor `web_tour/static/src/@types/registries.d.ts`
+  into `odoo.ts`, with two corrections to that file's own account,
+  each confirmed against the real running tour service rather than
+  guessed (the same JSDoc-vs-runtime-gap discipline already applied
+  repeatedly elsewhere in this migration):
+  - `url: string` (required) -- every one of the twelve real tours in
+    this tree omits it entirely (`console_tour.js`'s own comment:
+    "Deliberately no `url`: ... a url here would override the one
+    `start_tour` passes"), and the real consumer
+    (`tour_service.js`'s own `if (tour.url && ...)`) treats it as
+    genuinely optional. Widened to `url?: string`.
+  - `run`'s function arm, typed `() => void | Promise<void>` with no
+    `this` and no parameter -- but the real call site
+    (`tour_step_automatic.js`'s own `this.run.call({anchor:
+    this.element}, actionHelper)`) binds `this` to `{anchor: Element}`
+    and passes one argument (a real `TourHelpers` instance, left
+    `unknown`: no tour in this tree reads it). Several real tours read
+    `this.anchor` inside a `run` function. Widened to
+    `run?: string | ((this: { anchor: Element }, helpers: unknown) =>
+    void | Promise<void>)` -- also making `run` itself optional, since
+    a pure wait-for-trigger step (no action, just confirming something
+    is on screen) omits it in real tours.
+
+  This is also the first time in the whole migration that a shared
+  type change was validated end-to-end (probe file, real `tsc` run,
+  eslint, prettier, build, transpile-equivalence) *before* fanning a
+  wave out in parallel, rather than reconciling problems discovered
+  across eleven simultaneous drafts afterward -- worth doing again for
+  any future wave whose very first file depends on a not-yet-proven
+  new shared type.
+
+  Once the shared type existed, every one of the twelve files needed
+  it via pure **contextual typing** -- `registry.category("web_tour.tours")
+  .add(name, { steps: () => [...] })`'s own generic signature checks
+  the whole object literal automatically, with no explicit
+  `TourStep`/`ToursRegistryShape` import and no local `declare module`
+  block in any of the twelve files. Nine of the twelve needed zero
+  code changes beyond the file extension (every `run` a plain command
+  string, no DOM queries, no `this.anchor` reads) -- the cleanest wave
+  of this entire migration.
+
+  The three that did need real type-adding work, each a straightforward
+  application of an already-established idiom:
+  - `console_outline_tour.ts`: `.dataset["name"]` (bracket access,
+    `noPropertyAccessFromIndexSignature`), an `HTMLElement` cast for a
+    `.nextElementSibling`/`.previousElementSibling` read (`.dataset`
+    is `HTMLElement`-only, not on the base `Element` type the DOM lib
+    gives those), and a `!` assertion for a real, tour-guaranteed
+    non-null row lookup -- all three already-established idioms from
+    `outline.ts`/`outline.test.ts`.
+  - `console_new_field_tour.ts`: an `HTMLInputElement` cast on
+    `this.anchor` (the trigger selector already guarantees it's an
+    `<input>`) and a `!` assertion on a `document.querySelector`
+    result the tour's own construction guarantees is present by that
+    step. One reconciliation needed: the drafting agent's own first
+    pass replaced the assertion with a new `if (!note) { throw new
+    Error(...) }` guard instead -- a real, if practically unreachable,
+    behavior change (a descriptive `Error` instead of the original's
+    raw `TypeError` on the never-taken failure path). Reverted to a
+    documented `!` assertion during reconciliation, matching this
+    migration's own strict "type-adding pass only" rule.
+  - `console_drag_tour.ts`/`console_kanban_tour.ts`: `moveTo`'s real
+    position union has no `"center"` literal even though every real
+    tour drag uses it (the same `@odoo/hoot-dom` gap `drag.test.ts`
+    already found and fixed in cluster 3) -- each file reused that
+    established `DragHelpersWithCenter`-shaped local fix rather than
+    importing `drag.test.ts`'s own copy (which lives under
+    `static/tests/`, not an importable module) or inventing a shared
+    one -- correctly, per this migration's own "promote only once a
+    third real reader appears" rule (`drag.test.ts` is the first,
+    these are the second and third *files*, but the fix stays
+    file-local by design, not centralized, the same way `console_kanban
+    _tour.ts`'s own `findFirst` -- a `queryFirst` arity-JSDoc-gap
+    workaround -- was scoped narrower than `drag.test.ts`'s own
+    equivalent, returning `Element | null` rather than `HTMLElement |
+    null` since this file never needs an `HTMLElement`-only member off
+    a query result).
+
+  One process note, not a code finding: `console_kanban_tour.ts`'s own
+  drafting agent reported having written a temporary copy of its draft
+  directly into the real project tree (to run the real toolchain
+  against it) and deleted it afterward -- a more thorough variant of
+  the "stray direct write despite read-only instructions" pattern this
+  migration has now seen roughly eight times. Confirmed via `git
+  status` that no artifact survived; treated as harmless, per the
+  established precedent for this recurring pattern, but the tool file
+  itself was still applied from the scratchpad backup as usual, not
+  trusted blind because of the claim.
+
+  Verification: `tsc`/`eslint`/`prettier` completely clean across all
+  twelve files -- zero eslint findings of any kind, not even the
+  usual `no-unsafe-*` noise. `build_ts.mjs` idempotent.
+  Transpile-equivalence: all twelve are an exact `OK` match, name and
+  dependency list both unchanged -- tours call vendor hooks/`registry`
+  directly and never route through `odoo.ts`'s `useService`, so there
+  was no dependency-list shift to expect the way most `console/`
+  production files have shown since Phase 2c. Full tree-wide
+  transpiler guard passed clean across all 74 shipped `.js` files.
+
+  **Phase 2b is now complete.** Every `.js` file under any addon's
+  `static/src/` or `static/tests/` in this whole addon suite has a
+  real `.ts` source; every remaining `.js` file anywhere in the tree
+  is `linguist-generated` esbuild output sitting beside it. Next:
+  Phase 3 (enforcement, CI, docs) -- wiring the real `tsc` check into
+  CI (already true via `scripts/typecheck.mjs`, confirm it is actually
+  invoked there), deciding whether/when to turn on the `eslint`
+  pre-commit hook now that the known `no-unsafe-*` program-construction
+  bug (TYPING.md's own "Known traps") is either fixed or worked
+  around, and Phase 1's own Python-side strict-typing work if it has
+  not already proceeded in parallel.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was

@@ -87,6 +87,9 @@ declare module "registries" {
         // Odoo's own category (`console.ts` is the first real registrant
         // in this tree) -- see the "-- actions registry --" section below.
         actions: ActionsRegistryItemShape;
+        // Odoo's own category, registered into by every tour file under
+        // `static/tests/tours/` -- see the "-- tours --" section below.
+        "web_tour.tours": ToursRegistryShape;
     }
 }
 
@@ -434,6 +437,50 @@ export type ActionsRegistryItemShape = (
     path?: string;
     target?: string;
 };
+
+// -- tours --------------------------------------------------------------
+//
+// `registry.category("web_tour.tours")` -- core Odoo's own category,
+// registered into by every tour file under this addon suite's own
+// `static/tests/tours/`. Transcribed from the real vendor
+// `web_tour/static/src/@types/registries.d.ts` -- not in `tsconfig.json`'s
+// `include` (the same reason `cogMenu`/`systray`/`view_widgets`/`actions`
+// are transcribed here too) -- with two corrections to that file's own
+// account, confirmed against the real running tour service rather than
+// guessed:
+//
+//  - `url` is declared required (`url: string`) there, but every tour in
+//    this addon suite omits it (`console_tour.js`'s own comment:
+//    "Deliberately no `url`: ... a url here would override the one
+//    `start_tour` passes"), and the real consumer
+//    (`tour_service.js`'s own `if (tour.url && tourConfig.startUrl !=
+//    tour.url && tourConfig.redirect)`) treats it as genuinely optional --
+//    the same class of JSDoc-vs-runtime gap already tracked for
+//    `Registry.get`/`queryFirst`/`Domain.toList`.
+//  - `run`'s function arm is typed `() => void | Promise<void>` there,
+//    with no `this` and no parameter -- but the real call site
+//    (`tour_step_automatic.js`'s own `this.run.call({anchor:
+//    this.element}, actionHelper)`) binds `this` to `{anchor: Element}`
+//    and passes one argument (a real `TourHelpers` instance, left
+//    `unknown` here: no tour in this tree reads it). Several real tours
+//    read `this.anchor` inside a `run` function.
+//  - `run` is declared required there too, but a step that is only a
+//    wait-for-trigger (no action of its own -- just confirming something
+//    is on screen before the next step) omits it entirely in real tours
+//    in this tree; widened to optional. `content` stays required: every
+//    real step in this tree sets one.
+
+export interface TourStep {
+    content: string;
+    trigger: string;
+    run?: string | ((this: { anchor: Element }, helpers: unknown) => void | Promise<void>);
+}
+
+export interface ToursRegistryShape {
+    test?: boolean;
+    url?: string;
+    steps(): TourStep[];
+}
 
 // -- useService -----------------------------------------------------------
 
