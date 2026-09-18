@@ -36,5 +36,6 @@ become live without restarting the server.
         "app_builder_ui",
         "app_builder_report",
     ],
+    "external_dependencies": {"python": ["typing_extensions"]},
     "data": [],
 }

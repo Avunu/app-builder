@@ -15,6 +15,7 @@
     # hook (`@html_editor/utils/drag_and_drop`), which only resolves while
     # the module is installed. Naming it here is what keeps the two together.
     "depends": ["app_builder_base", "web", "html_editor"],
+    "external_dependencies": {"python": ["typing_extensions"]},
     "data": [
         "security/ir.model.access.csv",
         "views/studio_view_editor_views.xml",

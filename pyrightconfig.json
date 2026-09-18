@@ -31,5 +31,108 @@
 
   "pythonVersion": "3.10",
   "typeCheckingMode": "standard",
-  "reportMissingModuleSource": false
+  "reportMissingModuleSource": false,
+
+  // Odoo's own underscore-prefixed attributes (`_fields`, `_name`,
+  // `_inherit`, `record._ids`, ...) are internal-to-the-framework, not
+  // internal-to-the-declaring-*class* the way `reportPrivateUsage` checks
+  // -- every model in every addon reads another model's `_fields`/`_name`
+  // as a matter of course (`env[model]._fields`, `record._name`), and OCB
+  // itself does this pervasively. Flagging every one of those as a
+  // "private member accessed from outside its class" would be checking
+  // the wrong thing for how the ORM is actually used; off tree-wide
+  // rather than an ignore comment at every one of what would be hundreds
+  // of real, idiomatic call sites.
+  "reportPrivateUsage": "none",
+
+  // TYPING.md Phase 1a/1b: `tools/` is odoo-free by design (every module's
+  // own docstring says so) and strict-checked as a whole, rather than
+  // file-by-file `# pyright: strict` comments -- unlike models (Phase 1c),
+  // which ratchet one file at a time as each individually passes, since a
+  // model file's own strictness depends on how much of OCB's own untyped
+  // surface it touches.
+  //
+  // Every rule below is exactly the set whose default differs between
+  // `standard` and `strict` (pyright's own documented table), applied by
+  // hand rather than a top-level `"strict": [...]` glob or a per-file
+  // `# pyright: strict` comment: both of those activate strict mode as a
+  // fixed bundle that overrides `reportPrivateUsage` above regardless of
+  // where that override is declared -- confirmed by testing both forms
+  // directly on `compat.py` (`env[model]._fields`), which needs the
+  // relaxation `tools/` itself already gets, and neither form honored it.
+  // Individual `executionEnvironment` rules, below, are the one mechanism
+  // that does. Cross-checked against `catalogue.py`'s own real, working
+  // `# pyright: strict` comment (the file that established this file's
+  // own docstring claim, "tools/ is odoo-free by design") -- this table
+  // reproduces the identical zero-error result on it. Every `tools/`
+  // directory needs its own entry (`executionEnvironments` matches the
+  // first `root` a file falls under, no glob support), plus one catch-all
+  // root last so every other file keeps the top-level settings above.
+  "executionEnvironments": [
+    {
+      "root": "app_builder_base/tools",
+      "reportMissingTypeStubs": "error",
+      "reportConstantRedefinition": "error",
+      "reportDeprecated": "error",
+      "reportDuplicateImport": "error",
+      "reportIncompleteStub": "error",
+      "reportInconsistentConstructor": "error",
+      "reportInvalidStubStatement": "error",
+      "reportMatchNotExhaustive": "error",
+      "reportMissingParameterType": "error",
+      "reportMissingTypeArgument": "error",
+      "reportPrivateUsage": "none",
+      "reportTypeCommentUsage": "error",
+      "reportUnknownArgumentType": "error",
+      "reportUnknownLambdaType": "error",
+      "reportUnknownMemberType": "error",
+      "reportUnknownParameterType": "error",
+      "reportUnknownVariableType": "error",
+      "reportUnnecessaryCast": "error",
+      "reportUnnecessaryComparison": "error",
+      "reportUnnecessaryContains": "error",
+      "reportUnnecessaryIsInstance": "error",
+      "reportUnusedClass": "error",
+      "reportUnusedImport": "error",
+      "reportUnusedFunction": "error",
+      "reportUnusedVariable": "error",
+      "reportUntypedBaseClass": "error",
+      "reportUntypedClassDecorator": "error",
+      "reportUntypedFunctionDecorator": "error",
+      "reportUntypedNamedTuple": "error"
+    },
+    {
+      "root": "app_builder_view/tools",
+      "reportMissingTypeStubs": "error",
+      "reportConstantRedefinition": "error",
+      "reportDeprecated": "error",
+      "reportDuplicateImport": "error",
+      "reportIncompleteStub": "error",
+      "reportInconsistentConstructor": "error",
+      "reportInvalidStubStatement": "error",
+      "reportMatchNotExhaustive": "error",
+      "reportMissingParameterType": "error",
+      "reportMissingTypeArgument": "error",
+      "reportPrivateUsage": "none",
+      "reportTypeCommentUsage": "error",
+      "reportUnknownArgumentType": "error",
+      "reportUnknownLambdaType": "error",
+      "reportUnknownMemberType": "error",
+      "reportUnknownParameterType": "error",
+      "reportUnknownVariableType": "error",
+      "reportUnnecessaryCast": "error",
+      "reportUnnecessaryComparison": "error",
+      "reportUnnecessaryContains": "error",
+      "reportUnnecessaryIsInstance": "error",
+      "reportUnusedClass": "error",
+      "reportUnusedImport": "error",
+      "reportUnusedFunction": "error",
+      "reportUnusedVariable": "error",
+      "reportUntypedBaseClass": "error",
+      "reportUntypedClassDecorator": "error",
+      "reportUntypedFunctionDecorator": "error",
+      "reportUntypedNamedTuple": "error"
+    },
+    { "root": "." }
+  ]
 }

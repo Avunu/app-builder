@@ -4,10 +4,15 @@ fix = true
 
 [lint]
 extend-select = [
+    "ANN",  # flake8-annotations -- TYPING.md Phase 1a
     "B",
     "C90",
     "E501",  # line too long (default 88)
+    "FA",  # flake8-future-annotations -- TYPING.md Phase 1a
     "I",  # isort
+    "PGH003",  # blanket type: ignore -- TYPING.md Phase 1a
+    "PYI",  # flake8-pyi -- TYPING.md Phase 1a
+    "TC",  # flake8-type-checking -- TYPING.md Phase 1a
     "UP",  # pyupgrade
 ]
 extend-safe-fixes = ["UP008"]
@@ -19,6 +24,12 @@ ignore = [
     # _inherit / _sql_constraints are Odoo class attributes, not dataclass
     # fields; a ClassVar annotation on them is not idiomatic Odoo.
     "RUF012",
+    # `self`/`cls` needing no annotation is already how ANN works by default
+    # (ANN101/ANN102 were removed upstream); ANN401 (no `Any`) is off since
+    # `Any` is the honest type at real, traced boundaries this codebase
+    # already uses it for (a heterogeneous `_fields` dict, `env["..."]`
+    # before `typed.py`'s own helper narrows it) -- TYPING.md Phase 1c.
+    "ANN401",
 ]
 exclude = ["setup/*"]
 
@@ -30,7 +41,9 @@ exclude = ["setup/*", "*.md"]
 
 [lint.per-file-ignores]
 "__init__.py" = ["F401", "I001"]  # ignore unused and unsorted imports in __init__.py
-"__manifest__.py" = ["B018"]  # useless expression
+"__manifest__.py" = ["B018", "ANN"]  # useless expression; a plain data dict, not a function
+"*/tests/*" = ["ANN"]  # TYPING.md Phase 1d: tests stay `basic`, no annotation requirement
+"*/migrations/*" = ["ANN"]  # one-shot scripts, not maintained code
 
 [lint.isort]
 section-order = ["future", "standard-library", "third-party", "odoo", "odoo-addons", "first-party", "local-folder"]

@@ -6,8 +6,15 @@ Kept to one file so a port is a diff of one file, the way the console's
 ``compat.js`` keeps the client's seams together.
 """
 
+from __future__ import annotations
 
-def groups_field(env, model="res.users"):
+from typing import Any
+
+from odoo import api
+from odoo.fields import Field
+
+
+def groups_field(env: api.Environment, model: str = "res.users") -> str:
     """The field that holds a record's groups, by the name this server gives it.
 
     18 calls it ``groups_id``; 19 renamed it ``group_ids`` on ``res.users``,
@@ -16,7 +23,15 @@ def groups_field(env, model="res.users"):
     spells it: this answers instead, per model, since the rename did not
     reach every model at once.
     """
-    fields = env[model]._fields
+    # `_fields` is a heterogeneous dict (each field's own `Field[T]` differs
+    # by column type), so there is no single, real `T` to name here -- `Any`
+    # is the honest type, not a narrowing this function could do instead;
+    # only membership (`name in fields`) is ever checked, never a value.
+    # OCB's own `BaseModel._fields` is declared `dict[str, Field]` --
+    # unparameterized, not `dict[str, Field[Any]]` -- so the expression
+    # itself is `Unknown` before the annotation below ever applies; not
+    # something this file can fix from its own side.
+    fields: dict[str, Field[Any]] = env[model]._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
     for name in ("group_ids", "groups_id", "groups"):
         if name in fields:
             return name

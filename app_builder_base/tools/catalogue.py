@@ -1,6 +1,5 @@
 # Copyright 2026 Avunu LLC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
-# pyright: strict
 """One vocabulary for "what can be configured", shared by both builders.
 
 Field types were declared here in Python (``modelspec.FIELD_TYPES``) while

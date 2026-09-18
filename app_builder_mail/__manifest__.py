@@ -13,5 +13,6 @@
     # dropped from the generated source without saying so.
     "auto_install": True,
     "depends": ["app_builder_base", "mail"],
+    "external_dependencies": {"python": ["typing_extensions"]},
     "data": [],
 }

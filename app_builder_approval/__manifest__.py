@@ -13,6 +13,7 @@
     # so, which is the same reason app_builder_mail installs itself.
     "auto_install": True,
     "depends": ["app_builder_base", "base_tier_validation"],
+    "external_dependencies": {"python": ["typing_extensions"]},
     "assets": {
         "web.assets_backend": [
             "app_builder_approval/static/src/console_items.js",

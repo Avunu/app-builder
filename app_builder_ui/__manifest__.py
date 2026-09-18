@@ -9,6 +9,7 @@
     "development_status": "Beta",
     "installable": True,
     "depends": ["app_builder_base", "base_automation", "web"],
+    "external_dependencies": {"python": ["typing_extensions"]},
     "assets": {
         "web.assets_backend": [
             "app_builder_ui/static/src/automations_menu_item.js",

@@ -11,6 +11,7 @@
     # The console (app_builder_view) is the one builder: Compose opens a
     # model in it, and the field editor below is registered into it.
     "depends": ["app_builder_base", "app_builder_view", "web"],
+    "external_dependencies": {"python": ["typing_extensions"]},
     "assets": {
         "web.assets_backend": [
             "app_builder_model/static/src/field_popover.js",

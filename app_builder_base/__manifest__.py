@@ -9,6 +9,7 @@
     "development_status": "Beta",
     "installable": True,
     "depends": ["base"],
+    "external_dependencies": {"python": ["typing_extensions"]},
     "data": [
         "security/app_builder_security.xml",
         "security/ir.model.access.csv",

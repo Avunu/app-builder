@@ -10,5 +10,6 @@
     "installable": True,
     "auto_install": True,
     "depends": ["app_builder_approval", "base_tier_validation_formula"],
+    "external_dependencies": {"python": ["typing_extensions"]},
     "data": [],
 }

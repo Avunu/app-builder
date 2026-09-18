@@ -1825,6 +1825,80 @@ than reasoned about:
   around, and Phase 1's own Python-side strict-typing work if it has
   not already proceeded in parallel.
 
+- **Python (1a: configuration, finished; 1b: two more `tools/` files).**
+  `catalogue.py` (the first real conversion, done at the very start of
+  this whole migration) left the rest of Phase 1a's own configuration
+  unfinished -- `pyrightconfig.json` had no `strict` setting for
+  `tools/` at all (that one file passed on its own local `# pyright:
+  strict` comment alone), and `.ruff.toml` had none of `ANN`/`TC`/`FA`/
+  `PGH003`/`PYI`. Both finished now, plus `typing_extensions` added to
+  all nine addons' `external_dependencies` (the plan's own last 1a
+  item).
+
+  **A real config gap, found only by testing, not by reading the
+  plan's own text closely enough the first time:** the plan says
+  `strict = ["*/tools"]` as if `pyrightconfig.json`'s top-level
+  `"strict": [...]` glob array were the mechanism -- it compiles and
+  looks right, but it does not compose with this project's own
+  `"reportPrivateUsage": "none"` override (needed the moment a `tools/`
+  helper reads `env[model]._fields`, since Odoo's own underscore-
+  prefixed ORM attributes are framework-internal, not
+  declaring-class-internal the way that rule checks): a file matched
+  by the top-level `"strict": [...]` glob gets the *entire* strict
+  rule bundle applied as a fixed unit, silently overriding any other
+  top-level rule setting for that file regardless of where it's
+  declared -- confirmed by testing a per-file `# pyright: strict`
+  comment too (the mechanism `catalogue.py` itself already used),
+  which has the identical override behavior. The one mechanism that
+  does compose: individual `report*` rules set directly inside a
+  path-scoped `executionEnvironment` block (no `typeCheckingMode` key
+  there at all -- that key is rejected as "unrecognized setting" at
+  that level, confirmed empirically). `pyrightconfig.json` now carries
+  the full list of rules whose default differs between `standard` and
+  `strict` (pyright's own documented table), applied by hand to each
+  `tools/` directory's own `executionEnvironment`, with
+  `reportPrivateUsage` left at `"none"` there too -- cross-checked
+  against `catalogue.py`'s own already-passing file to confirm the
+  hand-built rule list reproduces the identical zero-error result
+  before trusting it, the same "probe before committing" discipline
+  Phase 2's own tours wave used for a new shared type. `catalogue.py`'s
+  own now-redundant local `# pyright: strict` comment was dropped in
+  favor of the directory-wide config doing the same job.
+
+  Two more small `tools/` files ratcheted to confirm the new config
+  actually works end-to-end, not just in isolation: `checksum.py`
+  (zero prior annotations; `hash_file`'s real return type is
+  `str | Literal[False]`, an explicit Odoo-style sentinel its own
+  docstring already names in prose) and `compat.py` (the first `tools/`
+  file to touch a real Odoo type, `api.Environment` -- despite
+  `catalogue.py`'s own docstring framing `tools/` as "odoo-free by
+  design," that describes `catalogue.py` itself, not a rule for the
+  whole directory; `compat.py`'s own module docstring already explains
+  why it exists as the one deliberate exception, an Odoo-version
+  compatibility shim). `compat.py` surfaced one genuine, unfixable-
+  from-this-side gap: OCB's own `BaseModel._fields` is declared
+  `dict[str, Field]` -- the bare, unparameterized generic, not
+  `dict[str, Field[Any]]` -- so the expression is `Unknown` before any
+  annotation on this file's own side could apply. A narrow, two-rule
+  `# pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]`
+  on that one line, not a config-level suppression (unlike
+  `reportPrivateUsage`, this is not a pervasive, tree-wide pattern with
+  hundreds of real call sites -- a vendor stub gap local to this one
+  read, the same PGH003 "narrow, not blanket" spirit the ruff rule
+  just added now enforces).
+
+  Baseline, for scale: a full-tree `pyright` run immediately after 1a's
+  config landed reports 6022 errors across 166 files (up from 3246
+  under the old, incomplete config -- the difference is `tools/`'s own
+  fourteen remaining files newly surfaced under strict mode, not a
+  regression: non-`tools/` error count is unchanged). `tools/` itself:
+  2786 errors across fourteen files (~5800 lines) once `catalogue.py`/
+  `checksum.py`/`compat.py` are excluded. Next: the rest of 1b, in the
+  plan's own dependency order (`modelspec`, `domainspec`, `placement`,
+  `manifest`, `pogen`, `xml_writer`, `pycodegen`, `pyparse`, `scaffold`,
+  `gitrepo`, `migrationgen`, then `app_builder_view/tools/`'s own
+  `view_options`, `canvas_stamp`, `manualfield`).
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was

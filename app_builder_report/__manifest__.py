@@ -11,6 +11,7 @@
     # web supplies the layouts a generated report calls: web.html_container,
     # web.external_layout, web.internal_layout.
     "depends": ["app_builder_base", "app_builder_ui", "app_builder_view", "web"],
+    "external_dependencies": {"python": ["typing_extensions"]},
     "assets": {
         "web.assets_backend": [
             "app_builder_report/static/src/console_items.js",
