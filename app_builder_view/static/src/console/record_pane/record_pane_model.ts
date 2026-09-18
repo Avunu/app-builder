@@ -36,13 +36,32 @@ import type {
     SectionJSON,
 } from "../wire";
 
+/** One entry of `entry.rowActions`, contributed alongside the built-in
+ * Remove/Duplicate row actions (`app_builder_ui/static/src/console_items.js`'s
+ * "menu" pane is the one real registration today). */
+export interface RowActionSpec {
+    key: string;
+    label: unknown;
+    icon: string;
+    when?: (row: RecordRowJSON) => boolean;
+    run: (shell: StudioShell, row: RecordRowJSON, model: RecordPaneModel) => void;
+}
+
 /** The pane's registry entry, the fields this model itself reads
  * (`shell/pane_registry.js`'s own docstring: "a record pane: surface,
- * surfaceArgs, rowActions, newFlow"). */
+ * surfaceArgs, rowActions, newFlow") plus `label`/`empty`, which
+ * `record_pane.ts` -- the real, first reader of either -- needs off the
+ * same entry. */
 export interface RecordPaneEntry {
     surface: string;
     surfaceArgs?: Record<string, unknown>;
     scope?: "package" | "model" | "view";
+    /** `_t(...)`'s own lazy return type, the same convention `FlowStep.label`
+     * already uses -- every real registration passes `_t(...)`, never a
+     * plain string. */
+    label?: unknown;
+    empty?: { title?: unknown; help?: unknown };
+    rowActions?: RowActionSpec[];
     [key: string]: unknown;
 }
 

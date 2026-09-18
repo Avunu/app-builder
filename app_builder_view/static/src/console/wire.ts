@@ -303,6 +303,10 @@ export interface RecordRowJSON {
     editable: boolean;
     reason: string;
     model: string;
+    /** Only the menu surface's own `rows()` override sends this
+     * (`app_builder_ui/models/studio_menu_surface.py`'s `row["depth"] =
+     * depth`), for its tree indentation. */
+    depth?: number;
 }
 
 /** One button `describe()`'s `actions` offers besides Advanced/Remove
@@ -329,7 +333,10 @@ export interface RecordChildrenJSON {
     /** The singular noun for one child ("step"), for "Add a %(one)s". */
     one: string;
     items: RecordDescription[];
-    kinds: string[];
+    /** `[value, label]` pairs (`Step._states()`,
+     * `app_builder_ui/models/studio_automation_surface.py`) -- not a bare
+     * `string[]`. */
+    kinds: [string, string][];
     kind_field: string;
     /** The method name `addChild` calls on `surface`. */
     add: string;
@@ -421,6 +428,16 @@ export interface PreviewInfo {
  * has not reached); narrow when a real reader appears, per this
  * migration's own rule against typing ahead of a consumer.
  */
+/** One group a `groups=""` attribute can name
+ * (`studio_view_editor.py:_selectable_groups`) -- only ones with an
+ * external id, since the attribute takes xmlids and a group without one
+ * cannot be referred to from an arch at all. */
+export interface SelectableGroupEntry {
+    id: number;
+    xmlid: string;
+    name: string;
+}
+
 export interface EditingContext {
     view: { id: number; name: string; type: string; model: string | false; mode: string };
     views: ViewOfEntry[];
@@ -432,9 +449,13 @@ export interface EditingContext {
     record_count: number;
     fields: EditingContextFieldEntry[];
     preview: PreviewInfo;
-    options: unknown;
-    catalogue: unknown;
-    groups: unknown;
+    /** `studio_view_editor.py:editing_context`'s own `"options":
+     * view_options.groups_json(...)` -- the same shape `options.ts`'s own
+     * `optionsFor` already takes for the canvas's `OptionsContext`. */
+    options: OptionGroupJSON[];
+    /** `editing_context`'s own `"catalogue": catalogue.catalogue_json(...)`. */
+    catalogue: CatalogueJSON;
+    groups: SelectableGroupEntry[];
     owned: boolean;
     packages: unknown;
     suggested_package_id: number | false;

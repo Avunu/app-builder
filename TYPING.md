@@ -416,6 +416,31 @@ hoot `onRpc` mocks typed against the same map.
   `@odoo/hoot-dom`'s own `queryOne` stays the plain, non-generic
   `Element` it has always been (see cluster-3's own `drag.test.ts`
   finding on this).
+- `ReturnType<typeof _t>`, unioned with anything else (`string |
+  ReturnType<typeof _t>`, `ReturnType<typeof _t> | null | false`), trips
+  eslint's `no-redundant-type-constituents` ("'any' overrides all other
+  types in this union type") -- the same vendor-`any`-bleed-under-
+  `checkJs:false` root cause already documented for the five `no-unsafe-*`
+  rules, just surfacing through a different rule once `ReturnType<typeof
+  _t>` is unioned with something rather than used bare (as `KIND_LABELS`/
+  `FlowStep.label`/etc. already do without tripping it). Treated as the
+  same accepted noise category -- eslint is not enforced tree-wide
+  (`eslint.config.mjs`'s own docstring), and there is no ambient
+  `Markup`/`LazyTranslatedString` declaration to name the union
+  precisely instead (the same reason `FlowStep.label` stays `unknown`).
+- `usePopover`'s own `open(target, props)` (`@web/core/popover/
+  popover_hook.js`) forwards `props` to the popover service unchanged --
+  neither it nor `Popover` itself injects a `close` into the *rendered*
+  component's own props (`Popover`'s own `close` prop is for its
+  click-away/escape chrome, not forwarded into `componentProps`), unlike
+  `DialogService.add`, which does inject one. A component meant to be
+  opened through `usePopover` that unconditionally calls
+  `this.props.close()` (`field_editor_fallback.ts`'s own `onKeydown`, on
+  Escape) is relying on something no real opener in this tree actually
+  supplies -- a real, pre-existing gap, not introduced by this migration
+  and not fixed by it (flag, don't fix). The type-level fix at each real
+  opener: `Omit<FieldEditorProps, "close">` for the props object, not the
+  full shape.
 
 ## Implemented so far
 
@@ -1303,6 +1328,105 @@ than reasoned about:
   full tree-wide transpiler guard (`test_assets.py`'s own check, run
   directly rather than through Odoo's test runner) passed clean across
   all 74 shipped `.js` files.
+
+- **TypeScript (2b, cluster 4, wave 2: sidebar/{add_tab,outline,
+  properties_tab,view_tab}, record_pane/record_pane, top_bar,
+  panes/changes_pane).** Seven more real Owl components, drafted in
+  parallel the same way as wave 1. Two of the seven agent runs hit real
+  tooling trouble this time -- `sidebar/outline.ts`'s own drafting agent
+  exceeded the structured-output retry cap entirely (5 failed schema
+  validations, no journal result at all), and `sidebar/add_tab.ts`'s
+  returned a bare placeholder (`"test"`) in the schema fields instead of
+  its real work. Both agents had, in fact, done the real conversion and
+  written it to the shared workflow scratchpad (its designated place for
+  intermediate files, not the project tree) before failing only the
+  final structured-output call -- recovered from there instead of
+  re-running either agent, after checking each file's head and tail
+  looked like complete, well-formed TypeScript. A third agent
+  (`record_pane.ts`) filled its `content` field with a prose description
+  of what it did (*"the full file content is below... its content, in
+  full, is: ..."*) rather than the file itself; also recovered from the
+  same scratchpad. Two more (`top_bar.ts`, `view_tab.ts`) prefixed real
+  code with a similar narrative sentence, harmlessly, since the real
+  `.ts` content still followed on the same string and both compiled
+  as-is. Lesson for future waves: always check the shared scratchpad for
+  a same-named `.ts` file before deciding an agent's result needs a
+  re-run -- the structured-output call failing does not mean the
+  underlying work was lost.
+
+  One real, load-bearing gap found in reconciliation, not by any one
+  agent alone: `sidebar/add_tab.ts`'s own `openEditor` built a
+  `const props: FieldEditorProps = {...}` missing `close` -- a real
+  `tsc` error, not a false positive. `sidebar/properties_tab.ts`'s own
+  independently-drafted agent had already hit and solved the identical
+  problem (`Omit<FieldEditorProps, "close">`, with the fuller writeup now
+  in "Known traps" above on why `close` is never really supplied), so
+  the same fix was applied to `add_tab.ts` rather than re-derived.
+
+  **Shared-type growth**, all landing because a real file in this wave
+  needed it, several because *multiple* files in the same wave
+  independently confirmed the identical shape:
+
+  - `wire.ts`'s `EditingContext.catalogue`/`.options`/`.groups` were
+    widened from `unknown` to `CatalogueJSON`/`OptionGroupJSON[]`/a new
+    `SelectableGroupEntry[]` -- `sidebar/view_tab.ts` and `sidebar/
+    properties_tab.ts` each independently asserted the identical
+    `catalogue`/`options` cast (traced to `studio_view_editor.py:
+    editing_context`'s own `"catalogue": catalogue.catalogue_json(...)`,
+    `"options": view_options.groups_json(...)`), and
+    `properties_tab.ts` alone needed `groups` (traced to
+    `_selectable_groups`, the same file). Two independent real readers
+    confirming the same shape in one wave is stronger grounds than the
+    single-reader cases below, so this one widened the shared type
+    directly rather than staying local.
+  - `wire.ts`'s `RecordChildrenJSON.kinds` widened from `string[]` to
+    `[string, string][]` (`Step._states()`,
+    `app_builder_ui/models/studio_automation_surface.py`, returns
+    `[value, label]` pairs, not bare strings) and `RecordRowJSON` gained
+    an optional `depth` (only the menu surface's own `rows()` override
+    sends it) -- both traced and confirmed against the real Python
+    sources before widening, `record_pane.ts` being the first real
+    reader of either.
+  - `record_pane_model.ts`'s `RecordPaneEntry` (cluster 2) gained
+    `label`/`empty`/`rowActions` (plus a new, exported `RowActionSpec`)
+    -- previously left under its own index signature, per `types.ts`'s
+    own `PaneRegistration` comment naming exactly these three as
+    "unmodeled until one of those is converted", which `record_pane.ts`
+    now is. `RecordPaneModel.addChild`'s return type was deliberately
+    **not** narrowed past `Promise<unknown>` despite tracing its one
+    known real implementation (`add_step`, returning a
+    `RecordDescription`) -- `children.add` names a different method per
+    surface, and not every surface's implementation was checked, so
+    narrowing tree-wide would risk being wrong for a surface not yet
+    read; `record_pane.ts` casts locally at its own one call site
+    instead.
+  - `odoo.ts` was *not* touched for `FormViewDialog`
+    (`@web/views/view_dialogs/form_view_dialog.js`, the same
+    no-`@extends`-JSDoc vendor-boundary problem `ConfirmationDialog`
+    already has a fix for there) -- `record_pane.ts` is the only real
+    renderer of it so far, so the identical cast/re-export pattern is
+    carried locally in that file, deliberately deferred the same way
+    cluster 3 deferred `app_builder.panes`'s own registry augmentation
+    until `odoo.ts` existed to hold it. Promote the day a second file
+    needs it.
+
+  Verification: `tsc`/`eslint`/`prettier` clean (the same triage policy
+  as wave 1 -- `no-unsafe-*` and the newly-added `no-redundant-type-
+  constituents`/`ReturnType<typeof _t>` case accepted as noise, four
+  real, fixable findings applied: two `no-misused-promises` async-
+  `confirm`-callback sites in `properties_tab.ts` pulled into a small
+  `finishRemoveOwned` helper called with `void`, two `onSave: async
+  (values) => {...}` sites in the same file rewritten to plain functions
+  with an internal `void`, one `no-floating-promises` `.then()` chain
+  `void`-prefixed, one `no-unnecessary-type-assertion` matching the
+  identical `field_editor_fallback.ts` pattern). `build_ts.mjs` re-run
+  to confirm idempotency. Transpile-equivalence: all seven show the same
+  *dependency-list-only* difference wave 1's five did (losing
+  `@web/core/utils/hooks`/`@web/core/confirmation_dialog/
+  confirmation_dialog`, gaining `@app_builder_view/console/odoo`) --
+  module identity unchanged in every case, the deliberate Phase 2c
+  routing working as intended. Full tree-wide transpiler guard passed
+  clean across all 74 shipped `.js` files.
 
 ## CI: the OCA container's real layout
 
