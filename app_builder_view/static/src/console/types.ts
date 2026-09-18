@@ -640,11 +640,11 @@ export interface PaneEntry extends PaneRegistration {
 // `StudioShell` on its own fields; nothing here needs to.
 
 /** One value a flow's steps read and write, keyed by name. A plain bag
- * rather than a per-flow union: `create_package_flow.js` keys it
- * `name`/`root_dir`/`git_init`, `build_app_flow.js` keys it
- * `model_name`/`features`/`groups`, `adopt_model_flow.js` keys it
+ * rather than a per-flow union: `create_package_flow.ts` keys it
+ * `name`/`root_dir`/`git_init`, `build_app_flow.ts` keys it
+ * `model_name`/`features`/`groups`, `adopt_model_flow.ts` keys it
  * `models`/`previews` -- nothing here could name a shape common to
- * flows that have not been converted yet, let alone ones not written. */
+ * every real flow without widening it to little more than this. */
 export type FlowValues = Record<string, unknown>;
 
 /** One step of a flow, as `flow.ts:FlowModel` reads it off `spec.steps`. */

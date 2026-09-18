@@ -9,6 +9,15 @@
 # marking an entire directory generated before it actually is would be
 # false for every file not yet converted. Add a line here in the same PR
 # that converts a file's .ts, drop it if a file is ever converted back.
+app_builder_approval/static/src/console_items.js linguist-generated
+app_builder_model/static/src/console_items.js linguist-generated
+app_builder_model/static/src/field_popover.js linguist-generated
+app_builder_model/static/src/flows/adopt_model_flow.js linguist-generated
+app_builder_model/static/src/flows/build_app_flow.js linguist-generated
+app_builder_report/static/src/console/report_canvas.js linguist-generated
+app_builder_report/static/src/console_items.js linguist-generated
+app_builder_ui/static/src/automations_menu_item.js linguist-generated
+app_builder_ui/static/src/console_items.js linguist-generated
 app_builder_view/static/src/console/apply_dialog.js linguist-generated
 app_builder_view/static/src/console/canvas.js linguist-generated
 app_builder_view/static/src/console/canvas_views.js linguist-generated

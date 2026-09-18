@@ -70,8 +70,8 @@ declare module "registries" {
          * `editable_as` (`panes/views_pane.ts`'s own `canvasComponent`) --
          * registered into by `canvas.ts` (`"canvas"`),
          * `canvases/search_lists_canvas.ts` (`"search_lists"`) and
-         * `app_builder_report`'s own `report_canvas.js` (`"report"`, still
-         * `.js`). A plain component-class registry, taken only for
+         * `app_builder_report`'s own `report_canvas.ts` (`"report"`). A
+         * plain component-class registry, taken only for
          * identity (`canvasRegistry.contains`/`.get`, compared against a
          * known class) and handed straight to the template's
          * `t-component`, the same shape as `app_builder.field_editor`/

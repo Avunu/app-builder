@@ -1618,6 +1618,86 @@ than reasoned about:
   `app_builder_ui`, `app_builder_report`, `app_builder_approval` static
   (2b's own plan, step 4's second half), then tours (2b step 5).
 
+- **TypeScript (2b step 4, second half: `app_builder_model`,
+  `app_builder_ui`, `app_builder_report`, `app_builder_approval` static).**
+  Nine files across four sibling addons -- the same `tsconfig.json`
+  (`*/static/src/**/*`) and path aliases already cover all of them, no
+  new config needed. Eight independent files drafted in parallel;
+  `app_builder_model/console_items.ts` (the one file with a same-addon
+  dependency, on `field_popover.ts`) converted directly afterward.
+
+  Wave-quality note, the same class of tooling trouble wave 2 first
+  hit: two of the eight agents' structured-output calls returned
+  unusable `content` (one a bare `"test"` placeholder, one the
+  unmodified original `.js` -- extension changed, nothing else --
+  despite otherwise-solid findings text) but both had written real,
+  complete work to the shared scratchpad backup; recovered from there,
+  the same as before. Three same-basename files
+  (`app_builder_ui/console_items.js`, `app_builder_report/console_items.js`,
+  `app_builder_approval/console_items.js`) all sharing one scratchpad
+  filename ("console_items.ts") is a real, if not fully realized this
+  time, name-collision risk the instructions themselves created --
+  worth passing agents the *addon-qualified* basename
+  (`app_builder_ui__console_items.ts`) next time this many
+  same-named files convert in one wave, rather than relying on their
+  own journal `content` being good enough not to need the scratchpad
+  fallback at all (two of the three were; the third needed it and
+  happened not to collide).
+
+  A first for this migration: `app_builder_model/field_popover.ts`'s
+  own `FieldPopover` is a real component **subclassed by another real
+  component** (`ConsoleFieldEditor`, in `console_items.ts`) -- every
+  prior Owl subclass in this tree has extended `Component` directly.
+  `FieldPopover` was made generic over its own Props
+  (`class FieldPopover<P extends FieldPopoverProps = FieldPopoverProps>
+  extends Component<P>`, rather than fixed to `Component<FieldPopoverProps>`)
+  specifically so `ConsoleFieldEditor extends FieldPopover<FieldEditorProps>`
+  can widen it cleanly: `FieldEditorProps` (`types.ts`) is exactly
+  `FieldPopoverProps` plus two additional, both-optional keys
+  (`initial`, `mode`) the console's own contract adds and the popover's
+  simpler original life did not need, so it structurally satisfies
+  `P extends FieldPopoverProps` with no cast anywhere in either file.
+
+  Two real, pre-existing bugs found, neither fixed (report, don't fix):
+  `field_popover.ts`'s own `get inverse()` had the identical missing-
+  `suggested` gap `field_editor_fallback.ts` found and fixed in cluster
+  4 wave 1 -- fixed the same way here too, since it is the identical,
+  already-established, safe correction (unreachable in practice,
+  `can_create: false` on the same fallback gates the only branch that
+  reads it). `field_popover.ts`'s own `onKeydown` submits on every bare
+  Enter anywhere in the popover, including inside the compute-body
+  `<textarea>` -- unlike `field_editor_fallback.ts`'s own `onKeydown`,
+  which excludes `TEXTAREA` -- a real, live usability bug, reproduced
+  as-is.
+
+  Shared-type growth, all in `wire.ts`'s `RecordRowJSON`, the same
+  "surface-specific optional field, traced to the real Python `rows()`
+  override that sends it" pattern wave 2 established for `depth`:
+  `view_id?: number | false` (the reports surface's own `_row()`,
+  `app_builder_report/models/studio_report_surface.py`, needed by
+  `app_builder_report/console_items.ts`'s "Edit layout" row action) and
+  `parent_id?: number | false` (the menu surface's own `rows()`,
+  `app_builder_ui/models/studio_menu_surface.py`, needed by
+  `app_builder_ui/console_items.ts`'s tree-reparenting row actions --
+  load-bearing there, not speculative, confirmed by two independent
+  drafting agents proposing the identical addition for the identical
+  real reason).
+
+  Verification: `tsc`/`eslint`/`prettier` clean (real fixes applied:
+  three `no-floating-promises`/`no-misused-promises` fire-and-forget
+  sites `void`-wrapped in `build_app_flow.ts`/`report_canvas.ts`, the
+  same established pattern; one confirmed-pre-existing dead function
+  (`build_app_flow.ts`'s own `slug()`, never called even in the
+  original `.js`) documented, not removed, the same
+  `onModelFields`/`slug` precedent wave 3 set). `build_ts.mjs`
+  idempotent. Transpile-equivalence: the four files that call
+  `useService` show the same expected dependency-list-only shift
+  (`@web/core/utils/hooks` lost, `@app_builder_view/console/odoo`
+  gained) every console-tree file has shown since Phase 2c; the
+  other five are an exact match. Full tree-wide transpiler guard
+  (now genuinely covering all `app_builder*` addons, not just
+  `app_builder_view`) passed clean across all 74 shipped `.js` files.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was

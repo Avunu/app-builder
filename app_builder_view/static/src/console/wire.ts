@@ -307,6 +307,15 @@ export interface RecordRowJSON {
      * (`app_builder_ui/models/studio_menu_surface.py`'s `row["depth"] =
      * depth`), for its tree indentation. */
     depth?: number;
+    /** Only the menu surface's own `rows()` override sends this
+     * (`studio_menu_surface.py`'s `row["parent_id"] = (... or False)`),
+     * for reparenting via drag. */
+    parent_id?: number | false;
+    /** Only the report surface's own `rows()` override sends this
+     * (`app_builder_report/models/studio_report_surface.py`'s
+     * `row["view_id"] = view.id or False`), the view its "Edit layout"
+     * row action opens. */
+    view_id?: number | false;
 }
 
 /** One button `describe()`'s `actions` offers besides Advanced/Remove
