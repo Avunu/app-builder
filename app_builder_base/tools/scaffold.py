@@ -15,9 +15,25 @@ relations in the middle of the form. Its field order is also whatever
 only by luck.
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
 
-from lxml import etree
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Protocol, TypedDict, cast
+
+# lxml ships no type stubs in this environment (a compiled extension with no
+# `.pyi`/`py.typed` marker; `lxml-stubs`/`types-lxml` is not an installed
+# dependency here), so pyright cannot resolve `etree` as an exported member of
+# `lxml` at all -- confirmed directly, `from lxml import etree` alone reports
+# both `reportMissingTypeStubs` (on `lxml`) and `reportAttributeAccessIssue`
+# ("etree" is unknown import symbol, on `etree`). Ignored narrowly on each
+# name rather than rewriting the import (e.g. `import lxml.etree as etree`),
+# which trades this gap for a different one: ruff's own `PLR0402`
+# (`fix = true` project-wide) silently auto-fixes that form straight back to
+# `from lxml import etree`, reintroducing the failure. Same pattern as
+# `xml_writer.py`/`placement.py`.
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 
 from .modelspec import (
     PRIORITY_VALUES,
@@ -28,9 +44,19 @@ from .modelspec import (
 )
 from .pycodegen import class_name_for
 
-CHATTER_MIXINS = ("mail.thread", "mail.activity.mixin")
+if TYPE_CHECKING:
+    # Only for annotations below; with `from __future__ import annotations`
+    # (above) nothing here needs these at runtime, and the module stays
+    # importable with no Odoo on the path for the pure, spec-building half.
+    from collections.abc import Callable, Collection, Iterable
 
-DEFAULT_STAGES = (
+    from odoo.fields import Field
+
+    from .lxml_types import LxmlElement
+
+CHATTER_MIXINS: tuple[str, ...] = ("mail.thread", "mail.activity.mixin")
+
+DEFAULT_STAGES: tuple[tuple[str, str], ...] = (
     ("draft", "Draft"),
     ("in_progress", "In Progress"),
     ("done", "Done"),
@@ -64,7 +90,7 @@ class Feature:
     companion: str | None = None
 
 
-FEATURES = (
+FEATURES: tuple[Feature, ...] = (
     Feature(
         "chatter",
         "Messaging & activities",
@@ -151,17 +177,29 @@ FEATURES = (
     ),
 )
 
-FEATURES_BY_KEY = {feature.key: feature for feature in FEATURES}
-DEFAULT_FEATURES = frozenset(f.key for f in FEATURES if f.default)
+FEATURES_BY_KEY: dict[str, Feature] = {feature.key: feature for feature in FEATURES}
+DEFAULT_FEATURES: frozenset[str] = frozenset(f.key for f in FEATURES if f.default)
 
 # What a wizard has to offer: everything except what another feature already
 # brings. Declared here so the wizard can be checked against it rather than
 # drifting quietly when a feature is added.
-_IMPLIED = {key for f in FEATURES for key in f.implies}
-WIZARD_FEATURES = tuple(f.key for f in FEATURES if f.key not in _IMPLIED)
+_IMPLIED: set[str] = {key for f in FEATURES for key in f.implies}
+WIZARD_FEATURES: tuple[str, ...] = tuple(
+    f.key for f in FEATURES if f.key not in _IMPLIED
+)
 
 
-def features_json():
+class FeatureJSON(TypedDict):
+    """What ``features_json`` sends: one entry per tile the wizard renders."""
+
+    key: str
+    label: str
+    help: str
+    default: bool
+    views: list[str]
+
+
+def features_json() -> list[FeatureJSON]:
     """The list a wizard renders, in declaration order."""
     return [
         {
@@ -185,7 +223,11 @@ class ScaffoldOptions:
     caller can construct.
     """
 
-    def __init__(self, **flags):
+    #: Which features are on, closed over `implies`. The only real instance
+    #: state; every other attribute read goes through `__getattr__` below.
+    enabled: frozenset[str]
+
+    def __init__(self, **flags: bool) -> None:
         unknown = set(flags) - set(FEATURES_BY_KEY)
         if unknown:
             raise ValueError(
@@ -196,9 +238,9 @@ class ScaffoldOptions:
         self.enabled = frozenset(self._resolve(enabled))
 
     @staticmethod
-    def _resolve(keys):
+    def _resolve(keys: Iterable[str]) -> set[str]:
         """Close over ``implies``, so a feature arrives with what it needs."""
-        seen = set()
+        seen: set[str] = set()
         pending = list(keys)
         while pending:
             key = pending.pop()
@@ -209,7 +251,7 @@ class ScaffoldOptions:
         return seen
 
     @classmethod
-    def from_keys(cls, keys):
+    def from_keys(cls, keys: Iterable[str] | None) -> ScaffoldOptions:
         """Exactly these features, defaults included only if asked for."""
         chosen = set(keys or ())
         unknown = chosen - set(FEATURES_BY_KEY)
@@ -221,7 +263,7 @@ class ScaffoldOptions:
         options.enabled = frozenset(cls._resolve(chosen))
         return options
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> bool:
         # Only reached for attributes the instance does not have, so `enabled`
         # itself never comes through here.
         if name in FEATURES_BY_KEY:
@@ -229,16 +271,16 @@ class ScaffoldOptions:
         raise AttributeError(name)
 
     @property
-    def view_types(self):
+    def view_types(self) -> tuple[str, ...]:
         """Views these features want, beyond the three every model gets."""
-        out = []
+        out: list[str] = []
         for feature in FEATURES:
             if feature.key in self.enabled:
                 out.extend(v for v in feature.views if v not in out)
         return tuple(out)
 
 
-def inverse_name_for(model_name):
+def inverse_name_for(model_name: str) -> str:
     """``studio_demo.workshop_job`` -> ``workshop_job_id``.
 
     Kept beside the companions because both sides -- the child's many2one and
@@ -248,9 +290,9 @@ def inverse_name_for(model_name):
     return "%s_id" % model_name.rsplit(".", 1)[-1]
 
 
-def _companion_fields(model_name, options):
+def _companion_fields(model_name: str, options: ScaffoldOptions) -> list[FieldSpec]:
     """The parent's side of each companion model."""
-    out = []
+    out: list[FieldSpec] = []
     if options.tags:
         out.append(
             FieldSpec(
@@ -273,12 +315,14 @@ def _companion_fields(model_name, options):
     return out
 
 
-def companion_name(model_name, kind):
+def companion_name(model_name: str, kind: str) -> str:
     """``x_studio_job`` + ``tag`` -> ``x_studio_job_tag``."""
     return "%s_%s" % (model_name, kind)
 
 
-def companion_specs(model_name, label, options=None):
+def companion_specs(
+    model_name: str, label: str, options: ScaffoldOptions | None = None
+) -> list[ModelSpec]:
     """The extra models the chosen features need, in load order.
 
     Tags and Lines are the only two documented features that are not a column:
@@ -290,7 +334,7 @@ def companion_specs(model_name, label, options=None):
     one2many name these models.
     """
     options = options or ScaffoldOptions()
-    specs = []
+    specs: list[ModelSpec] = []
     if options.tags:
         specs.append(
             ModelSpec(
@@ -358,10 +402,12 @@ def companion_specs(model_name, label, options=None):
     return specs
 
 
-def scaffold_spec(model_name, label, options=None):
+def scaffold_spec(
+    model_name: str, label: str, options: ScaffoldOptions | None = None
+) -> ModelSpec:
     """The model a site manager gets before they add anything of their own."""
     options = options or ScaffoldOptions()
-    fields = [
+    fields: list[FieldSpec] = [
         FieldSpec(
             name="name",
             ttype="char",
@@ -412,11 +458,19 @@ def scaffold_spec(model_name, label, options=None):
                 name="priority",
                 ttype="selection",
                 string="Priority",
+                # `PRIORITY_VALUES` (`modelspec.py`) is declared
+                # `tuple[dict[str, str | int], ...]` -- a heterogeneous
+                # per-entry value type pyright cannot narrow per key -- but
+                # every real entry's own literal shape is fixed:
+                # `value`/`label` always `str`, `sequence` always `int`. Cast
+                # back to what each key actually holds, the same
+                # known-fixed-shape idiom `pycodegen.py`'s
+                # `_field_spec_from_record` already uses.
                 selection=tuple(
                     SelectionSpec(
-                        value=entry["value"],
-                        label=entry["label"],
-                        sequence=entry["sequence"],
+                        value=cast("str", entry["value"]),
+                        label=cast("str", entry["label"]),
+                        sequence=cast("int", entry["sequence"]),
                     )
                     for entry in PRIORITY_VALUES
                 ),
@@ -552,9 +606,43 @@ def scaffold_spec(model_name, label, options=None):
 
 # -- views ---------------------------------------------------------------
 
+
+class ModelLike(Protocol):
+    """The live recordset the arch builders below walk.
+
+    Narrower than pulling in the whole ``BaseModel`` surface: every real
+    reader in this file only ever touches ``_fields`` -- membership,
+    ``.get()``, ``.items()`` -- never ``.env``, ``._name`` or anything else,
+    so this names exactly that slice rather than the whole recordset, the
+    same "narrow, hand-traced boundary" discipline ``lxml_types.py`` uses for
+    lxml's own ``_Element``. A real ``env[model_name]`` (a ``BaseModel``)
+    satisfies this structurally: OCB's own ``_fields`` is declared
+    ``dict[str, Field]``, the bare unparameterized generic, which pyright
+    treats as compatible with the parameterized ``Field[Any]`` below.
+    """
+
+    _fields: dict[str, Field[Any]]
+
+
+# `etree.SubElement`/`etree.Element` are the two constructors this module
+# actually calls; grabbing each once, behind a single documented cast, keeps
+# the "Unknown member of an unstubbed module" gap to two lines instead of one
+# `# pyright: ignore` per call site (there are dozens). Same pattern as
+# `placement.py`'s own `_sub_element`/`_element`, adapted to this file's own
+# call style, which passes `**attrs` keyword arguments (and sometimes a plain
+# `dict` as the second positional argument) rather than a single dict --
+# `Callable[..., LxmlElement]` accepts either, since `...` places no
+# constraint on the parameter list.
+_sub_element_raw = etree.SubElement  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+_sub_element: Callable[..., LxmlElement] = cast(
+    "Callable[..., LxmlElement]", _sub_element_raw
+)
+_element_raw = etree.Element  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+_element: Callable[..., LxmlElement] = cast("Callable[..., LxmlElement]", _element_raw)
+
 # Fields a scaffolded view never shows directly: they are either plumbing or
 # rendered by a dedicated widget.
-HIDDEN = (
+HIDDEN: tuple[str, ...] = (
     "active",
     "sequence",
     "note",
@@ -577,7 +665,7 @@ HIDDEN = (
 # Fields the scaffold places with a widget rather than bare. Keeping this beside
 # HIDDEN says the same thing from the other side: what a field looks like on a
 # screen is a decision, and both lists are where those decisions live.
-SCAFFOLD_WIDGETS = {
+SCAFFOLD_WIDGETS: dict[str, str] = {
     "tag_ids": "many2many_tags",
     "priority": "priority",
     "kanban_state": "state_selection",
@@ -587,70 +675,76 @@ SCAFFOLD_WIDGETS = {
 }
 
 
-def _field(parent, name, **attrs):
+def _field(parent: LxmlElement, name: str, **attrs: str) -> LxmlElement:
     """A <field> node carrying whatever widget the scaffold has decided on."""
     widget = SCAFFOLD_WIDGETS.get(name)
     if widget and "widget" not in attrs:
         attrs["widget"] = widget
-    return etree.SubElement(parent, "field", name=name, **attrs)
+    return _sub_element(parent, "field", name=name, **attrs)
 
 
-def _visible(model, spec):
+def _visible(model: ModelLike, spec: ModelSpec) -> list[FieldSpec]:
     """Spec fields that exist on the live model, in declaration order."""
     return [f for f in spec.fields if f.name in model._fields]
 
 
-def scaffold_list_arch(model, spec, options=None):
+def scaffold_list_arch(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions | None = None
+) -> LxmlElement:
     options = options or ScaffoldOptions()
-    root = etree.Element("list", string=spec.description)
+    root = _element("list", string=spec.description)
     if options.ordering:
-        etree.SubElement(root, "field", name="sequence", widget="handle")
+        _sub_element(root, "field", name="sequence", widget="handle")
     for spec_field in _visible(model, spec):
         if spec_field.name in HIDDEN:
             continue
         _field(root, spec_field.name)
     if options.stage and "state" in model._fields:
-        etree.SubElement(root, "field", name="state", widget="badge")
+        _sub_element(root, "field", name="state", widget="badge")
     return root
 
 
-def _scaffold_notebook(sheet, model, options):
+def _scaffold_notebook(
+    sheet: LxmlElement, model: ModelLike, options: ScaffoldOptions
+) -> None:
     """Lines and Notes, in that order.
 
     Lines first because the table is the record's substance and the note is a
     remark about it. One notebook either way -- two would render as two rows of
     tabs.
     """
-    notebook = None
+    notebook: LxmlElement | None = None
     if options.lines and "line_ids" in model._fields:
-        notebook = etree.SubElement(sheet, "notebook")
-        page = etree.SubElement(notebook, "page", string="Lines", name="lines")
-        field = etree.SubElement(page, "field", name="line_ids")
+        notebook = _sub_element(sheet, "notebook")
+        page = _sub_element(notebook, "page", string="Lines", name="lines")
+        field = _sub_element(page, "field", name="line_ids")
         # An inline list, so a line is edited where it is read. The child model
         # is scaffolded with `sequence`, which is what the handle reorders.
-        inner = etree.SubElement(field, "list", editable="bottom")
-        etree.SubElement(inner, "field", name="sequence", widget="handle")
-        etree.SubElement(inner, "field", name="name")
-        etree.SubElement(inner, "field", name="quantity")
+        inner = _sub_element(field, "list", editable="bottom")
+        _sub_element(inner, "field", name="sequence", widget="handle")
+        _sub_element(inner, "field", name="name")
+        _sub_element(inner, "field", name="quantity")
 
     if "note" in model._fields:
         if notebook is None:
-            notebook = etree.SubElement(sheet, "notebook")
-        page = etree.SubElement(notebook, "page", string="Notes", name="notes")
-        etree.SubElement(page, "field", name="note")
+            notebook = _sub_element(sheet, "notebook")
+        page = _sub_element(notebook, "page", string="Notes", name="notes")
+        _sub_element(page, "field", name="note")
 
 
-def scaffold_form_arch(model, spec, options=None):
+def scaffold_form_arch(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions | None = None
+) -> LxmlElement:
     """A form with a title, two columns, and a chatter -- the shape every core
     Odoo form has, so it looks like the rest of the system rather than a
     generated artefact."""
     options = options or ScaffoldOptions()
-    form = etree.Element("form", string=spec.description)
-    sheet = etree.SubElement(form, "sheet")
+    form = _element("form", string=spec.description)
+    sheet = _sub_element(form, "sheet")
 
     if options.stage and "state" in model._fields:
-        header = etree.Element("header")
-        etree.SubElement(
+        header = _element("header")
+        _sub_element(
             header,
             "field",
             name="state",
@@ -660,26 +754,26 @@ def scaffold_form_arch(model, spec, options=None):
         form.insert(0, header)
 
     if options.reference and "reference" in model._fields:
-        title = etree.SubElement(sheet, "div", {"class": "oe_title"})
-        h1 = etree.SubElement(title, "h1")
-        etree.SubElement(h1, "field", name="reference", readonly="1")
+        title = _sub_element(sheet, "div", {"class": "oe_title"})
+        h1 = _sub_element(title, "h1")
+        _sub_element(h1, "field", name="reference", readonly="1")
 
     if options.picture and "image" in model._fields:
         # Before the title, because it floats right: an image declared after it
         # renders below the heading instead of beside it.
         _field(sheet, "image", **{"class": "oe_avatar"})
 
-    title = etree.SubElement(sheet, "div", {"class": "oe_title"})
-    h1 = etree.SubElement(title, "h1")
-    etree.SubElement(h1, "field", name="name", placeholder=spec.description)
+    title = _sub_element(sheet, "div", {"class": "oe_title"})
+    h1 = _sub_element(title, "h1")
+    _sub_element(h1, "field", name="name", placeholder=spec.description)
 
     if options.active and "active" in model._fields:
         # The archive widget belongs beside the title, not in a column.
-        etree.SubElement(title, "field", name="active", invisible="1")
+        _sub_element(title, "field", name="active", invisible="1")
 
-    outer = etree.SubElement(sheet, "group")
-    left = etree.SubElement(outer, "group")
-    right = etree.SubElement(outer, "group")
+    outer = _sub_element(sheet, "group")
+    left = _sub_element(outer, "group")
+    right = _sub_element(outer, "group")
     columns = (left, right)
     index = 0
     for spec_field in _visible(model, spec):
@@ -706,11 +800,13 @@ def scaffold_form_arch(model, spec, options=None):
     if options.chatter:
         # Bare <chatter/> is the 18.0 form and has no server-side validator, so
         # it is inert rather than an error on a model without mail.thread.
-        etree.SubElement(form, "chatter")
+        _sub_element(form, "chatter")
     return form
 
 
-def scaffold_kanban_arch(model, spec, options=None):
+def scaffold_kanban_arch(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions | None = None
+) -> LxmlElement:
     """A card with a title, a couple of details, and nothing clever.
 
     Emits the v18 ``t-name="card"`` template rather than the legacy
@@ -724,24 +820,24 @@ def scaffold_kanban_arch(model, spec, options=None):
     end on purpose.
     """
     options = options or ScaffoldOptions()
-    root = etree.Element("kanban")
+    root = _element("kanban")
     if options.stage and "state" in model._fields:
         root.set("default_group_by", "state")
 
-    templates = etree.SubElement(root, "templates")
-    card = etree.SubElement(templates, "t", {"t-name": "card"})
+    templates = _sub_element(root, "templates")
+    card = _sub_element(templates, "t", {"t-name": "card"})
 
-    title = etree.SubElement(card, "div", {"class": "fw-bold fs-5"})
-    etree.SubElement(title, "field", name=spec.rec_name or "name")
+    title = _sub_element(card, "div", {"class": "fw-bold fs-5"})
+    _sub_element(title, "field", name=spec.rec_name or "name")
 
-    details = etree.SubElement(card, "div", {"class": "d-flex justify-content-between"})
+    details = _sub_element(card, "div", {"class": "d-flex justify-content-between"})
     shown = 0
     for spec_field in _visible(model, spec):
         if spec_field.name in HIDDEN or spec_field.name == (spec.rec_name or "name"):
             continue
         if spec_field.ttype in ("one2many", "many2many", "html", "text", "binary"):
             continue  # unreadable at card size
-        etree.SubElement(details, "field", name=spec_field.name)
+        _sub_element(details, "field", name=spec_field.name)
         shown += 1
         if shown == 2:
             break
@@ -749,12 +845,17 @@ def scaffold_kanban_arch(model, spec, options=None):
         card.remove(details)
 
     if options.chatter and "activity_ids" in model._fields:
-        footer = etree.SubElement(card, "div", {"class": "d-flex justify-content-end"})
-        etree.SubElement(footer, "field", name="activity_ids", widget="kanban_activity")
+        footer = _sub_element(card, "div", {"class": "d-flex justify-content-end"})
+        _sub_element(footer, "field", name="activity_ids", widget="kanban_activity")
     return root
 
 
-def scaffold_calendar_arch(model, spec, date_field, options=None):
+def scaffold_calendar_arch(
+    model: ModelLike,
+    spec: ModelSpec,
+    date_field: str | None,
+    options: ScaffoldOptions | None = None,
+) -> LxmlElement:
     """A calendar keyed on ``date_field``.
 
     ``date_start`` is not optional -- the parser raises without it
@@ -765,34 +866,36 @@ def scaffold_calendar_arch(model, spec, date_field, options=None):
     options = options or ScaffoldOptions()
     if not date_field or date_field not in model._fields:
         raise ValueError("a calendar needs a date field that exists on the model")
-    root = etree.Element("calendar", string=spec.description, date_start=date_field)
+    root = _element("calendar", string=spec.description, date_start=date_field)
     root.set("mode", "month")
     if options.stage and "state" in model._fields:
         root.set("color", "state")
     elif options.user and "user_id" in model._fields:
         root.set("color", "user_id")
-    etree.SubElement(root, "field", name=spec.rec_name or "name")
+    _sub_element(root, "field", name=spec.rec_name or "name")
     for spec_field in _visible(model, spec):
         if spec_field.ttype == "many2one" and spec_field.name != spec.rec_name:
-            etree.SubElement(root, "field", name=spec_field.name)
+            _sub_element(root, "field", name=spec_field.name)
             break
     return root
 
 
-def scaffold_search_arch(model, spec, options=None):
+def scaffold_search_arch(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions | None = None
+) -> LxmlElement:
     """Search fields plus real group-bys -- a list you cannot filter is not a
     list anybody keeps using."""
     options = options or ScaffoldOptions()
-    root = etree.Element("search", string=spec.description)
+    root = _element("search", string=spec.description)
     for spec_field in _visible(model, spec):
         if spec_field.ttype in ("char", "text", "html"):
-            etree.SubElement(root, "field", name=spec_field.name)
+            _sub_element(root, "field", name=spec_field.name)
     for spec_field in _visible(model, spec):
         if spec_field.ttype == "many2one":
-            etree.SubElement(root, "field", name=spec_field.name)
+            _sub_element(root, "field", name=spec_field.name)
 
     if options.active and "active" in model._fields:
-        etree.SubElement(
+        _sub_element(
             root,
             "filter",
             name="inactive",
@@ -804,9 +907,9 @@ def scaffold_search_arch(model, spec, options=None):
         f for f in _visible(model, spec) if f.ttype in ("selection", "many2one", "date")
     ]
     if groupable:
-        group = etree.SubElement(root, "group", expand="0", string="Group By")
+        group = _sub_element(root, "group", expand="0", string="Group By")
         for spec_field in groupable:
-            etree.SubElement(
+            _sub_element(
                 group,
                 "filter",
                 name="group_by_%s" % spec_field.name,
@@ -816,11 +919,16 @@ def scaffold_search_arch(model, spec, options=None):
     return root
 
 
-def arch_to_string(node):
-    return etree.tostring(node, encoding="unicode", pretty_print=True)
+def arch_to_string(node: LxmlElement) -> str:
+    # `etree.tostring` is itself Unknown (same unstubbed-lxml gap as the
+    # `etree` import above), so both the call's own member type and its
+    # argument types read as Unknown until the `cast` below names the real
+    # return type -- same two-rule ignore `xml_writer.py`'s own
+    # `serialize_document`/`normalize_arch` already use for this exact call.
+    return cast("str", etree.tostring(node, encoding="unicode", pretty_print=True))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
 
-def _measure_fields(model, spec):
+def _measure_fields(model: ModelLike, spec: ModelSpec) -> list[FieldSpec]:
     """Numbers worth aggregating: what a pivot or a graph is *for*."""
     return [
         f
@@ -830,7 +938,7 @@ def _measure_fields(model, spec):
     ]
 
 
-def _groupable_fields(model, spec):
+def _groupable_fields(model: ModelLike, spec: ModelSpec) -> list[FieldSpec]:
     return [
         f
         for f in _visible(model, spec)
@@ -839,33 +947,39 @@ def _groupable_fields(model, spec):
     ]
 
 
-def scaffold_pivot_arch(model, spec, options=None):
+def scaffold_pivot_arch(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions | None = None
+) -> LxmlElement:
     """A pivot with a row grouping and a measure, rather than an empty grid.
 
     An empty pivot is valid and useless: it opens on a single Count cell and
     the user has to discover the two menus that make it a report. Choosing the
     obvious pair is the difference between a view and a demonstration of one.
     """
-    root = etree.Element("pivot", string=spec.description)
+    root = _element("pivot", string=spec.description)
     groupable = _groupable_fields(model, spec)
     if groupable:
-        etree.SubElement(root, "field", name=groupable[0].name, type="row")
+        _sub_element(root, "field", name=groupable[0].name, type="row")
     for measure in _measure_fields(model, spec)[:1]:
-        etree.SubElement(root, "field", name=measure.name, type="measure")
+        _sub_element(root, "field", name=measure.name, type="measure")
     return root
 
 
-def scaffold_graph_arch(model, spec, options=None):
-    root = etree.Element("graph", string=spec.description, type="bar")
+def scaffold_graph_arch(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions | None = None
+) -> LxmlElement:
+    root = _element("graph", string=spec.description, type="bar")
     groupable = _groupable_fields(model, spec)
     if groupable:
-        etree.SubElement(root, "field", name=groupable[0].name)
+        _sub_element(root, "field", name=groupable[0].name)
     for measure in _measure_fields(model, spec)[:1]:
-        etree.SubElement(root, "field", name=measure.name, type="measure")
+        _sub_element(root, "field", name=measure.name, type="measure")
     return root
 
 
-def scaffold_activity_arch(model, spec, options=None):
+def scaffold_activity_arch(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions | None = None
+) -> LxmlElement:
     """The activity view's card, which is a qweb template rather than a list.
 
     ``t-name="activity-box"`` is not optional -- the renderer looks that name up
@@ -873,18 +987,24 @@ def scaffold_activity_arch(model, spec, options=None):
     kanban card uses them: only a field puts its name in the DOM, so anything
     else cannot be selected by the builder later.
     """
-    root = etree.Element("activity", string=spec.description)
-    templates = etree.SubElement(root, "templates")
-    box = etree.SubElement(templates, "div", {"t-name": "activity-box"})
-    etree.SubElement(box, "field", name=spec.rec_name or "name")
+    root = _element("activity", string=spec.description)
+    templates = _sub_element(root, "templates")
+    box = _sub_element(templates, "div", {"t-name": "activity-box"})
+    _sub_element(box, "field", name=spec.rec_name or "name")
     for spec_field in _visible(model, spec):
         if spec_field.ttype == "many2one" and spec_field.name not in HIDDEN:
-            etree.SubElement(box, "field", name=spec_field.name, muted="1")
+            _sub_element(box, "field", name=spec_field.name, muted="1")
             break
     return root
 
 
-def scaffold_timeline_arch(model, spec, date_field, group_field, options=None):
+def scaffold_timeline_arch(
+    model: ModelLike,
+    spec: ModelSpec,
+    date_field: str | None,
+    group_field: str | None,
+    options: ScaffoldOptions | None = None,
+) -> LxmlElement:
     """A timeline, which is OCA's answer to the enterprise Gantt.
 
     Both attributes are mandatory in ``web_timeline`` -- ``default_group_by``
@@ -896,7 +1016,7 @@ def scaffold_timeline_arch(model, spec, date_field, group_field, options=None):
         raise ValueError("a timeline needs a date field that exists on the model")
     if not group_field or group_field not in model._fields:
         raise ValueError("a timeline needs a field to group its rows by")
-    root = etree.Element(
+    root = _element(
         "timeline",
         string=spec.description,
         date_start=date_field,
@@ -906,7 +1026,7 @@ def scaffold_timeline_arch(model, spec, date_field, group_field, options=None):
     if stop and stop != date_field:
         root.set("date_stop", stop)
     root.set("event_open_popup", "true")
-    etree.SubElement(root, "field", name=spec.rec_name or "name")
+    _sub_element(root, "field", name=spec.rec_name or "name")
     return root
 
 
@@ -927,7 +1047,7 @@ class ReportLayout:
     help: str
 
 
-REPORT_LAYOUTS = (
+REPORT_LAYOUTS: tuple[ReportLayout, ...] = (
     ReportLayout(
         "external",
         "External",
@@ -951,10 +1071,21 @@ REPORT_LAYOUTS = (
     ),
 )
 
-REPORT_LAYOUTS_BY_KEY = {layout.key: layout for layout in REPORT_LAYOUTS}
+REPORT_LAYOUTS_BY_KEY: dict[str, ReportLayout] = {
+    layout.key: layout for layout in REPORT_LAYOUTS
+}
 
 
-def report_layouts_json():
+class ReportLayoutJSON(TypedDict):
+    """What ``report_layouts_json`` sends: one entry per layout choice."""
+
+    key: str
+    label: str
+    template: str | None
+    help: str
+
+
+def report_layouts_json() -> list[ReportLayoutJSON]:
     return [
         {
             "key": layout.key,
@@ -973,38 +1104,91 @@ def report_layouts_json():
 #
 # `date_field` and `group_field` are passed to every builder and ignored by the
 # ones that do not need them, so a caller never has to know which is which.
-SCAFFOLD_BUILDERS = {
-    "list": lambda model, spec, options, **_kw: scaffold_list_arch(
-        model, spec, options
-    ),
-    "form": lambda model, spec, options, **_kw: scaffold_form_arch(
-        model, spec, options
-    ),
-    "search": lambda model, spec, options, **_kw: scaffold_search_arch(
-        model, spec, options
-    ),
-    "kanban": lambda model, spec, options, **_kw: scaffold_kanban_arch(
-        model, spec, options
-    ),
-    "pivot": lambda model, spec, options, **_kw: scaffold_pivot_arch(
-        model, spec, options
-    ),
-    "graph": lambda model, spec, options, **_kw: scaffold_graph_arch(
-        model, spec, options
-    ),
-    "activity": lambda model, spec, options, **_kw: scaffold_activity_arch(
-        model, spec, options
-    ),
-    "calendar": lambda model, spec, options, date_field=None, **_kw: (
-        scaffold_calendar_arch(model, spec, date_field, options)
-    ),
-    "timeline": lambda model, spec, options, date_field=None, group_field=None: (
-        scaffold_timeline_arch(model, spec, date_field, group_field, options)
-    ),
+#
+# Named functions rather than the inline lambdas this registry used to hold:
+# a lambda parameter cannot carry an annotation at all (a Python syntax
+# limit), and under strict mode pyright does not infer one from the
+# dict's own declared value type either -- confirmed by trying it first,
+# `reportUnknownLambdaType` on every parameter of every entry, the same
+# "give it its own signature" fix `pycodegen.py`'s `_selection_sort_key`
+# already applied to an unannotated `.sorted(key=...)` lambda for the same
+# underlying reason.
+def _build_list(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions, **_kw: object
+) -> LxmlElement:
+    return scaffold_list_arch(model, spec, options)
+
+
+def _build_form(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions, **_kw: object
+) -> LxmlElement:
+    return scaffold_form_arch(model, spec, options)
+
+
+def _build_search(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions, **_kw: object
+) -> LxmlElement:
+    return scaffold_search_arch(model, spec, options)
+
+
+def _build_kanban(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions, **_kw: object
+) -> LxmlElement:
+    return scaffold_kanban_arch(model, spec, options)
+
+
+def _build_pivot(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions, **_kw: object
+) -> LxmlElement:
+    return scaffold_pivot_arch(model, spec, options)
+
+
+def _build_graph(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions, **_kw: object
+) -> LxmlElement:
+    return scaffold_graph_arch(model, spec, options)
+
+
+def _build_activity(
+    model: ModelLike, spec: ModelSpec, options: ScaffoldOptions, **_kw: object
+) -> LxmlElement:
+    return scaffold_activity_arch(model, spec, options)
+
+
+def _build_calendar(
+    model: ModelLike,
+    spec: ModelSpec,
+    options: ScaffoldOptions,
+    date_field: str | None = None,
+    **_kw: object,
+) -> LxmlElement:
+    return scaffold_calendar_arch(model, spec, date_field, options)
+
+
+def _build_timeline(
+    model: ModelLike,
+    spec: ModelSpec,
+    options: ScaffoldOptions,
+    date_field: str | None = None,
+    group_field: str | None = None,
+) -> LxmlElement:
+    return scaffold_timeline_arch(model, spec, date_field, group_field, options)
+
+
+SCAFFOLD_BUILDERS: dict[str, Callable[..., LxmlElement]] = {
+    "list": _build_list,
+    "form": _build_form,
+    "search": _build_search,
+    "kanban": _build_kanban,
+    "pivot": _build_pivot,
+    "graph": _build_graph,
+    "activity": _build_activity,
+    "calendar": _build_calendar,
+    "timeline": _build_timeline,
 }
 
 # What a view of this type needs before it can be built at all.
-SCAFFOLD_REQUIRES = {
+SCAFFOLD_REQUIRES: dict[str, tuple[str, ...]] = {
     "calendar": ("date_field",),
     # Unlike Gantt, where rows are optional, web_timeline requires
     # default_group_by -- so this is the view refusing to open, not a
@@ -1013,7 +1197,9 @@ SCAFFOLD_REQUIRES = {
 }
 
 
-def first_field_of(model, ttypes, prefer=()):
+def first_field_of(
+    model: ModelLike, ttypes: Collection[str], prefer: Iterable[str] = ()
+) -> str | None:
     """A field on ``model`` of one of ``ttypes``, preferring ``prefer`` by name.
 
     Used to answer "which date should this calendar place records on" without
@@ -1030,7 +1216,7 @@ def first_field_of(model, ttypes, prefer=()):
     return None
 
 
-def scaffold_report_arch(title, layout="external"):
+def scaffold_report_arch(title: str, layout: str = "external") -> LxmlElement:
     """The starting body of a PDF report.
 
     Iterates ``docs``, which is what ``_render_qweb_html`` puts in the rendering
@@ -1053,15 +1239,15 @@ def scaffold_report_arch(title, layout="external"):
         raise ValueError("unknown report layout %r" % layout)
     wrapper = REPORT_LAYOUTS_BY_KEY[layout].template
 
-    root = etree.Element("t", {"t-call": "web.html_container"})
-    loop = etree.SubElement(root, "t", {"t-foreach": "docs", "t-as": "doc"})
+    root = _element("t", {"t-call": "web.html_container"})
+    loop = _sub_element(root, "t", {"t-foreach": "docs", "t-as": "doc"})
     # `web.external_layout` reads company/address/logo from the record being
     # printed, so the body has to sit inside the t-call rather than beside it.
     # The loop variable has to be `doc`: both layouts do
     # `<t t-if="not o" t-set="o" t-value="doc"/>` (`report_templates.xml:803`),
     # so any other name leaves `o` unset and the header renders blank.
     if wrapper:
-        host = etree.SubElement(loop, "t", {"t-call": wrapper})
+        host = _sub_element(loop, "t", {"t-call": wrapper})
     else:
         # `web.basic_layout` is the obvious thing to call here and cannot be
         # used: it t-calls `web.html_container` itself
@@ -1070,7 +1256,7 @@ def scaffold_report_arch(title, layout="external"):
         # by hoisting basic_layout outside the loop, which is why a badge sheet
         # prints as one undivided PDF. Drawing the same div it draws
         # (`report_templates.xml:864`) keeps the chrome off and the splitting on.
-        host = etree.SubElement(
+        host = _sub_element(
             loop,
             "div",
             {
@@ -1080,9 +1266,9 @@ def scaffold_report_arch(title, layout="external"):
                 "t-att-data-oe-lang": "doc and doc.env.context.get('lang')",
             },
         )
-    page = etree.SubElement(host, "div", {"class": "page"})
-    heading = etree.SubElement(page, "h2")
+    page = _sub_element(host, "div", {"class": "page"})
+    heading = _sub_element(page, "h2")
     heading.text = title
-    line = etree.SubElement(page, "div", {"class": "mb-3"})
-    etree.SubElement(line, "span", {"t-field": "doc.display_name"})
+    line = _sub_element(page, "div", {"class": "mb-3"})
+    _sub_element(line, "span", {"t-field": "doc.display_name"})
     return root

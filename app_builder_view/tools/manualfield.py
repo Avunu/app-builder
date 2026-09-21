@@ -26,9 +26,21 @@ Messages are translated through ``env._`` for the same reason: a module
 function has no ``self`` for the translator to find a language on.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, cast
+
 from odoo.exceptions import UserError
 
 from odoo.addons.app_builder_base.tools import modelspec
+
+if TYPE_CHECKING:
+    from collections.abc import Collection, Iterable, Mapping
+
+    from odoo import api
+    from odoo.fields import Field
+
+    from odoo.addons.base.models.ir_model import IrModel, IrModelFields
 
 # What a manual row can be. Everything the picker offers, less what has no
 # ``ir.model.fields`` column to hold it: ``properties`` needs a definition
@@ -75,7 +87,7 @@ TRANSLATABLE = frozenset({"char", "text", "html"})
 CURRENCY_FALLBACKS = ("currency_id", "x_currency_id")
 
 
-def field_name_for(label, prefix="x_"):
+def field_name_for(label: str | None, prefix: str = "x_") -> str:
     """``x_delivery_date`` for "Delivery date": the name a live field gets
     when the user gave only a label.
 
@@ -91,7 +103,7 @@ def field_name_for(label, prefix="x_"):
     return "%s%s" % (prefix, name)
 
 
-def unique_name(name, taken):
+def unique_name(name: str, taken: Collection[str]) -> str:
     """``name`` as it is when nothing in ``taken`` has it, else the first
     of ``name_2``, ``name_3``, ... that is free.
 
@@ -108,7 +120,7 @@ def unique_name(name, taken):
     return "%s_%d" % (name, counter)
 
 
-def needs_dialog(entry_key, has_default_currency=False):
+def needs_dialog(entry_key: str, has_default_currency: bool = False) -> bool:
     """Whether a tile of ``entry_key`` has to ask before it can create.
 
     A scalar has nothing to ask: it is created as "New Text" and the label
@@ -132,7 +144,7 @@ def needs_dialog(entry_key, has_default_currency=False):
     return False
 
 
-def creatable_live(entry_key):
+def creatable_live(entry_key: str) -> bool:
     """Whether a tile of ``entry_key`` can become a manual field at all."""
     entry = modelspec.field_type_for(entry_key)
     if entry is None or not entry.supported:
@@ -142,11 +154,18 @@ def creatable_live(entry_key):
     return entry.picker_key == "related" or entry.ttype in SUPPORTED_TTYPES
 
 
-def default_currency_field(model_name, env):
+def default_currency_field(model_name: str, env: api.Environment) -> str:
     """The currency field core would fall back to on ``model_name``, or ``""``."""
     if model_name not in env:
         return ""
-    fields_ = env[model_name]._fields
+    # `_fields` is a heterogeneous dict (each field's own `Field[T]` differs
+    # by column type), so there is no single, real `T` to name here -- `Any`
+    # is the honest type, not a narrowing this function could do instead.
+    # OCB's own `BaseModel._fields` is declared `dict[str, Field]` --
+    # unparameterized, not `dict[str, Field[Any]]` -- so the expression
+    # itself is `Unknown` before the annotation below ever applies; the
+    # same gap `compat.py`'s own `groups_field` already documents.
+    fields_: dict[str, Field[Any]] = env[model_name]._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
     for name in CURRENCY_FALLBACKS:
         field = fields_.get(name)
         if (
@@ -158,7 +177,9 @@ def default_currency_field(model_name, env):
     return ""
 
 
-def ir_model_fields_vals(values, model_name, env):
+def ir_model_fields_vals(
+    values: Mapping[str, Any] | None, model_name: str, env: api.Environment
+) -> dict[str, Any]:
     """The ``ir.model.fields.create`` payload for a spec-shaped ``values``.
 
     ``values`` has been through ``modelspec.apply_preset`` already, so its
@@ -170,41 +191,58 @@ def ir_model_fields_vals(values, model_name, env):
     for key, why in UNSUPPORTED_LIVE.items():
         if values.get(key):
             raise UserError(
-                env._(
+                env._(  # pyright: ignore[reportUnknownMemberType] -- `Environment._`'s own `*args`/`**kwargs` (`odoo/api.py`) are unannotated in the merged tree, confirmed directly with `reveal_type`; every call site in this file needs the same ignore.
                     "'%(key)s' cannot be set on a field created here: %(why)s.",
                     key=key,
                     why=why,
                 )
             )
     if model_name not in env:
-        raise UserError(env._("Unknown model '%s'.", model_name))
+        raise UserError(env._("Unknown model '%s'.", model_name))  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
 
-    label = (values.get("field_description") or values.get("string") or "").strip()
+    label: str = (values.get("field_description") or values.get("string") or "").strip()
     if not label:
-        raise UserError(env._("The field needs a label."))
-    name = values.get("name") or field_name_for(label)
-    vals = {
+        raise UserError(env._("The field needs a label."))  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
+    name: str = values.get("name") or field_name_for(label)
+    # `env["ir.model"]` is a plain `BaseModel` as far as `Environment
+    # .__getitem__` is concerned -- `_get` is `IrModel`'s own method, not
+    # `BaseModel`'s, so the recordset needs naming for pyright to resolve
+    # it. The same idiom `pycodegen.py`'s `spec_from_ir_model` already
+    # takes a real `IrModel` parameter for. `IrModel._get`'s own `name`
+    # parameter is unannotated in the merged tree, which is a second,
+    # independent source of "partially unknown" on top of the recordset
+    # typing above -- confirmed with `reveal_type`, same shape of gap as
+    # `env._`, just on a different vendor member.
+    ir_model = cast("IrModel", env["ir.model"])
+    vals: dict[str, Any] = {
         "name": _checked_name(name, model_name, env),
         "field_description": label,
         "ttype": values.get("ttype") or "char",
-        "model_id": env["ir.model"]._get(model_name).id,
+        "model_id": ir_model._get(model_name).id,  # pyright: ignore[reportUnknownMemberType]
     }
-    relation = values.get("comodel") or values.get("relation") or ""
-    related = (values.get("related") or "").strip()
+    relation: str = values.get("comodel") or values.get("relation") or ""
+    related: str = (values.get("related") or "").strip()
     if related:
         # The picker's placeholder type gives way to what the path ends at:
         # core's `_check_related` demands the end field's type and comodel,
         # and a related field is not stored unless somebody says so -- a
         # stored copy of another record's value is a column that goes stale.
         end = _related_end(env, model_name, related)
-        vals["ttype"] = end.ttype
-        relation = end.relation or ""
+        # `end.ttype`/`.relation` are two of the five `ir.model.fields`
+        # attributes that read `str | bool` instead of the usual `str |
+        # Literal[False]` (TYPING.md's "Known traps"; traced and cast the
+        # same way in `pycodegen.py`'s `_field_spec_from_record`). A real
+        # row only ever holds a `str` here, never a real `bool`.
+        vals["ttype"] = cast("str", end.ttype)
+        relation = cast("str", end.relation) or ""
         vals["related"] = related
         vals["store"] = bool(values.get("store"))
-    ttype = vals["ttype"]
+    ttype: str = vals["ttype"]
     if ttype not in SUPPORTED_TTYPES:
         raise UserError(
-            env._("A field of type '%s' cannot be created on a live model.", ttype)
+            env._(  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
+                "A field of type '%s' cannot be created on a live model.", ttype
+            )
         )
     vals.update(_relational_vals(values, model_name, ttype, relation, related, env))
     if ttype == "monetary":
@@ -219,32 +257,54 @@ def ir_model_fields_vals(values, model_name, env):
     return vals
 
 
-def _checked_name(name, model_name, env):
+def _checked_name(name: str, model_name: str, env: api.Environment) -> str:
     if not name.startswith("x_"):
-        raise UserError(env._("A custom field name must start with 'x_'."))
+        raise UserError(env._("A custom field name must start with 'x_'."))  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
     if not name.isidentifier():
-        raise UserError(env._("'%s' is not a usable field name.", name))
-    if name in env[model_name]._fields:
-        raise UserError(env._("%s already has a field called %s.", model_name, name))
+        raise UserError(env._("'%s' is not a usable field name.", name))  # pyright: ignore[reportUnknownMemberType]
+    # Same `_fields` gap as `default_currency_field`, above.
+    fields_: dict[str, Field[Any]] = env[model_name]._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    if name in fields_:
+        raise UserError(env._("%s already has a field called %s.", model_name, name))  # pyright: ignore[reportUnknownMemberType]
     return name
 
 
-def _relational_vals(values, model_name, ttype, relation, related, env):
+def _relational_vals(
+    values: Mapping[str, Any],
+    model_name: str,
+    ttype: str,
+    relation: str,
+    related: str,
+    env: api.Environment,
+) -> dict[str, Any]:
     """``relation``, ``relation_field``, ``on_delete`` and the many2many
     table names, checked the way core's ``create`` checks them."""
     if ttype not in modelspec.RELATIONAL:
         return {}
     if not relation:
-        raise UserError(env._("Choose the model this field should link to."))
-    if relation not in env or not env["ir.model"]._get_id(relation):
-        raise UserError(env._("There is no model called %s to link to.", relation))
-    vals = {"relation": relation}
+        raise UserError(env._("Choose the model this field should link to."))  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
+    # Same reasoning as `ir_model_fields_vals`'s own `ir_model` above: `_get_id`
+    # is `IrModel`'s own method, not a plain `BaseModel`'s.
+    ir_model = cast("IrModel", env["ir.model"])
+    # `_get_id` is `@tools.ormcache('name')`-decorated (`ir_model.py`); the
+    # `decorator` package's own stub (`decorator/__init__.pyi`) types
+    # `decorator(caller, _func=None, ...)`'s return as unconditionally
+    # `Callable[[Callable[..., Any]], Callable[..., Any]]` even when `_func`
+    # is supplied (as `ormcache.__call__` does), which is the wrong shape
+    # for that call pattern -- confirmed with `reveal_type`:
+    # `IrModel._get_id` reads as `() -> ((...) -> Any)`, a vendor-stub
+    # artifact, not the real one-argument method. A narrow, local,
+    # stub-vs-runtime gap (the same shape as `pogen.py`'s own one-off
+    # `polib` finding), not a tree-wide pattern.
+    if relation not in env or not ir_model._get_id(relation):  # pyright: ignore[reportCallIssue]
+        raise UserError(env._("There is no model called %s to link to.", relation))  # pyright: ignore[reportUnknownMemberType]
+    vals: dict[str, Any] = {"relation": relation}
     if ttype == "many2one":
         # Without this Odoo defaults to 'set null', which is right often
         # enough, but saying it makes the generated source explicit.
         vals["on_delete"] = values.get("ondelete") or "set null"
     if ttype == "one2many" and not related:
-        inverse = values.get("inverse_name") or values.get("relation_field") or ""
+        inverse: str = values.get("inverse_name") or values.get("relation_field") or ""
         _check_inverse(env, model_name, relation, inverse)
         vals["relation_field"] = inverse
     if ttype == "many2many":
@@ -257,14 +317,16 @@ def _relational_vals(values, model_name, ttype, relation, related, env):
     return vals
 
 
-def _flag_vals(values, ttype, env):
+def _flag_vals(
+    values: Mapping[str, Any], ttype: str, env: api.Environment
+) -> dict[str, Any]:
     """The booleans and the small extras, only where they were stated.
 
     The spec says ``copy``, as the class attribute is spelt; the row's
     column is ``copied``, and a payload that used the spec's word would be
     refused by ``create`` with a traceback rather than a sentence.
     """
-    vals = {}
+    vals: dict[str, Any] = {}
     for key in ("required", "readonly", "index"):
         if values.get(key) is not None:
             vals[key] = bool(values[key])
@@ -272,7 +334,7 @@ def _flag_vals(values, ttype, env):
         vals["copied"] = bool(values["copy"])
     if values.get("translate") is not None:
         if values["translate"] and ttype not in TRANSLATABLE:
-            raise UserError(env._("Only text fields can be translated."))
+            raise UserError(env._("Only text fields can be translated."))  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
         vals["translate"] = bool(values["translate"])
     if values.get("help"):
         vals["help"] = values["help"]
@@ -281,22 +343,24 @@ def _flag_vals(values, ttype, env):
     return vals
 
 
-def selection_rows(entries, env):
+def selection_rows(
+    entries: Iterable[Mapping[str, Any]] | None, env: api.Environment
+) -> list[dict[str, Any]]:
     """``ir.model.fields.selection`` rows for a list of ``{value, label,
     sequence}``, checked the way the row's own constraints would check them
     -- a value and a label each, no value twice -- and never empty, since
     ``fields.Selection()`` with no values raises at registry setup rather
     than here."""
-    rows = []
-    seen = set()
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for position, entry in enumerate(entries or ()):
         entry = dict(entry or {})
         value = str(entry.get("value") or "").strip()
         label = str(entry.get("label") or entry.get("name") or "").strip()
         if not value or not label:
-            raise UserError(env._("Every selection value needs a value and a label."))
+            raise UserError(env._("Every selection value needs a value and a label."))  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
         if value in seen:
-            raise UserError(env._("The selection value '%s' is listed twice.", value))
+            raise UserError(env._("The selection value '%s' is listed twice.", value))  # pyright: ignore[reportUnknownMemberType]
         seen.add(value)
         sequence = entry.get("sequence")
         rows.append(
@@ -307,11 +371,13 @@ def selection_rows(entries, env):
             }
         )
     if not rows:
-        raise UserError(env._("A selection needs at least one value."))
+        raise UserError(env._("A selection needs at least one value."))  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
     return rows
 
 
-def _check_inverse(env, model_name, relation, inverse):
+def _check_inverse(
+    env: api.Environment, model_name: str, relation: str, inverse: str
+) -> None:
     """A one2many needs a many2one back, and it has to point *here*.
 
     Core only checks that a many2one of that name exists on the comodel;
@@ -320,15 +386,22 @@ def _check_inverse(env, model_name, relation, inverse):
     """
     if not inverse:
         raise UserError(
-            env._(
+            env._(  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
                 "A related list needs the field on %s that links back to this model.",
                 relation,
             )
         )
-    field = env[relation]._fields.get(inverse) if relation in env else None
+    if relation in env:
+        # Same `_fields` gap as `default_currency_field`, above -- split out
+        # of the original one-line ternary so the annotated intermediate
+        # variable has somewhere to live; behaviorally identical.
+        fields_: dict[str, Field[Any]] = env[relation]._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        field = fields_.get(inverse)
+    else:
+        field = None
     if field is None or field.type != "many2one":
         raise UserError(
-            env._(
+            env._(  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
                 "%(relation)s has no link field called %(inverse)s. Add a "
                 "'Link to one record' there first, then pick it here.",
                 relation=relation,
@@ -337,7 +410,7 @@ def _check_inverse(env, model_name, relation, inverse):
         )
     if field.comodel_name != model_name:
         raise UserError(
-            env._(
+            env._(  # pyright: ignore[reportUnknownMemberType]
                 "%(relation)s.%(inverse)s links to %(other)s, not to %(model)s.",
                 relation=relation,
                 inverse=inverse,
@@ -347,7 +420,7 @@ def _check_inverse(env, model_name, relation, inverse):
         )
 
 
-def _check_currency(env, model_name, currency_field):
+def _check_currency(env: api.Environment, model_name: str, currency_field: str) -> str:
     """The currency field an amount will use, named explicitly.
 
     Core accepts an empty ``currency_field`` when the model has a
@@ -356,42 +429,62 @@ def _check_currency(env, model_name, currency_field):
     know the fallback rule.
     """
     name = currency_field or default_currency_field(model_name, env)
-    field = env[model_name]._fields.get(name) if name else None
+    if name:
+        # Same `_fields` gap as `_check_inverse`, above.
+        fields_: dict[str, Field[Any]] = env[model_name]._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        field = fields_.get(name)
+    else:
+        field = None
     if field is None:
         raise UserError(
-            env._(
+            env._(  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
                 "An amount needs a currency field on %s. Add a 'Link to one "
                 "record' pointing at res.currency first.",
                 model_name,
             )
         )
     if field.type != "many2one" or field.comodel_name != "res.currency":
-        raise UserError(env._("%s is not a link to res.currency.", name))
+        raise UserError(env._("%s is not a link to res.currency.", name))  # pyright: ignore[reportUnknownMemberType]
     return name
 
 
-def _related_end(env, model_name, path):
+def _related_end(env: api.Environment, model_name: str, path: str) -> IrModelFields:
     """The ``ir.model.fields`` row a dotted ``path`` ends at, walked the way
     core's ``_related_field`` walks it -- on the reflected rows, since those
     are what the constraint compares against."""
     steps = [part for part in path.split(".") if part]
     if not steps:
-        raise UserError(env._("Choose a field to follow."))
-    field = None
+        raise UserError(env._("Choose a field to follow."))  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
+    # `env["ir.model.fields"]` is a plain `BaseModel` as far as `Environment
+    # .__getitem__` is concerned -- `_get` is `IrModelFields`'s own method.
+    ir_model_fields = cast("IrModelFields", env["ir.model.fields"])
+    field: IrModelFields | None = None
     for index, step in enumerate(steps):
-        field = env["ir.model.fields"]._get(model_name, step)
+        field = ir_model_fields._get(model_name, step)  # pyright: ignore[reportUnknownMemberType] -- same vendor-parameter gap as `ir_model_fields_vals`'s own `ir_model._get` above.
         if not field:
             raise UserError(
-                env._(
+                env._(  # pyright: ignore[reportUnknownMemberType]
                     "%(step)s is not a field of %(model)s.",
                     step=step,
                     model=model_name,
                 )
             )
         if index < len(steps) - 1:
-            if not field.relation:
+            # `.relation` is one of the five `ir.model.fields` attributes
+            # that reads `str | bool` instead of `str | Literal[False]`
+            # (TYPING.md's "Known traps"; same cast `pycodegen.py`'s
+            # `_field_spec_from_record` already applies to the identical
+            # attribute).
+            relation = cast("str", field.relation)
+            if not relation:
                 raise UserError(
-                    env._("%s is not a relation, so nothing can follow it.", step)
+                    env._("%s is not a relation, so nothing can follow it.", step)  # pyright: ignore[reportUnknownMemberType] -- same `env._` gap as above.
                 )
-            model_name = field.relation
+            model_name = relation
+    # `steps` is non-empty (checked above), so the loop runs at least once
+    # and always either raises or assigns a real `field` before looping
+    # again -- an invariant pyright's own loop analysis cannot see through a
+    # plain `list[str]`, so `field` still reads as possibly `None` after the
+    # loop as far as the checker is concerned.
+    assert field is not None
     return field

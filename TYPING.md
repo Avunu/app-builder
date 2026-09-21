@@ -521,6 +521,48 @@ hoot `onRpc` mocks typed against the same map.
   bool]`, with `.sorted` unresolved on two of the three arms -- fixed
   the same way, `cast("IrModelSelection", record.selection_ids)` plus
   the matching ignore.
+- `Environment._` (`odoo/api.py`) -- the translation callable every real
+  caller knows as `env._(...)`/`self.env._(...)` -- has its `source`
+  parameter annotated (`str | LazyGettext`) but its `*args`/`**kwargs`
+  are not, in the merged tree; confirmed directly with `reveal_type`.
+  Every real call site (`env._("...", key=value)`,
+  `env._("...", positional)`) therefore reads as `reportUnknownMemberType`
+  under this project's strict `tools/` execution environment. Fix:
+  `# pyright: ignore[reportUnknownMemberType]` at each call site (21 in
+  `manualfield.py`, the first file in this migration to call `env._`
+  directly rather than only pass it as a value). This will very likely
+  recur in most Phase 1c model files, which call `self.env._(...)`
+  constantly -- worth deciding then whether the house convention stays
+  "ignore at every call site" or a single typed wrapper (e.g. `def
+  translate(env: api.Environment, source: str, *args: object, **kwargs:
+  object) -> str: return env._(source, *args, **kwargs)`) is worth
+  introducing to avoid dozens of near-duplicate ignores per file.
+- A method decorated with `@tools.ormcache(...)` (e.g. `IrModel._get_id`)
+  reads as `() -> ((...) -> Any)` under pyright, not its real signature --
+  confirmed with `reveal_type` and traced to the installed `decorator`
+  package's own stub (`decorator/__init__.pyi`), which types
+  `decorator(caller, _func=None, kwsyntax=False)`'s return as
+  unconditionally `Callable[[Callable[..., Any]], Callable[..., Any]]`
+  even when `_func` is supplied the way `ormcache.__call__` actually
+  calls it (`decorator(self.lookup, method)`, `odoo/tools/cache.py`) --
+  a real stub-vs-runtime gap in a third-party stub, not this codebase's
+  to fix. Fix: a narrow `# pyright: ignore[reportCallIssue]` at each call
+  site of an `@ormcache(...)`-decorated method called directly (rather
+  than through a plain, undecorated wrapper) -- `manualfield.py`'s
+  `IrModel._get_id(relation)`. Likely to recur anywhere else in this
+  codebase that calls an `@ormcache`/`@tools.ormcache`-decorated ORM
+  method directly.
+- A `dict[str, Callable[..., T]]` registry built from inline lambda
+  values reports `reportUnknownLambdaType` on every lambda parameter
+  under strict mode, regardless of the dict's own declared value type --
+  a lambda's parameter cannot carry an annotation at all (a Python syntax
+  limit), and pyright does not infer one from the surrounding dict
+  literal's declared type either. The same underlying gap as `.sorted(key
+  =lambda ...)` above, just a second manifestation of it (a dict literal
+  rather than a single keyword argument). Fix, identical in shape: small,
+  separately-defined, explicitly-annotated named functions in place of
+  the inline lambdas (`scaffold.py`'s `SCAFFOLD_BUILDERS`, nine
+  `_build_*` functions replacing nine lambdas).
 
 ## Implemented so far
 
@@ -2202,6 +2244,99 @@ than reasoned about:
   an empty model, sql_constraints, methods, a sequence-backed `create`
   override) plus every other public function -- identical all three
   times. Next: `pyparse.py`.
+
+- **Python (1b: final wave -- `pyparse.py`, `scaffold.py`,
+  `manualfield.py`).** The last three `tools/` files, converted in
+  parallel once their shared dependencies (`modelspec.py`, `pycodegen.py`)
+  were both done and each was confirmed independent of the other two
+  (`pyparse.py` and `scaffold.py` each import only `modelspec`/
+  `pycodegen`; `manualfield.py` imports only `modelspec`). Built as a
+  three-item pipeline workflow, each file going through its own draft ->
+  independent-verify pair, then re-verified a third time in the main loop
+  before committing -- the same process `pycodegen.py` established, run
+  three times over. **Every `tools/` file in both `app_builder_base` and
+  `app_builder_view` is now strict-mode typed**, closing out Phase 1b
+  entirely: a full-tree `pyright` run over both directories now reports
+  only the pre-existing 13-error `tools/__init__.py` `reportUnusedImport`
+  backlog (documented since wave 1), down from wave 1's 2032.
+
+  **`pyparse.py`** (451 lines) is `pycodegen.py`'s exact mirror --
+  parsing a studio-generated block back into a `ModelSpec` via the `ast`
+  module -- and is the first file in this migration typed against
+  Python's own stdlib `ast` node types (`ast.ClassDef`, `ast.Assign`,
+  `ast.Call`, `ast.keyword`, etc.) rather than a vendor/Odoo boundary;
+  typeshed's own bundled `ast` stubs made this mostly straightforward,
+  with two `cast()`s needed for "already true by construction, invisible
+  to pyright across a function/string-template boundary" situations
+  (mirroring `pycodegen.py`'s own such casts, not `ast`-specific). One
+  real, dead function removed: `_segment` (an unused helper subsumed by
+  `_verbatim`, confirmed via a whole-repo grep for callers, flagged by
+  plain `reportUnusedFunction` under this directory's strict rules --
+  removed rather than suppressed, since a narrow `# pyright: ignore` is
+  reserved for real typing gaps, not dead code). One pre-existing,
+  unrelated gap flagged, not fixed: `_selection()`'s tuple-unpack has no
+  shape validation, so a malformed selection literal crashes with a raw
+  `ValueError`/`TypeError` rather than this file's own consistent
+  `UnsupportedConstruct` -- a real behavior change to fix, out of scope
+  for a type-only pass. Verification included the strongest form this
+  migration has used yet: real `pycodegen.render_model -> pyparse
+  .parse_model` round-trips (`parse(render(spec)) == spec` and
+  `render(parse(source)) == source`, the exact fixed-point property
+  `pycodegen.py`'s own docstring states this pairing exists for) across
+  every field type, model attribute and refusal path, independently
+  built twice (draft agent, verify agent) plus a third smoke test in the
+  main loop -- all in agreement.
+
+  **`scaffold.py`** (1088 lines, the largest `tools/` file) builds the
+  default form/list/kanban/calendar/search/pivot/graph/activity/timeline/
+  report archs for a newly scaffolded model, and is the third of the
+  three files `lxml_types.py`'s own `LxmlElement` Protocol was built
+  anticipating (after `xml_writer.py`/`placement.py`) -- imported and
+  reused as intended, no new local Protocol. Two design decisions worth
+  recording: `ScaffoldOptions` (a hand-rolled, non-dataclass class with a
+  `__getattr__` returning `bool` for any of a closed, registry-derived
+  set of feature names) needed no restructuring at all -- pyright treats
+  a class's own `__getattr__` as the fallback type for every otherwise-
+  undeclared attribute read on its instances, confirmed with a standalone
+  probe before trusting it in the real file. `SCAFFOLD_BUILDERS`'s nine
+  inline lambdas needed the "give it its own signature" fix (see "Known
+  traps"). New: a narrow, locally-declared `ModelLike` Protocol (`_fields:
+  dict[str, Field[Any]]` only -- every real reader in this file touches
+  nothing else on the live model parameter), the same "narrow, hand-traced
+  boundary" discipline as `lxml_types.py` itself; two `TypedDict`s
+  (`FeatureJSON`, `ReportLayoutJSON`) for `features_json`/
+  `report_layouts_json`'s real wire shapes.
+
+  **`manualfield.py`** (397 lines, `app_builder_view/tools/`) translates
+  the picker's vocabulary into a live `ir.model.fields.create()` payload
+  -- genuinely Odoo-aware throughout (every function takes `env`), unlike
+  every other `tools/` file's "mostly pure, one exception" shape. Reused
+  `compat.py`'s established `_fields: dict[str, Field[Any]]` idiom and
+  `pycodegen.py`'s `IrModel`/`IrModelFields` `cast()` idiom (including the
+  five-attribute `str | bool` cast) throughout, rather than reinventing
+  either. Surfaced both new "Known traps" entries above (`env._`'s
+  unannotated varargs, the `@ormcache`-decorated-method stub gap) --
+  the first genuinely recurring, since most of Phase 1c's model files
+  will call `self.env._(...)` directly. One self-flagged, and confirmed
+  correct, deviation from the task's own suggested precedent: `compat.py`
+  itself currently fails a plain `ruff check` (`TC002`, its `api`/`Field`
+  imports are not `TYPE_CHECKING`-guarded, a pre-existing gap from an
+  earlier wave, not this task's to fix) -- `manualfield.py` guards its own
+  equivalent imports instead, matching the more recent, more comparable
+  `pycodegen.py` precedent.
+
+  Verification for all three: `pyright`/`ruff check`/`ruff format --diff`
+  clean; full-tree count confirmed identically by both the draft and
+  verify agent for each file, then a third time in the main loop;
+  independent, from-scratch byte-for-byte behavioral-equivalence checks
+  (real ORM fakes for `manualfield.py`'s `env`-touching functions, real
+  round-trips for `pyparse.py`, real arch-building calls for
+  `scaffold.py`) run twice per file by the two agents and spot-confirmed
+  a third time in the main loop -- identical every time. **Phase 1b is
+  now complete.** Next: Phase 1c (models -- full annotation, `Self` for
+  recordset methods, `TYPE_CHECKING`-guarded relational field imports,
+  RPC `TypedDict`s in `wire.py`, per-file strictness ratchet), per
+  TYPING.md's own original Phase 1 plan.
 
 ## CI: the OCA container's real layout
 
