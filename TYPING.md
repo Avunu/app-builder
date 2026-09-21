@@ -471,6 +471,56 @@ hoot `onRpc` mocks typed against the same map.
   `tools/` reader imports rather than re-declaring -- three independent
   local copies existed briefly before being reconciled into it (see
   "Implemented so far").
+- `BaseModel.sorted(self, key=None, reverse=False)` (`odoo/models.py`)
+  carries no type annotation at all on `key` in the merged tree, so a
+  lambda passed as `some_recordset.sorted(key=lambda r: ...)` has no
+  context to infer its own parameter's type from and reports fully
+  `Unknown` throughout (the lambda's parameter, its return, and every
+  attribute read inside its body). Fix: a small, separately-defined,
+  explicitly-annotated function in place of the inline lambda -- the
+  function's own signature needs no inference, so the same
+  `reveal_type`-confirmed field reads it already relied on stay exactly
+  as typed (`pycodegen.py`'s `_selection_sort_key`, replacing
+  `record.selection_ids.sorted(key=lambda s: (s.sequence, s.value))`).
+  `.sorted` itself still needs a narrow
+  `# pyright: ignore[reportUnknownMemberType]` at the call site when the
+  recordset it's called on is itself only reachable via a `cast` (see
+  the next trap) -- a separate diagnostic, about the method reference's
+  own partially-unknown signature, not about the `key` argument.
+- Five attributes of `ir.model.fields` (`IrModelFields`, in the merged
+  tree's `odoo/addons/base/models/ir_model.py`) -- `.ttype`,
+  `.relation`, `.relation_table`, `.column1`, `.column2` -- read back as
+  `str | bool` under pyright (`.column1`/`.column2` additionally carry a
+  genuine `Unknown` component: `str | Unknown | bool`) instead of the
+  `str | Literal[False]` every other `Char`/`Selection` field on that
+  same real class gets (confirmed clean on ten siblings: `.name`,
+  `.field_description`, `.help`, `.related`, `.domain`, `.on_delete`,
+  `.currency_field`, `.compute`, `.depends`, `.relation_field`).
+  Confirmed by direct `reveal_type` probe, and confirmed it is not about
+  the field *name*: a synthetic `models.Model` declared inline with
+  identically-named `Char` fields (`relation`, `column1`, `ttype`) infers
+  the expected `str | Literal[False]` every time. Traced as far as
+  `Many2many.relation`/`.column1`/`.column2` (`odoo/fields.py`) being
+  unrelated class attributes of the *field descriptor* class itself
+  (e.g. `relation = None  # name of table`) that happen to share these
+  exact names with real `IrModelFields` columns -- the only coincidental
+  overlap found, not a conclusively confirmed root cause, so worth
+  re-checking if it resurfaces elsewhere rather than assumed solved.
+  Fix, since a real row only ever holds a `str` (or the empty-string/
+  `False` "unset" spelling any `Char` field can have) at these five
+  attributes, never a real `bool`: `cast("str", record.<attr>)` at each
+  read, with a `# pyright: ignore[reportUnknownMemberType]` alongside
+  the two (`column1`/`column2`) whose source expression also carries the
+  genuine `Unknown` component the cast alone doesn't silence
+  (`pycodegen.py`'s `_field_spec_from_record`). The same file's own
+  `record.selection_ids` (a `fields.One2many("ir.model.fields
+  .selection", "field_id", ...)`, a plain string comodel with none of
+  OCB's typed-relation syntax) hits the same shape of gap one level up
+  -- pyright cannot resolve the element type from the declaration at
+  all and falls back to `M@_Relational | list[Unknown] | list[Unknown |
+  bool]`, with `.sorted` unresolved on two of the three arms -- fixed
+  the same way, `cast("IrModelSelection", record.selection_ids)` plus
+  the matching ignore.
 
 ## Implemented so far
 
@@ -2098,6 +2148,60 @@ than reasoned about:
   `clean_placement`, `is_builder_method`, `field_type_for(None)`,
   `canonical_source` -- with both runs' JSON-serialized output diffed.
   Identical. Next: `pycodegen.py`.
+
+- **Python (1b: `pycodegen.py`).** 632 lines, the file that renders a
+  `ModelSpec` into the machine-owned block of a generated model file --
+  the second `tools/` file (after `modelspec.py`) that four still-
+  untyped readers (`pyparse.py`, `app_builder_base/models
+  /studio_model_draft.py`, `app_builder_ui/models
+  /studio_graduate_code.py`, `app_builder_model/models
+  /studio_app_builder.py`, `app_builder_approval/models
+  /studio_approval.py`) import from. Built this time as a two-stage
+  workflow -- one agent drafted the typed file, a second, independent
+  agent re-ran every verification step itself from scratch (own pyright/
+  ruff runs, its own `reveal_type` probes against the real merged tree,
+  its own from-scratch behavioral-equivalence script) rather than
+  trusting the draft's self-report -- and both agents' full verification
+  was then redone a third time in the main loop before committing. All
+  three independent passes agree, including on the exact full-tree error
+  count (1168) and file-by-file attribution.
+
+  The first file in this migration where the "one Odoo-aware function"
+  (`spec_from_ir_model`/`_field_spec_from_record`, the module's own
+  docstring's words) needed *specific* Odoo model recordset types, not
+  the generic `api.Environment` `compat.py` used: `IrModel`/
+  `IrModelFields`/`IrModelSelection`, imported `TYPE_CHECKING`-only from
+  `odoo.addons.base.models.ir_model` in the merged tree at
+  `../../.devenv/state/pythonpath` (already configured via
+  `pyrightconfig.json`'s `extraPaths`, nothing new to wire up). This is
+  where both new "Known traps" entries above came from -- the
+  unannotated `.sorted(key=...)` lambda gap and the five `IrModelFields`
+  attributes that read `str | bool` instead of the usual `str |
+  Literal[False]`.
+
+  No new shared types: unlike `modelspec.py`, this file renders Python
+  *source text* (strings), not JSON, so there is no wire shape here
+  comparable to `PlacementJSON`/`FieldTypeJSON`. One new private,
+  unexported helper, `_selection_sort_key`, purely to give `.sorted()` a
+  real, non-lambda, explicitly-typed `key` function (see "Known traps").
+
+  Verification: `pyright`/`ruff check`/`ruff format --diff` clean;
+  full-tree count across both `tools/` directories dropped from
+  `modelspec.py`'s 1561 to 1168 (`pycodegen.py`'s own prior 392-error
+  standalone count accounts for the drop almost exactly), with the
+  remainder entirely `scaffold.py`/`pyparse.py`/`manualfield.py` plus
+  the pre-existing 13-error `tools/__init__.py` backlog item -- nothing
+  new anywhere outside this file. Runtime smoke-tested (no DB) across
+  every odoo-free function; `spec_from_ir_model`/`_field_spec_from_record`
+  cannot be (need real `ir.model`/`ir.model.fields` rows), same as every
+  prior file's Odoo-aware function. Byte-for-byte behavioral-equivalence
+  check against the original file, independently run three times (draft
+  agent, verify agent, main loop), covering `render_model`'s full
+  pipeline across five hand-built specs (every renderable field type
+  plus one unsupported one, an `_inherit` extension, a transient model,
+  an empty model, sql_constraints, methods, a sequence-backed `create`
+  override) plus every other public function -- identical all three
+  times. Next: `pyparse.py`.
 
 ## CI: the OCA container's real layout
 
