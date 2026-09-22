@@ -12,10 +12,33 @@ depend on, rather than a copy per builder that drifts unnoticed because each
 copy works.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING, cast
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+
+from odoo.addons.base.models.ir_model import IrModelData
+
+from ..tools import typed
+from .studio_package import StudioPackage
+
+if TYPE_CHECKING:
+    from odoo.api import Self, ValuesType
+
+    # Aliased: this file defines its own ``IrModel``/``IrModelFields``
+    # classes below (``_inherit``-composed with ``studio.owned.mixin`` at the
+    # registry level, never a real Python base class), so importing the
+    # *core* classes under their own bare names would shadow those local
+    # definitions. Same classes ``pycodegen.py``/``studio_package.py`` already
+    # import for the identical "cast a plain-string-comodel read to its real
+    # class" purpose -- renamed only because this file, uniquely so far, also
+    # declares classes of the same name for a different reason (extend and
+    # mix in, not a type-only import).
+    from odoo.addons.base.models.ir_model import IrModel as CoreIrModel
+    from odoo.addons.base.models.ir_model import IrModelFields as CoreIrModelFields
 
 _logger = logging.getLogger(__name__)
 
@@ -35,7 +58,7 @@ class StudioOwnedMixin(models.AbstractModel):
     )
 
     @api.model
-    def _search_studio_package_id(self, operator, value):
+    def _search_studio_package_id(self, operator: str, value: object) -> api.DomainType:
         """Resolve ownership through ir.model.data, where it actually lives.
 
         Not optional, and not merely an optimisation. A non-stored field with
@@ -50,7 +73,7 @@ class StudioOwnedMixin(models.AbstractModel):
         if operator not in ("=", "!=", "in", "not in"):
             raise UserError(_("Studio Package cannot be searched with '%s'.", operator))
         negate = operator in ("!=", "not in")
-        Package = self.env["studio.package"]
+        Package = typed.model(self.env, StudioPackage)
         if not value:
             # "owned by nobody" is the complement of "owned by anybody", so it
             # is answered against every package rather than against none.
@@ -59,23 +82,29 @@ class StudioOwnedMixin(models.AbstractModel):
         if isinstance(value, str):
             packages = Package.search([("name", "=", value)])
         else:
-            packages = Package.browse(value if isinstance(value, list) else [value])
+            # Every real caller passes either a single id or a list of ids,
+            # the two shapes ``browse()`` itself accepts, once the
+            # string-name branch above has ruled out anything else -- honest
+            # about what a domain leaf's value actually carries, not a new
+            # runtime check.
+            ids = cast("list[int]", value if isinstance(value, list) else [value])
+            packages = Package.browse(ids)
         owned = self._studio_owned_ids(packages.exists())
         return [("id", "not in" if negate else "in", owned)]
 
     @api.model
-    def _studio_owned_ids(self, packages):
+    def _studio_owned_ids(self, packages: StudioPackage) -> list[int]:
         """Ids of this model's records carried by any of ``packages``."""
         if not packages:
             return []
-        entries = self.env["ir.model.data"].search(
+        entries = typed.model(self.env, IrModelData).search(
             [("model", "=", self._name), ("module", "in", packages.mapped("name"))]
         )
-        return entries.mapped("res_id")
+        return cast("list[int]", entries.mapped("res_id"))
 
-    def _compute_studio_package_id(self):
-        Data = self.env["ir.model.data"]
-        Package = self.env["studio.package"]
+    def _compute_studio_package_id(self) -> None:
+        Data = typed.model(self.env, IrModelData)
+        Package = typed.model(self.env, StudioPackage)
         for record in self:
             entry = Data.search(
                 [("model", "=", record._name), ("res_id", "=", record.id)], limit=1
@@ -86,9 +115,9 @@ class StudioOwnedMixin(models.AbstractModel):
                 else Package
             )
 
-    def _inverse_studio_package_id(self):
+    def _inverse_studio_package_id(self) -> None:
         for record in self:
-            package = record.studio_package_id
+            package = cast("StudioPackage", record.studio_package_id)
             if not package:
                 continue
             if not record._studio_assignable():
@@ -113,24 +142,26 @@ class StudioOwnedMixin(models.AbstractModel):
                 )
             package.studio_capture(record)
 
-    def _studio_current_package(self):
+    def _studio_current_package(self) -> StudioPackage:
         """The package that already owns this record, if any."""
         self.ensure_one()
-        entry = self.env["ir.model.data"].search(
+        entry = typed.model(self.env, IrModelData).search(
             [("model", "=", self._name), ("res_id", "=", self.id)], limit=1
         )
         if not entry:
-            return self.env["studio.package"]
-        return self.env["studio.package"].search([("name", "=", entry.module)], limit=1)
+            return typed.model(self.env, StudioPackage)
+        return typed.model(self.env, StudioPackage).search(
+            [("name", "=", entry.module)], limit=1
+        )
 
-    def _studio_assignable(self):
+    def _studio_assignable(self) -> bool:
         """Whether this record may be taken over by a package."""
         self.ensure_one()
         return True
 
-    def action_studio_write(self):
+    def action_studio_write(self) -> bool:
         """Flush the owning package to disk."""
-        for package in self.mapped("studio_package_id"):
+        for package in cast("StudioPackage", self.mapped("studio_package_id")):
             package.action_write_files()
         return True
 
@@ -153,12 +184,12 @@ class StudioCapturedOnCreate(models.AbstractModel):
     _description = "Studio Captured On Create"
 
     @api.model_create_multi
-    def create(self, vals_list):
+    def create(self, vals_list: list[ValuesType]) -> Self:
         records = super().create(vals_list)
         if self.env.context.get("studio_skip_autocapture"):
             return records
         package = (
-            self.env["studio.package"]
+            typed.model(self.env, StudioPackage)
             .browse(self.env.context.get("studio_package_id") or [])
             .exists()
         )
@@ -177,7 +208,7 @@ class IrUiView(models.Model):
     _name = "ir.ui.view"
     _inherit = ["ir.ui.view", "studio.owned.mixin"]
 
-    def _studio_assignable(self):
+    def _studio_assignable(self) -> bool:
         self.ensure_one()
         # Any view can be owned: a studio package legitimately contains both new
         # views and extensions of core ones. What it must never do is rewrite a
@@ -190,21 +221,21 @@ class IrModel(models.Model):
     _name = "ir.model"
     _inherit = ["ir.model", "studio.owned.mixin"]
 
-    def _studio_assignable(self):
+    def _studio_assignable(self) -> bool:
         self.ensure_one()
-        return self.state == "manual"
+        return cast("CoreIrModel", self).state == "manual"
 
 
 class IrModelFields(models.Model):
     _name = "ir.model.fields"
     _inherit = ["ir.model.fields", "studio.owned.mixin"]
 
-    def _studio_assignable(self):
+    def _studio_assignable(self) -> bool:
         self.ensure_one()
-        return self.state == "manual"
+        return cast("CoreIrModelFields", self).state == "manual"
 
     @api.model_create_multi
-    def create(self, vals_list):
+    def create(self, vals_list: list[ValuesType]) -> Self:
         """Keep a new field in the same package as the model it extends.
 
         Without this, adding a field through the studio would create it in the
@@ -222,14 +253,16 @@ class IrModelFields(models.Model):
         if self.env.context.get("studio_skip_autocapture"):
             return records
         fallback = (
-            self.env["studio.package"]
+            typed.model(self.env, StudioPackage)
             .browse(self.env.context.get("studio_package_id") or [])
             .exists()
         )
         for record in records:
-            if record.state != "manual":
+            core_record = cast("CoreIrModelFields", record)
+            if core_record.state != "manual":
                 continue
-            package = record.model_id.studio_package_id or fallback
+            model = cast("StudioOwnedMixin", core_record.model_id)  # pyright: ignore[reportUnknownMemberType]
+            package = cast("StudioPackage", model.studio_package_id) or fallback
             if package:
                 package.studio_capture(record)
             else:
@@ -240,7 +273,7 @@ class IrModelFields(models.Model):
                 _logger.warning(
                     "Manual field %s.%s was created outside any studio package "
                     "and will not be written to source.",
-                    record.model,
-                    record.name,
+                    core_record.model,
+                    core_record.name,
                 )
         return records

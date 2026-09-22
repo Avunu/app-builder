@@ -2913,6 +2913,35 @@ than reasoned about:
   `TYPE_CHECKING`-only forward imports -- plus `studio_owned_mixin.py`
   and `studio_record_surface.py`).
 
+- **`studio_package_model.py`, `studio_package_apply.py`,
+  `studio_owned_mixin.py`** (three mutually-independent files, wave 2's
+  own first batch, converted as one pipeline). The two circular
+  references `studio_package.py` opened are now closed from both sides:
+  `package_id`/`studio_package_id` (the `Many2one` back to
+  `studio.package` each of these three files declares) stay unannotated
+  at the declaration per the established relational-field rule, with
+  `cast("StudioPackage", ...)` at every real read site. `studio_package
+  _apply.py` already had one real (non-`TYPE_CHECKING`) import from
+  `studio_package.py` (`_mute_dev_watcher`) -- added `StudioPackage` to
+  that same real import rather than a second, `TYPE_CHECKING`-only one,
+  since `studio_package.py` itself never imports this file back for
+  real, so there is no cycle to create. Verified with the strongest
+  circular-import test this migration has run: not just this file set,
+  but every dependent addon (`app_builder_view`, `app_builder_ui`,
+  `app_builder_model`, `app_builder_report`, `app_builder_approval`,
+  `app_builder_mail`, `app_builder_approval_formula`) imported cleanly
+  against the real merged tree after applying all three.
+
+  One real, pre-existing, latent bug found and left unfixed (flag, don't
+  fix): `studio_owned_mixin.py`'s own `_search_studio_package_id` only
+  special-cases a `list` value for its `in`/`not in` branch -- a caller
+  passing a *tuple* (`[("studio_package_id", "in", (3, 4))]`, a domain
+  shape some ORM callers use interchangeably with a list) would silently
+  wrap it as a single malformed id rather than iterating it. No real
+  caller in this codebase currently searches this field that way
+  (confirmed by grep), so this is latent, not active -- left exactly as
+  written.
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was

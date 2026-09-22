@@ -22,13 +22,27 @@ Three sources, and the difference between them decides what gets written:
     where the builder shows the model read-only.
 """
 
+from __future__ import annotations
+
 import logging
 import os
+from typing import TYPE_CHECKING, Literal, NoReturn, cast
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 from ..tools import pycodegen, pyparse
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes. Not a real,
+    # top-level import: this file has no real (runtime) use of `StudioPackage`
+    # anywhere in its own body, unlike `studio_package_apply.py`'s real
+    # `_mute_dev_watcher` import from the same module -- see TYPING.md's own
+    # dependency-map note on `studio_package.py`'s two circular children.
+    from ..tools.modelspec import ModelSpec
+    from .studio_package import StudioPackage
 
 _logger = logging.getLogger(__name__)
 
@@ -52,7 +66,7 @@ class StudioPackageModel(models.Model):
         "declaring one. It renders as _inherit with no _name.",
     )
     source = fields.Selection(
-        [
+        [  # pyright: ignore[reportArgumentType] -- see `state`'s own comment above, in studio_package.py.
             ("python", "Python class"),
             ("xml", "Data records"),
             ("frozen", "Code-owned (unparseable)"),
@@ -75,13 +89,18 @@ class StudioPackageModel(models.Model):
     ]
 
     @api.depends("model")
-    def _compute_python_path(self):
+    def _compute_python_path(self) -> None:
         for record in self:
-            record.python_path = "models/%s" % pycodegen.module_file_for(record.model)
+            # `model` is a required Char -- the same "declared str | False,
+            # never actually False" cast as every other required-field read
+            # in this migration (studio_package.py's own `entry.model`).
+            record.python_path = "models/%s" % pycodegen.module_file_for(
+                cast("str", record.model)
+            )
 
     # -- the spec ---------------------------------------------------------
 
-    def _current_spec(self):
+    def _current_spec(self) -> ModelSpec | None:
         """The authoritative spec: parsed from disk, never from ``ir.model``.
 
         Returns ``None`` when there is nothing to render -- either the file is
@@ -90,7 +109,13 @@ class StudioPackageModel(models.Model):
         self.ensure_one()
         if self.source != "python":
             return None
-        source = self.package_id._read_source(self.python_path)
+        # `package_id` is the circular relational field (TYPING.md's own
+        # dependency map): no LHS annotation on the field declaration, cast
+        # at this real read site instead. `python_path` is compute-only
+        # (`_compute_python_path` above) and always derived from `model`, so
+        # it is never actually empty for a real row -- same cast as there.
+        package = cast("StudioPackage", self.package_id)
+        source = package._read_source(cast("str", self.python_path))
         if source is None:
             return None
         try:
@@ -102,13 +127,13 @@ class StudioPackageModel(models.Model):
             self.write({"source": "frozen", "parse_error": str(err)})
             _logger.info(
                 "Package %s: %s is now code-owned (%s)",
-                self.package_id.name,
+                package.name,
                 self.model,
                 err,
             )
             return None
 
-    def action_compose(self):
+    def action_compose(self) -> NoReturn:
         """Open the builder on this model.
 
         The builder is the console, and ``app_builder_view`` ships it, so the
@@ -125,10 +150,12 @@ class StudioPackageModel(models.Model):
             )
         )
 
-    def action_retry_parse(self):
+    def action_retry_parse(self) -> bool:
         """Give a frozen model another chance after the file was fixed."""
         for record in self.filtered(lambda r: r.source == "frozen"):
-            source = record.package_id._read_source(record.python_path)
+            # Same `package_id`/`python_path` cast as `_current_spec` above.
+            package = cast("StudioPackage", record.package_id)
+            source = package._read_source(cast("str", record.python_path))
             if source is None:
                 continue
             try:
@@ -142,7 +169,7 @@ class StudioPackageModel(models.Model):
     # -- lookups ----------------------------------------------------------
 
     @api.model
-    def _is_python_owned(self, model_name):
+    def _is_python_owned(self, model_name: str | Literal[False]) -> bool:
         """Whether any package *declares* ``model_name`` as a Python class.
 
         Used by the serializers: a row still marked ``state='manual'`` for such
@@ -169,27 +196,41 @@ class StudioPackageModel(models.Model):
         )
 
     @api.model
-    def _adopt(self, package, model_name, source="python", extends=False):
+    def _adopt(
+        self,
+        package: StudioPackage,
+        model_name: str,
+        source: str = "python",
+        extends: bool = False,
+    ) -> StudioPackageModel:
         """Record ownership, or return the existing row."""
         existing = self.search(
             [("package_id", "=", package.id), ("model", "=", model_name)], limit=1
         )
         if existing:
             return existing
-        return self.create(
-            {
-                "package_id": package.id,
-                "model": model_name,
-                "source": source,
-                "extends": extends,
-            }
-        )
+        vals = {
+            "package_id": package.id,
+            "model": model_name,
+            "source": source,
+            "extends": extends,
+        }
+        # `create()`'s own declared signature (`odoo/models.py`) takes only
+        # `list[ValuesType]` -- `@api.model_create_multi` (`odoo/api.py`) is
+        # a bare passthrough decorator that does not widen it to also cover
+        # the single-dict form it genuinely accepts at runtime. Same shape
+        # of decorator-stub gap already documented in TYPING.md's Known
+        # traps and already applied this way in studio_package.py.
+        return self.create(vals)  # pyright: ignore[reportArgumentType]
 
-    def unlink(self):
+    def unlink(self) -> Literal[True]:
         for record in self:
-            if record.source == "python" and record.package_id.writable:
+            # Same `package_id` cast as `_current_spec`/`action_retry_parse`
+            # above.
+            package = cast("StudioPackage", record.package_id)
+            if record.source == "python" and package.writable:
                 full = os.path.join(
-                    record.package_id.root_path or "", record.python_path
+                    package.root_path or "", cast("str", record.python_path)
                 )
                 if os.path.isfile(full):
                     raise UserError(

@@ -14,16 +14,26 @@ that matters when the process dies mid-reload and nothing can run a rollback --
 recovery is then ``git checkout`` or copying the backup back, from a shell.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import shutil
 import uuid
 from datetime import timedelta
+from typing import TYPE_CHECKING, Any, cast
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
-from .studio_package import _mute_dev_watcher
+from ..tools import typed
+from .studio_package import StudioPackage, _mute_dev_watcher
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs this at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from odoo.sql_db import Cursor
 
 _logger = logging.getLogger(__name__)
 
@@ -43,12 +53,19 @@ class StudioPackageApply(models.Model):
     _description = "Studio Package Apply"
     _order = "create_date desc, id desc"
 
+    # No typed-relation declaration here -- traced and confirmed not to
+    # work under this real OCB/pyright combination (TYPING.md's own "Known
+    # traps"); every real read below goes through `cast("StudioPackage",
+    # self.package_id)` instead.
     package_id = fields.Many2one(
         "studio.package", required=True, ondelete="cascade", index=True
     )
     reason = fields.Char()
     state = fields.Selection(
-        [
+        [  # pyright: ignore[reportArgumentType] -- `Selection.__init__`'s own
+            # `selection` parameter carries no annotation of its own, only a
+            # `SENTINEL` default; a real, traced vendor-stub gap, not fixable
+            # from this side (TYPING.md's own "Known traps").
             ("pending", "Pending"),
             ("applied", "Applied"),
             # Written to disk and committed, not reloaded: the server runs
@@ -65,17 +82,28 @@ class StudioPackageApply(models.Model):
     error = fields.Text(readonly=True)
     backup_path = fields.Char(readonly=True)
     boot_id = fields.Char(readonly=True, help="The process that started the apply.")
+    # Same "no typed-relation declaration" rule as `package_id` above.
     file_ids = fields.One2many("studio.package.apply.file", "apply_id")
 
     # -- snapshot ---------------------------------------------------------
 
     @api.model
-    def _snapshot(self, package, files, reason="", stamp=None):
+    def _snapshot(
+        self,
+        package: StudioPackage,
+        files: dict[str, str],
+        reason: str = "",
+        stamp: str | None = None,
+    ) -> StudioPackageApply:
         """Record the bytes currently on disk for everything we are about to
         write, before writing any of it."""
         backup = os.path.join(package.root_path or "", BACKUP_DIR, stamp or "latest")
         record = self.create(
-            {
+            {  # pyright: ignore[reportArgumentType] -- `@api.model_create_multi`
+                # (`odoo/api.py`) is a bare passthrough decorator that does not
+                # widen `create()`'s own declared `list[ValuesType]`-only
+                # signature to also cover the single-dict form it genuinely
+                # accepts at runtime (TYPING.md's own "Known traps").
                 "package_id": package.id,
                 "reason": reason,
                 "state": "pending",
@@ -83,7 +111,7 @@ class StudioPackageApply(models.Model):
                 "boot_id": PROCESS_BOOT_ID,
             }
         )
-        rows = []
+        rows: list[dict[str, Any]] = []
         for relative in sorted(files):
             before = package._read_source(relative)
             rows.append(
@@ -100,10 +128,15 @@ class StudioPackageApply(models.Model):
                 with open(target, "w", encoding="utf-8") as handle:
                     handle.write(before)
         if rows:
-            self.env["studio.package.apply.file"].create(rows)
+            # `StudioPackageApplyFile` is defined later in this same module,
+            # but by the time `_snapshot` actually runs the class already
+            # exists in the module's own namespace -- a real, runtime-bound
+            # `cls` for `typed.model()`, not a `TYPE_CHECKING`-only forward
+            # reference (TYPING.md's own file-specific notes for this file).
+            typed.model(self.env, StudioPackageApplyFile).create(rows)
         return record
 
-    def _restore(self):
+    def _restore(self) -> bool:
         """Put the previous bytes back. Best effort, and loud about failures.
 
         Runs when the registry rebuild raised, i.e. at the point where the new
@@ -111,12 +144,12 @@ class StudioPackageApply(models.Model):
         rather than left as a half-written module.
         """
         self.ensure_one()
-        root = self.package_id.root_path or ""
+        root = cast("StudioPackage", self.package_id).root_path or ""
         # Old bytes going back onto disk are .py files too; the dev watcher
         # must not restart on them any more than on the write being undone.
         _mute_dev_watcher(root)
-        for entry in self.file_ids:
-            full = os.path.join(root, entry.path)
+        for entry in cast("StudioPackageApplyFile", self.file_ids):
+            full = os.path.join(root, cast("str", entry.path))
             try:
                 if entry.existed:
                     os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -128,7 +161,7 @@ class StudioPackageApply(models.Model):
                 _logger.error("Could not restore %s: %s", full, err)
         return True
 
-    def action_rollback(self):
+    def action_rollback(self) -> dict[str, bool]:
         """Undo an apply from the UI, then reload back to what was there.
 
         An apply that was written but never loaded (``awaiting_restart``,
@@ -138,20 +171,32 @@ class StudioPackageApply(models.Model):
         count, so nothing is reloaded here and the answer says so.
         """
         self.ensure_one()
-        self.package_id._assert_studio_manager()
-        self.package_id._assert_writable()
+        # `package_id` read once and reused -- side-effect-free (a Many2one
+        # field read), the same "read once into a local, reuse it" idiom
+        # `studio_package.py`'s own `_refresh_disk_checksum`/`_write_files`
+        # already use for a field read repeated within one method.
+        package = cast("StudioPackage", self.package_id)
+        # `_assert_studio_manager` lives on `studio.security.mixin`
+        # (`_inherit`, not a Python base class -- Odoo's registry merges it
+        # in at runtime, invisibly to pyright); `typed.security()` is the
+        # shared fix (TYPING.md's own "Known traps").
+        typed.security(package)._assert_studio_manager()
+        package._assert_writable()
         if not self.file_ids:
             raise UserError(_("There is nothing recorded to put back."))
         self._restore()
-        self.env.cr.commit()  # the reload below rebuilds from disk
-        restart_required = self.package_id.reload_mode == "manual"
+        # `Environment.cr` is declared `BaseCursor`, which has no `.commit()`
+        # of its own -- only the real `Cursor` subclass every live request
+        # actually gets (TYPING.md's own "Known traps").
+        cast("Cursor", self.env.cr).commit()  # the reload below rebuilds from disk
+        restart_required = package.reload_mode == "manual"
         if not restart_required:
-            self.package_id._reload_now()
+            package._reload_now()
         self.write({"state": "rolled_back"})
-        self.package_id.action_check_drift()
+        package.action_check_drift()
         return {"rolled_back": True, "restart_required": restart_required}
 
-    def action_discard_backup(self):
+    def action_discard_backup(self) -> bool:
         for record in self:
             if record.backup_path and os.path.isdir(record.backup_path):
                 shutil.rmtree(record.backup_path, ignore_errors=True)
@@ -161,7 +206,7 @@ class StudioPackageApply(models.Model):
     # -- crash recovery ---------------------------------------------------
 
     @api.model
-    def _reap_abandoned(self, packages):
+    def _reap_abandoned(self, packages: StudioPackage) -> StudioPackageApply:
         """Mark applies that were pending when the process died.
 
         Step 7 of the apply sequence cannot run if the process is gone -- a
@@ -214,7 +259,7 @@ class StudioPackageApplyFile(models.Model):
     content_before = fields.Text()
     existed = fields.Boolean(default=False)
 
-    def action_view_before(self):
+    def action_view_before(self) -> bool:
         self.ensure_one()
         if not self.existed:
             raise UserError(_("%s did not exist before this change.", self.path))
