@@ -273,7 +273,9 @@ class StudioViewEdit(models.Model):
         typed.security(self)._assert_studio_manager()
         self.ensure_one()
         editor = cast("StudioViewEditor", self.env["studio.view.editor"])
-        editor._assert_arch_version(self.base_view_id, expected_arch_version)
+        editor._assert_arch_version(
+            cast("View", self.base_view_id), expected_arch_version
+        )
         latest = self.sudo().search(
             [
                 ("base_view_id", "=", cast("View", self.base_view_id).id),
@@ -293,7 +295,7 @@ class StudioViewEdit(models.Model):
         package = cast("StudioPackage", self.package_id)
         view = cast("View", self.view_id) or cast(
             "StudioViewEditor", self.env["studio.view.editor"]
-        )._find_extension(self.base_view_id, package)
+        )._find_extension(cast("View", self.base_view_id), package)
         self.undone = True
         if not view:
             # Somebody removed the written view by other means. There is
@@ -328,7 +330,7 @@ class StudioViewEdit(models.Model):
         typed.security(self)._assert_studio_manager()
         self.ensure_one()
         editor = cast("StudioViewEditor", self.env["studio.view.editor"])
-        base_view = self.base_view_id
+        base_view = cast("View", self.base_view_id)
         editor._assert_arch_version(base_view, expected_arch_version)
         if self._redoable() != self:
             raise UserError(

@@ -3169,12 +3169,115 @@ than reasoned about:
   sites routed through `typed.security(self)`, every new TypedDict
   spot-checked against its real literal-dict call sites.
 
-  This closes Phase 1c wave 3 in full. Next: wave 4 and beyond, working
-  outward through the remaining surface-mixin hierarchy and the
-  view/report/approval leaves per the dependency map above -- not yet
-  enumerated file-by-file here; the addons' own `models/` directories
-  and this document's running "Implemented so far" list are the
-  authoritative record of what remains.
+  This closes Phase 1c wave 3 in full.
+
+- **Wave 4**: `studio_view_editor.py` alone (`app_builder_view`, 2960 ->
+  3888 lines, ~90 methods) -- by a wide margin the largest and most
+  RPC-heavy file in the whole suite (74+ `@api.model` methods, the de
+  facto RPC surface for the entire console), given the same dedicated
+  draft-then-independently-verify treatment as `studio_package.py`/
+  `studio_record_surface.py`/`studio_model_draft.py` before it, except
+  the verify stage itself was split three ways (one agent per
+  roughly-1000-line range of the ORIGINAL file, each doing a full
+  method-by-method behavioral read against `git show HEAD:...` for its
+  own range) rather than one agent attempting the whole 2960-line diff
+  -- the file was simply too large for a single careful read to stay
+  reliable, the same reasoning that splits a review into dimensions
+  rather than one pass. All three ranges PASSED with zero real defects.
+  Full-tree `pyright` dropped from 2741 to 2626 (115 errors, after the
+  two main-loop fixes below).
+
+  ~25 new module-level `TypedDict`s for the RPC surface, cross-checked
+  against `wire.ts`/`types.ts` per the now-established practice -- three
+  real, minor Python/TS discrepancies found and typed honestly to match
+  the traced Python reality rather than silently following `wire.ts`
+  (same judgment call `studio_record_surface.py` made first): `wire.ts`
+  has `OperationResult.created_name` optional+nullable where the real
+  Python body always sends it; `wire.ts`'s search-field entry never
+  allows a null `name` where the real body's `node.get("name")`
+  genuinely can be `None`; `wire.ts`'s `EditingContext.packages` is
+  `unknown` where the real body always sends a precise
+  `{id, name, writable}[]`. Worth tightening `wire.ts` to match, next
+  time that file is touched -- not done here, out of a Python-only
+  task's scope.
+
+  **Two genuinely reverse-direction `_inherit` gaps**, a new shape this
+  migration had not hit before: this file is the *base* three sibling
+  files extend (`studio_report_ops.py`, `studio_view_canvas.py`,
+  `studio_view_new_field.py`, none converted yet -- the wave 5 follow-
+  up), but its own methods already call INTO methods those siblings
+  declare (`canvas`, `_canvas_draft`, `_splice_pending`,
+  `_drop_field_definition`, `_mint_anchor`, `_python_owner` -- and,
+  reaching into a different sibling model entirely,
+  `studio.model.draft`'s own not-yet-converted `app_builder_view`
+  extension's `set_anchor`). Fixed with two local, narrow `Protocol`s
+  (`_ComposedViewEditor`, `_DraftHandle`) declaring only the methods
+  this file's own body actually calls -- the same "narrow, real-call-
+  site-driven contract" spirit as `lxml_types.py`'s own `LxmlElement`,
+  just scoped to one file since the real target classes do not exist
+  yet. Once wave 5 converts those three sibling files, whoever does it
+  should check whether these two local Protocols can be replaced by
+  real casts to the (by-then-real) sibling classes, or whether they are
+  worth keeping as the documented contract those files must satisfy --
+  a decision for that pass, not pre-empted here.
+
+  **Two real `lxml_types.py` gaps** the draft agent found and correctly
+  declined to fix out-of-scope (flagged instead, with local Protocol
+  workarounds, `_RootTreeElement`/`_SiblingElement`) -- `getroottree()`
+  (`_locator_for`'s positional-path fallback) and `getprevious()`
+  (`_own_label`'s walk back through unnamed siblings). Fixed for real in
+  the main loop immediately after the workflow returned, the same way
+  `ir_ui_view.py`'s own conversion once extended `.iter()`: added both
+  to the shared `LxmlElement` Protocol (`getprevious`) plus a new
+  `ElementTree` Protocol for `getroottree()`'s own return (the narrow
+  slice `_locator_for` needs, just `.getpath()`), then simplified
+  `studio_view_editor.py` to use them directly, deleting its own three
+  local workaround classes (`_RootTree`/`_RootTreeElement`/
+  `_SiblingElement` -- `_ComposedViewEditor`/`_DraftHandle` stay, since
+  those two are the reverse-`_inherit` case above, not an
+  `lxml_types.py` gap).
+
+  **One real regression surfaced, not introduced, and fixed in the main
+  loop**: typing `_assert_arch_version`/`_find_extension`/
+  `_get_or_create_extension`'s own `view`/`base_view` parameters as the
+  real `View` class (this file's own conversion) exposed a latent gap
+  in `studio_view_edit.py`'s EARLIER conversion (wave 2): 5 call sites
+  there pass `self.base_view_id` (a plain-string-comodel Many2one read,
+  TYPING.md's own relational-field trap) straight through, uncast --
+  which was silently accepted when the callee's own parameter was
+  untyped, and became 5 real `reportArgumentType` errors the moment the
+  callee gained a real declared type. Not a new bug introduced by this
+  conversion; a pre-existing gap in `studio_view_edit.py`'s own earlier,
+  narrower cast coverage that this file's own conversion made visible
+  (the exact situation `typed.py`'s own docstring warns every
+  `_inherit`/cross-file gap eventually surfaces once enough of the
+  graph is typed). Fixed directly in the main loop with `cast("View",
+  ...)` at each of the 5 sites, matching that file's own already-
+  established idiom at its other call sites -- a one-line, zero-
+  behavior-change fix, not deferred, since leaving a previously-clean
+  file at 5 errors would have broken this migration's own standing
+  invariant ("every file already converted stays at zero").
+
+  This closes Phase 1c wave 4 in full. Next: wave 5 -- the three
+  `_inherit`-only extensions of `studio.view.editor` just discussed
+  above (`studio_report_ops.py`, `studio_view_canvas.py`,
+  `studio_view_new_field.py`, all `app_builder_view`), plus the
+  remaining files the dependency map has not yet reached:
+  `studio_workspace.py` (real base in `app_builder_base`, pure
+  extensions in `app_builder_approval`/`app_builder_ui`),
+  `studio_app_builder.py` (`app_builder_model`), `studio_report_preview
+  .py` (`app_builder_report`), `studio_approval_surface.py`
+  (`app_builder_approval` -- another same-`_name`-as-`studio_approval.py`
+  collision, same fix shape as `studio_report_surface.py`),
+  `studio_automation_surface.py` (`app_builder_ui` -- same collision
+  shape against `studio_automation.py`, plus a second, uncomplicated new
+  model `studio.automation.step`), and `app_builder_view/models
+  /studio_model_draft.py` (a pure `_inherit` extension of the
+  already-converted `app_builder_base` file of the same name -- yet
+  another instance of the same collision shape). Not yet enumerated
+  further than this; the addons' own `models/` directories and this
+  document's running "Implemented so far" list are the authoritative
+  record of what remains.
 
 ## CI: the OCA container's real layout
 

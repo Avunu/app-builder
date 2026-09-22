@@ -46,6 +46,16 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, MutableMapping
 
 
+class ElementTree(Protocol):
+    """lxml's own ``_ElementTree`` -- only the one method
+    ``LxmlElement.getroottree()`` below is for: minting an absolute,
+    root-anchored path to a node that no attribute identifies uniquely
+    (``studio_view_editor.py:_locator_for``'s own positional fallback, the
+    same call core's own ``distribute_branding`` uses)."""
+
+    def getpath(self, element: LxmlElement) -> str: ...
+
+
 class LxmlElement(Protocol):
     """The slice of lxml's ``_Element`` these ``tools/`` modules touch."""
 
@@ -75,5 +85,10 @@ class LxmlElement(Protocol):
     #: than the fuller variadic signature nothing yet needs.
     def iter(self, tag: str | None = None) -> Iterator[LxmlElement]: ...
     def iterancestors(self) -> Iterator[LxmlElement]: ...
+    #: `studio_view_editor.py`'s own `_locator_for`, positional fallback.
+    def getroottree(self) -> ElementTree: ...
+    #: `studio_view_editor.py`'s own `_own_label`, walking back through
+    #: unnamed siblings (a comment, a processing instruction).
+    def getprevious(self) -> LxmlElement | None: ...
     def __len__(self) -> int: ...
     def __iter__(self) -> Iterator[LxmlElement]: ...

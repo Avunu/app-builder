@@ -14,27 +14,61 @@ against your own primary view would produce source no developer would write --
 a generated form plus a pile of xpaths against it in the same addon.
 """
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import secrets
 from collections import Counter
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias, TypedDict, cast
 
-from lxml import etree
+# lxml ships no type stubs in this environment, the same gap `xml_writer.py`/
+# `placement.py`/`studio_serializer.py`/`studio_model_draft.py` already
+# document -- `reportMissingTypeStubs` only escalates to `error` under
+# `tools/`'s own `executionEnvironments` override (`pyrightconfig.json`), not
+# at this (model) level, so the one real hit here (`etree` itself, an
+# unresolvable import symbol with no stub) is the only one that needs
+# silencing.
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+from typing_extensions import NotRequired
 
 from odoo import _, api, models
 from odoo.exceptions import UserError, ValidationError
 from odoo.tools.template_inheritance import apply_inheritance_specs
 
+from odoo.addons.base.models.ir_actions import IrActionsActWindow, IrActionsServer
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.base.models.res_users import Groups
+from odoo.addons.app_builder_base.models.studio_domain import StudioDomain
+from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.models.studio_package_model import StudioPackageModel
 from odoo.addons.app_builder_base.tools import (
     catalogue,
     modelspec,
     pycodegen,
     scaffold,
+    typed,
     xml_writer,
 )
 
 from ..exceptions import STALE_VIEW_MESSAGE, StudioConfirmRequired, StudioStaleView
 from ..tools import canvas_stamp, view_options
+from .studio_view_edit import StudioViewEdit
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from collections.abc import Callable
+
+    from odoo.fields import Field
+    from odoo.models import BaseModel
+
+    from odoo.addons.app_builder_base.models.studio_domain import DomainRowJSON
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
+    from odoo.addons.web.models.ir_ui_view import View as WebView
 
 _logger = logging.getLogger(__name__)
 
@@ -71,6 +105,445 @@ IDENTIFYING_ATTRS = ("name", "for", "t-field", "t-name")
 RECORD_COUNT_CAP = 1000
 
 
+# -- wire types ---------------------------------------------------------
+#
+# Cross-checked against `app_builder_view/static/src/console/wire.ts` and
+# `.../console/types.ts` (read-only references, hand-kept in sync with
+# these until TYPING.md's Phase 2d generator exists) -- named to match
+# their TS cousins where one exists. Discrepancies found against the TS
+# side are noted per type, typed honestly to the real Python body rather
+# than silently following the TS declaration (the same judgment call
+# `studio_record_surface.py`'s own conversion already made once).
+
+
+class OperationResultJSON(TypedDict):
+    """``apply_operation()``'s own return (``wire.ts:OperationResult``),
+    reused verbatim by every mutator that funnels through it (``apply_at``,
+    ``remove_at``, ``show_label_at``, ``add_container_at``, ``move_node``,
+    ``add_search_element``, ``remove_search_element``)."""
+
+    view_id: int
+    arch: str
+    combined_arch: str
+    arch_version: str
+    #: `wire.ts` declares this `created_name?: string | null` (optional
+    #: *and* nullable); the real ``operation.get("_created_name")`` always
+    #: sends the key, `None` when the handler named nothing -- so `str |
+    #: None`, never absent, is the honest shape.
+    created_name: str | None
+
+
+class NodeExpectationJSON(TypedDict):
+    """What a locator minted for a node should still find where it is
+    applied (``_expectation_for``), checked by ``_matches_expectation``.
+
+    Server-internal: travels inside an ``operation`` dict's own
+    ``_expect``/``_expect_target``/``_expect_label`` keys (``EXPECTATION_
+    KEYS``), never sent as a JSON value of its own, so it has no `wire.ts`
+    cousin.
+    """
+
+    tag: str
+    name: str | None
+    string: str | None
+    children: tuple[tuple[str, str | None], ...]
+
+
+class EditingContextFieldEntryJSON(TypedDict):
+    """One field entry for options that name one (``_model_fields``,
+    ``editing_context``'s own ``fields``; ``wire.ts:
+    EditingContextFieldEntry``)."""
+
+    name: str
+    string: str
+    type: str
+
+
+class FieldInfoJSON(TypedDict):
+    """What the sidebar needs to offer the right options for one node
+    (``_field_info``, consumed by ``locate_target``/``describe_node`` --
+    the latter in ``studio_view_canvas.py``, not yet converted)."""
+
+    name: str
+    type: str
+    string: str
+    store: bool
+    required: bool
+    readonly: bool
+    #: Only set when the field is relational and its comodel is a real,
+    #: installed model (``_field_info``'s own ``if comodel and comodel in
+    #: self.env:``).
+    comodel_fields: NotRequired[list[EditingContextFieldEntryJSON]]
+
+
+class _LocateTargetNotFoundJSON(TypedDict):
+    found: Literal[False]
+    reason: str
+
+
+class _LocateTargetFoundJSON(TypedDict):
+    found: Literal[True]
+    xpath: str
+    tag: str
+    attrs: dict[str, str]
+    field: FieldInfoJSON | None
+
+
+#: ``locate_target()``'s own answer shape -- no `wire.ts` cousin of its
+#: own (the closest, `types.ts:DescribeNodeAnswer`, is `describe_node`'s,
+#: a different method with a different shape: `definition` where this has
+#: `xpath`).
+LocateTargetJSON: TypeAlias = _LocateTargetNotFoundJSON | _LocateTargetFoundJSON
+
+
+class PlaceableFieldEntryJSON(TypedDict):
+    """A field the picker offers for a date or a group-by when creating
+    another kind of view (``_placeable_fields``; ``wire.ts:
+    PlaceableFieldEntry``)."""
+
+    name: str
+    string: str
+
+
+class _ViewPrerequisiteExtraJSON(TypedDict, total=False):
+    """``_view_prerequisites``'s own second return value: whichever of
+    ``AddableViewTypeEntryJSON``'s two field-picker keys this view type
+    needs the caller to choose from, merged into the entry with
+    ``dict.update()`` -- a real (``total=False``) subset of that TypedDict
+    rather than a plain ``dict[str, list[...]]``, which `TypedDict.update()`
+    does not structurally accept."""
+
+    date_fields: list[PlaceableFieldEntryJSON]
+    group_fields: list[PlaceableFieldEntryJSON]
+
+
+class AddableViewTypeEntryJSON(TypedDict):
+    """One kind of view ``addable_view_types`` offers, and why not when it
+    does not (``wire.ts:AddableViewTypeEntry``)."""
+
+    type: str
+    label: str
+    icon: str
+    enabled: bool
+    reason: str
+    date_fields: list[PlaceableFieldEntryJSON]
+    group_fields: list[PlaceableFieldEntryJSON]
+
+
+class AddableFieldEntryJSON(TypedDict):
+    """One field ``get_addable_fields`` offers: not already in the arch,
+    with enough to show and place it (``wire.ts:AddableFieldEntry``)."""
+
+    name: str
+    string: str
+    type: str
+    required: bool
+    readonly: bool
+    manual: bool
+
+
+class SearchFilterEntryJSON(TypedDict):
+    """One row of ``search_elements()``'s ``filters``/``group_bys``
+    (``wire.ts:SearchFilterEntry``)."""
+
+    name: str
+    string: str
+    domain: str
+
+
+class _SearchFieldEntryJSON(TypedDict):
+    #: `wire.ts:SearchElements.fields` declares `name: string` (never
+    #: absent or null); the real body appends ``node.get("name")``
+    #: straight from the arch with no fallback, and an lxml `.get()`
+    #: returns `None` for an attribute that is not there -- a search
+    #: `<field>` with no `name` is unlikely but not refused anywhere
+    #: upstream, so this is typed to the real, wider possibility rather
+    #: than the narrower one `wire.ts` assumes.
+    name: str | None
+    string: str
+
+
+class SearchElementsJSON(TypedDict):
+    """``search_elements()``'s whole return: what a search view offers, in
+    the three groups the sidebar shows (``wire.ts:SearchElements``)."""
+
+    fields: list[_SearchFieldEntryJSON]
+    filters: list[SearchFilterEntryJSON]
+    group_bys: list[SearchFilterEntryJSON]
+    addable: list[AddableFieldEntryJSON]
+
+
+class SelectableGroupEntryJSON(TypedDict):
+    """One group a ``groups=""`` attribute can name (``_selectable_groups``;
+    ``wire.ts:SelectableGroupEntry``)."""
+
+    id: int
+    xmlid: str
+    name: str
+
+
+class AddViewJSON(TypedDict):
+    """``add_view()``'s own return: the new view, created and made
+    reachable."""
+
+    view_id: int
+    type: str
+
+
+class ViewOfEntryJSON(TypedDict):
+    """One view of a model, as ``_views_of`` picks it (``wire.ts:
+    ViewOfEntry``)."""
+
+    type: str
+    view_id: int
+    name: str
+    owned: bool
+
+
+class PreviewInfoJSON(TypedDict):
+    """``_preview_for()``'s whole return (``wire.ts:PreviewInfo``)."""
+
+    type: str
+    view_id: int | Literal[False]
+    search_view_id: int | Literal[False]
+    unavailable: NotRequired[bool]
+
+
+class EditingContextViewJSON(TypedDict):
+    """``editing_context()``'s own ``view`` key."""
+
+    id: int
+    name: str
+    type: str
+    model: str | Literal[False]
+    mode: str
+
+
+class EditingContextPackageEntryJSON(TypedDict):
+    """One entry of ``editing_context()``'s own ``packages`` list.
+
+    `wire.ts:EditingContext.packages` is declared `unknown` -- nothing
+    converted so far read it when that interface was written -- but the
+    real body always sends this exact shape (``{"id": p.id, "name": p.name,
+    "writable": p.writable} for p in packages``), so it is typed to what
+    the Python actually, always sends rather than left to match the wider
+    TS declaration.
+    """
+
+    id: int
+    name: str
+    writable: bool
+
+
+class EditingContextJSON(TypedDict):
+    """``editing_context()``'s whole return -- everything the editor needs
+    to open on a view (``wire.ts:EditingContext``).
+
+    ``options``/``catalogue``/``groups`` are given the real return types of
+    the calls that build them (``view_options.groups_json``,
+    ``catalogue.catalogue_json``, ``_selectable_groups``) rather than left
+    `unknown` the way `wire.ts` leaves the first two -- narrower than the
+    wire type, not looser, so still an honest supertype of it.
+    """
+
+    view: EditingContextViewJSON
+    views: list[ViewOfEntryJSON]
+    python_owned: bool
+    python_owner_id: int | Literal[False]
+    field_types: list[modelspec.FieldTypeJSON]
+    draft_id: int | Literal[False]
+    reload_mode: str | Literal[False]
+    record_count: int
+    fields: list[EditingContextFieldEntryJSON]
+    preview: PreviewInfoJSON
+    options: list[catalogue.OptionGroupJSON]
+    catalogue: catalogue.CatalogueJSON
+    groups: list[SelectableGroupEntryJSON]
+    owned: bool
+    packages: list[EditingContextPackageEntryJSON]
+    suggested_package_id: int | Literal[False]
+
+
+class CanvasViewJSON(TypedDict):
+    """``canvas()``'s own ``view`` key (``studio_view_canvas.py:canvas``,
+    ``wire.ts:CanvasPayload.view``)."""
+
+    id: int
+    name: str
+    type: str
+    model: str | Literal[False]
+    mode: str
+    js_class: str | None
+
+
+class CanvasPackageJSON(TypedDict):
+    """``canvas()``'s own ``package`` key: who a drop here would record
+    into (``wire.ts:CanvasPackageSummary``)."""
+
+    id: int
+    name: str
+    writable: bool
+
+
+class CanvasJSON(TypedDict):
+    """``canvas()``'s whole return (``studio_view_canvas.py:canvas``,
+    composed into this same RPC model via a pure ``_inherit`` -- see
+    ``_ComposedViewEditor`` below; ``wire.ts:CanvasPayload``).
+
+    Declared here, not there, because this file's own ``drop_at``/
+    ``_reanchor_gap``/``_token_named`` all consume it. ``models``/
+    ``source``/``pending``/``history`` stay ``object``, matching
+    `wire.ts`'s own `unknown` for `models`/`source` -- nothing in *this*
+    file reads any of the four beyond passing them on whole.
+    """
+
+    view: CanvasViewJSON
+    arch: str | None
+    models: object
+    arch_version: str
+    res_id: int | Literal[False]
+    root: str | None
+    nodes: dict[canvas_stamp.Token, canvas_stamp.StudioNode]
+    pending: object
+    draft_id: int | Literal[False]
+    editable_as: str
+    source: object
+    history: object
+    package: CanvasPackageJSON | None
+    record_count: int
+
+
+class DropCreatedFieldJSON(TypedDict):
+    """What a live-created field's ``created`` names, on a ``drop_at``
+    answer (``studio_view_new_field.py:_drop_live_field``; ``wire.ts:
+    DropCreatedField``)."""
+
+    name: str
+    label: str
+    live: Literal[True]
+
+
+class DropStagedFieldJSON(TypedDict):
+    """What a staged field's ``staged`` names, on a ``drop_at`` answer
+    (``studio_view_new_field.py:_drop_field_definition``; ``wire.ts:
+    DropStagedField``)."""
+
+    name: str
+    label: str
+    draft_id: int
+
+
+class DropSuccessJSON(TypedDict):
+    """A settled (non-stale) ``drop_at`` answer -- built here or by
+    ``studio_view_new_field.py``'s own ``_drop_live_field``/
+    ``_drop_field_definition``, composed into this same RPC method via
+    ``_inherit`` (``wire.ts:DropSuccessResult``)."""
+
+    stale: Literal[False]
+    select: str | None
+    created: DropCreatedFieldJSON | None
+    staged: DropStagedFieldJSON | None
+    canvas: CanvasJSON
+    history: object
+    draft: object | None
+
+
+class DropStaleJSON(TypedDict):
+    """The stale early return: a token minted before the last write no
+    longer means anything, so nothing but a fresh canvas is sent."""
+
+    stale: Literal[True]
+    canvas: CanvasJSON
+
+
+#: ``drop_at()``'s own return: the stale early answer, or a settled one --
+#: `wire.ts`'s own `_mutate` peels the stale shape off before anything
+#: downstream sees it (`types.ts:DropSuccessResult`'s own docstring), so
+#: only `DropSuccessJSON` has a `wire.ts` cousin of its own.
+DropAtJSON: TypeAlias = DropStaleJSON | DropSuccessJSON
+
+
+if TYPE_CHECKING:
+
+    class _ComposedViewEditor(Protocol):
+        """The slice of ``studio.view.editor`` this file calls but does not
+        itself declare.
+
+        ``studio_view_canvas.py`` and ``studio_view_new_field.py`` extend
+        this same ``_name`` with a pure ``_inherit = "studio.view.editor"``
+        and no ``_name``/base class of their own -- the registry composes
+        all three into one model, but neither is a real Python base of
+        this file's own ``StudioViewEditor``, so pyright cannot see
+        ``PENDING_TOKEN_PREFIX``/``canvas``/``_canvas_draft``/
+        ``_splice_pending``/``_drop_field_definition``/``_mint_anchor``/
+        ``_python_owner`` on a bare ``self`` here -- the identical
+        ``_inherit``-mixin gap ``typed.security()`` exists for, on a
+        different mixin, worked around by hand here since a third
+        `typed.py` helper is outside this file's own scope (``Only touch
+        app_builder_view/models/studio_view_editor.py``). Neither sibling
+        is converted yet (a later batch, once this file's own real
+        signatures exist for them to read), so ``self`` is cast to this
+        narrow, hand-traced Protocol at each call site below rather than
+        to their real (still-untyped) classes -- narrow it further, or
+        replace it with a real aliased import, once those two convert.
+        """
+
+        PENDING_TOKEN_PREFIX: str
+
+        def canvas(
+            self, view_id: int, options: dict[str, object] | None = None
+        ) -> CanvasJSON: ...
+        def _canvas_draft(self, view: View, draft_id: object = None) -> BaseModel: ...
+        def _splice_pending(
+            self,
+            stamped: canvas_stamp.StampResult,
+            root: LxmlElement,
+            view: View,
+            draft: BaseModel,
+            arch_version: str,
+        ) -> object: ...
+        def _drop_field_definition(
+            self,
+            view: View,
+            package: StudioPackage,
+            stamped: canvas_stamp.StampResult,
+            root: LxmlElement,
+            token: canvas_stamp.Token,
+            position: str,
+            container: canvas_stamp.StudioNode,
+            payload: dict[str, object],
+            options: dict[str, object],
+        ) -> DropSuccessJSON: ...
+        def _mint_anchor(
+            self,
+            view: View,
+            stamped: canvas_stamp.StampResult,
+            root: LxmlElement,
+            token: canvas_stamp.Token,
+            position: str,
+        ) -> dict[str, object]: ...
+        def _python_owner(self, model_name: str) -> StudioPackage: ...
+
+    class _DraftHandle(Protocol):
+        """The one extension method ``_reanchor_gap`` calls on a draft
+        recordset: ``set_anchor``, declared only on
+        ``app_builder_view/models/studio_model_draft.py``'s own pure
+        ``_inherit`` extension of ``studio.model.draft`` (not
+        ``app_builder_base``'s own base class, ``typed.model()``'s real
+        target for ``_open_draft_id`` elsewhere in this file) -- not yet
+        converted, so this is the same narrow composed-elsewhere
+        workaround as ``_ComposedViewEditor`` above, for a different,
+        sibling model.
+        """
+
+        def set_anchor(
+            self,
+            name: str,
+            anchor: dict[str, object],
+            release_dependents: bool = True,
+        ) -> object: ...
+
+
 class StudioViewEditor(models.AbstractModel):
     _name = "studio.view.editor"
     _inherit = ["studio.security.mixin"]
@@ -79,27 +552,43 @@ class StudioViewEditor(models.AbstractModel):
     # -- extension view lifecycle -----------------------------------------
 
     @api.model
-    def _extension_name(self, base_view):
+    def _extension_name(self, base_view: View) -> str:
         return "%s.studio" % (base_view.name or base_view.model)
 
     @api.model
-    def _find_extension(self, base_view, package):
+    def _find_extension(self, base_view: View, package: StudioPackage) -> View:
         """This package's extension of ``base_view``, if it already has one."""
         name = self._extension_name(base_view)
-        candidates = self.env["ir.ui.view"].search(
+        candidates = typed.model(self.env, View).search(
             [("inherit_id", "=", base_view.id), ("name", "=", name)]
         )
         for candidate in candidates:
-            if candidate.studio_package_id == package:
+            # `studio_package_id` is a field from `studio.owned.mixin`,
+            # composed onto `ir.ui.view` in `app_builder_base/models/
+            # studio_owned_mixin.py` (`_inherit`, never a real Python base
+            # class) -- invisible to pyright on `candidate`/`View` itself
+            # without the first cast, same idiom as `typed.security()`'s own
+            # docstring. The second cast is the plain-string-comodel one
+            # (rule 5, `typed.py`'s own docstring): the field is declared
+            # `Many2one("studio.package", ...)`, unsubscripted, so its read
+            # type is the bound `BaseModel`, not `StudioPackage`.
+            if (
+                cast(
+                    "StudioPackage",
+                    cast("StudioOwnedMixin", candidate).studio_package_id,
+                )
+                == package
+            ):
                 return candidate
-        return self.env["ir.ui.view"].browse()
+        return typed.model(self.env, View).browse()
 
     @api.model
-    def _describe(self, operation):
+    def _describe(self, operation: dict[str, object]) -> str:
         """A one-line account of an edit, for the history list."""
-        kind = operation.get("type", "edit")
+        kind = cast("str", operation.get("type", "edit"))
         if kind == "set_attributes":
-            keys = ", ".join(sorted((operation.get("attrs") or {}).keys()))
+            attrs = cast("dict[str, object]", operation.get("attrs") or {})
+            keys = ", ".join(sorted(attrs.keys()))
             return _("changed %s", keys) if keys else _("changed attributes")
         if kind == "add_field":
             return _("added %s", operation.get("name", "a field"))
@@ -112,7 +601,9 @@ class StudioViewEditor(models.AbstractModel):
         return kind.replace("_", " ")
 
     @api.model
-    def _get_or_create_extension(self, base_view, package, write_files=True):
+    def _get_or_create_extension(
+        self, base_view: View, package: StudioPackage, write_files: bool = True
+    ) -> View:
         """One extension view per (base view, package).
 
         Collecting every edit into a single inheriting view keeps the generated
@@ -124,24 +615,45 @@ class StudioViewEditor(models.AbstractModel):
         writes once, afterwards, rather than putting an empty ``<data/>`` on
         disk first.
         """
-        View = self.env["ir.ui.view"]
+        # Named `view_model`, not `View` (the real class this method's own
+        # signature is typed against): a local `View = self.env[...]`
+        # would shadow that import for the rest of this function -- and,
+        # worse, `View = typed.model(self.env, View)` would try to read
+        # the not-yet-assigned local `View` on its own right-hand side
+        # (Python's own scoping: a name assigned anywhere in a function is
+        # local for the whole function), an `UnboundLocalError` this
+        # conversion must not introduce.
+        view_model = typed.model(self.env, View)
         name = self._extension_name(base_view)
-        candidates = View.search(
+        candidates = view_model.search(
             [("inherit_id", "=", base_view.id), ("name", "=", name)]
         )
         for candidate in candidates:
-            if candidate.studio_package_id == package:
+            # Same `studio.owned.mixin` composed-elsewhere cast as
+            # `_find_extension` above.
+            if (
+                cast(
+                    "StudioPackage",
+                    cast("StudioOwnedMixin", candidate).studio_package_id,
+                )
+                == package
+            ):
                 return candidate
-        view = View.create(
-            {
-                "name": name,
-                "model": base_view.model,
-                "inherit_id": base_view.id,
-                "mode": "extension",
-                "priority": STUDIO_PRIORITY,
-                "arch": "<data/>",
-            }
-        )
+        # `@api.model_create_multi` (`odoo/api.py`) is a bare passthrough
+        # decorator that does not widen `create()`'s own declared `list
+        # [ValuesType]`-only signature to also cover the single-dict
+        # calling form it genuinely accepts at runtime -- the documented
+        # stub gap (TYPING.md's own "Known traps"), kept as the exact
+        # original single-dict call rather than rewritten to `create([...])`.
+        vals = {
+            "name": name,
+            "model": base_view.model,
+            "inherit_id": base_view.id,
+            "mode": "extension",
+            "priority": STUDIO_PRIORITY,
+            "arch": "<data/>",
+        }
+        view = view_model.create(vals)  # pyright: ignore[reportArgumentType]
         if view.type == "qweb":
             # Odoo mints `gen_key.<uuid>` for a qweb view created without a key
             # (`ir_ui_view.py:519`), and the key is emitted -- so an extension of
@@ -155,29 +667,31 @@ class StudioViewEditor(models.AbstractModel):
     # -- arch surgery -----------------------------------------------------
 
     @api.model
-    def _parse_data(self, view):
-        root = xml_writer.parse_arch(view.arch)
+    def _parse_data(self, view: View) -> LxmlElement:
+        root = xml_writer.parse_arch(cast("str", view.arch))
         if root.tag != "data":
             # A hand-written extension may use a bare xpath as its root; wrap it
             # so we always have somewhere to append.
-            wrapper = etree.Element("data")
+            wrapper = cast("LxmlElement", etree.Element("data"))
             wrapper.append(root)
             root = wrapper
         return root
 
     @api.model
-    def _find_xpath(self, root, expr, position):
+    def _find_xpath(
+        self, root: LxmlElement, expr: str, position: str
+    ) -> LxmlElement | None:
         for node in root.findall("xpath"):
             if node.get("expr") == expr and node.get("position") == position:
                 return node
         return None
 
     @api.model
-    def _write_arch(self, view, root):
+    def _write_arch(self, view: View, root: LxmlElement) -> View:
         """Persist an arch, letting Odoo's own validators reject bad edits."""
         xml_writer.canonicalize_attributes(root)
         xml_writer.indent(root)
-        arch = etree.tostring(root, encoding="unicode")
+        arch = cast("str", etree.tostring(root, encoding="unicode"))
         try:
             view.write({"arch": arch})
         except ValidationError as err:
@@ -192,13 +706,13 @@ class StudioViewEditor(models.AbstractModel):
     # -- the version a client edits against --------------------------------
 
     @api.model
-    def _version_of(self, view_id, combined_arch):
+    def _version_of(self, view_id: int, combined_arch: str) -> str:
         return hashlib.sha1(
             ("%s\n%s" % (view_id, combined_arch)).encode("utf-8")
         ).hexdigest()
 
     @api.model
-    def _neutral_combined_arch(self, view):
+    def _neutral_combined_arch(self, view: View) -> str:
         """The combined arch in the source language, whoever is asking.
 
         ``arch_db`` is a translated field: read under a French user's context
@@ -209,10 +723,16 @@ class StudioViewEditor(models.AbstractModel):
         source -- ``lang=None`` reads the ``en_US`` terms whatever the
         session speaks.
         """
-        return view.with_context(lang=None).get_combined_arch()
+        # `get_combined_arch`/`get_view_info` are core Odoo methods with no
+        # annotations of their own; `etree.tostring(...)` inside the former
+        # makes its inferred return `Unknown` given lxml's own missing
+        # stubs (this file's own top-of-file comment) -- a genuine,
+        # pre-existing vendor gap, not one this migration introduces, cast
+        # to the real `str` it always returns.
+        return cast("str", view.with_context(lang=None).get_combined_arch())
 
     @api.model
-    def arch_version(self, view_id):
+    def arch_version(self, view_id: int) -> str:
         """A fingerprint of the view as the editor would edit it right now.
 
         Taken from the *combined* arch and deliberately not from
@@ -231,25 +751,27 @@ class StudioViewEditor(models.AbstractModel):
         freshly scaffolded list and its copy -- do not share a version and let
         an edit meant for one be accepted against the other.
         """
-        self._assert_studio_user()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_user()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
-        return self._version_of(view.id, self._neutral_combined_arch(view))
+        return self._version_of(cast("int", view.id), self._neutral_combined_arch(view))
 
     @api.model
-    def _assert_arch_version(self, view, expected):
+    def _assert_arch_version(self, view: View, expected: str | None) -> None:
         """Refuse to edit a view that is not the one the client looked at.
 
         ``None`` means the caller made no claim -- a script, an older client
         -- and is not checked; a claim is checked exactly, before anything is
         written, so a stale gesture costs nothing to retry.
         """
-        if expected is not None and expected != self.arch_version(view.id):
+        if expected is not None and expected != self.arch_version(cast("int", view.id)):
             raise StudioStaleView(self.env._(STALE_VIEW_MESSAGE))
 
     @api.model
-    def _claimed_version(self, expected, *descriptors):
+    def _claimed_version(
+        self, expected: str | None, *descriptors: dict[str, object] | None
+    ) -> str | None:
         """The version an edit is checked against.
 
         The caller's explicit claim when it made one; otherwise the version
@@ -264,7 +786,7 @@ class StudioViewEditor(models.AbstractModel):
         for descriptor in descriptors:
             version = (descriptor or {}).get("arch_version")
             if version is not None:
-                return version
+                return cast("str", version)
         return None
 
     # -- public operations ------------------------------------------------
@@ -272,12 +794,12 @@ class StudioViewEditor(models.AbstractModel):
     @api.model
     def apply_operation(
         self,
-        view_id,
-        package_id,
-        operation,
-        expected_arch_version=None,
-        write_files=True,
-    ):
+        view_id: int,
+        package_id: int,
+        operation: dict[str, object],
+        expected_arch_version: str | None = None,
+        write_files: bool = True,
+    ) -> OperationResultJSON:
         """Apply one edit and write the owning package to source.
 
         ``operation`` is a dict with at least ``type``, ``xpath`` and
@@ -302,14 +824,18 @@ class StudioViewEditor(models.AbstractModel):
         several operations that wants the directory written once, at the end
         -- the caller then owes the package an ``action_write_files()``.
         """
-        self._assert_studio_manager()
-        base_view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        base_view = typed.model(self.env, View).browse(view_id).exists()
         if not base_view:
             raise UserError(_("The view being edited no longer exists."))
-        package = self.env["studio.package"].browse(package_id).exists()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a studio package to record this change in."))
 
+        # `getattr` with a non-literal name is `Any` by construction (pyright
+        # cannot know which `_op_*` method it names); every real handler
+        # takes `(LxmlElement, dict[str, object]) -> LxmlElement`, but that
+        # contract lives in each handler's own signature below, not here.
         handler = getattr(self, "_op_%s" % operation.get("type"), None)
         if handler is None:
             raise UserError(_("Unknown studio operation '%s'.", operation.get("type")))
@@ -325,14 +851,23 @@ class StudioViewEditor(models.AbstractModel):
         if self._owns_outright(base_view, package):
             target = base_view
             created = False
-            primary = xml_writer.parse_arch(base_view.arch)
+            primary = xml_writer.parse_arch(cast("str", base_view.arch))
             self._assert_owned_locators(
                 primary,
                 operation,
                 expectations,
-                extended=bool(base_view.inherit_children_ids.filtered("active")),
+                # `inherit_children_ids` is a bare (unsubscripted)
+                # `One2many("ir.ui.view", ...)` -- core Odoo's own
+                # declaration, not this migration's -- whose read type
+                # pyright cannot resolve past `Unknown` with no stub
+                # narrowing it; cast to the real recordset type, the same
+                # plain-string-comodel idiom rule 5 already applies to a
+                # `Many2one`.
+                extended=bool(
+                    cast("View", base_view.inherit_children_ids).filtered("active")
+                ),
             )
-            spec = etree.Element("data")
+            spec = cast("LxmlElement", etree.Element("data"))
             # A handler dedupes against the spec it is building, which is
             # enough on the extension path where the spec accumulates every
             # edit. Here the spec is empty every time, so a handler that cares
@@ -340,7 +875,13 @@ class StudioViewEditor(models.AbstractModel):
             # about to be merged into.
             operation["_current_arch"] = base_view.arch
             handler(spec, operation)
-            arch = apply_inheritance_specs(primary, spec)
+            # `apply_inheritance_specs` (`odoo/tools/template_inheritance.py`)
+            # is a core function with no annotations of its own; its
+            # parameters are untyped, so its inferred return is `Unknown` --
+            # an accepted, pre-existing vendor gap (this migration's own
+            # rule for a less-common core utility), cast to the real
+            # `LxmlElement` it always returns.
+            arch = cast("LxmlElement", apply_inheritance_specs(primary, spec))
         else:
             existing = self._find_extension(base_view, package)
             target = existing or self._get_or_create_extension(
@@ -353,16 +894,16 @@ class StudioViewEditor(models.AbstractModel):
         # Captured before the write, and including whether the target had to be
         # brought into existence -- undoing an edit that created the patch has
         # to remove it rather than leave an empty one behind.
-        arch_before = "" if created else target.arch
+        arch_before = "" if created else cast("str", target.arch)
         self._write_arch(target, arch)
-        self.env["studio.view.edit"].record(
+        typed.model(self.env, StudioViewEdit).record(
             base_view,
             target,
             package,
             self._describe(operation),
             arch_before,
             created,
-            arch_after=target.arch,
+            arch_after=cast("str", target.arch),
         )
         package.studio_capture(target, write_files=False)
         # A view edit is live the moment the arch is written -- views are data,
@@ -377,22 +918,22 @@ class StudioViewEditor(models.AbstractModel):
         # what was cached before it. The arch the client renders is in its
         # own language; the version it will edit against is not, or the
         # next call from a colleague in another language would refuse it.
-        base_view = self.env["ir.ui.view"].browse(base_view.id)
+        base_view = typed.model(self.env, View).browse(cast("int", base_view.id))
         return {
-            "view_id": target.id,
-            "arch": target.arch,
-            "combined_arch": base_view.get_combined_arch(),
+            "view_id": cast("int", target.id),
+            "arch": cast("str", target.arch),
+            "combined_arch": cast("str", base_view.get_combined_arch()),
             "arch_version": self._version_of(
-                base_view.id, self._neutral_combined_arch(base_view)
+                cast("int", base_view.id), self._neutral_combined_arch(base_view)
             ),
             # What the handler brought into being, by name, when it named
             # something: the caller that wants to select it next has no
             # other way to find a node it did not name itself.
-            "created_name": operation.get("_created_name"),
+            "created_name": cast("str | None", operation.get("_created_name")),
         }
 
     @api.model
-    def _resolve_xpath(self, root, expr):
+    def _resolve_xpath(self, root: LxmlElement, expr: str) -> list[LxmlElement] | None:
         """The elements ``expr`` selects in ``root``; ``None`` if it is not an xpath."""
         try:
             found = etree.ETXPath(expr)(root)
@@ -403,7 +944,9 @@ class StudioViewEditor(models.AbstractModel):
         return [node for node in found if etree.iselement(node)]
 
     @api.model
-    def _assert_move_is_sane(self, base_view, operation):
+    def _assert_move_is_sane(
+        self, base_view: View, operation: dict[str, object]
+    ) -> None:
         """Refuse a move core would turn into a crash rather than an error.
 
         With ``inside`` allowed, a node can be asked to move into one of its
@@ -414,9 +957,13 @@ class StudioViewEditor(models.AbstractModel):
         when either does not resolve to exactly one node the guard stands
         aside and lets core's own, clearer error surface.
         """
-        root = etree.fromstring(base_view.get_combined_arch().encode())
-        source = self._resolve_xpath(root, operation.get("xpath") or "")
-        target = self._resolve_xpath(root, operation.get("target_xpath") or "")
+        root = cast(
+            "LxmlElement", etree.fromstring(base_view.get_combined_arch().encode())
+        )
+        source = self._resolve_xpath(root, cast("str", operation.get("xpath")) or "")
+        target = self._resolve_xpath(
+            root, cast("str", operation.get("target_xpath")) or ""
+        )
         if not source or not target or len(source) != 1 or len(target) != 1:
             return
         if source[0] is target[0]:
@@ -425,7 +972,13 @@ class StudioViewEditor(models.AbstractModel):
             raise UserError(_("A node cannot be moved into itself."))
 
     @api.model
-    def _assert_owned_locators(self, primary, operation, expectations, extended=True):
+    def _assert_owned_locators(
+        self,
+        primary: LxmlElement,
+        operation: dict[str, object],
+        expectations: dict[str, object | None],
+        extended: bool = True,
+    ) -> None:
         """On the owned path, the locator must mean the same node in both trees.
 
         A locator is minted against the *combined* arch -- the view as it
@@ -456,7 +1009,7 @@ class StudioViewEditor(models.AbstractModel):
             ("target_xpath", expectations.get("_expect_target")),
             ("label_xpath", expectations.get("_expect_label")),
         ):
-            expr = operation.get(key)
+            expr = cast("str | None", operation.get(key))
             if not expr:
                 continue
             found = self._resolve_xpath(primary, expr)
@@ -473,7 +1026,9 @@ class StudioViewEditor(models.AbstractModel):
                         count=len(found),
                     )
                 )
-            if extended and not self._matches_expectation(found[0], expected):
+            if extended and not self._matches_expectation(
+                found[0], cast("NodeExpectationJSON | None", expected)
+            ):
                 raise UserError(
                     _(
                         "That element comes from another module's extension of "
@@ -482,7 +1037,7 @@ class StudioViewEditor(models.AbstractModel):
                 )
 
     @api.model
-    def _named_children(self, node):
+    def _named_children(self, node: LxmlElement) -> tuple[tuple[str, str | None], ...]:
         """``(tag, name)`` of each direct child that carries a name.
 
         The fingerprint of a container that has no name of its own. Two
@@ -497,7 +1052,7 @@ class StudioViewEditor(models.AbstractModel):
         )
 
     @api.model
-    def _identity(self, node):
+    def _identity(self, node: LxmlElement) -> str | None:
         """The value that names ``node`` -- the first identifying attribute
         it carries -- or ``None`` for a node known only by position."""
         for attr in IDENTIFYING_ATTRS:
@@ -507,7 +1062,7 @@ class StudioViewEditor(models.AbstractModel):
         return None
 
     @api.model
-    def _expectation_for(self, node):
+    def _expectation_for(self, node: LxmlElement) -> NodeExpectationJSON:
         """What a locator minted for ``node`` should find where it is applied.
 
         ``name`` is the node's identity in the sense of ``IDENTIFYING_ATTRS``,
@@ -515,14 +1070,16 @@ class StudioViewEditor(models.AbstractModel):
         expected by its template name rather than refused for having none.
         """
         return {
-            "tag": node.tag,
+            "tag": cast("str", node.tag),
             "name": self._identity(node),
             "string": node.get("string"),
             "children": self._named_children(node),
         }
 
     @api.model
-    def _matches_expectation(self, node, expected):
+    def _matches_expectation(
+        self, node: LxmlElement, expected: NodeExpectationJSON | None
+    ) -> bool:
         """Whether ``node`` is the one the locator was minted for.
 
         Tag and name have to agree, and a name settles it: a named node is
@@ -557,7 +1114,7 @@ class StudioViewEditor(models.AbstractModel):
         return bool(string) and node.get("string") == string
 
     @api.model
-    def _owns_outright(self, view, package):
+    def _owns_outright(self, view: View, package: StudioPackage) -> bool:
         """Whether ``package`` may edit ``view``'s arch directly.
 
         Only a *primary* view the package already owns. An extension view is
@@ -565,18 +1122,26 @@ class StudioViewEditor(models.AbstractModel):
         module must never be rewritten in place -- that is the Studio failure
         mode this project exists to avoid.
         """
-        return view.mode == "primary" and view.studio_package_id == package
+        # Same `studio.owned.mixin` composed-elsewhere cast as
+        # `_find_extension` above.
+        return (
+            view.mode == "primary"
+            and cast("StudioPackage", cast("StudioOwnedMixin", view).studio_package_id)
+            == package
+        )
 
     @api.model
-    def _new_xpath(self, root, expr, position):
+    def _new_xpath(self, root: LxmlElement, expr: str, position: str) -> LxmlElement:
         if position not in VALID_POSITIONS:
             raise UserError(_("'%s' is not a valid xpath position.", position))
-        node = etree.SubElement(root, "xpath")
+        node = cast("LxmlElement", etree.SubElement(root, "xpath"))
         node.set("expr", expr)
         node.set("position", position)
         return node
 
-    def _op_add_field(self, root, operation):
+    def _op_add_field(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Insert a field relative to an existing node.
 
         Adding the *same* field at the same anchor twice -- a double-click, a
@@ -586,11 +1151,11 @@ class StudioViewEditor(models.AbstractModel):
         blocks apply in sequence and read back in the order the user added
         them, whereas merging them into one block silently reverses that.
         """
-        name = operation.get("name")
+        name = cast("str | None", operation.get("name"))
         if not name:
             raise UserError(_("Adding a field requires a field name."))
-        position = operation.get("position", "after")
-        expr = operation["xpath"]
+        position = cast("str", operation.get("position", "after"))
+        expr = cast("str", operation["xpath"])
         node = None
         for candidate in root.findall("xpath"):
             if candidate.get("expr") != expr or candidate.get("position") != position:
@@ -606,15 +1171,19 @@ class StudioViewEditor(models.AbstractModel):
                 # Where the form draws no label, one of core's own goes
                 # before the field -- in the same block, so the drop is
                 # one edit and one undo. `_label_wanted` decides.
-                label = etree.SubElement(node, "label")
+                label = cast("LxmlElement", etree.SubElement(node, "label"))
                 label.set("for", name)
-            field = etree.SubElement(node, "field")
+            field = cast("LxmlElement", etree.SubElement(node, "field"))
         field.set("name", name)
-        for key, value in (operation.get("attrs") or {}).items():
+        for key, value in cast(
+            "dict[str, object]", operation.get("attrs") or {}
+        ).items():
             field.set(key, str(value))
         return node
 
-    def _op_move_node(self, root, operation):
+    def _op_move_node(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Relocate an existing node, using core's own ``position="move"``.
 
         Core extracts the named node and re-inserts it at the anchor
@@ -628,9 +1197,9 @@ class StudioViewEditor(models.AbstractModel):
         master. There is no "inside, at index n" -- a drop between two
         children is expressed as before/after one of them.
         """
-        expr = operation.get("xpath")
-        anchor = operation.get("target_xpath")
-        position = operation.get("position", "before")
+        expr = cast("str | None", operation.get("xpath"))
+        anchor = cast("str | None", operation.get("target_xpath"))
+        position = cast("str", operation.get("position", "before"))
         if not expr or not anchor:
             raise UserError(_("Moving a node needs both what moves and where."))
         if position not in INSERT_POSITIONS:
@@ -651,20 +1220,22 @@ class StudioViewEditor(models.AbstractModel):
         # draw it twice; then the label is dropped. A field a group was
         # labelling, moved to where nothing will, is given one.
         if operation.get("label_xpath") and not operation.get("drop_label"):
-            label = etree.SubElement(node, "xpath")
-            label.set("expr", operation["label_xpath"])
+            label = cast("LxmlElement", etree.SubElement(node, "xpath"))
+            label.set("expr", cast("str", operation["label_xpath"]))
             label.set("position", "move")
         elif operation.get("label") and operation.get("name"):
-            label = etree.SubElement(node, "label")
-            label.set("for", operation["name"])
-        moved = etree.SubElement(node, "xpath")
+            label = cast("LxmlElement", etree.SubElement(node, "label"))
+            label.set("for", cast("str", operation["name"]))
+        moved = cast("LxmlElement", etree.SubElement(node, "xpath"))
         moved.set("expr", expr)
         moved.set("position", "move")
         if operation.get("label_xpath") and operation.get("drop_label"):
-            self._new_xpath(root, operation["label_xpath"], "replace")
+            self._new_xpath(root, cast("str", operation["label_xpath"]), "replace")
         return node
 
-    def _op_add_filter(self, root, operation):
+    def _op_add_filter(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Add a ``<filter>`` -- a saved condition, or a group-by.
 
         Group-bys are filters too; what makes one a group-by is a ``group_by``
@@ -674,58 +1245,72 @@ class StudioViewEditor(models.AbstractModel):
         second operation the user would have to understand.
         """
         node = self._new_xpath(
-            root, operation["xpath"], operation.get("position", "inside")
+            root,
+            cast("str", operation["xpath"]),
+            cast("str", operation.get("position", "inside")),
         )
         container = node
         if operation.get("in_new_group"):
-            container = etree.SubElement(node, "group")
-            container.set("string", operation.get("group_string") or "Group By")
-        filter_node = etree.SubElement(container, "filter")
-        filter_node.set("name", operation["name"])
-        filter_node.set("string", operation.get("string") or operation["name"])
+            container = cast("LxmlElement", etree.SubElement(node, "group"))
+            container.set(
+                "string", cast("str", operation.get("group_string") or "Group By")
+            )
+        filter_node = cast("LxmlElement", etree.SubElement(container, "filter"))
+        filter_node.set("name", cast("str", operation["name"]))
+        filter_node.set(
+            "string", cast("str", operation.get("string") or operation["name"])
+        )
         if operation.get("domain"):
-            filter_node.set("domain", operation["domain"])
+            filter_node.set("domain", cast("str", operation["domain"]))
         if operation.get("context"):
-            filter_node.set("context", operation["context"])
+            filter_node.set("context", cast("str", operation["context"]))
         return node
 
-    def _op_remove_node(self, root, operation):
+    def _op_remove_node(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Remove a node from the rendered view.
 
         Emitted as ``position="replace"`` with empty content, which is the
         idiomatic Odoo way to drop a node without touching the base view.
         """
-        existing = self._find_xpath(root, operation["xpath"], "replace")
+        expr = cast("str", operation["xpath"])
+        existing = self._find_xpath(root, expr, "replace")
         if existing is not None:
             return existing
-        node = self._new_xpath(root, operation["xpath"], "replace")
+        node = self._new_xpath(root, expr, "replace")
         if operation.get("label_xpath"):
             # A field's own `<label for>` has nothing to label once the
             # field is gone, and would render as an empty label.
-            self._new_xpath(root, operation["label_xpath"], "replace")
+            self._new_xpath(root, cast("str", operation["label_xpath"]), "replace")
         return node
 
-    def _op_set_attributes(self, root, operation):
+    def _op_set_attributes(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Set attributes on an existing node, merging with prior edits."""
-        attrs = operation.get("attrs") or {}
+        attrs = cast("dict[str, object]", operation.get("attrs") or {})
         if not attrs:
             raise UserError(_("No attributes given."))
-        node = self._find_xpath(root, operation["xpath"], "attributes")
+        expr = cast("str", operation["xpath"])
+        node = self._find_xpath(root, expr, "attributes")
         if node is None:
-            node = self._new_xpath(root, operation["xpath"], "attributes")
+            node = self._new_xpath(root, expr, "attributes")
         for key, value in attrs.items():
             for existing in node.findall("attribute"):
                 if existing.get("name") == key:
                     existing.text = None if value is None else str(value)
                     break
             else:
-                child = etree.SubElement(node, "attribute")
+                child = cast("LxmlElement", etree.SubElement(node, "attribute"))
                 child.set("name", key)
                 if value is not None:
                     child.text = str(value)
         return node
 
-    def _op_show_label(self, root, operation):
+    def _op_show_label(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Give a field the label the form would not draw for it.
 
         A field is labelled by the form compiler only as a direct child of
@@ -742,21 +1327,21 @@ class StudioViewEditor(models.AbstractModel):
         checked against the spec being built: a label this extension added
         and then removed is still in it, and would wrongly count.
         """
-        name = operation.get("name")
+        name = cast("str | None", operation.get("name"))
         if not name:
             raise UserError(_("Giving a field a label requires its name."))
         current = operation.get("_current_arch")
         if current is not None:
-            primary = xml_writer.parse_arch(current)
+            primary = xml_writer.parse_arch(cast("str", current))
             if any(label.get("for") == name for label in primary.iter("label")):
                 raise UserError(_("%s already has a label of its own.", name))
-        node = self._new_xpath(root, operation["xpath"], "before")
-        label = etree.SubElement(node, "label")
+        node = self._new_xpath(root, cast("str", operation["xpath"]), "before")
+        label = cast("LxmlElement", etree.SubElement(node, "label"))
         label.set("for", name)
         return node
 
     @api.model
-    def _container_name(self, kind, given=None):
+    def _container_name(self, kind: str, given: str | None = None) -> str:
         """A name for a container the studio creates, when the user gave none.
 
         Every container gets one so that it can be *addressed* later. A
@@ -770,51 +1355,73 @@ class StudioViewEditor(models.AbstractModel):
         """
         return given or "studio_%s_%s" % (kind, secrets.token_hex(3))
 
-    def _op_add_group(self, root, operation):
+    def _op_add_group(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         node = self._new_xpath(
-            root, operation["xpath"], operation.get("position", "inside")
+            root,
+            cast("str", operation["xpath"]),
+            cast("str", operation.get("position", "inside")),
         )
-        group = etree.SubElement(node, "group")
-        group.set("name", self._container_name("group", operation.get("name")))
+        group = cast("LxmlElement", etree.SubElement(node, "group"))
+        group.set(
+            "name",
+            self._container_name("group", cast("str | None", operation.get("name"))),
+        )
         if operation.get("string"):
-            group.set("string", operation["string"])
+            group.set("string", cast("str", operation["string"]))
         operation["_created_name"] = group.get("name")
         return node
 
-    def _op_add_page(self, root, operation):
+    def _op_add_page(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Add a notebook tab, creating the notebook when there is none.
 
         Same reasoning as the group a filter lands in: a tab with nowhere to
         live is not a second operation the user should have to understand.
         """
         node = self._new_xpath(
-            root, operation["xpath"], operation.get("position", "inside")
+            root,
+            cast("str", operation["xpath"]),
+            cast("str", operation.get("position", "inside")),
         )
         container = node
         if operation.get("in_new_notebook"):
-            container = etree.SubElement(node, "notebook")
+            container = cast("LxmlElement", etree.SubElement(node, "notebook"))
             container.set("name", self._container_name("notebook"))
-        page = etree.SubElement(container, "page")
-        page.set("string", operation.get("string") or self.DEFAULT_PAGE_STRING)
-        page.set("name", self._container_name("page", operation.get("name")))
+        page = cast("LxmlElement", etree.SubElement(container, "page"))
+        page.set(
+            "string", cast("str", operation.get("string") or self.DEFAULT_PAGE_STRING)
+        )
+        page.set(
+            "name",
+            self._container_name("page", cast("str | None", operation.get("name"))),
+        )
         operation["_created_name"] = page.get("name")
         return node
 
-    def _op_add_button(self, root, operation):
+    def _op_add_button(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         node = self._new_xpath(
-            root, operation["xpath"], operation.get("position", "inside")
+            root,
+            cast("str", operation["xpath"]),
+            cast("str", operation.get("position", "inside")),
         )
-        button = etree.SubElement(node, "button")
-        button.set("name", operation["name"])
-        button.set("type", operation.get("button_type", "object"))
+        button = cast("LxmlElement", etree.SubElement(node, "button"))
+        button.set("name", cast("str", operation["name"]))
+        button.set("type", cast("str", operation.get("button_type", "object")))
         if operation.get("string"):
-            button.set("string", operation["string"])
+            button.set("string", cast("str", operation["string"]))
         if operation.get("class"):
-            button.set("class", operation["class"])
+            button.set("class", cast("str", operation["class"]))
         operation["_created_name"] = button.get("name")
         return node
 
-    def _op_add_columns(self, root, operation):
+    def _op_add_columns(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Add two side-by-side columns: an outer group holding two groups.
 
         That is what "Columns" on the palette means in a form, and it is one
@@ -825,14 +1432,19 @@ class StudioViewEditor(models.AbstractModel):
         again.
         """
         node = self._new_xpath(
-            root, operation["xpath"], operation.get("position", "inside")
+            root,
+            cast("str", operation["xpath"]),
+            cast("str", operation.get("position", "inside")),
         )
-        outer = etree.SubElement(node, "group")
-        outer.set("name", self._container_name("group", operation.get("name")))
+        outer = cast("LxmlElement", etree.SubElement(node, "group"))
+        outer.set(
+            "name",
+            self._container_name("group", cast("str | None", operation.get("name"))),
+        )
         if operation.get("string"):
-            outer.set("string", operation["string"])
+            outer.set("string", cast("str", operation["string"]))
         for _column in range(2):
-            inner = etree.SubElement(outer, "group")
+            inner = cast("LxmlElement", etree.SubElement(outer, "group"))
             inner.set("name", self._container_name("group"))
         operation["_created_name"] = outer.get("name")
         return node
@@ -846,7 +1458,9 @@ class StudioViewEditor(models.AbstractModel):
     DEFAULT_SEPARATOR_STRING = "Separator"
     DEFAULT_LABEL_STRING = "Label"
 
-    def _op_add_notebook(self, root, operation):
+    def _op_add_notebook(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Add a notebook with one tab in it.
 
         An empty notebook renders as nothing at all -- no tab strip, no
@@ -855,17 +1469,26 @@ class StudioViewEditor(models.AbstractModel):
         next drop somewhere to land.
         """
         node = self._new_xpath(
-            root, operation["xpath"], operation.get("position", "inside")
+            root,
+            cast("str", operation["xpath"]),
+            cast("str", operation.get("position", "inside")),
         )
-        notebook = etree.SubElement(node, "notebook")
-        notebook.set("name", self._container_name("notebook", operation.get("name")))
-        page = etree.SubElement(notebook, "page")
-        page.set("string", operation.get("string") or self.DEFAULT_PAGE_STRING)
+        notebook = cast("LxmlElement", etree.SubElement(node, "notebook"))
+        notebook.set(
+            "name",
+            self._container_name("notebook", cast("str | None", operation.get("name"))),
+        )
+        page = cast("LxmlElement", etree.SubElement(notebook, "page"))
+        page.set(
+            "string", cast("str", operation.get("string") or self.DEFAULT_PAGE_STRING)
+        )
         page.set("name", self._container_name("page"))
         operation["_created_name"] = notebook.get("name")
         return node
 
-    def _op_add_separator(self, root, operation):
+    def _op_add_separator(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Add a titled rule between two blocks of a form.
 
         Named, although a separator never needs one for itself: the name
@@ -873,23 +1496,35 @@ class StudioViewEditor(models.AbstractModel):
         addresses it without counting its siblings.
         """
         node = self._new_xpath(
-            root, operation["xpath"], operation.get("position", "inside")
+            root,
+            cast("str", operation["xpath"]),
+            cast("str", operation.get("position", "inside")),
         )
-        separator = etree.SubElement(node, "separator")
+        separator = cast("LxmlElement", etree.SubElement(node, "separator"))
         separator.set(
-            "string", operation.get("string") or self.DEFAULT_SEPARATOR_STRING
+            "string",
+            cast("str", operation.get("string") or self.DEFAULT_SEPARATOR_STRING),
         )
-        separator.set("name", self._container_name("separator", operation.get("name")))
+        separator.set(
+            "name",
+            self._container_name(
+                "separator", cast("str | None", operation.get("name"))
+            ),
+        )
         operation["_created_name"] = separator.get("name")
         return node
 
-    def _op_add_chatter(self, root, operation):
+    def _op_add_chatter(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """A ``<chatter/>`` after the sheet, the way every core form has it."""
-        node = self._new_xpath(root, operation["xpath"], "after")
+        node = self._new_xpath(root, cast("str", operation["xpath"]), "after")
         etree.SubElement(node, "chatter")
         return node
 
-    def _op_add_label(self, root, operation):
+    def _op_add_label(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """Add a piece of static text styled as a label.
 
         Not a ``<label>``: core's validator refuses one without a ``for``
@@ -901,19 +1536,24 @@ class StudioViewEditor(models.AbstractModel):
         is.
         """
         node = self._new_xpath(
-            root, operation["xpath"], operation.get("position", "inside")
+            root,
+            cast("str", operation["xpath"]),
+            cast("str", operation.get("position", "inside")),
         )
-        label = etree.SubElement(node, "div")
+        label = cast("LxmlElement", etree.SubElement(node, "div"))
         label.set("class", "o_form_label")
-        label.set("name", self._container_name("label", operation.get("name")))
-        label.text = operation.get("string") or self.DEFAULT_LABEL_STRING
+        label.set(
+            "name",
+            self._container_name("label", cast("str | None", operation.get("name"))),
+        )
+        label.text = cast("str", operation.get("string") or self.DEFAULT_LABEL_STRING)
         operation["_created_name"] = label.get("name")
         return node
 
     # -- helpers for the client -------------------------------------------
 
     @api.model
-    def _occurrences(self, root):
+    def _occurrences(self, root: LxmlElement) -> Counter[tuple[str, str, str]]:
         """How many nodes answer to each ``(tag, name)`` pair.
 
         A bare ``//tag[@name='x']`` is only a valid locator when nothing else in
@@ -923,7 +1563,7 @@ class StudioViewEditor(models.AbstractModel):
         sheet instead, for the wrong model.
         """
         return Counter(
-            (el.tag, attr, el.get(attr))
+            (cast("str", el.tag), attr, cast("str", el.get(attr)))
             for el in root.iter()
             if isinstance(el.tag, str)
             for attr in IDENTIFYING_ATTRS
@@ -931,7 +1571,9 @@ class StudioViewEditor(models.AbstractModel):
         )
 
     @api.model
-    def _locator_for(self, node, occurrences):
+    def _locator_for(
+        self, node: LxmlElement, occurrences: Counter[tuple[str, str, str]]
+    ) -> str:
         """The most durable xpath identifying exactly ``node``.
 
         Prefer an identifying predicate over a positional index: ``//field[@name]``
@@ -947,20 +1589,20 @@ class StudioViewEditor(models.AbstractModel):
         """
         for attr in IDENTIFYING_ATTRS:
             value = node.get(attr)
-            if value and occurrences[(node.tag, attr, value)] == 1:
+            if value and occurrences[(cast("str", node.tag), attr, value)] == 1:
                 return "//%s[@%s='%s']" % (node.tag, attr, value)
         return node.getroottree().getpath(node)
 
     @api.model
     def apply_at(
         self,
-        view_id,
-        package_id,
-        anchor,
-        operation,
-        expected_arch_version=None,
-        write_files=True,
-    ):
+        view_id: int,
+        package_id: int,
+        anchor: dict[str, object],
+        operation: dict[str, object],
+        expected_arch_version: str | None = None,
+        write_files: bool = True,
+    ) -> OperationResultJSON:
         """Apply an operation relative to a node the client picked by descriptor.
 
         The one entry point for every structural edit -- adding a field, a
@@ -987,13 +1629,13 @@ class StudioViewEditor(models.AbstractModel):
         checks it again, which costs a hash and keeps the raw-locator path
         guarded by the same line.
         """
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view being edited no longer exists."))
         expected_arch_version = self._claimed_version(expected_arch_version, anchor)
         self._assert_arch_version(view, expected_arch_version)
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         node, stamped, token = self._find_node_entry(root, anchor)
         if node is None:
             raise UserError(
@@ -1005,11 +1647,21 @@ class StudioViewEditor(models.AbstractModel):
         operation["_expect"] = self._expectation_for(node)
         operation.setdefault(
             "position",
-            self._insert_position(anchor, stamped and stamped.nodes[token]),
+            # `_find_node_entry` only ever returns `stamped`/`token`
+            # together, never one without the other (its own docstring) --
+            # a correlation a flat 3-tuple return can't state to pyright,
+            # so `token` is cast here rather than adding a second `token`
+            # check that would (harmlessly, but not byte-for-byte) change
+            # what a violated invariant does at runtime.
+            self._insert_position(
+                anchor,
+                stamped and stamped.nodes[cast("canvas_stamp.Token", token)],
+            ),
         )
         if operation.get("type") == "add_field":
             operation.setdefault(
-                "label", self._label_wanted(view, node, operation["position"])
+                "label",
+                self._label_wanted(view, node, cast("str", operation["position"])),
             )
         elif operation.get("type") == "remove_node":
             label = self._own_label(node)
@@ -1025,7 +1677,7 @@ class StudioViewEditor(models.AbstractModel):
         )
 
     @api.model
-    def _explicit_position(self, position):
+    def _explicit_position(self, position: object) -> str | None:
         """A position the caller named for an insertion, checked, or ``None``.
 
         Refused rather than ignored when it is not one of the three: an
@@ -1041,21 +1693,23 @@ class StudioViewEditor(models.AbstractModel):
                     position,
                 )
             )
-        return position
+        return cast("str", position)
 
     @api.model
-    def add_chatter(self, view_id, package_id, expected_arch_version=None):
+    def add_chatter(
+        self, view_id: int, package_id: int, expected_arch_version: str | None = None
+    ) -> bool:
         """Give a form the messaging pane, once the model has the mixins.
 
         After the sheet -- or, on a form without one, at the end -- as
         every core form does it. A form that already has one is left
         alone: a second chatter is not a stronger one.
         """
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view or view.type != "form":
             raise UserError(_("Only a form has a chatter."))
-        model = self.env.get(view.model)
+        model = self.env.get(cast("str", view.model))
         if model is None or "message_ids" not in model._fields:
             raise UserError(
                 _(
@@ -1064,7 +1718,7 @@ class StudioViewEditor(models.AbstractModel):
                     view.model,
                 )
             )
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         if root.find(".//chatter") is not None:
             return False
         sheet = root.find("./sheet")
@@ -1088,11 +1742,11 @@ class StudioViewEditor(models.AbstractModel):
     @api.model
     def show_label_at(
         self,
-        view_id,
-        package_id,
-        anchor,
-        expected_arch_version=None,
-    ):
+        view_id: int,
+        package_id: int,
+        anchor: dict[str, object],
+        expected_arch_version: str | None = None,
+    ) -> OperationResultJSON:
         """Put a ``<label for>`` before the field the client selected.
 
         The properties panel's "Show label" switch, for a field the form
@@ -1102,13 +1756,13 @@ class StudioViewEditor(models.AbstractModel):
         itself, both directions are the ``nolabel`` attribute and never
         come here.
         """
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view being edited no longer exists."))
         expected_arch_version = self._claimed_version(expected_arch_version, anchor)
         self._assert_arch_version(view, expected_arch_version)
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         node = self._find_descriptor(root, anchor)
         if node is None or node.tag != "field" or not node.get("name"):
             raise UserError(_("Only a field can be given a label."))
@@ -1137,14 +1791,14 @@ class StudioViewEditor(models.AbstractModel):
     @api.model
     def add_field_at(
         self,
-        view_id,
-        package_id,
-        anchor,
-        field_name,
-        position=None,
-        attrs=None,
-        expected_arch_version=None,
-    ):
+        view_id: int,
+        package_id: int,
+        anchor: dict[str, object],
+        field_name: str,
+        position: str | None = None,
+        attrs: dict[str, object] | None = None,
+        expected_arch_version: str | None = None,
+    ) -> OperationResultJSON:
         """Put an existing field of the model into the view.
 
         The gap this closes is the largest one the builder had: a field could be
@@ -1159,11 +1813,11 @@ class StudioViewEditor(models.AbstractModel):
         entry in the history, not "added a field" followed by "changed
         widget".
         """
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view being edited no longer exists."))
-        if field_name not in self.env[view.model]._fields:
+        if field_name not in self.env[cast("str", view.model)]._fields:
             raise UserError(
                 _(
                     "%(field)s is not a field of %(model)s.",
@@ -1171,7 +1825,7 @@ class StudioViewEditor(models.AbstractModel):
                     model=view.model,
                 )
             )
-        operation = {"type": "add_field", "name": field_name}
+        operation: dict[str, object] = {"type": "add_field", "name": field_name}
         if attrs:
             operation["attrs"] = dict(attrs)
         position = self._explicit_position(position)
@@ -1190,8 +1844,13 @@ class StudioViewEditor(models.AbstractModel):
 
     @api.model
     def remove_at(
-        self, view_id, package_id, anchor, expected_arch_version=None, force=False
-    ):
+        self,
+        view_id: int,
+        package_id: int,
+        anchor: dict[str, object],
+        expected_arch_version: str | None = None,
+        force: bool = False,
+    ) -> OperationResultJSON:
         """Take the selected node out of the view.
 
         Emitted as ``position="replace"`` with nothing in it, which is how a
@@ -1214,18 +1873,21 @@ class StudioViewEditor(models.AbstractModel):
         button for those, and the server keeps the same rule for a caller
         that did not.
         """
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view being edited no longer exists."))
         expected_arch_version = self._claimed_version(expected_arch_version, anchor)
         # Before the node is looked at: a stale token resolves to some node,
         # and the question asked about it would be about the wrong one.
         self._assert_arch_version(view, expected_arch_version)
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         _node, stamped, token = self._find_node_entry(root, anchor, stamp=True)
         if stamped is not None:
-            entry = stamped.nodes[token]
+            # Same correlated-tuple cast as `apply_at`'s own `stamped and
+            # stamped.nodes[...]` -- `_find_node_entry` never returns
+            # `stamped` without `token`.
+            entry = stamped.nodes[cast("canvas_stamp.Token", token)]
             if not entry["removable"]:
                 raise UserError(
                     _(
@@ -1234,7 +1896,9 @@ class StudioViewEditor(models.AbstractModel):
                         self._describe_kind(entry["kind"]),
                     )
                 )
-            inside = canvas_stamp.descendants(stamped.nodes, token)
+            inside = canvas_stamp.descendants(
+                stamped.nodes, cast("canvas_stamp.Token", token)
+            )
             if inside and not force:
                 fields = [
                     t for t in inside if stamped.nodes[t]["kind"] in ("field", "column")
@@ -1255,14 +1919,14 @@ class StudioViewEditor(models.AbstractModel):
     @api.model
     def add_button_at(
         self,
-        view_id,
-        package_id,
-        anchor,
-        values,
-        position=None,
-        expected_arch_version=None,
-        write_files=True,
-    ):
+        view_id: int,
+        package_id: int,
+        anchor: dict[str, object],
+        values: dict[str, object],
+        position: str | None = None,
+        expected_arch_version: str | None = None,
+        write_files: bool = True,
+    ) -> OperationResultJSON:
         """Add a button that runs a server action.
 
         Restricted to server actions on purpose. The alternative Odoo Studio
@@ -1271,9 +1935,11 @@ class StudioViewEditor(models.AbstractModel):
         whoever presses it. A server action is a record, so the reference is
         checked when it is chosen and travels with the package.
         """
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         action = (
-            self.env["ir.actions.server"].browse(values.get("action_id") or 0).exists()
+            typed.model(self.env, IrActionsServer)
+            .browse(cast("int", values.get("action_id") or 0))
+            .exists()
         )
         if not action:
             raise UserError(_("Choose the server action this button should run."))
@@ -1284,7 +1950,7 @@ class StudioViewEditor(models.AbstractModel):
         # `%(...)d` spelling is refused outright here, because convert.py
         # resolves it while *loading* and there is nothing to resolve it in a
         # view being written live.
-        xmlid = action.get_external_id().get(action.id)
+        xmlid = cast("str", action.get_external_id().get(cast("int", action.id)))
         if not xmlid:
             raise UserError(
                 _(
@@ -1294,7 +1960,7 @@ class StudioViewEditor(models.AbstractModel):
                     name=action.display_name,
                 )
             )
-        operation = {
+        operation: dict[str, object] = {
             "type": "add_button",
             "name": xmlid,
             "button_type": "action",
@@ -1316,19 +1982,19 @@ class StudioViewEditor(models.AbstractModel):
     @api.model
     def add_container_at(
         self,
-        view_id,
-        package_id,
-        anchor,
-        kind,
-        string=None,
-        position=None,
-        expected_arch_version=None,
-    ):
+        view_id: int,
+        package_id: int,
+        anchor: dict[str, object],
+        kind: str,
+        string: str | None = None,
+        position: str | None = None,
+        expected_arch_version: str | None = None,
+    ) -> OperationResultJSON:
         """Add a tab or a group -- the two structural pieces a form is made of."""
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         position = self._explicit_position(position)
         if kind == "group":
-            operation = {"type": "add_group", "string": string or ""}
+            operation: dict[str, object] = {"type": "add_group", "string": string or ""}
             if position:
                 operation["position"] = position
             return self.apply_at(
@@ -1347,7 +2013,7 @@ class StudioViewEditor(models.AbstractModel):
         # user create the notebook first would be asking them to know a rule the
         # builder already knows, and the failure if they did not would arrive as
         # a validation error about ancestors.
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view being edited no longer exists."))
         # The claim a token anchor carries is settled here, before the
@@ -1356,8 +2022,8 @@ class StudioViewEditor(models.AbstractModel):
         # of its own to be checked against.
         expected_arch_version = self._claimed_version(expected_arch_version, anchor)
         self._assert_arch_version(view, expected_arch_version)
-        root = etree.fromstring(view.get_combined_arch().encode())
-        operation = {"type": "add_page", "string": string or ""}
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        operation: dict[str, object] = {"type": "add_page", "string": string or ""}
         if position:
             operation["position"] = position
         # What the anchor is: said outright by a legacy descriptor, and by
@@ -1407,14 +2073,14 @@ class StudioViewEditor(models.AbstractModel):
     @api.model
     def move_node(
         self,
-        view_id,
-        package_id,
-        source,
-        target,
-        position="before",
-        expected_arch_version=None,
-        write_files=True,
-    ):
+        view_id: int,
+        package_id: int,
+        source: dict[str, object],
+        target: dict[str, object],
+        position: str = "before",
+        expected_arch_version: str | None = None,
+        write_files: bool = True,
+    ) -> OperationResultJSON:
         """Reorder by descriptor, resolving both ends server-side.
 
         The client says "this column goes before that one" and never computes a
@@ -1430,8 +2096,8 @@ class StudioViewEditor(models.AbstractModel):
         is checked before anything is resolved: two tokens from two
         loadings of the view are two claims, and one stale one is enough.
         """
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view being edited no longer exists."))
         for descriptor in (source, target):
@@ -1441,7 +2107,7 @@ class StudioViewEditor(models.AbstractModel):
         expected_arch_version = self._claimed_version(
             expected_arch_version, source, target
         )
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         occurrences = self._occurrences(root)
         source_node = self._find_descriptor(root, source)
         target_node = self._find_descriptor(root, target)
@@ -1453,7 +2119,7 @@ class StudioViewEditor(models.AbstractModel):
             raise UserError(_("A node cannot be moved relative to itself."))
         if any(ancestor is source_node for ancestor in target_node.iterancestors()):
             raise UserError(_("A node cannot be moved into itself."))
-        operation = {
+        operation: dict[str, object] = {
             "type": "move_node",
             "xpath": self._locator_for(source_node, occurrences),
             "target_xpath": self._locator_for(target_node, occurrences),
@@ -1481,7 +2147,7 @@ class StudioViewEditor(models.AbstractModel):
         )
 
     @api.model
-    def _label_wanted(self, view, node, position):
+    def _label_wanted(self, view: View, node: LxmlElement, position: str) -> bool:
         """Whether a field put at ``position`` of ``node`` needs a label of
         its own to have one at all.
 
@@ -1504,7 +2170,7 @@ class StudioViewEditor(models.AbstractModel):
         return not bare_on_purpose
 
     @api.model
-    def _labelled_by_group(self, node):
+    def _labelled_by_group(self, node: LxmlElement) -> bool:
         """Whether the form draws ``node``'s label because of its group."""
         return (
             bool(node.get("name"))
@@ -1513,7 +2179,7 @@ class StudioViewEditor(models.AbstractModel):
         )
 
     @api.model
-    def _own_label(self, node):
+    def _own_label(self, node: LxmlElement) -> LxmlElement | None:
         """The ``<label for>`` immediately before ``node`` naming it, or ``None``."""
         if node.tag != "field" or not node.get("name"):
             return None
@@ -1544,13 +2210,13 @@ class StudioViewEditor(models.AbstractModel):
     @api.model
     def drop_at(
         self,
-        view_id,
-        package_id,
-        target,
-        payload,
-        expected_arch_version=None,
-        canvas_options=None,
-    ):
+        view_id: int,
+        package_id: int,
+        target: dict[str, object],
+        payload: dict[str, object],
+        expected_arch_version: str | None = None,
+        canvas_options: dict[str, object] | None = None,
+    ) -> DropAtJSON:
         """One drop on the canvas: one call, one transaction, one file write.
 
         ``target`` is ``{token, position}`` -- the node the pointer was
@@ -1592,11 +2258,12 @@ class StudioViewEditor(models.AbstractModel):
         canvas keeps showing the order the gesture asked for and Apply
         writes that same order.
         """
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        composed = cast("_ComposedViewEditor", self)
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view being edited no longer exists."))
-        package = self.env["studio.package"].browse(package_id).exists()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a studio package to record this change in."))
         # The canvas handed back reports this package's extension as the
@@ -1607,21 +2274,26 @@ class StudioViewEditor(models.AbstractModel):
         )
         if (
             expected_arch_version is not None
-            and expected_arch_version != self.arch_version(view.id)
+            and expected_arch_version != self.arch_version(cast("int", view.id))
         ):
-            return {"stale": True, "canvas": self.canvas(view.id, canvas_options)}
+            return {
+                "stale": True,
+                "canvas": composed.canvas(cast("int", view.id), canvas_options),
+            }
 
-        root = etree.fromstring(view.get_combined_arch().encode())
-        stamped = canvas_stamp.stamp(root, view.type)
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        stamped = canvas_stamp.stamp(root, cast("str", view.type))
         target = dict(target or {})
-        draft = None
-        if str(target.get("token") or "").startswith(self.PENDING_TOKEN_PREFIX):
-            draft = self._canvas_draft(view, canvas_options.get("draft_id"))
-            self._splice_pending(stamped, root, view, draft, self.arch_version(view.id))
+        draft: BaseModel | None = None
+        if str(target.get("token") or "").startswith(composed.PENDING_TOKEN_PREFIX):
+            draft = composed._canvas_draft(view, canvas_options.get("draft_id"))
+            composed._splice_pending(
+                stamped, root, view, draft, self.arch_version(cast("int", view.id))
+            )
         token, position, container = self._drop_target(stamped, target)
         payload = dict(payload or {})
         moved = self._moved_node(stamped, payload)
-        gesture = None
+        gesture: tuple[canvas_stamp.Token, str] | None = None
         if stamped.nodes[token]["kind"] == "pending" and payload.get("kind") not in (
             "new_field",
             "move_pending",
@@ -1630,10 +2302,18 @@ class StudioViewEditor(models.AbstractModel):
             # around what lands; the drop itself goes beside a real node.
             gesture = (token, position)
             token, position = self._beside_ghost(
-                stamped, token, position, skip=payload.get("token") if moved else None
+                stamped,
+                token,
+                position,
+                skip=cast("canvas_stamp.Token | None", payload.get("token"))
+                if moved
+                else None,
             )
             container = stamped.nodes[
-                token if position == "inside" else stamped.nodes[token]["parent"]
+                cast(
+                    "canvas_stamp.Token",
+                    token if position == "inside" else stamped.nodes[token]["parent"],
+                )
             ]
         tag = canvas_stamp.payload_tag(payload, moved_tag=moved and moved["tag"])
         if not tag:
@@ -1643,7 +2323,7 @@ class StudioViewEditor(models.AbstractModel):
         if not container["container"] or tag not in container["accepts"]:
             raise UserError(self._drop_refusal(tag, container))
         if payload.get("kind") in ("new_field", "move_pending"):
-            return self._drop_field_definition(
+            return composed._drop_field_definition(
                 view,
                 package,
                 stamped,
@@ -1664,7 +2344,7 @@ class StudioViewEditor(models.AbstractModel):
             )
         if package.writable:
             package.action_write_files()
-        canvas = self.canvas(view.id, canvas_options)
+        canvas = composed.canvas(cast("int", view.id), canvas_options)
         return {
             "stale": False,
             "select": self._token_named(
@@ -1681,7 +2361,9 @@ class StudioViewEditor(models.AbstractModel):
         }
 
     @api.model
-    def _drop_target(self, stamped, target):
+    def _drop_target(
+        self, stamped: canvas_stamp.StampResult, target: dict[str, object]
+    ) -> tuple[canvas_stamp.Token, str, canvas_stamp.StudioNode]:
         """Resolve a drop target to ``(token, position, container node)``.
 
         The container is what the drop is checked against: the target
@@ -1691,7 +2373,7 @@ class StudioViewEditor(models.AbstractModel):
         position = self._explicit_position(target.get("position"))
         if not position:
             raise UserError(_("A drop has to say before, after or inside what."))
-        token = target.get("token")
+        token = cast("canvas_stamp.Token", target.get("token"))
         if token not in stamped.nodes:
             raise UserError(
                 _("That is not a place in the view the builder can address.")
@@ -1704,7 +2386,13 @@ class StudioViewEditor(models.AbstractModel):
         return token, position, stamped.nodes[parent]
 
     @api.model
-    def _beside_ghost(self, stamped, token, position, skip=None):
+    def _beside_ghost(
+        self,
+        stamped: canvas_stamp.StampResult,
+        token: canvas_stamp.Token,
+        position: str,
+        skip: canvas_stamp.Token | None = None,
+    ) -> tuple[canvas_stamp.Token, str]:
         """The real place a drop beside a ghost stands for: ``(token,
         position)`` on the nearest real sibling, or inside the parent when
         the ghost has none.
@@ -1719,10 +2407,10 @@ class StudioViewEditor(models.AbstractModel):
         relative to itself is refused.
         """
         node = stamped.nodes[token]
-        siblings = stamped.nodes[node["parent"]]["children"]
+        siblings = stamped.nodes[cast("canvas_stamp.Token", node["parent"])]["children"]
         index = siblings.index(token)
 
-        def real(t):
+        def real(t: canvas_stamp.Token) -> bool:
             return stamped.nodes[t]["kind"] != "pending" and t != skip
 
         following = [t for t in siblings[index + 1 :] if real(t)]
@@ -1737,10 +2425,19 @@ class StudioViewEditor(models.AbstractModel):
                 return preceding[-1], "after"
             if following:
                 return following[0], "before"
-        return node["parent"], "inside"
+        return cast("canvas_stamp.Token", node["parent"]), "inside"
 
     @api.model
-    def _reanchor_gap(self, view, draft, stamped, gesture, name, tag, container):
+    def _reanchor_gap(
+        self,
+        view: View,
+        draft: BaseModel | None,
+        stamped: canvas_stamp.StampResult,
+        gesture: tuple[canvas_stamp.Token, str],
+        name: str | None,
+        tag: str | None,
+        container: canvas_stamp.StudioNode,
+    ) -> bool:
         """Hang the ghosts of a gap off the real node that just landed in it.
 
         ``gesture`` is the drop as made -- ``(ghost token, position)`` on
@@ -1774,10 +2471,10 @@ class StudioViewEditor(models.AbstractModel):
             return False
         ghost_token, position = gesture
         node = stamped.nodes[ghost_token]
-        siblings = stamped.nodes[node["parent"]]["children"]
+        siblings = stamped.nodes[cast("canvas_stamp.Token", node["parent"])]["children"]
         index = siblings.index(ghost_token)
 
-        def ghost(token):
+        def ghost(token: canvas_stamp.Token) -> bool:
             return stamped.nodes[token]["kind"] == "pending"
 
         start = index
@@ -1787,31 +2484,55 @@ class StudioViewEditor(models.AbstractModel):
         while end < len(siblings) and ghost(siblings[end]):
             end += 1
         cut = index + (1 if position == "after" else 0)
-        before = [stamped.nodes[t]["pending"]["name"] for t in siblings[start:cut]]
-        after = [stamped.nodes[t]["pending"]["name"] for t in siblings[cut:end]]
+        # `"pending"` is `NotRequired` on `StudioNode` in general (real for
+        # every node `ghost()` selects here, a `kind: "pending"` ghost --
+        # `_splice_ghost`'s own construction always sets it on those, true
+        # by construction the direct-subscript form pyright refuses to
+        # assume); `.get()` plus a cast says so explicitly.
+        before = [
+            cast("canvas_stamp.PendingFieldInfo", stamped.nodes[t].get("pending"))[
+                "name"
+            ]
+            for t in siblings[start:cut]
+        ]
+        after = [
+            cast("canvas_stamp.PendingFieldInfo", stamped.nodes[t].get("pending"))[
+                "name"
+            ]
+            for t in siblings[cut:end]
+        ]
 
-        fresh_view = self.env["ir.ui.view"].browse(view.id)
-        root = etree.fromstring(fresh_view.get_combined_arch().encode())
-        fresh = canvas_stamp.stamp(root, view.type)
+        fresh_view = typed.model(self.env, View).browse(cast("int", view.id))
+        root = cast(
+            "LxmlElement", etree.fromstring(fresh_view.get_combined_arch().encode())
+        )
+        fresh = canvas_stamp.stamp(root, cast("str", view.type))
         landed = self._token_named(
             fresh.nodes, name, tag, within=(container["tag"], container["name"])
         )
         if landed is None:
             return False
-        landing = self._mint_anchor(fresh_view, fresh, root, landed, "after")
+        landing = cast("_ComposedViewEditor", self)._mint_anchor(
+            fresh_view, fresh, root, landed, "after"
+        )
         for side, chain in (("before", reversed(before)), ("after", after)):
             previous = None
             for ghost_name in chain:
+                anchor: dict[str, object]
                 if previous is None:
                     anchor = dict(landing, position=side)
                 else:
                     anchor = {"view_id": view.id, "position": side, "pending": previous}
-                draft.set_anchor(ghost_name, anchor, release_dependents=False)
+                cast("_DraftHandle", draft).set_anchor(
+                    ghost_name, anchor, release_dependents=False
+                )
                 previous = ghost_name
         return True
 
     @api.model
-    def _moved_node(self, stamped, payload):
+    def _moved_node(
+        self, stamped: canvas_stamp.StampResult, payload: dict[str, object]
+    ) -> canvas_stamp.StudioNode | None:
         """The node table entry a ``move`` payload names, or ``None``.
 
         A node under a subview is never in the table, so a move across a
@@ -1824,7 +2545,7 @@ class StudioViewEditor(models.AbstractModel):
         """
         if payload.get("kind") != "move":
             return None
-        moved = stamped.nodes.get(payload.get("token"))
+        moved = stamped.nodes.get(cast("canvas_stamp.Token", payload.get("token")))
         if moved is None:
             raise UserError(
                 _("One end of that move is not a node the builder can address.")
@@ -1839,7 +2560,15 @@ class StudioViewEditor(models.AbstractModel):
         return moved
 
     @api.model
-    def _apply_drop(self, view, package, anchor, position, payload, moved):
+    def _apply_drop(
+        self,
+        view: View,
+        package: StudioPackage,
+        anchor: dict[str, object],
+        position: str,
+        payload: dict[str, object],
+        moved: canvas_stamp.StudioNode | None,
+    ) -> tuple[str | None, str | None]:
         """Run the operation a drop stands for, disk gate closed.
 
         Returns the name of what landed and the tag to select it by, or
@@ -1848,8 +2577,8 @@ class StudioViewEditor(models.AbstractModel):
         """
         kind = payload.get("kind")
         if kind == "existing_field":
-            name = payload.get("name")
-            if not name or name not in self.env[view.model]._fields:
+            name = cast("str | None", payload.get("name"))
+            if not name or name not in self.env[cast("str", view.model)]._fields:
                 raise UserError(
                     _(
                         "%(field)s is not a field of %(model)s.",
@@ -1857,46 +2586,61 @@ class StudioViewEditor(models.AbstractModel):
                         model=view.model,
                     )
                 )
-            operation = {"type": "add_field", "name": name, "position": position}
+            operation: dict[str, object] = {
+                "type": "add_field",
+                "name": name,
+                "position": position,
+            }
             if payload.get("attrs"):
-                operation["attrs"] = dict(payload["attrs"])
-            self.apply_at(view.id, package.id, anchor, operation, write_files=False)
+                operation["attrs"] = dict(cast("dict[str, object]", payload["attrs"]))
+            self.apply_at(
+                cast("int", view.id),
+                cast("int", package.id),
+                anchor,
+                operation,
+                write_files=False,
+            )
             return name, "field"
         if kind == "component":
-            component = payload.get("component")
-            values = payload.get("values") or {}
+            component = cast("str | None", payload.get("component"))
+            values = cast("dict[str, object]", payload.get("values") or {})
             if component == "button":
                 result = self.add_button_at(
-                    view.id,
-                    package.id,
+                    cast("int", view.id),
+                    cast("int", package.id),
                     anchor,
                     values,
                     position=position,
                     write_files=False,
                 )
             else:
-                operation = {"type": self.COMPONENT_OPS[component]}
+                operation = {"type": self.COMPONENT_OPS[cast("str", component)]}
                 operation["position"] = position
                 if values.get("string"):
                     operation["string"] = values["string"]
                 result = self.apply_at(
-                    view.id, package.id, anchor, operation, write_files=False
+                    cast("int", view.id),
+                    cast("int", package.id),
+                    anchor,
+                    operation,
+                    write_files=False,
                 )
             return result.get("created_name"), None
         if kind == "move":
             self.move_node(
-                view.id,
-                package.id,
+                cast("int", view.id),
+                cast("int", package.id),
                 {"kind": "node", "token": payload["token"]},
                 anchor,
                 position,
                 write_files=False,
             )
-            return moved["name"], moved["tag"]
+            moved_entry = cast("canvas_stamp.StudioNode", moved)
+            return moved_entry["name"], moved_entry["tag"]
         raise UserError(_("'%s' is not something the builder can drop.", kind))
 
     @api.model
-    def _drop_refusal(self, tag, container):
+    def _drop_refusal(self, tag: str, container: canvas_stamp.StudioNode) -> str:
         """The sentence for a drop the container does not take."""
         if tag == "page":
             return _("A tab can only live in a notebook.")
@@ -1917,7 +2661,13 @@ class StudioViewEditor(models.AbstractModel):
         return _("%s cannot be dropped here.", what)
 
     @api.model
-    def _token_named(self, nodes, name, tag=None, within=None):
+    def _token_named(
+        self,
+        nodes: dict[canvas_stamp.Token, canvas_stamp.StudioNode],
+        name: str | None,
+        tag: str | None = None,
+        within: tuple[str, str | None] | None = None,
+    ) -> canvas_stamp.Token | None:
         """The token of the node called ``name`` in a fresh canvas, or ``None``.
 
         The canvas is re-stamped after the drop, so the token of what
@@ -1933,11 +2683,16 @@ class StudioViewEditor(models.AbstractModel):
         """
         if not name:
             return None
-        best, best_score = None, None
+        best: canvas_stamp.Token | None = None
+        best_score: tuple[bool, bool, bool] | None = None
         for token, node in nodes.items():
             if node["name"] != name:
                 continue
-            parent = nodes.get(node["parent"]) if node["parent"] else None
+            parent = (
+                nodes.get(cast("canvas_stamp.Token", node["parent"]))
+                if node["parent"]
+                else None
+            )
             score = (
                 bool(node["selectable"]),
                 tag is None or node["tag"] == tag,
@@ -1969,21 +2724,23 @@ class StudioViewEditor(models.AbstractModel):
     }
 
     @api.model
-    def search_elements(self, view_id):
+    def search_elements(self, view_id: int) -> SearchElementsJSON:
         """What a search view offers, in the three groups the sidebar shows."""
-        self._assert_studio_user()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_user()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
-        root = etree.fromstring(view.get_combined_arch().encode())
-        fields_, filters, group_bys = [], [], []
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        fields_: list[_SearchFieldEntryJSON] = []
+        filters: list[SearchFilterEntryJSON] = []
+        group_bys: list[SearchFilterEntryJSON] = []
         for node in root.iter("field"):
             if not any(a.tag == "field" for a in node.iterancestors()):
                 fields_.append(
                     {"name": node.get("name"), "string": node.get("string") or ""}
                 )
         for node in root.iter("filter"):
-            entry = {
+            entry: SearchFilterEntryJSON = {
                 "name": node.get("name") or "",
                 "string": node.get("string") or node.get("name") or "",
                 "domain": node.get("domain") or "",
@@ -1999,29 +2756,46 @@ class StudioViewEditor(models.AbstractModel):
             # Not computed on the client: "already offered" has to ignore
             # fields belonging to embedded subviews, which are another model's
             # entirely, and that rule lives here with the reason for it.
-            "addable": self.get_addable_fields(view.model, view.id),
+            "addable": self.get_addable_fields(
+                cast("str", view.model), cast("int", view.id)
+            ),
         }
 
     @api.model
-    def add_search_element(self, view_id, package_id, kind, values):
+    def add_search_element(
+        self, view_id: int, package_id: int, kind: str, values: dict[str, object]
+    ) -> OperationResultJSON:
         """Add a searchable field, a filter, or a group-by."""
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         occurrences = self._occurrences(root)
-        field_name = values.get("field")
+        field_name = cast("str | None", values.get("field"))
         # A built condition names its fields in its rows, so there is no single
         # field to insist on -- and insisting anyway is how "add a filter for
         # two things" turns into "choose one field first".
         built = kind == "filter" and values.get("condition") == "built"
         if not built and (
-            not field_name or field_name not in self.env[view.model]._fields
+            not field_name
+            or field_name not in self.env[cast("str", view.model)]._fields
         ):
             raise UserError(_("Choose a field that exists on %s.", view.model))
-        field = self.env[view.model]._fields.get(field_name)
+        # `not built and (... or field_name not in self.env[...]._fields)`
+        # above already raised unless `field_name` names a real field, so
+        # `field` is never actually `None` in either branch below that
+        # reads it (`condition in self.FILTER_CONDITIONS`/`group_by`) --
+        # true by construction, the same idiom `_field_info`'s own
+        # `self.env[model_name]._fields.get(...)` reads rely on elsewhere
+        # in this file, invisible to the type checker across the two
+        # separate `.get()` calls.
+        field = cast(
+            "Field[Any]",
+            self.env[cast("str", view.model)]._fields.get(cast("str", field_name)),
+        )
 
+        operation: dict[str, object]
         if kind == "field":
             anchor, position = self._search_anchor(root, "field")
             operation = {
@@ -2031,10 +2805,12 @@ class StudioViewEditor(models.AbstractModel):
                 "name": field_name,
             }
         elif kind == "filter":
-            condition = values.get("condition", "set")
+            condition = cast("str", values.get("condition", "set"))
             anchor, position = self._search_anchor(root, "filter")
             if condition == "built":
-                name, string, domain = self._built_filter(view.model, values)
+                name, string, domain = self._built_filter(
+                    cast("str", view.model), values
+                )
             elif condition in self.FILTER_CONDITIONS:
                 label, template = self.FILTER_CONDITIONS[condition]
                 name = "filter_%s_%s" % (field_name, condition)
@@ -2067,29 +2843,35 @@ class StudioViewEditor(models.AbstractModel):
         return self.apply_operation(view_id, package_id, operation)
 
     @api.model
-    def _built_filter(self, model_name, values):
+    def _built_filter(
+        self, model_name: str, values: dict[str, object]
+    ) -> tuple[str, str, str]:
         """A filter from the condition builder: name, label and domain.
 
         Checked before it is written, for the same reason a record rule is: a
         filter whose domain does not search raises when somebody clicks it,
         and by then it is in the source file and in the next database too.
         """
-        domain = self.env["studio.domain"].write_domain(
-            values.get("rows") or [], values.get("joiner") or "all"
+        domain = typed.model(self.env, StudioDomain).write_domain(
+            cast("list[DomainRowJSON] | None", values.get("rows")) or [],
+            cast("str", values.get("joiner") or "all"),
         )
-        checked = self.env["studio.domain"].check_domain(model_name, domain)
+        checked = typed.model(self.env, StudioDomain).check_domain(model_name, domain)
         if not checked["valid"]:
             raise UserError(
-                _("This condition does not search:\n\n%s", checked["reason"])
+                _(
+                    "This condition does not search:\n\n%s",
+                    cast("dict[str, object]", checked)["reason"],
+                )
             )
-        label = (values.get("string") or "").strip()
+        label = cast("str", (values.get("string") or "")).strip()
         if not label:
             raise UserError(_("Give the filter a name — it becomes its menu entry."))
         slug = "".join(c if c.isalnum() else "_" for c in label.lower())
         return "filter_%s" % "_".join(p for p in slug.split("_") if p), label, domain
 
     @api.model
-    def _search_anchor(self, root, tag):
+    def _search_anchor(self, root: LxmlElement, tag: str) -> tuple[LxmlElement, str]:
         """Where a new node of ``tag`` should go, and on which side.
 
         After the last one of its kind, so additions read in the order they
@@ -2106,14 +2888,19 @@ class StudioViewEditor(models.AbstractModel):
         return root, "inside"
 
     @api.model
-    def remove_search_element(self, view_id, package_id, kind, name):
+    def remove_search_element(
+        self, view_id: int, package_id: int, kind: str, name: str
+    ) -> OperationResultJSON:
         """Take a field, filter or group-by out of a search view."""
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
-        root = etree.fromstring(view.get_combined_arch().encode())
-        descriptor = {"kind": "field" if kind == "field" else "filter", "name": name}
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        descriptor: dict[str, object] = {
+            "kind": "field" if kind == "field" else "filter",
+            "name": name,
+        }
         node = self._find_descriptor(root, descriptor)
         if node is None:
             raise UserError(_("There is no '%s' in this search view.", name))
@@ -2161,7 +2948,9 @@ class StudioViewEditor(models.AbstractModel):
     INSERT_INSIDE = ("group", "notebook", "sheet", "header", "form", "list", "root")
 
     @api.model
-    def locate_target(self, view_id, descriptor):
+    def locate_target(
+        self, view_id: int, descriptor: dict[str, object]
+    ) -> LocateTargetJSON:
         """Resolve what the user clicked to a stable xpath, server-side.
 
         The browser sends a *descriptor* -- "the column for user_id" -- and
@@ -2172,16 +2961,18 @@ class StudioViewEditor(models.AbstractModel):
         against the combined arch, using the same uniqueness rule the node list
         already uses.
         """
-        self._assert_studio_user()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_user()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
         # A token is only meaningful on the tree it was minted from, so a
         # descriptor that says which tree that was is checked against the
         # current one -- a locator resolved from the wrong tree would be
         # for the wrong node, and the client is better told to reload.
-        self._assert_arch_version(view, descriptor.get("arch_version"))
-        root = etree.fromstring(view.get_combined_arch().encode())
+        self._assert_arch_version(
+            view, cast("str | None", descriptor.get("arch_version"))
+        )
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         node = self._find_descriptor(root, descriptor)
         if node is None:
             return {
@@ -2194,13 +2985,15 @@ class StudioViewEditor(models.AbstractModel):
         return {
             "found": True,
             "xpath": self._locator_for(node, self._occurrences(root)),
-            "tag": node.tag,
+            "tag": cast("str", node.tag),
             "attrs": dict(node.attrib),
-            "field": self._field_info(view.model, node),
+            "field": self._field_info(cast("str", view.model), node),
         }
 
     @api.model
-    def _find_descriptor(self, root, descriptor):
+    def _find_descriptor(
+        self, root: LxmlElement, descriptor: dict[str, object]
+    ) -> LxmlElement | None:
         """The arch node a descriptor refers to, or ``None``.
 
         Three vocabularies. ``root`` is the view itself. A *token* names a
@@ -2217,8 +3010,10 @@ class StudioViewEditor(models.AbstractModel):
             return root
         if kind == "node":
             stamped = canvas_stamp.stamp(root, root.tag)
-            return stamped.elements.get(descriptor.get("token"))
-        tag = self.DESCRIPTOR_TAGS.get(kind)
+            return stamped.elements.get(
+                cast("canvas_stamp.Token", descriptor.get("token"))
+            )
+        tag = self.DESCRIPTOR_TAGS.get(cast("str", kind))
         if not tag:
             return None
         # A node inside an embedded subview belongs to another model entirely;
@@ -2247,7 +3042,11 @@ class StudioViewEditor(models.AbstractModel):
         return None
 
     @api.model
-    def _find_node_entry(self, root, descriptor, stamp=False):
+    def _find_node_entry(
+        self, root: LxmlElement, descriptor: dict[str, object], stamp: bool = False
+    ) -> tuple[
+        LxmlElement | None, canvas_stamp.StampResult | None, canvas_stamp.Token | None
+    ]:
         """The node a descriptor names, with its place in the node table.
 
         Returns ``(element, stamped, token)``. For a token descriptor the
@@ -2261,8 +3060,8 @@ class StudioViewEditor(models.AbstractModel):
         """
         if descriptor.get("kind") == "node":
             stamped = canvas_stamp.stamp(root, root.tag)
-            token = descriptor.get("token")
-            element = stamped.elements.get(token)
+            token = cast("canvas_stamp.Token | None", descriptor.get("token"))
+            element = stamped.elements.get(cast("canvas_stamp.Token", token))
             return element, (stamped if element is not None else None), token
         element = self._find_descriptor(root, descriptor)
         if element is None or not stamp:
@@ -2272,7 +3071,11 @@ class StudioViewEditor(models.AbstractModel):
         return element, (stamped if token else None), token
 
     @api.model
-    def _insert_position(self, descriptor, entry=None):
+    def _insert_position(
+        self,
+        descriptor: dict[str, object],
+        entry: canvas_stamp.StudioNode | None = None,
+    ) -> str:
         """Whether a new node goes inside what was selected or after it.
 
         A token descriptor says nothing about what it names, so the answer
@@ -2286,7 +3089,7 @@ class StudioViewEditor(models.AbstractModel):
         return "inside" if kind in self.INSERT_INSIDE else "after"
 
     @api.model
-    def _describe_kind(self, kind):
+    def _describe_kind(self, kind: str) -> str:
         """How a sentence to the user names a node of ``kind``.
 
         Internal kinds -- ``html``, ``button_box``, the kanban parts -- are
@@ -2316,7 +3119,7 @@ class StudioViewEditor(models.AbstractModel):
         }.get(kind, _("element"))
 
     @api.model
-    def _confirm_removal(self, kind, count, fields):
+    def _confirm_removal(self, kind: str, count: int, fields: int) -> str:
         """The question asked before a container and its content go.
 
         Counted in fields when there are any, since that is what the user
@@ -2343,7 +3146,7 @@ class StudioViewEditor(models.AbstractModel):
         )
 
     @api.model
-    def _field_info(self, model_name, node):
+    def _field_info(self, model_name: str, node: LxmlElement) -> FieldInfoJSON | None:
         """What the sidebar needs in order to offer the right options.
 
         Options are type-aware -- a column sum belongs on a number and nowhere
@@ -2352,10 +3155,10 @@ class StudioViewEditor(models.AbstractModel):
         """
         if node.tag != "field" or model_name not in self.env:
             return None
-        field = self.env[model_name]._fields.get(node.get("name"))
+        field = self.env[model_name]._fields.get(cast("str", node.get("name")))
         if not field:
             return None
-        info = {
+        info: FieldInfoJSON = {
             "name": field.name,
             "type": field.type,
             "string": field.string or field.name,
@@ -2371,7 +3174,12 @@ class StudioViewEditor(models.AbstractModel):
         return info
 
     @api.model
-    def editing_context(self, view_id=None, model=None, view_type=None):
+    def editing_context(
+        self,
+        view_id: int | None = None,
+        model: str | None = None,
+        view_type: str | None = None,
+    ) -> EditingContextJSON:
         """Everything the editor needs to open on a view.
 
         ``view_id`` is optional on purpose. An ordinary action rarely pins one
@@ -2385,19 +3193,24 @@ class StudioViewEditor(models.AbstractModel):
         records into its own package; anything else needs one chosen, and when
         exactly one writable package exists that is not worth asking about.
         """
-        self._assert_studio_user()
-        View = self.env["ir.ui.view"]
-        view = View.browse(view_id).exists() if view_id else View.browse()
+        typed.security(self)._assert_studio_user()
+        # Same `View` shadowing trap as `_get_or_create_extension` above.
+        view_model = typed.model(self.env, View)
+        view = view_model.browse(view_id).exists() if view_id else view_model.browse()
         if not view and model and view_type:
-            view = View.browse(View.default_view(model, view_type))
+            view = view_model.browse(
+                cast("int", view_model.default_view(model, view_type))
+            )
         if not view and model and not view_type:
             # Only the model in hand -- Home's Open, the crumb's picker, a
             # URL without a view: the form first, since that is where a
             # field goes, then whichever view the model has.
-            existing = {v["type"]: v["view_id"] for v in self._views_of(model)}
+            existing: dict[str, int] = {
+                v["type"]: v["view_id"] for v in self._views_of(model)
+            }
             for candidate in ("form", "list", "kanban", *existing):
                 if candidate in existing:
-                    view = View.browse(existing[candidate])
+                    view = view_model.browse(existing[candidate])
                     break
         if not view:
             raise UserError(
@@ -2407,19 +3220,23 @@ class StudioViewEditor(models.AbstractModel):
                     model=model or _("that model"),
                 )
             )
-        packages = self.env["studio.package"].search([])
-        owner = view.studio_package_id
+        packages = typed.model(self.env, StudioPackage).search([])
+        # Same `studio.owned.mixin` composed-elsewhere cast as
+        # `_find_extension` above.
+        owner = cast("StudioPackage", cast("StudioOwnedMixin", view).studio_package_id)
         suggested = owner or packages._suggested()
         python_owner = (
-            self._python_owner(view.model) if view.model else packages.browse()
+            cast("_ComposedViewEditor", self)._python_owner(cast("str", view.model))
+            if view.model
+            else packages.browse()
         )
         return {
             "view": {
-                "id": view.id,
-                "name": view.name,
-                "type": view.type,
+                "id": cast("int", view.id),
+                "name": cast("str", view.name),
+                "type": cast("str", view.type),
                 "model": view.model,
-                "mode": view.mode,
+                "mode": cast("str", view.mode),
             },
             # Every kind of view the model has, for the console's switcher.
             # One per type, chosen the way Odoo chooses when an action does
@@ -2429,7 +3246,7 @@ class StudioViewEditor(models.AbstractModel):
             # Apply, or a row that is live at once -- the two paths a field
             # drop can take, decided before the palette is drawn.
             "python_owned": bool(python_owner),
-            "python_owner_id": python_owner.id if python_owner else False,
+            "python_owner_id": cast("int", python_owner.id) if python_owner else False,
             "field_types": modelspec.available_field_types(
                 self._python_spec(python_owner, view.model), self.env._
             ),
@@ -2450,7 +3267,7 @@ class StudioViewEditor(models.AbstractModel):
             # vocabulary shared with the model composer. Sent here rather than
             # from an endpoint of its own because the editor already makes this
             # call and the answer never changes mid-session.
-            "options": view_options.groups_json(view.type, self.env._),
+            "options": view_options.groups_json(cast("str", view.type), self.env._),
             "catalogue": catalogue.catalogue_json(self.env._),
             "groups": self._selectable_groups(),
             # Whether an edit rewrites this view or emits a patch against it.
@@ -2458,13 +3275,20 @@ class StudioViewEditor(models.AbstractModel):
             # is the difference between understanding the output and not.
             "owned": bool(owner) and self._owns_outright(view, owner),
             "packages": [
-                {"id": p.id, "name": p.name, "writable": p.writable} for p in packages
+                {
+                    "id": cast("int", p.id),
+                    "name": cast("str", p.name),
+                    "writable": p.writable,
+                }
+                for p in packages
             ],
-            "suggested_package_id": suggested.id if suggested else False,
+            "suggested_package_id": cast("int", suggested.id) if suggested else False,
         }
 
     @api.model
-    def _views_of(self, model_name):
+    def _views_of(
+        self, model_name: str | Literal[False] | None
+    ) -> list[ViewOfEntryJSON]:
         """One view per type the model has, as Odoo would pick it.
 
         The types come from ``get_view_info`` -- the registry every module
@@ -2475,28 +3299,42 @@ class StudioViewEditor(models.AbstractModel):
         """
         if not model_name:
             return []
-        View = self.env["ir.ui.view"]
-        out = []
-        for view_type in View.get_view_info():
-            view_id = View.default_view(model_name, view_type)
+        # Same `View` shadowing trap as `_get_or_create_extension` above.
+        view_model = typed.model(self.env, View)
+        out: list[ViewOfEntryJSON] = []
+        # `get_view_info` is declared only by `web`'s own `_inherit =
+        # "ir.ui.view"` extension (`odoo/addons/web/models/ir_ui_view.py`),
+        # not `base`'s real class `typed.model()` targets above -- a
+        # genuine core-vendor composed-elsewhere gap (this project's own
+        # `View` import is `base`'s, per TYPING.md's traced classes list),
+        # worked around the same narrow way as `studio.owned.mixin`'s own,
+        # for a dependency this addon already declares (`web`, in its
+        # manifest) rather than one this migration adds.
+        for view_type in cast("WebView", view_model).get_view_info():
+            view_id = cast("int", view_model.default_view(model_name, view_type))
             if not view_id:
                 continue
-            view = View.browse(view_id)
+            view = view_model.browse(view_id)
             # Ownership is an xmlid lookup, which only an administrator may
-            # make; the fact itself is not a secret.
-            owner = view.sudo().studio_package_id
+            # make; the fact itself is not a secret. Same `studio.owned
+            # .mixin` composed-elsewhere cast as `_find_extension` above.
+            owner = cast(
+                "StudioPackage", cast("StudioOwnedMixin", view.sudo()).studio_package_id
+            )
             out.append(
                 {
                     "type": view_type,
-                    "view_id": view.id,
-                    "name": view.name,
+                    "view_id": cast("int", view.id),
+                    "name": cast("str", view.name),
                     "owned": bool(owner) and self._owns_outright(view, owner),
                 }
             )
         return out
 
     @api.model
-    def _python_spec(self, package, model_name):
+    def _python_spec(
+        self, package: StudioPackage, model_name: str | Literal[False]
+    ) -> modelspec.ModelSpec | None:
         """The spec the field picker decides its offer from.
 
         The on-disk spec of a Python-owned model, since that is where a
@@ -2510,8 +3348,11 @@ class StudioViewEditor(models.AbstractModel):
         if not model_name or model_name not in self.env:
             return None
         if package:
-            entry = self.env["studio.package.model"].search(
-                [("package_id", "=", package.id), ("model", "=", model_name)],
+            entry = typed.model(self.env, StudioPackageModel).search(
+                [
+                    ("package_id", "=", cast("int", package.id)),
+                    ("model", "=", model_name),
+                ],
                 limit=1,
             )
             if entry:
@@ -2519,7 +3360,7 @@ class StudioViewEditor(models.AbstractModel):
         return self._live_spec(model_name)
 
     @api.model
-    def _live_spec(self, model_name):
+    def _live_spec(self, model_name: str) -> modelspec.ModelSpec:
         """A spec of the registry's model, saying only what the picker asks.
 
         The relational fields, by name and comodel: enough to find a
@@ -2542,11 +3383,13 @@ class StudioViewEditor(models.AbstractModel):
         )
 
     @api.model
-    def _open_draft_id(self, model_name):
+    def _open_draft_id(
+        self, model_name: str | Literal[False] | None
+    ) -> int | Literal[False]:
         """The newest draft this user has on ``model_name``, or ``False``."""
         if not model_name or "studio.model.draft" not in self.env:
             return False
-        draft = self.env["studio.model.draft"].search(
+        draft = typed.model(self.env, StudioModelDraft).search(
             [
                 ("package_model_id.model", "=", model_name),
                 ("create_uid", "=", self.env.uid),
@@ -2555,10 +3398,10 @@ class StudioViewEditor(models.AbstractModel):
             order="id desc",
             limit=1,
         )
-        return draft.id or False
+        return cast("int", draft.id) or False
 
     @api.model
-    def _record_count(self, model_name):
+    def _record_count(self, model_name: str | Literal[False] | None) -> int:
         """How many records the model has, archived ones included, up to
         ``RECORD_COUNT_CAP``.
 
@@ -2600,7 +3443,9 @@ class StudioViewEditor(models.AbstractModel):
     NOT_ADDABLE = ("search", "qweb")
 
     @api.model
-    def _placeable_fields(self, model, types):
+    def _placeable_fields(
+        self, model: BaseModel, types: tuple[str, ...]
+    ) -> list[PlaceableFieldEntryJSON]:
         """Stored fields of ``types``, as the picker needs them.
 
         `create_date` and `write_date` are dates too, and a calendar of when
@@ -2617,7 +3462,9 @@ class StudioViewEditor(models.AbstractModel):
         ]
 
     @api.model
-    def _view_prerequisites(self, model, view_type):
+    def _view_prerequisites(
+        self, model: BaseModel, view_type: str
+    ) -> tuple[str, _ViewPrerequisiteExtraJSON]:
         """What this view type needs from this model before it can exist.
 
         Returns the reason it cannot, plus whatever the caller has to choose.
@@ -2654,23 +3501,25 @@ class StudioViewEditor(models.AbstractModel):
         return "", {}
 
     @api.model
-    def addable_view_types(self, model_name):
+    def addable_view_types(self, model_name: str) -> list[AddableViewTypeEntryJSON]:
         """Which views this model could have, and why not where it could not."""
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
         model = self.env[model_name]
         existing = set(
-            self.env["ir.ui.view"]
+            typed.model(self.env, View)
             .search([("model", "=", model_name), ("mode", "=", "primary")])
             .mapped("type")
         )
-        known = self.env["ir.ui.view"].get_view_info()
-        out = []
+        # Same `web`-only `get_view_info` composed-elsewhere cast as
+        # `_views_of` above.
+        known = cast("WebView", typed.model(self.env, View)).get_view_info()
+        out: list[AddableViewTypeEntryJSON] = []
         for view_type, meta in known.items():
             if view_type in self.NOT_ADDABLE:
                 continue
-            entry = {
+            entry: AddableViewTypeEntryJSON = {
                 "type": view_type,
                 "label": meta.get("display_name") or view_type,
                 "icon": meta.get("icon") or "",
@@ -2696,14 +3545,30 @@ class StudioViewEditor(models.AbstractModel):
                 reason, extra = self._view_prerequisites(model, view_type)
                 entry["reason"] = reason
                 entry["enabled"] = not reason
-                entry.update(extra)
+                # `dict.update()` on a `TypedDict` wants its argument's own
+                # type to already be a `Partial` of the *same* TypedDict
+                # (typeshed's own `update()` overloads), which
+                # `_ViewPrerequisiteExtraJSON` -- a real but different,
+                # narrower TypedDict -- does not structurally satisfy even
+                # though every key it ever carries is one of this one's
+                # own; merged by hand instead, keeping `.update()`'s own
+                # "only a key actually present overwrites" behavior.
+                if "date_fields" in extra:
+                    entry["date_fields"] = extra["date_fields"]
+                if "group_fields" in extra:
+                    entry["group_fields"] = extra["group_fields"]
             out.append(entry)
         return out
 
     @api.model
     def add_view(
-        self, model_name, view_type, package_id, date_field=None, group_field=None
-    ):
+        self,
+        model_name: str,
+        view_type: str,
+        package_id: int,
+        date_field: str | None = None,
+        group_field: str | None = None,
+    ) -> AddViewJSON:
         """Create a view of ``view_type`` for ``model_name``, and make it
         reachable.
 
@@ -2712,18 +3577,18 @@ class StudioViewEditor(models.AbstractModel):
         gain the type in their ``view_mode`` -- otherwise the builder would
         report success and the user would never find what it built.
         """
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         if view_type not in self.VIEW_SCAFFOLDS:
             raise UserError(_("The builder does not create %s views.", view_type))
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
-        package = self.env["studio.package"].browse(package_id).exists()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a studio package to record this view in."))
         package._assert_writable()
 
         model = self.env[model_name]
-        existing = self.env["ir.ui.view"].search(
+        existing = typed.model(self.env, View).search(
             [
                 ("model", "=", model_name),
                 ("type", "=", view_type),
@@ -2764,21 +3629,28 @@ class StudioViewEditor(models.AbstractModel):
                 )
             )
         arch = self._scaffold_arch(model, view_type, date_field, group_field)
-        view = self.env["ir.ui.view"].create(
-            {
-                "name": "%s.%s" % (model_name, view_type),
-                "model": model_name,
-                "type": view_type,
-                "arch": etree.tostring(arch, encoding="unicode"),
-            }
-        )
+        # Same `create()` single-dict vendor gap as `_get_or_create_extension`
+        # above.
+        vals = {
+            "name": "%s.%s" % (model_name, view_type),
+            "model": model_name,
+            "type": view_type,
+            "arch": cast("str", etree.tostring(arch, encoding="unicode")),
+        }
+        view = typed.model(self.env, View).create(vals)  # pyright: ignore[reportArgumentType]
         package.studio_capture(view)
         self._offer_view_in_actions(package, model_name, view_type)
         package.action_write_files()
-        return {"view_id": view.id, "type": view_type}
+        return {"view_id": cast("int", view.id), "type": view_type}
 
     @api.model
-    def _scaffold_arch(self, model, view_type, date_field=None, group_field=None):
+    def _scaffold_arch(
+        self,
+        model: BaseModel,
+        view_type: str,
+        date_field: str | None = None,
+        group_field: str | None = None,
+    ) -> LxmlElement:
         """The starting arch for a new view, built from the live model."""
         spec = self._spec_for(model)
         options = scaffold.ScaffoldOptions.from_keys(
@@ -2790,7 +3662,7 @@ class StudioViewEditor(models.AbstractModel):
             )
             if present
         )
-        builders = {
+        builders: dict[str, Callable[[], LxmlElement]] = {
             "kanban": lambda: scaffold.scaffold_kanban_arch(model, spec, options),
             "calendar": lambda: scaffold.scaffold_calendar_arch(
                 model, spec, date_field, options
@@ -2810,14 +3682,14 @@ class StudioViewEditor(models.AbstractModel):
         return build()
 
     @api.model
-    def _spec_for(self, model):
+    def _spec_for(self, model: BaseModel) -> modelspec.ModelSpec:
         """A spec describing the live model, for the scaffold to read.
 
         The scaffolds take a spec because that is what building a *new* model
         produces. Here the model already exists, so one is derived from the
         registry -- the same direction adoption uses.
         """
-        entry = self.env["studio.package.model"].search(
+        entry = typed.model(self.env, StudioPackageModel).search(
             [("model", "=", model._name), ("source", "=", "python")], limit=1
         )
         spec = entry._current_spec() if entry else None
@@ -2829,22 +3701,31 @@ class StudioViewEditor(models.AbstractModel):
             if field.store and name not in modelspec.MAGIC_COLUMNS
         ]
         return modelspec.ModelSpec(
-            name=model._name,
-            description=model._description or model._name,
-            class_name=pycodegen.class_name_for(model._name),
+            name=cast("str", model._name),
+            description=model._description or cast("str", model._name),
+            class_name=pycodegen.class_name_for(cast("str", model._name)),
             fields=tuple(fields_),
             rec_name=model._rec_name or "name",
         )
 
     @api.model
-    def _offer_view_in_actions(self, package, model_name, view_type):
+    def _offer_view_in_actions(
+        self, package: StudioPackage, model_name: str, view_type: str
+    ) -> BaseModel:
         """Add the new view type to the window actions that show this model."""
-        actions = self.env["ir.actions.act_window"].search(
+        actions = typed.model(self.env, IrActionsActWindow).search(
             [("res_model", "=", model_name)]
         )
         touched = actions.browse()
         for action in actions:
-            if action.studio_package_id != package:
+            # Same `studio.owned.mixin` composed-elsewhere cast as
+            # `_find_extension` above, on a different owned model.
+            if (
+                cast(
+                    "StudioPackage", cast("StudioOwnedMixin", action).studio_package_id
+                )
+                != package
+            ):
                 # Somebody else's action is not ours to change; the studio's
                 # whole premise is that it does not rewrite what it does not own.
                 continue
@@ -2863,7 +3744,7 @@ class StudioViewEditor(models.AbstractModel):
         return touched
 
     @api.model
-    def _preview_for(self, view):
+    def _preview_for(self, view: View) -> PreviewInfoJSON:
         """How to render the view being edited.
 
         Every type renders itself, except search: a search view has no
@@ -2873,43 +3754,55 @@ class StudioViewEditor(models.AbstractModel):
         edited rather than an approximation of them.
         """
         if view.type != "search":
-            return {"type": view.type, "view_id": view.id, "search_view_id": False}
-        host = self.env["ir.ui.view"].default_view(view.model, "list")
+            return {
+                "type": cast("str", view.type),
+                "view_id": cast("int", view.id),
+                "search_view_id": False,
+            }
+        host = cast("int", typed.model(self.env, View).default_view(view.model, "list"))
         return {
             "type": "list",
             "view_id": host or False,
-            "search_view_id": view.id,
+            "search_view_id": cast("int", view.id),
             # Without a list to host it there is nothing to show. Editing still
             # works -- the sidebar is the editor for a search view anyway.
             "unavailable": not host,
         }
 
     @api.model
-    def _selectable_groups(self):
+    def _selectable_groups(self) -> list[SelectableGroupEntryJSON]:
         """Groups a ``groups=""`` attribute can name.
 
         Only ones with an external id: the attribute takes xmlids, and a group
         without one cannot be referred to from an arch at all -- so offering it
         would produce a view that silently shows the field to everybody.
         """
-        groups = self.env["res.groups"].sudo().search([])
-        external = groups.get_external_id()
-        out = [
+        groups = typed.model(self.env, Groups).sudo().search([])
+        external = cast("dict[int, str]", groups.get_external_id())
+        out: list[SelectableGroupEntryJSON] = [
             {
-                "id": group.id,
-                "xmlid": external.get(group.id),
-                "name": group.display_name,
+                "id": cast("int", group.id),
+                "xmlid": cast("str", external.get(cast("int", group.id))),
+                "name": cast("str", group.display_name),
             }
             for group in groups
-            if external.get(group.id)
+            if external.get(cast("int", group.id))
         ]
         return sorted(out, key=lambda entry: entry["name"])
 
     @api.model
-    def _model_fields(self, model_name):
+    def _model_fields(
+        self, model_name: str | Literal[False] | None
+    ) -> list[EditingContextFieldEntryJSON]:
         """Every stored field of a model, for option rows that name one."""
+        # `not in` does not narrow a union the way `is None`/truthiness
+        # would -- `self.env`'s own `__contains__` tells pyright nothing
+        # about `model_name`'s type -- so the empty-string/`False`/`None`
+        # cases this guard actually rules out at runtime need a cast to
+        # read back as the plain `str` `self.env[...]` below takes.
         if model_name not in self.env:
             return []
+        model_name = cast("str", model_name)
         return [
             {"name": name, "string": field.string or name, "type": field.type}
             for name, field in sorted(self.env[model_name]._fields.items())
@@ -2917,17 +3810,21 @@ class StudioViewEditor(models.AbstractModel):
         ]
 
     @api.model
-    def get_addable_fields(self, model_name, view_id=None):
+    def get_addable_fields(
+        self, model_name: str, view_id: int | None = None
+    ) -> list[AddableFieldEntryJSON]:
         """Fields on the model that are not already in the combined arch."""
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
         model = self.env[model_name]
-        present = set()
+        present: set[str | None] = set()
         if view_id:
-            view = self.env["ir.ui.view"].browse(view_id).exists()
+            view = typed.model(self.env, View).browse(view_id).exists()
             if view:
-                arch = etree.fromstring(view.get_combined_arch().encode())
+                arch = cast(
+                    "LxmlElement", etree.fromstring(view.get_combined_arch().encode())
+                )
                 # Only fields at this arch's own level count as placed. iter()
                 # is recursive, so an embedded x2many subview -- which belongs
                 # to another model entirely -- would otherwise mask the parent's
@@ -2939,7 +3836,7 @@ class StudioViewEditor(models.AbstractModel):
                     if node.get("name")
                     and not any(a.tag == "field" for a in node.iterancestors())
                 }
-        result = []
+        result: list[AddableFieldEntryJSON] = []
         for name, field in sorted(model._fields.items()):
             if name in present or name.startswith("_"):
                 continue
