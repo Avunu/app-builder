@@ -2,20 +2,44 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Graduate-to-code: the handoff from metadata to owned source."""
 
+from __future__ import annotations
+
 import ast
 import os
+from typing import TYPE_CHECKING, cast
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from odoo.addons.base.models.ir_model import (
+    IrModel,
+    IrModelFields,
+    IrModelSelection,
     field_xmlid,
     model_xmlid,
     selection_xmlid,
 )
 
-from ..tools import modelspec
-from .common import StudioCase
+# Fully-qualified, not the relative `..tools`/`.models...` forms otherwise
+# used inside this addon: `make_package()` (`common.py`) returns `StudioPackage`
+# imported via this same `odoo.addons.app_builder_base....` path, so a `ModelSpec`
+# built here has to resolve under that identity too, or `_seed_source_for`
+# (`studio_package.py`) sees two `ModelSpec`s that print identically but come
+# from different resolved module paths -- the exact trap `studio_package.py`'s
+# own imports document for the same reason.
+from odoo.addons.app_builder_base.models.studio_package_model import (
+    StudioPackageModel,
+)
+from odoo.addons.app_builder_base.tools import modelspec
+
+from ..tools import typed
+from .common import StudioCase, raises
+
+if TYPE_CHECKING:
+    # Only for the cast below; with `from __future__ import annotations`
+    # nothing here needs this at runtime, the same `TYPE_CHECKING` bargain
+    # `studio_package.py`'s own `env.cr` casts make.
+    from odoo.sql_db import Cursor
 
 
 @tagged("post_install", "-at_install")
@@ -43,13 +67,15 @@ class TestAdopt(StudioCase):
             model.get_external_id()[model.id],
             model_xmlid(package.name, "x_studio_project"),
         )
-        field = self.env["ir.model.fields"]._get("x_studio_project", "x_name")
+        field = typed.model(self.env, IrModelFields)._get("x_studio_project", "x_name")
         self.assertEqual(
             field.get_external_id()[field.id],
             field_xmlid(package.name, "x_studio_project", "x_name"),
         )
-        stage = self.env["ir.model.fields"]._get("x_studio_project", "x_stage")
-        draft = stage.selection_ids.filtered(lambda s: s.value == "draft")
+        stage = typed.model(self.env, IrModelFields)._get("x_studio_project", "x_stage")
+        draft = cast("IrModelSelection", stage.selection_ids).filtered(
+            lambda s: s.value == "draft"
+        )
         self.assertEqual(
             draft.get_external_id()[draft.id],
             selection_xmlid(package.name, "x_studio_project", "x_stage", "draft"),
@@ -59,7 +85,11 @@ class TestAdopt(StudioCase):
 
     def test_graduation_writes_python_and_wires_imports(self):
         package = self._graduated_package()
-        root = package.root_path
+        # `root_path` is compute-only (`_compute_root_path`, studio_package.py)
+        # and declared `str | Literal[False]` like any Char, but a package that
+        # just graduated always has one -- same invariant cast as
+        # `studio_package.py`'s own real read sites.
+        root = cast("str", package.root_path)
         model_file = os.path.join(root, "models/x_studio_project.py")
         self.assertTrue(os.path.isfile(model_file))
 
@@ -80,7 +110,9 @@ class TestAdopt(StudioCase):
         self.assertNotIn("models/x_studio_project.xml", rendered)
         self.assertFalse(
             os.path.isfile(
-                os.path.join(package.root_path, "models/x_studio_project.xml")
+                os.path.join(
+                    cast("str", package.root_path), "models/x_studio_project.xml"
+                )
             ),
             "the superseded XML must be pruned from disk",
         )
@@ -105,7 +137,9 @@ class TestAdopt(StudioCase):
         regenerating would emit an empty class over working code.
         """
         package = self._graduated_package()
-        model_file = os.path.join(package.root_path, "models/x_studio_project.py")
+        model_file = os.path.join(
+            cast("str", package.root_path), "models/x_studio_project.py"
+        )
         with open(model_file, "a", encoding="utf-8") as handle:
             handle.write("\n    # hand-written by a developer\n")
 
@@ -116,7 +150,7 @@ class TestAdopt(StudioCase):
 
     def test_models_init_preserves_hand_added_imports(self):
         package = self._graduated_package()
-        init_path = os.path.join(package.root_path, "models/__init__.py")
+        init_path = os.path.join(cast("str", package.root_path), "models/__init__.py")
         with open(init_path, "a", encoding="utf-8") as handle:
             handle.write("from . import my_own_module\n")
 
@@ -139,7 +173,9 @@ class TestAdopt(StudioCase):
         package.action_write_files()
         package.action_adopt(["x_studio_project"])
 
-        model = self.env["ir.model"].search([("model", "=", "x_studio_project")])
+        model = typed.model(self.env, IrModel).search(
+            [("model", "=", "x_studio_project")]
+        )
         self.assertTrue(model, "the row must survive; only its state changes")
         self.assertEqual(model.state, "base")
         self.assertFalse(
@@ -158,19 +194,19 @@ class TestAdopt(StudioCase):
         package = self.make_package(name="x_demote_data")
         self.build_demo_content(package)
         package.action_write_files()
-        record = self.env["x_studio_project"].create(
-            {"x_name": "Keep me", "x_budget": 7.0}
-        )
+        vals: dict[str, object] = {"x_name": "Keep me", "x_budget": 7.0}
+        record = self.env["x_studio_project"].create(vals)  # pyright: ignore[reportArgumentType]
         record_id = record.id
         self.env.flush_all()
 
         package.action_adopt(["x_studio_project"])
 
-        self.env.cr.execute(
+        cr = cast("Cursor", self.env.cr)
+        cr.execute(
             "SELECT x_name, x_budget FROM x_studio_project WHERE id = %s",
             (record_id,),
         )
-        self.assertEqual(self.env.cr.fetchone(), ("Keep me", 7.0))
+        self.assertEqual(cr.fetchone(), ("Keep me", 7.0))
 
     def test_demotion_does_not_cascade_into_dependent_records(self):
         """Every model_id in Odoo is ondelete='cascade'.
@@ -180,22 +216,20 @@ class TestAdopt(StudioCase):
         """
         package = self.make_package(name="x_demote_cascade")
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        rule = self.env["ir.rule"].create(
-            {
-                "name": "demote rule",
-                "model_id": model.id,
-                "domain_force": "[(1, '=', 1)]",
-            }
-        )
-        server_action = self.env["ir.actions.server"].create(
-            {
-                "name": "demote action",
-                "model_id": model.id,
-                "state": "code",
-                "code": "pass",
-            }
-        )
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        rule_vals: dict[str, object] = {
+            "name": "demote rule",
+            "model_id": model.id,
+            "domain_force": "[(1, '=', 1)]",
+        }
+        rule = self.env["ir.rule"].create(rule_vals)  # pyright: ignore[reportArgumentType]
+        server_action_vals: dict[str, object] = {
+            "name": "demote action",
+            "model_id": model.id,
+            "state": "code",
+            "code": "pass",
+        }
+        server_action = self.env["ir.actions.server"].create(server_action_vals)  # pyright: ignore[reportArgumentType]
         package._assign([rule, server_action])
         package.action_write_files()
 
@@ -238,17 +272,17 @@ class TestAdopt(StudioCase):
         package = self.make_package(name="x_grad_uninstalled", installed=False)
         self.build_demo_content(package)
         package.action_write_files()
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             package.action_adopt(["x_studio_project"])
 
     def test_graduating_an_unowned_model_is_refused(self):
         package = self.make_package(name="x_grad_guard")
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             package.action_adopt(["res.partner"])
 
     def test_graduating_nothing_is_refused(self):
         package = self.make_package(name="x_grad_empty")
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             package.action_adopt([])
 
     def test_graduation_is_idempotent(self):
@@ -263,7 +297,9 @@ class TestPackageTeardown(StudioCase):
         package = self.make_package(name="x_teardown")
         self.build_demo_content(package)
         package.action_write_files()
-        source = os.path.join(package.root_path, "models/x_studio_project.xml")
+        source = os.path.join(
+            cast("str", package.root_path), "models/x_studio_project.xml"
+        )
         self.assertTrue(os.path.isfile(source))
 
         package.action_delete_records()
@@ -303,7 +339,7 @@ class TestExtendingACoreModel(StudioCase):
 
     def test_an_extension_renders_as_inherit_without_name(self):
         package = self.make_package()
-        entry = self.env["studio.package.model"]._adopt(
+        entry = typed.model(self.env, StudioPackageModel)._adopt(
             package, "res.partner", extends=True
         )
         self.assertTrue(entry.extends)
@@ -315,7 +351,11 @@ class TestExtendingACoreModel(StudioCase):
             fields=(modelspec.FieldSpec(name="x_studio_ref", ttype="char"),),
         )
         package._seed_source_for("res.partner", spec)
-        source = package._read_source(entry.python_path)
+        # `python_path` is compute-only and declared `str | Literal[False]`
+        # like any Char (same invariant cast as `studio_package_model.py`'s
+        # own real read sites); `_read_source` returns `str | None` but this
+        # source was just seeded above, so it is never `None` here.
+        source = cast("str", package._read_source(cast("str", entry.python_path)))
         self.assertIn('_inherit = "res.partner"', source)
         self.assertNotIn("_name =", source)
 
@@ -326,30 +366,33 @@ class TestExtendingACoreModel(StudioCase):
         that model, and lose it.
         """
         package = self.make_package()
-        self.env["studio.package.model"]._adopt(package, "res.partner", extends=True)
+        typed.model(self.env, StudioPackageModel)._adopt(
+            package, "res.partner", extends=True
+        )
         self.assertFalse(
-            self.env["studio.package.model"]._is_python_owned("res.partner")
+            typed.model(self.env, StudioPackageModel)._is_python_owned("res.partner")
         )
 
     def test_a_declaration_still_claims_its_model(self):
         package = self.make_package()
-        self.env["studio.package.model"]._adopt(package, "x_studio_thing")
+        typed.model(self.env, StudioPackageModel)._adopt(package, "x_studio_thing")
         self.assertTrue(
-            self.env["studio.package.model"]._is_python_owned("x_studio_thing")
+            typed.model(self.env, StudioPackageModel)._is_python_owned("x_studio_thing")
         )
 
     def test_a_manual_field_on_an_extended_model_still_reaches_xml(self):
         """The regression the extends flag exists to prevent."""
         package = self.make_package()
-        self.env["studio.package.model"]._adopt(package, "res.partner", extends=True)
-        field = self.env["ir.model.fields"].create(
-            {
-                "name": "x_studio_note",
-                "field_description": "Note",
-                "ttype": "char",
-                "model_id": self.env["ir.model"]._get("res.partner").id,
-            }
+        typed.model(self.env, StudioPackageModel)._adopt(
+            package, "res.partner", extends=True
         )
+        field_vals: dict[str, object] = {
+            "name": "x_studio_note",
+            "field_description": "Note",
+            "ttype": "char",
+            "model_id": typed.model(self.env, IrModel)._get("res.partner").id,
+        }
+        field = self.env["ir.model.fields"].create(field_vals)  # pyright: ignore[reportArgumentType]
         package._assign(field)
         emitted = "".join(package._render_files().values())
         self.assertIn("x_studio_note", emitted)

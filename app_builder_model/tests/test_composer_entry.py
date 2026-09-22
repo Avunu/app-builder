@@ -13,20 +13,30 @@ Both halves are pinned here: the entry point exists, and no module redefines
 one of its own xmlids again.
 """
 
+from __future__ import annotations
+
 import os
 from collections import Counter
+from typing import TYPE_CHECKING, cast
 
-from lxml import etree
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo.modules.module import get_module_path
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.app_builder_base.tools import typed
+
+if TYPE_CHECKING:
+    from odoo.addons.base.models.ir_ui_menu import IrUiMenu
+
 
 @tagged("post_install", "-at_install")
 class TestComposerEntryPoint(TransactionCase):
     def test_the_composer_is_reachable_from_a_menu(self):
-        menu = self.env.ref("app_builder_model.menu_studio_composer")
+        menu = cast(
+            "IrUiMenu", typed.ref(self.env, "app_builder_model.menu_studio_composer")
+        )
         self.assertEqual(
             menu.action,
             self.env.ref("app_builder_model.studio_package_model_action"),
@@ -36,7 +46,9 @@ class TestComposerEntryPoint(TransactionCase):
 
     def test_the_technical_model_list_kept_its_own_menu(self):
         """The two are different surfaces and both should exist."""
-        menu = self.env.ref("app_builder_model.menu_studio_models")
+        menu = cast(
+            "IrUiMenu", typed.ref(self.env, "app_builder_model.menu_studio_models")
+        )
         self.assertEqual(menu.name, "Custom Models")
 
     def test_an_administrator_can_see_the_way_in(self):
@@ -45,8 +57,8 @@ class TestComposerEntryPoint(TransactionCase):
         it, or the person who installed the studio cannot open it. The
         composer list itself is developer-mode only: the console is the
         way in, and this list is the rows behind its cards."""
-        root = self.env.ref("app_builder_base.menu_studio_root")
-        menu = self.env.ref("app_builder_model.menu_studio_composer")
+        root = typed.ref(self.env, "app_builder_base.menu_studio_root")
+        menu = typed.ref(self.env, "app_builder_model.menu_studio_composer")
         admin = self.env.ref("base.user_admin")
         visible = self.env["ir.ui.menu"].with_user(admin)
         self.assertIn(root.id, visible.search([]).ids)
@@ -83,7 +95,11 @@ class TestNoRedefinedXmlids(TransactionCase):
             )
             checked += 1
             ids = []
-            for dirpath, _dirs, names in os.walk(root):
+            # The assertTrue above raises if `root` is falsy -- same
+            # "invariant guaranteed by the check just above, not provable
+            # from here" shape as `studio_package.py`'s own
+            # `cast("str", self.root_path)`.
+            for dirpath, _dirs, names in os.walk(cast("str", root)):
                 if "tests" in dirpath.split(os.sep):
                     continue
                 for name in sorted(names):

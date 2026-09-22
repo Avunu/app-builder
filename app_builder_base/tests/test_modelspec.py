@@ -20,13 +20,17 @@ a database, so it runs in milliseconds and can gate the phases that do. (A bare
 only ``MetaCase`` supplies.)
 """
 
+from __future__ import annotations
+
 import ast
 import itertools
+from typing import Any
 
 from odoo.tests import BaseCase, tagged
 
 from ..tools import catalogue, modelspec, pycodegen, pyparse
 from ..tools.modelspec import ConstraintSpec, FieldSpec, ModelSpec, SelectionSpec
+from .common import raises
 
 
 def spec_with(*fields, **kwargs):
@@ -135,7 +139,7 @@ class TestCodegenFixedPoint(BaseCase):
     def test_each_attribute_toggle_round_trips(self):
         for toggle in TOGGLES:
             with self.subTest(toggle=toggle):
-                base = {"name": "f_probe", "ttype": "char"}
+                base: dict[str, Any] = {"name": "f_probe", "ttype": "char"}
                 base.update(toggle)
                 self.assert_fixed_point(spec_with(FieldSpec(**base)))
 
@@ -145,7 +149,7 @@ class TestCodegenFixedPoint(BaseCase):
             if set(first) & set(second):
                 continue
             with self.subTest(first=first, second=second):
-                base = {"name": "f_probe", "ttype": "char"}
+                base: dict[str, Any] = {"name": "f_probe", "ttype": "char"}
                 base.update(first)
                 base.update(second)
                 self.assert_fixed_point(spec_with(FieldSpec(**base)))
@@ -428,7 +432,7 @@ class TestParserIsConservative(BaseCase):
 
     def assert_refused(self, source):
         """``source`` is a whole file."""
-        with self.assertRaises(pyparse.UnsupportedConstruct):
+        with raises(self, pyparse.UnsupportedConstruct):
             pyparse.parse_model(source)
 
     def assert_block_refused(self, body):
@@ -443,7 +447,7 @@ class P(models.Model):
 {body}
 {pycodegen.END_MARKER}
 """
-        with self.assertRaises(pyparse.UnsupportedConstruct):
+        with raises(self, pyparse.UnsupportedConstruct):
             pyparse.parse_model(source)
 
     def test_a_structurally_load_bearing_attribute_is_still_refused(self):
@@ -504,7 +508,7 @@ class P(models.Model):
             pycodegen.END_MARKER,
             "\n    def action_go(self):\n        return True\n" + pycodegen.END_MARKER,
         )
-        with self.assertRaises(pyparse.UnsupportedConstruct) as caught:
+        with raises(self, pyparse.UnsupportedConstruct) as caught:
             pyparse.parse_model(source)
         self.assertIn("below the block", str(caught.exception))
 

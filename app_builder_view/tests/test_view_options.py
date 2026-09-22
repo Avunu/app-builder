@@ -7,12 +7,26 @@ JavaScript objects carrying functions, "does every row name an attribute the
 editor can actually write" was not a question anything could ask.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.tests.common import StudioCase
-from odoo.addons.app_builder_base.tools import catalogue
+from odoo.addons.app_builder_base.tools import catalogue, typed
 
+from ..models.studio_view_editor import StudioViewEditor
 from ..tools import view_options
+
+if TYPE_CHECKING:
+    # Only used inside the `cast()` calls below (`from __future__ import
+    # annotations` defers them to strings) -- `_fields["type"]` off a
+    # `typed.model()`-less lookup is the base `Field`, which does not
+    # declare `get_values`; only its `Selection` subclass does (`odoo
+    # /fields.py`). Same shape as `studio_approval.py`'s own traced
+    # `_selection_values` gap.
+    from odoo.fields import Selection
 
 # Renderers the properties panel implements. A row asking for anything else
 # renders as nothing at all, which reads as a missing feature rather than a typo.
@@ -78,7 +92,11 @@ class TestOptionCatalogue(StudioCase):
         the day somebody installs the module. What must not pass is a typo, so
         the optional ones are listed rather than assumed.
         """
-        known = set(self.env["ir.ui.view"]._fields["type"].get_values(self.env))
+        known = set(
+            cast("Selection", self.env["ir.ui.view"]._fields["type"]).get_values(
+                self.env
+            )
+        )
         allowed = known | set(view_options.OPTIONAL_VIEW_TYPES)
         for group in view_options.OPTION_GROUPS:
             for view_type in group.view_types:
@@ -88,7 +106,10 @@ class TestOptionCatalogue(StudioCase):
         absent = [
             t
             for t in view_options.OPTIONAL_VIEW_TYPES
-            if t not in self.env["ir.ui.view"]._fields["type"].get_values(self.env)
+            if t
+            not in cast("Selection", self.env["ir.ui.view"]._fields["type"]).get_values(
+                self.env
+            )
         ]
         if not absent:
             self.skipTest("every optional view type is installed here")
@@ -134,7 +155,9 @@ class TestEditingContextCarriesTheCatalogue(StudioCase):
         view = self.env["ir.ui.view"].search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
-        context = self.env["studio.view.editor"].editing_context(view.id)
+        context = typed.model(self.env, StudioViewEditor).editing_context(
+            cast("int", view.id)
+        )
         self.assertTrue(context["options"], "the panel would have nothing to show")
         self.assertTrue(context["catalogue"]["widgets"])
         ids = {group["id"] for group in context["options"]}
@@ -149,7 +172,9 @@ class TestEditingContextCarriesTheCatalogue(StudioCase):
         view = self.env["ir.ui.view"].search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
-        context = self.env["studio.view.editor"].editing_context(view.id)
+        context = typed.model(self.env, StudioViewEditor).editing_context(
+            cast("int", view.id)
+        )
         group = next(g for g in context["options"] if g["id"] == "form_field")
         names = [row["name"] for row in group["rows"]]
         self.assertIn("widget", names)

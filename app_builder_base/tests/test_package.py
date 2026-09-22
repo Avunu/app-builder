@@ -2,23 +2,31 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Package lifecycle: writing, drift detection, guard rails."""
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING, cast
 
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import tagged
 
-from .common import StudioCase
+from .common import StudioCase, raises
+
+if TYPE_CHECKING:
+    # Only for the cast below; with `from __future__ import annotations`
+    # nothing here needs this at runtime.
+    from ..models.studio_package import StudioPackageFile
 
 
 @tagged("post_install", "-at_install")
 class TestPackage(StudioCase):
     def test_reserved_name_is_rejected(self):
         """graph.py hardcodes studio_customization out of the module graph."""
-        with self.assertRaises(ValidationError):
+        with raises(self, ValidationError):
             self.make_package(name="studio_customization")
 
     def test_invalid_module_name_is_rejected(self):
-        with self.assertRaises(ValidationError):
+        with raises(self, ValidationError):
             self.make_package(name="not a module")
 
     def test_write_creates_files_on_disk(self):
@@ -26,7 +34,7 @@ class TestPackage(StudioCase):
         self.build_demo_content(package)
         package.action_write_files()
 
-        root = package.root_path
+        root = cast("str", package.root_path)
         for relative in (
             "__manifest__.py",
             "__init__.py",
@@ -45,7 +53,9 @@ class TestPackage(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         package.action_write_files()
-        target = os.path.join(package.root_path, "models/x_studio_project.xml")
+        target = os.path.join(
+            cast("str", package.root_path), "models/x_studio_project.xml"
+        )
         before = os.stat(target).st_mtime_ns
 
         package.action_write_files()
@@ -64,13 +74,19 @@ class TestPackage(StudioCase):
         package.action_check_drift()
         self.assertEqual(package.state, "synced")
 
-        target = os.path.join(package.root_path, "models/x_studio_project.xml")
+        target = os.path.join(
+            cast("str", package.root_path), "models/x_studio_project.xml"
+        )
         with open(target, "a", encoding="utf-8") as handle:
             handle.write("<!-- hand edit -->\n")
 
         package.action_check_drift()
         self.assertEqual(package.state, "drifted")
-        drifted = package.file_ids.filtered("drifted").mapped("path")
+        drifted = (
+            cast("StudioPackageFile", package.file_ids)
+            .filtered("drifted")
+            .mapped("path")
+        )
         self.assertEqual(drifted, ["models/x_studio_project.xml"])
 
     def test_missing_directory_is_detected(self):
@@ -79,7 +95,7 @@ class TestPackage(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         package.action_write_files()
-        shutil.rmtree(package.root_path)
+        shutil.rmtree(cast("str", package.root_path))
         package.action_check_drift()
         self.assertEqual(package.state, "missing")
 
@@ -91,7 +107,7 @@ class TestPackage(StudioCase):
         package.root_path = self.unwritable_path()
         package.invalidate_recordset(["writable"])
         self.assertFalse(package.writable)
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             package.action_write_files()
 
     def test_stale_generated_file_is_pruned(self):
@@ -111,7 +127,9 @@ class TestPackage(StudioCase):
 
         self.assertFalse(
             os.path.isfile(
-                os.path.join(package.root_path, "views/x_studio_project_views.xml")
+                os.path.join(
+                    cast("str", package.root_path), "views/x_studio_project_views.xml"
+                )
             ),
             "a generated file with no remaining records should be removed",
         )
@@ -123,7 +141,9 @@ class TestPackage(StudioCase):
         self.build_demo_content(package)
         package.action_write_files()
 
-        target = os.path.join(package.root_path, "views/x_studio_project_views.xml")
+        target = os.path.join(
+            cast("str", package.root_path), "views/x_studio_project_views.xml"
+        )
         with open(target, "a", encoding="utf-8") as handle:
             handle.write("<!-- mine -->\n")
 
@@ -148,7 +168,9 @@ class TestPackage(StudioCase):
         package = self.make_package()
         web_icon = package._seed_app_icon()
         self.assertEqual(web_icon, "%s,static/description/icon.png" % package.name)
-        target = os.path.join(package.root_path, "static/description/icon.png")
+        target = os.path.join(
+            cast("str", package.root_path), "static/description/icon.png"
+        )
         self.assertTrue(os.path.isfile(target))
         with open(target, "rb") as handle:
             self.assertEqual(handle.read(8), b"\x89PNG\r\n\x1a\n")
@@ -158,7 +180,9 @@ class TestPackage(StudioCase):
         it is not tracked, so the pruning pass has no reason to look at it."""
         package = self.make_package()
         package._seed_app_icon()
-        target = os.path.join(package.root_path, "static/description/icon.png")
+        target = os.path.join(
+            cast("str", package.root_path), "static/description/icon.png"
+        )
         with open(target, "wb") as handle:
             handle.write(b"theirs")
 
@@ -179,9 +203,12 @@ class TestPackage(StudioCase):
 
     def test_assign_allocates_stable_xmlids(self):
         package = self.make_package()
-        model = self.env["ir.model"].create(
-            {"name": "Thing", "model": "x_studio_thing", "field_id": []}
-        )
+        vals: dict[str, object] = {
+            "name": "Thing",
+            "model": "x_studio_thing",
+            "field_id": [],
+        }
+        model = self.env["ir.model"].create(vals)  # pyright: ignore[reportArgumentType]
         first = package._assign(model)
         second = package._assign(model)
         self.assertEqual(first, second, "assigning twice must not mint a new xmlid")
@@ -189,12 +216,14 @@ class TestPackage(StudioCase):
 
     def test_assign_deduplicates_colliding_names(self):
         package = self.make_package()
-        a = self.env["ir.ui.view"].create(
-            {"name": "same name", "model": "res.partner", "arch": "<form/>"}
-        )
-        b = self.env["ir.ui.view"].create(
-            {"name": "same name", "model": "res.partner", "arch": "<form/>"}
-        )
+        vals: dict[str, object] = {
+            "name": "same name",
+            "model": "res.partner",
+            "arch": "<form/>",
+        }
+        a = self.env["ir.ui.view"].create(vals)  # pyright: ignore[reportArgumentType]
+        vals = {"name": "same name", "model": "res.partner", "arch": "<form/>"}
+        b = self.env["ir.ui.view"].create(vals)  # pyright: ignore[reportArgumentType]
         first = package._assign(a)[0]
         second = package._assign(b)[0]
         self.assertNotEqual(first, second)
@@ -219,13 +248,12 @@ class TestPackage(StudioCase):
         """
         package = self.make_package()
         self.build_demo_content(package)
-        foreign = self.env["ir.ui.view"].create(
-            {
-                "name": "not ours",
-                "model": "x_studio_project",
-                "arch": "<form><sheet><field name='x_name'/></sheet></form>",
-            }
-        )
+        vals: dict[str, object] = {
+            "name": "not ours",
+            "model": "x_studio_project",
+            "arch": "<form><sheet><field name='x_name'/></sheet></form>",
+        }
+        foreign = self.env["ir.ui.view"].create(vals)  # pyright: ignore[reportArgumentType]
 
         ours = self.env["ir.ui.view"].search(
             [("model", "=", "x_studio_project"), ("studio_package_id", "=", package.id)]

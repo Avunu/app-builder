@@ -8,7 +8,14 @@ names its nodes the same way -- and that it names exactly the nodes an edit
 may touch: nothing under a field, nothing that has no DOM to carry a name.
 """
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import Any, cast
+
+# lxml ships no type stubs in this environment, the same gap `test_xml_writer.py`
+# and every Phase 1c model file already document -- `etree` itself is an
+# unresolvable import symbol with no stub.
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo.tests import TransactionCase, tagged
 
@@ -148,7 +155,11 @@ class TestCanvasStamp(TransactionCase):
         root, result = self._stamp(FORM, "form")
         token = _by_name(result, "comment")
         element = result.elements[token]
-        self.assertIs(element.getroottree().getroot(), root)
+        # `LxmlElement.getroottree()` (`lxml_types.py`) only declares
+        # `getpath()`, the one method its other two readers need; `getroot()`
+        # is real lxml but outside that narrow Protocol, and out of this
+        # file's own scope to extend it.
+        self.assertIs(cast("Any", element.getroottree()).getroot(), root)
         self.assertEqual(element.get("name"), "comment")
         self.assertIsNone(element.get("class"), "the original carries no token")
 
@@ -309,11 +320,21 @@ class TestCanvasStamp(TransactionCase):
             result.nodes[label_tokens["off_but_labelled"]]["string"], "off_but_labelled"
         )
         self.assertEqual(result.nodes[label_tokens["on_sheet"]]["string"], "Named")
-        off = result.nodes[_by_name(result, "off_but_labelled")]["label"]
+        # `StudioNode["label"]` is `FieldLabel | None`; only a `field` node
+        # ever carries one, and both fields read here do (asserted above via
+        # `label_tokens`), so the cast just names what the test already
+        # relies on.
+        off = cast(
+            "canvas_stamp.FieldLabel",
+            result.nodes[_by_name(result, "off_but_labelled")]["label"],
+        )
         self.assertEqual(off["by"], "label")
         self.assertEqual(off["token"], label_tokens["off_but_labelled"])
         self.assertTrue(off["in_group"])
-        on_sheet = result.nodes[_by_name(result, "on_sheet")]["label"]
+        on_sheet = cast(
+            "canvas_stamp.FieldLabel",
+            result.nodes[_by_name(result, "on_sheet")]["label"],
+        )
         self.assertEqual(on_sheet["by"], "label")
         self.assertFalse(on_sheet["in_group"])
 
@@ -387,7 +408,9 @@ class TestCanvasStamp(TransactionCase):
         self.assertEqual(stamped.get("class"), "w-100 %s" % token)
         # Through a <t t-if> wrapper, which is not itself a place.
         name = result.nodes[_by_name(result, "name")]
-        self.assertEqual(result.nodes[name["parent"]]["tag"], "main")
+        self.assertEqual(
+            result.nodes[cast("canvas_stamp.Token", name["parent"])]["tag"], "main"
+        )
         self.assertEqual(
             [n["name"] for n in result.nodes.values() if n["tag"] == "t"],
             ["card"],
@@ -499,7 +522,10 @@ class TestCanvasStamp(TransactionCase):
         _root, result = self._stamp(arch, "form")
         meta = canvas_stamp.prepare_for_canvas(result.arch, "form", show_invisible=True)
         self.assertEqual(meta["rewritten"], [])
-        self.assertEqual(result.arch[0].get("invisible"), "not b")
+        # `LxmlElement` (`lxml_types.py`) declares no `__getitem__`; real
+        # lxml supports positional indexing for a child, out of this file's
+        # own scope to add to that Protocol.
+        self.assertEqual(cast("Any", result.arch)[0].get("invisible"), "not b")
 
     def test_js_class_is_taken_off_and_returned(self):
         _root, result = self._stamp(FORM, "form")

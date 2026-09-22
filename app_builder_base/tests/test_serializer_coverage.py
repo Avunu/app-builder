@@ -20,13 +20,21 @@ Two tests, doing different jobs:
   the developer from having to notice.
 """
 
+from __future__ import annotations
+
 import logging
 from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from .common import StudioCase
+from odoo.addons.base.models.ir_model import IrModel, IrModelAccess
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.base_automation.models.base_automation import BaseAutomation
+
+from ..models.studio_serializer import StudioSerializer
+from ..tools import typed
+from .common import StudioCase, raises
 
 _logger = logging.getLogger(__name__)
 
@@ -45,7 +53,7 @@ DECLARED_SCOPE = frozenset({"base", "mail", "sms", "base_automation"})
 @tagged("post_install", "-at_install")
 class TestSerializerCoverage(StudioCase):
     def _serializers(self):
-        Serializer = self.env["studio.serializer"]
+        Serializer = typed.model(self.env, StudioSerializer)
         for model_name in Serializer._serializable_models():
             serializer = Serializer._for_model(model_name)
             if serializer is not None and model_name in self.env:
@@ -133,8 +141,10 @@ class TestCompletenessGuard(StudioCase):
     """
 
     def _view_serializer(self, package):
-        return self.env["studio.serializer.ir.ui.view"].with_context(
-            studio_package=package.name
+        return typed.serializer(
+            self.env["studio.serializer.ir.ui.view"].with_context(
+                studio_package=package.name
+            )
         )
 
     def _without_priority(self, serializer):
@@ -145,14 +155,14 @@ class TestCompletenessGuard(StudioCase):
         """The guard is what turns silent data loss into a stopped write."""
         package = self.make_package()
         self.build_demo_content(package)
-        view = self.env["ir.ui.view"].search(
+        view = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
         view.priority = 42
         serializer = self._view_serializer(package)
         with (
             self._without_priority(serializer),
-            self.assertRaises(UserError) as caught,
+            raises(self, UserError) as caught,
         ):
             serializer._serialize(view, "%s.view_x" % package.name)
         self.assertIn("priority", str(caught.exception))
@@ -198,23 +208,24 @@ class TestReferencePortability(StudioCase):
     def test_a_reference_field_is_emitted_as_an_xmlid(self):
         package = self.make_package()
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        action = self.env["ir.actions.server"].create(
-            {
-                "name": "Point at a partner",
-                "model_id": model.id,
-                "state": "object_write",
-                "update_path": "x_name",
-                "resource_ref": "res.partner,%d" % self.env.ref("base.main_partner").id,
-            }
-        )
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        vals = {
+            "name": "Point at a partner",
+            "model_id": model.id,
+            "state": "object_write",
+            "update_path": "x_name",
+            "resource_ref": "res.partner,%d"
+            % typed.ref(self.env, "base.main_partner").id,
+        }
+        action = self.env["ir.actions.server"].create(vals)  # pyright: ignore[reportArgumentType]
         package._assign(action)
         rendered = package._render_files()
         emitted = "".join(rendered.values())
         self.assertIn('name="resource_ref"', emitted)
         self.assertIn("base.main_partner", emitted)
         self.assertNotIn(
-            'name="resource_ref" ref="%d"' % self.env.ref("base.main_partner").id,
+            'name="resource_ref" ref="%d"'
+            % typed.ref(self.env, "base.main_partner").id,
             emitted,
             "a raw id would not survive a fresh install",
         )
@@ -231,24 +242,23 @@ class TestReferencePortability(StudioCase):
             self.skipTest("base_automation is not installed")
         package = self.make_package()
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("res.partner")
-        category = self.env["res.partner.category"].create({"name": "Studio Tag"})
-        self.env["ir.model.data"].create(
-            {
-                "module": package.name,
-                "name": "category_studio_tag",
-                "model": "res.partner.category",
-                "res_id": category.id,
-            }
-        )
-        automation = self.env["base.automation"].create(
-            {
-                "name": "On tag",
-                "model_id": model.id,
-                "trigger": "on_tag_set",
-                "trg_field_ref": category.id,
-            }
-        )
+        model = typed.model(self.env, IrModel)._get("res.partner")
+        category_vals = {"name": "Studio Tag"}
+        category = self.env["res.partner.category"].create(category_vals)  # pyright: ignore[reportArgumentType]
+        data_vals = {
+            "module": package.name,
+            "name": "category_studio_tag",
+            "model": "res.partner.category",
+            "res_id": category.id,
+        }
+        self.env["ir.model.data"].create(data_vals)  # pyright: ignore[reportArgumentType]
+        automation_vals = {
+            "name": "On tag",
+            "model_id": model.id,
+            "trigger": "on_tag_set",
+            "trg_field_ref": category.id,
+        }
+        automation = typed.model(self.env, BaseAutomation).create(automation_vals)  # pyright: ignore[reportArgumentType]
         self.addCleanup(self.env["base.automation"]._unregister_hook)
         if not automation.trg_field_ref_model_name:
             self.skipTest("res.partner exposes no tag field for this trigger")
@@ -260,15 +270,14 @@ class TestReferencePortability(StudioCase):
         """A raw primary key means a different record in the next database."""
         package = self.make_package()
         self.build_demo_content(package)
-        partner = self.env.ref("base.main_partner")
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "One partner",
-                "res_model": "res.partner",
-                "view_mode": "form",
-                "res_id": partner.id,
-            }
-        )
+        partner = typed.ref(self.env, "base.main_partner")
+        vals = {
+            "name": "One partner",
+            "res_model": "res.partner",
+            "view_mode": "form",
+            "res_id": partner.id,
+        }
+        action = self.env["ir.actions.act_window"].create(vals)  # pyright: ignore[reportArgumentType]
         package._assign(action)
         emitted = "".join(package._render_files().values())
         self.assertIn("ref('base.main_partner')", emitted)
@@ -285,7 +294,7 @@ class TestAccessCsvOptionalColumns(StudioCase):
         csv = package._render_files()["security/ir.model.access.csv"]
         self.assertNotIn("active", csv.splitlines()[0])
 
-        access = self.env["ir.model.access"].search(
+        access = typed.model(self.env, IrModelAccess).search(
             [("model_id.model", "=", "x_studio_project")], limit=1
         )
         access.active = False
@@ -301,15 +310,14 @@ class TestServerActionCoverage(StudioCase):
         """Regression: state='webhook' serialized with no URL at all."""
         package = self.make_package()
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        action = self.env["ir.actions.server"].create(
-            {
-                "name": "Notify",
-                "model_id": model.id,
-                "state": "webhook",
-                "webhook_url": "https://example.invalid/hook",
-            }
-        )
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        vals = {
+            "name": "Notify",
+            "model_id": model.id,
+            "state": "webhook",
+            "webhook_url": "https://example.invalid/hook",
+        }
+        action = self.env["ir.actions.server"].create(vals)  # pyright: ignore[reportArgumentType]
         package._assign(action)
         emitted = "".join(package._render_files().values())
         self.assertIn("https://example.invalid/hook", emitted)
@@ -319,16 +327,15 @@ class TestServerActionCoverage(StudioCase):
         turns an automation's action back into a standalone one."""
         package = self.make_package()
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        action = self.env["ir.actions.server"].create(
-            {
-                "name": "Owned by a rule",
-                "model_id": model.id,
-                "state": "code",
-                "code": "pass",
-                "usage": "base_automation",
-            }
-        )
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        vals = {
+            "name": "Owned by a rule",
+            "model_id": model.id,
+            "state": "code",
+            "code": "pass",
+            "usage": "base_automation",
+        }
+        action = self.env["ir.actions.server"].create(vals)  # pyright: ignore[reportArgumentType]
         package._assign(action)
         emitted = "".join(package._render_files().values())
         self.assertIn("base_automation", emitted)
@@ -351,17 +358,18 @@ class TestSkipOverridesDoNotHideFields(StudioCase):
         """Root tag <t> is not a view type, so inference raises on load."""
         package = self.make_package()
         self.build_demo_content(package)
-        view = self.env["ir.ui.view"].create(
-            {
-                "name": "studio.qweb.template",
-                "type": "qweb",
-                "key": "%s.some_template" % package.name,
-                "arch": '<t t-name="something"><div>hello</div></t>',
-            }
-        )
+        vals = {
+            "name": "studio.qweb.template",
+            "type": "qweb",
+            "key": "%s.some_template" % package.name,
+            "arch": '<t t-name="something"><div>hello</div></t>',
+        }
+        view = self.env["ir.ui.view"].create(vals)  # pyright: ignore[reportArgumentType]
         package._assign(view)
-        serializer = self.env["studio.serializer.ir.ui.view"].with_context(
-            studio_package=package.name
+        serializer = typed.serializer(
+            self.env["studio.serializer.ir.ui.view"].with_context(
+                studio_package=package.name
+            )
         )
         node = serializer._serialize(view, "%s.view_qweb" % package.name)
         emitted = {child.get("name") for child in node}
@@ -379,8 +387,10 @@ class TestSkipOverridesDoNotHideFields(StudioCase):
         view = self.env["ir.ui.view"].search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
-        serializer = self.env["studio.serializer.ir.ui.view"].with_context(
-            studio_package=package.name
+        serializer = typed.serializer(
+            self.env["studio.serializer.ir.ui.view"].with_context(
+                studio_package=package.name
+            )
         )
         node = serializer._serialize(view, "%s.view_form" % package.name)
         self.assertNotIn("type", {child.get("name") for child in node})
@@ -390,12 +400,14 @@ class TestSkipOverridesDoNotHideFields(StudioCase):
         key is how a multi-website database resolves views."""
         package = self.make_package()
         self.build_demo_content(package)
-        view = self.env["ir.ui.view"].search(
+        view = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
         view.key = "%s.carried_key" % package.name
-        serializer = self.env["studio.serializer.ir.ui.view"].with_context(
-            studio_package=package.name
+        serializer = typed.serializer(
+            self.env["studio.serializer.ir.ui.view"].with_context(
+                studio_package=package.name
+            )
         )
         node = serializer._serialize(view, "%s.view_form" % package.name)
         self.assertIn("key", {child.get("name") for child in node})

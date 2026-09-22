@@ -9,11 +9,24 @@ an optimisation; if it does not, we have two competing sources of truth and the
 design works.
 """
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING, Any, cast
 
 from odoo.tests import tagged
 
+from odoo.addons.base.models.ir_model import IrModel, IrModelData, IrModelFields
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.base.models.res_lang import Lang
+from odoo.addons.app_builder_base.tools import typed
+
 from .common import StudioCase
+
+if TYPE_CHECKING:
+    # Only for the `selection_ids` cast below; the same bargain every
+    # Phase 1c file's own `TYPE_CHECKING` block makes.
+    from odoo.addons.base.models.ir_model import IrModelSelection
 
 
 @tagged("post_install", "-at_install")
@@ -42,7 +55,7 @@ class TestRoundTrip(StudioCase):
 
         original_ids = {
             entry.name: entry.res_id
-            for entry in self.env["ir.model.data"].search(
+            for entry in typed.model(self.env, IrModelData).search(
                 [("module", "=", package.name)]
             )
         }
@@ -57,7 +70,7 @@ class TestRoundTrip(StudioCase):
 
         reloaded_ids = {
             entry.name: entry.res_id
-            for entry in self.env["ir.model.data"].search(
+            for entry in typed.model(self.env, IrModelData).search(
                 [("module", "=", package.name)]
             )
         }
@@ -81,16 +94,21 @@ class TestRoundTrip(StudioCase):
         self.load_rendered(package, rendered)
 
         self.assertIn("x_studio_project", self.env)
-        record = self.env["x_studio_project"].create(
-            {"x_name": "Rebuilt", "x_budget": 21.0}
-        )
-        self.assertEqual(record.x_name, "Rebuilt")
+        # x_studio_project is a manual model synthesized at runtime -- no
+        # real Python class in this tree ever carries its fields, the same
+        # "_inherits/delegate=True" shape TYPING.md documents for ir.cron's
+        # own model_id/name: `Any` is the honest type here, not a cast to
+        # some concrete class that does not exist.
+        vals: dict[str, object] = {"x_name": "Rebuilt", "x_budget": 21.0}
+        record = self.env["x_studio_project"].create(vals)  # pyright: ignore[reportArgumentType]
+        self.assertEqual(cast("Any", record).x_name, "Rebuilt")
         # The stored compute survived serialization as data, not code.
-        self.assertEqual(record.x_budget_doubled, 42.0)
+        self.assertEqual(cast("Any", record).x_budget_doubled, 42.0)
         # Selection values came back in order.
-        field = self.env["ir.model.fields"]._get("x_studio_project", "x_stage")
+        field = typed.model(self.env, IrModelFields)._get("x_studio_project", "x_stage")
+        selections = cast("IrModelSelection", field.selection_ids)
         self.assertEqual(
-            [s.value for s in field.selection_ids.sorted("sequence")],
+            [s.value for s in selections.sorted("sequence")],
             ["draft", "done"],
         )
 
@@ -121,7 +139,7 @@ class TestRoundTripKeepsTranslations(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.env["res.lang"]._activate_lang("fr_FR")
+        typed.model(self.env, Lang)._activate_lang("fr_FR")
 
     def _translate(self, record, fname, value, lang="fr_FR"):
         """`update_field_translations` rather than a write under a lang context.
@@ -138,7 +156,7 @@ class TestRoundTripKeepsTranslations(StudioCase):
     def test_a_translated_label_survives_the_round_trip(self):
         package = self.make_package()
         self.build_demo_content(package)
-        field = self.env["ir.model.fields"].search(
+        field = typed.model(self.env, IrModelFields).search(
             [("model", "=", "x_studio_project"), ("name", "=", "x_name")], limit=1
         )
         self.assertTrue(field, "demo content must provide the field")
@@ -154,7 +172,7 @@ class TestRoundTripKeepsTranslations(StudioCase):
         self.load_rendered(package, files)
         self.load_translations(package, files)
 
-        restored = self.env["ir.model.fields"].search(
+        restored = typed.model(self.env, IrModelFields).search(
             [("model", "=", "x_studio_project"), ("name", "=", "x_name")], limit=1
         )
         self.assertEqual(
@@ -175,7 +193,9 @@ class TestRoundTripKeepsTranslations(StudioCase):
         self.load_rendered(package, files)
         self.load_translations(package, files)
 
-        restored = self.env["ir.model"].search([("model", "=", "x_studio_project")])
+        restored = typed.model(self.env, IrModel).search(
+            [("model", "=", "x_studio_project")]
+        )
         self.assertEqual(
             restored.with_context(lang="fr_FR").name, "Affaire de démonstration"
         )
@@ -189,16 +209,15 @@ class TestRoundTripKeepsTranslations(StudioCase):
         # A view of our own with a term we control, rather than whichever
         # labels the scaffold happened to produce -- an arch without the
         # expected string would make this test skip and read as passing.
-        view = self.env["ir.ui.view"].create(
-            {
-                "name": "x_studio_project.translated",
-                "model": "x_studio_project",
-                "type": "form",
-                "arch": '<form><sheet><separator string="Budget"/></sheet></form>',
-            }
-        )
+        view_vals: dict[str, object] = {
+            "name": "x_studio_project.translated",
+            "model": "x_studio_project",
+            "type": "form",
+            "arch": '<form><sheet><separator string="Budget"/></sheet></form>',
+        }
+        view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         package.studio_capture(view)
-        self.assertIn("Budget", view.with_context(lang="en_US").arch_db)
+        self.assertIn("Budget", cast("str", view.with_context(lang="en_US").arch_db))
         self._translate(view, "arch_db", {"Budget": "Enveloppe"})
 
         files = package._render_files()
@@ -209,10 +228,12 @@ class TestRoundTripKeepsTranslations(StudioCase):
         self.load_rendered(package, files)
         self.load_translations(package, files)
 
-        restored = self.env["ir.ui.view"].search(
+        restored = typed.model(self.env, View).search(
             [("name", "=", "x_studio_project.translated")], limit=1
         )
-        self.assertIn("Enveloppe", restored.with_context(lang="fr_FR").arch_db)
+        self.assertIn(
+            "Enveloppe", cast("str", restored.with_context(lang="fr_FR").arch_db)
+        )
 
     def test_no_translations_means_no_po_file(self):
         """An addon with nothing to translate should have no i18n directory."""

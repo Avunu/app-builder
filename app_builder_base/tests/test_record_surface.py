@@ -9,12 +9,28 @@ written to its file -- and refused, with the honest alternative, when
 another module owns them.
 """
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING, Any, cast
 
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
-from .common import StudioCase
+from odoo.addons.base.models.ir_model import IrModel, IrModelAccess
+from odoo.addons.base.models.ir_rule import IrRule
+
+from ..models.studio_security_surfaces import StudioAccessSurface, StudioRuleSurface
+from ..tools import typed
+from .common import StudioCase, raises
+
+if TYPE_CHECKING:
+    # Only for the casts below (`from __future__ import annotations` defers
+    # all of them to strings); `StudioAccessSurface`/`StudioRuleSurface` are
+    # real, top-level imports instead (above), since `typed.model()` reads
+    # `cls._name` at *runtime* -- the same split every other Phase 1c/1d
+    # file's own `TYPE_CHECKING` block makes.
+    from ..models.studio_record_surface import StudioRecordSurface
 
 
 @tagged("post_install", "-at_install")
@@ -24,13 +40,28 @@ class TestRecordSurface(StudioCase):
         self.package = self.make_package(name="x_surf_pkg")
         self.build_demo_content(self.package)
         self.package.action_write_files()
-        self.access = self.env["studio.access.surface"]
-        self.rules = self.env["studio.rule.surface"]
+        # Both surfaces compose `studio.record.surface` only via
+        # `_inherit` (registry-level, never a real Python base class), so
+        # their own declared class carries none of its methods as far as
+        # pyright can see -- the same shape `typed.security()`/`typed
+        # .serializer()` (`tools/typed.py`) already fix for the studio's
+        # other two mixins, applied here at the call site instead since
+        # this file cannot add a helper of its own to `tools/typed.py`.
+        self.access = cast(
+            "StudioRecordSurface", typed.model(self.env, StudioAccessSurface)
+        )
+        self.rules = cast(
+            "StudioRecordSurface", typed.model(self.env, StudioRuleSurface)
+        )
         self.model = "x_studio_project"
-        self.group = self.env.ref("base.group_user")
+        self.group = typed.ref(self.env, "base.group_user")
 
     def _file(self, relative):
-        path = os.path.join(self.package.root_path, relative)
+        # `root_path` is always set by `make_package` before a test ever
+        # reaches here (a Char field, `str | Literal[False]` by its own
+        # declared type) -- true by construction, the same way
+        # `studio_package.py`'s own `root_path` reads already cast it.
+        path = os.path.join(cast("str", self.package.root_path), relative)
         if not os.path.isfile(path):
             return ""
         with open(path, encoding="utf-8") as handle:
@@ -71,7 +102,13 @@ class TestRecordSurface(StudioCase):
     # -- rows ------------------------------------------------------------------------
 
     def test_rows_say_who_owns_what(self):
-        rows = self.access.rows(self.model, self.package.id)
+        # `self.package` is a real, `.create()`-backed record for the rest
+        # of this suite (`setUp`), so `.id` is true by construction a real
+        # `int`, never `NewId`/`Literal[False]` -- the same cast `_row`
+        # (`studio_record_surface.py`) already makes on `record.id`. Every
+        # other `self.package.id`/`<record>.id` argument below is the same
+        # cast, for the same reason.
+        rows = self.access.rows(self.model, cast("int", self.package.id))
         self.assertTrue(rows)
         owned = [r for r in rows if r["owned"]]
         self.assertTrue(
@@ -82,26 +119,24 @@ class TestRecordSurface(StudioCase):
         self.assertIn("perms", owned[0])
 
     def test_a_foreign_row_is_shown_but_refused_with_the_alternative(self):
-        model_id = self.env["ir.model"]._get_id(self.model)
-        foreign = self.env["ir.model.access"].create(
-            {
-                "name": "from elsewhere",
-                "model_id": model_id,
-                "group_id": self.group.id,
-                "perm_read": True,
-            }
-        )
-        self.env["ir.model.data"].create(
-            {
-                "module": "some_other_module",
-                "name": "access_elsewhere",
-                "model": "ir.model.access",
-                "res_id": foreign.id,
-            }
-        )
+        model_id = typed.model(self.env, IrModel)._get_id(self.model)  # pyright: ignore[reportCallIssue]
+        access_vals: dict[str, object] = {
+            "name": "from elsewhere",
+            "model_id": model_id,
+            "group_id": self.group.id,
+            "perm_read": True,
+        }
+        foreign = self.env["ir.model.access"].create(access_vals)  # pyright: ignore[reportArgumentType]
+        data_vals: dict[str, object] = {
+            "module": "some_other_module",
+            "name": "access_elsewhere",
+            "model": "ir.model.access",
+            "res_id": foreign.id,
+        }
+        self.env["ir.model.data"].create(data_vals)  # pyright: ignore[reportArgumentType]
         row = next(
             r
-            for r in self.access.rows(self.model, self.package.id)
+            for r in self.access.rows(self.model, cast("int", self.package.id))
             if r["id"] == foreign.id
         )
         self.assertFalse(row["owned"])
@@ -110,23 +145,44 @@ class TestRecordSurface(StudioCase):
         self.assertIn(
             {"key": "foreign", "label": "From some_other_module"}, row["badges"]
         )
-        with self.assertRaises(UserError) as caught:
-            self.access.write_record(foreign.id, {"perm_write": True}, self.package.id)
+        with raises(self, UserError) as caught:
+            self.access.write_record(
+                cast("int", foreign.id),
+                {"perm_write": True},
+                cast("int", self.package.id),
+            )
         self.assertIn("add up", str(caught.exception))
-        with self.assertRaises(UserError):
-            self.access.remove_record(foreign.id, self.package.id)
+        with raises(self, UserError):
+            self.access.remove_record(
+                cast("int", foreign.id), cast("int", self.package.id)
+            )
 
     def test_a_row_not_in_source_can_be_added_to_the_package(self):
-        model_id = self.env["ir.model"]._get_id(self.model)
-        loose = self.env["ir.model.access"].create(
-            {"name": "loose", "model_id": model_id, "perm_read": True}
+        model_id = typed.model(self.env, IrModel)._get_id(self.model)  # pyright: ignore[reportCallIssue]
+        loose_vals: dict[str, object] = {
+            "name": "loose",
+            "model_id": model_id,
+            "perm_read": True,
+        }
+        loose = self.env["ir.model.access"].create(loose_vals)  # pyright: ignore[reportArgumentType]
+        described = cast(
+            "dict[str, Any]",
+            self.access.describe(cast("int", loose.id), cast("int", self.package.id)),
         )
-        described = self.access.describe(loose.id, self.package.id)
         self.assertFalse(described["row"]["in_source"])
         self.assertEqual(described["actions"][0]["key"], "capture")
-        with self.assertRaises(UserError):
-            self.access.write_record(loose.id, {"perm_write": True}, self.package.id)
-        described = self.access.run(loose.id, "capture", self.package.id)
+        with raises(self, UserError):
+            self.access.write_record(
+                cast("int", loose.id),
+                {"perm_write": True},
+                cast("int", self.package.id),
+            )
+        described = cast(
+            "dict[str, Any]",
+            self.access.run(
+                cast("int", loose.id), "capture", cast("int", self.package.id)
+            ),
+        )
         self.assertTrue(described["row"]["owned"])
         self.assertIn("loose", self._file("security/ir.model.access.csv"))
 
@@ -134,9 +190,14 @@ class TestRecordSurface(StudioCase):
 
     def test_describe_hands_back_values_in_row_shape(self):
         row = next(
-            r for r in self.access.rows(self.model, self.package.id) if r["owned"]
+            r
+            for r in self.access.rows(self.model, cast("int", self.package.id))
+            if r["owned"]
         )
-        described = self.access.describe(row["id"], self.package.id)
+        described = cast(
+            "dict[str, Any]",
+            self.access.describe(row["id"], cast("int", self.package.id)),
+        )
         values = described["values"]
         self.assertIsInstance(values["perm_read"], bool)
         self.assertTrue(
@@ -149,13 +210,15 @@ class TestRecordSurface(StudioCase):
 
     def test_write_lands_in_the_file(self):
         row = next(
-            r for r in self.access.rows(self.model, self.package.id) if r["owned"]
+            r
+            for r in self.access.rows(self.model, cast("int", self.package.id))
+            if r["owned"]
         )
-        record = self.env["ir.model.access"].browse(row["id"])
+        record = typed.model(self.env, IrModelAccess).browse(row["id"])
         self.access.write_record(
             row["id"],
             {"perm_unlink": True, "group_id": {"id": self.group.id}},
-            self.package.id,
+            cast("int", self.package.id),
         )
         self.assertTrue(record.perm_unlink)
         self.assertEqual(record.group_id, self.group)
@@ -164,10 +227,14 @@ class TestRecordSurface(StudioCase):
 
     def test_write_refuses_what_the_catalogue_did_not_declare(self):
         row = next(
-            r for r in self.access.rows(self.model, self.package.id) if r["owned"]
+            r
+            for r in self.access.rows(self.model, cast("int", self.package.id))
+            if r["owned"]
         )
-        with self.assertRaises(UserError) as caught:
-            self.access.write_record(row["id"], {"model_id": 1}, self.package.id)
+        with raises(self, UserError) as caught:
+            self.access.write_record(
+                row["id"], {"model_id": 1}, cast("int", self.package.id)
+            )
         self.assertIn("Not something the studio sets", str(caught.exception))
 
     # -- create / duplicate / remove ----------------------------------------------
@@ -175,15 +242,15 @@ class TestRecordSurface(StudioCase):
     def test_create_from_a_template_into_the_package(self):
         row = self.access.create_record(
             self.model,
-            self.package.id,
+            cast("int", self.package.id),
             {"group_id": self.group.id},
             template="read_only",
         )
-        record = self.env["ir.model.access"].browse(row["id"])
+        record = typed.model(self.env, IrModelAccess).browse(row["id"])
         self.assertTrue(row["owned"])
         self.assertTrue(record.perm_read)
         self.assertFalse(record.perm_write)
-        self.assertIn("Internal User", record.name)
+        self.assertIn("Internal User", cast("str", record.name))
         self.assertIn(record.name, self._file("security/ir.model.access.csv"))
         self.assertIn("read_only", self.access.templates()[0]["key"])
 
@@ -191,35 +258,40 @@ class TestRecordSurface(StudioCase):
         # No writable package anywhere: nothing to record into.
         self.package.write({"root_path": self.unwritable_path()})
         other = self.make_package(name="x_surf_other", root_path=self.unwritable_path())
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self.access.create_record(
-                self.model, other.id, {"group_id": self.group.id}, "full"
+                self.model, cast("int", other.id), {"group_id": self.group.id}, "full"
             )
         self.assertIn("Choose a package", str(caught.exception))
 
     def test_a_rule_is_created_checked_and_written(self):
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self.rules.create_record(
                 self.model,
-                self.package.id,
+                cast("int", self.package.id),
                 {"name": "bad", "domain_force": "[('nope', '=', 1)]"},
                 "blank",
             )
         self.assertIn("does not search", str(caught.exception))
         row = self.rules.create_record(
             self.model,
-            self.package.id,
+            cast("int", self.package.id),
             {"name": "Own", "groups": [{"id": self.group.id}]},
             template="own_records",
         )
-        rule = self.env["ir.rule"].browse(row["id"])
+        rule = typed.model(self.env, IrRule).browse(row["id"])
         self.assertEqual(rule.domain_force, "[('create_uid', '=', user.id)]")
-        self.assertIn(self.group, rule[self.rules._groups_field()])
+        self.assertIn(
+            self.group, rule[cast("StudioRuleSurface", self.rules)._groups_field()]
+        )
         self.assertIn("Own", self._file("security/x_studio_project_security.xml"))
-        described = self.rules.describe(row["id"], self.package.id)
+        described = cast(
+            "dict[str, Any]",
+            self.rules.describe(row["id"], cast("int", self.package.id)),
+        )
         self.assertTrue(described["matches"]["valid"])
         self.assertEqual(described["values"]["groups"][0]["id"], self.group.id)
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             self.rules.write_record(
                 row["id"],
                 {
@@ -228,31 +300,42 @@ class TestRecordSurface(StudioCase):
                     "perm_create": False,
                     "perm_unlink": False,
                 },
-                self.package.id,
+                cast("int", self.package.id),
             )
 
     def test_duplicate_makes_an_inactive_copy_in_the_package(self):
         row = self.rules.create_record(
-            self.model, self.package.id, {"name": "Original"}, template="blank"
+            self.model,
+            cast("int", self.package.id),
+            {"name": "Original"},
+            template="blank",
         )
-        copy = self.rules.duplicate_record(row["id"], self.package.id)
-        record = self.env["ir.rule"].browse(copy["id"])
+        copy = self.rules.duplicate_record(row["id"], cast("int", self.package.id))
+        record = typed.model(self.env, IrRule).browse(copy["id"])
         self.assertTrue(copy["owned"])
         self.assertFalse(record.active)
         self.assertIn({"key": "inactive", "label": "Inactive"}, copy["badges"])
         self.assertIn(
             record.id,
-            [r["id"] for r in self.rules.rows(self.model, self.package.id)],
+            [
+                r["id"]
+                for r in self.rules.rows(self.model, cast("int", self.package.id))
+            ],
             "archived rows are listed too",
         )
 
     def test_remove_takes_the_row_out_of_the_file(self):
         row = self.access.create_record(
-            self.model, self.package.id, {"group_id": self.group.id}, template="full"
+            self.model,
+            cast("int", self.package.id),
+            {"group_id": self.group.id},
+            template="full",
         )
-        name = self.env["ir.model.access"].browse(row["id"]).name
+        name = typed.model(self.env, IrModelAccess).browse(row["id"]).name
         self.assertIn(name, self._file("security/ir.model.access.csv"))
-        self.assertTrue(self.access.remove_record(row["id"], self.package.id))
+        self.assertTrue(
+            self.access.remove_record(row["id"], cast("int", self.package.id))
+        )
         self.assertNotIn(name, self._file("security/ir.model.access.csv"))
 
     # -- guards ------------------------------------------------------------------------
@@ -260,8 +343,11 @@ class TestRecordSurface(StudioCase):
     def test_writes_need_a_manager(self):
         builder = self.make_user("surf_builder", ["app_builder_base.group_studio_user"])
         as_builder = self.access.with_user(builder)
-        self.assertTrue(as_builder.rows(self.model, self.package.id))
-        with self.assertRaises(AccessError):
+        self.assertTrue(as_builder.rows(self.model, cast("int", self.package.id)))
+        with raises(self, AccessError):
             as_builder.create_record(
-                self.model, self.package.id, {"group_id": self.group.id}, "full"
+                self.model,
+                cast("int", self.package.id),
+                {"group_id": self.group.id},
+                "full",
             )

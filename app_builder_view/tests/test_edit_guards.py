@@ -10,16 +10,33 @@ when it fails; and a name on every container the studio creates, so the thing
 just added can be pointed at again without counting its siblings.
 """
 
-import os
+from __future__ import annotations
 
-from lxml import etree
+import os
+from typing import TYPE_CHECKING, cast
+
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.base.models.res_lang import Lang
 from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.app_builder_view.exceptions import StudioStaleView
+
+from ..models.studio_view_edit import StudioViewEdit
+from ..models.studio_view_editor import StudioViewEditor
+
+if TYPE_CHECKING:
+    # Only for the casts below; with `from __future__ import annotations`
+    # nothing here needs these at runtime, the same bargain every other
+    # converted file's own `TYPE_CHECKING` block makes.
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+
+    from ..models.studio_view_editor import _LocateTargetFoundJSON
 
 FORM_ARCH = """
 <form string="Guard Demo">
@@ -47,56 +64,62 @@ def _snapshot(root):
 class TestEditGuards(StudioCase):
     def setUp(self):
         super().setUp()
-        self.editor = self.env["studio.view.editor"]
-        self.history = self.env["studio.view.edit"]
+        self.editor = typed.model(self.env, StudioViewEditor)
+        self.history = typed.model(self.env, StudioViewEdit)
         self.package = self.make_package(name="x_guard_pkg")
-        self.env["ir.model"].create(
-            {
-                "name": "Guard Demo",
-                "model": "x_guard_demo",
-                "field_id": [
-                    Command.create(
-                        {"name": "x_name", "ttype": "char", "field_description": "Name"}
-                    ),
-                    Command.create(
-                        {"name": "x_note", "ttype": "char", "field_description": "Note"}
-                    ),
-                ],
-            }
-        )
-        self.view = self.env["ir.ui.view"].create(
-            {
-                "name": "studio.guard.test",
-                "model": "x_guard_demo",
-                "type": "form",
-                "arch": FORM_ARCH,
-            }
-        )
+        model_vals: dict[str, object] = {
+            "name": "Guard Demo",
+            "model": "x_guard_demo",
+            "field_id": [
+                Command.create(
+                    {"name": "x_name", "ttype": "char", "field_description": "Name"}
+                ),
+                Command.create(
+                    {"name": "x_note", "ttype": "char", "field_description": "Note"}
+                ),
+            ],
+        }
+        self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
+        view_vals: dict[str, object] = {
+            "name": "studio.guard.test",
+            "model": "x_guard_demo",
+            "type": "form",
+            "arch": FORM_ARCH,
+        }
+        self.view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         # Owned by somebody else, so every edit here is a patch -- the path
         # that has a view to create as well as one to write.
         self.make_package(name="x_guard_owner").studio_capture(self.view)
 
     def _combined(self):
         return etree.fromstring(
-            self.env["ir.ui.view"].browse(self.view.id).get_combined_arch().encode()
+            typed.model(self.env, View)
+            .browse(cast("int", self.view.id))
+            .get_combined_arch()
+            .encode()
         )
 
     # -- the version a client edits against ----------------------------------
 
     def test_the_version_changes_when_the_view_does(self):
-        before = self.editor.arch_version(self.view.id)
-        self.assertEqual(before, self.editor.arch_version(self.view.id), "stable")
-        self.editor.add_field_at(
-            self.view.id, self.package.id, {"kind": "group", "name": "main"}, "x_note"
+        before = self.editor.arch_version(cast("int", self.view.id))
+        self.assertEqual(
+            before, self.editor.arch_version(cast("int", self.view.id)), "stable"
         )
-        self.assertNotEqual(before, self.editor.arch_version(self.view.id))
+        self.editor.add_field_at(
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            {"kind": "group", "name": "main"},
+            "x_note",
+        )
+        self.assertNotEqual(before, self.editor.arch_version(cast("int", self.view.id)))
 
     def test_the_version_is_the_same_for_every_user(self):
         """Taken from the combined arch, not the per-user projection: two
         people looking at one view must agree on what version it is -- and
         ``arch_db`` is translated, so a colleague working in French reads a
         different combined arch and must still get the same version."""
-        self.env["res.lang"]._activate_lang("fr_FR")
+        typed.model(self.env, Lang)._activate_lang("fr_FR")
         self.view.update_field_translations(
             "arch_db", {"fr_FR": {"Guard Demo": "Démo de garde"}}
         )
@@ -112,15 +135,18 @@ class TestEditGuards(StudioCase):
             "sanity: the arch really does differ by language",
         )
         self.assertEqual(
-            self.editor.arch_version(self.view.id),
-            as_outsider.arch_version(self.view.id),
+            self.editor.arch_version(cast("int", self.view.id)),
+            as_outsider.arch_version(cast("int", self.view.id)),
         )
         result = as_outsider.add_field_at(
-            self.view.id, self.package.id, {"kind": "group", "name": "main"}, "x_note"
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            {"kind": "group", "name": "main"},
+            "x_note",
         )
         self.assertEqual(
             result["arch_version"],
-            self.editor.arch_version(self.view.id),
+            self.editor.arch_version(cast("int", self.view.id)),
             "the version an edit hands back is language-neutral too",
         )
 
@@ -133,8 +159,8 @@ class TestEditGuards(StudioCase):
         # checked as well, since no savepoint ever covered that.
         try:
             self.editor.add_field_at(
-                self.view.id,
-                self.package.id,
+                cast("int", self.view.id),
+                cast("int", self.package.id),
                 {"kind": "group", "name": "main"},
                 "x_note",
                 expected_arch_version="something-older",
@@ -145,7 +171,7 @@ class TestEditGuards(StudioCase):
             self.fail("a stale version has to be refused")
         self.view.invalidate_recordset()
         self.assertEqual(self.view.arch, before)
-        self.assertEqual(self.history.history_for(self.view.id), [])
+        self.assertEqual(self.history.history_for(cast("int", self.view.id)), [])
         self.assertFalse(
             self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)]),
             "no extension may be created for an edit that was refused",
@@ -159,24 +185,27 @@ class TestEditGuards(StudioCase):
         self.assertIn("try again", str(StudioStaleView()))
 
     def test_the_current_version_goes_through(self):
-        version = self.editor.arch_version(self.view.id)
+        version = self.editor.arch_version(cast("int", self.view.id))
         result = self.editor.add_field_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "group", "name": "main"},
             "x_note",
             expected_arch_version=version,
         )
         self.assertEqual(
             result["arch_version"],
-            self.editor.arch_version(self.view.id),
+            self.editor.arch_version(cast("int", self.view.id)),
             "the answer carries the version the next edit is checked against",
         )
 
     def test_no_claim_is_not_checked(self):
         """An older client, or a script, makes no claim and is not refused."""
         self.editor.add_field_at(
-            self.view.id, self.package.id, {"kind": "group", "name": "main"}, "x_note"
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            {"kind": "group", "name": "main"},
+            "x_note",
         )
         self.assertIn("x_note", self.view.get_combined_arch())
 
@@ -189,12 +218,15 @@ class TestEditGuards(StudioCase):
         the extension view itself, which is captured on the way -- not even
         its empty <data/> may land."""
         before = _snapshot(self.package.root_path)
-        found = self.editor.locate_target(
-            self.view.id, {"kind": "group", "name": "main"}
+        found = cast(
+            "_LocateTargetFoundJSON",
+            self.editor.locate_target(
+                cast("int", self.view.id), {"kind": "group", "name": "main"}
+            ),
         )
         self.editor.apply_operation(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {
                 "type": "add_field",
                 "name": "x_note",
@@ -204,9 +236,15 @@ class TestEditGuards(StudioCase):
             write_files=False,
         )
         patch = self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)])
-        self.assertEqual(patch.studio_package_id, self.package, "captured")
+        self.assertEqual(
+            cast("StudioOwnedMixin", patch).studio_package_id,
+            self.package,
+            "captured",
+        )
         self.assertIn("x_note", self.view.get_combined_arch(), "the edit is live")
-        self.assertEqual(len(self.history.history_for(self.view.id)), 1, "recorded")
+        self.assertEqual(
+            len(self.history.history_for(cast("int", self.view.id))), 1, "recorded"
+        )
         self.assertEqual(_snapshot(self.package.root_path), before, "disk untouched")
         self.assertEqual(self.package.state, "dirty", "and it says a write is owed")
 
@@ -220,8 +258,8 @@ class TestEditGuards(StudioCase):
     def test_the_gate_is_honoured_by_the_descriptor_entry_point_too(self):
         before = _snapshot(self.package.root_path)
         self.editor.apply_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "group", "name": "main"},
             {"type": "add_field", "name": "x_note"},
             write_files=False,
@@ -232,7 +270,10 @@ class TestEditGuards(StudioCase):
     def test_by_default_the_file_keeps_up_with_the_edit(self):
         before = _snapshot(self.package.root_path)
         self.editor.add_field_at(
-            self.view.id, self.package.id, {"kind": "group", "name": "main"}, "x_note"
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            {"kind": "group", "name": "main"},
+            "x_note",
         )
         self.assertNotEqual(_snapshot(self.package.root_path), before)
 
@@ -240,13 +281,19 @@ class TestEditGuards(StudioCase):
 
     def test_a_new_group_gets_a_name_it_can_be_found_by(self):
         self.editor.add_container_at(
-            self.view.id, self.package.id, {"kind": "sheet"}, "group"
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            {"kind": "sheet"},
+            "group",
         )
         groups = [g.get("name") for g in self._combined().iter("group")]
         added = [n for n in groups if n and n.startswith("studio_group_")]
         self.assertEqual(len(added), 1, groups)
-        found = self.editor.locate_target(
-            self.view.id, {"kind": "group", "name": added[0]}
+        found = cast(
+            "_LocateTargetFoundJSON",
+            self.editor.locate_target(
+                cast("int", self.view.id), {"kind": "group", "name": added[0]}
+            ),
         )
         self.assertEqual(
             found["xpath"],
@@ -256,7 +303,11 @@ class TestEditGuards(StudioCase):
 
     def test_a_new_tab_and_its_notebook_get_names(self):
         self.editor.add_container_at(
-            self.view.id, self.package.id, {"kind": "sheet"}, "page", "Notes"
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            {"kind": "sheet"},
+            "page",
+            "Notes",
         )
         root = self._combined()
         notebook = root.find(".//notebook")
@@ -267,8 +318,8 @@ class TestEditGuards(StudioCase):
 
     def test_a_name_the_caller_gives_is_kept(self):
         self.editor.apply_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "sheet"},
             {"type": "add_group", "name": "mine", "string": "Mine"},
         )
@@ -277,7 +328,10 @@ class TestEditGuards(StudioCase):
     def test_two_containers_never_share_a_name(self):
         for _i in range(2):
             self.editor.add_container_at(
-                self.view.id, self.package.id, {"kind": "sheet"}, "group"
+                cast("int", self.view.id),
+                cast("int", self.package.id),
+                {"kind": "sheet"},
+                "group",
             )
         names = [
             g.get("name")
@@ -291,7 +345,11 @@ class TestEditGuards(StudioCase):
         """The name is what makes the group addressable in the *source*, where
         the next session's locator will be minted."""
         self.editor.add_container_at(
-            self.view.id, self.package.id, {"kind": "sheet"}, "group", "Extra"
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            {"kind": "sheet"},
+            "group",
+            "Extra",
         )
         emitted = "".join(self.package._render_files().values())
         self.assertIn('name="studio_group_', emitted)

@@ -8,46 +8,60 @@ half: a view no action offers is a view nobody can open, which would let the
 builder report success while the user never finds what it built.
 """
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo import Command
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.base.models.ir_actions import IrActionsActWindow
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tools import typed
+
+from ..models.studio_view_edit import StudioViewEdit
+from ..models.studio_view_editor import StudioViewEditor
+
+if TYPE_CHECKING:
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.web.models.ir_ui_view import View as WebView
 
 
 @tagged("post_install", "-at_install")
 class TestAddView(StudioCase):
     def setUp(self):
         super().setUp()
-        self.editor = self.env["studio.view.editor"]
+        self.editor = typed.model(self.env, StudioViewEditor)
         self.package = self.make_package(name="x_addview_pkg")
         # A model of our own rather than res.partner, which already ships a
         # kanban in 18 -- so "create a kanban" would be correctly refused and
         # the test would be measuring the fixture instead of the feature.
-        self.model = self.env["ir.model"].create(
-            {
-                "name": "Add View Demo",
-                "model": "x_addview_demo",
-                "field_id": [
-                    Command.create(
-                        {
-                            "name": "x_name",
-                            "ttype": "char",
-                            "field_description": "Name",
-                        }
-                    ),
-                    Command.create(
-                        {
-                            "name": "x_when",
-                            "ttype": "date",
-                            "field_description": "When",
-                        }
-                    ),
-                ],
-            }
-        )
+        model_vals: dict[str, object] = {
+            "name": "Add View Demo",
+            "model": "x_addview_demo",
+            "field_id": [
+                Command.create(
+                    {
+                        "name": "x_name",
+                        "ttype": "char",
+                        "field_description": "Name",
+                    }
+                ),
+                Command.create(
+                    {
+                        "name": "x_when",
+                        "ttype": "date",
+                        "field_description": "When",
+                    }
+                ),
+            ],
+        }
+        self.model = typed.model(self.env, IrModel).create(model_vals)  # pyright: ignore[reportArgumentType]
         self.demo = "x_addview_demo"
 
     def _offers(self, model_name=None):
@@ -73,7 +87,8 @@ class TestAddView(StudioCase):
         builder cannot do calendars at all."""
         # No fields of our own: Odoo gives a manual model its x_name for free,
         # and adding one here collides with it.
-        self.env["ir.model"].create({"name": "No Dates", "model": "x_no_dates"})
+        no_dates_vals: dict[str, object] = {"name": "No Dates", "model": "x_no_dates"}
+        typed.model(self.env, IrModel).create(no_dates_vals)  # pyright: ignore[reportArgumentType]
         offers = self._offers("x_no_dates")
         self.assertFalse(offers["calendar"]["enabled"])
         self.assertIn("date field", offers["calendar"]["reason"])
@@ -81,9 +96,9 @@ class TestAddView(StudioCase):
     # -- creating ----------------------------------------------------------
 
     def test_a_kanban_is_created_with_the_v18_card_template(self):
-        result = self.editor.add_view(self.demo, "kanban", self.package.id)
-        view = self.env["ir.ui.view"].browse(result["view_id"])
-        root = etree.fromstring(view.arch.encode())
+        result = self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
+        view = typed.model(self.env, View).browse(result["view_id"])
+        root = etree.fromstring(cast("str", view.arch).encode())
         card = root.find(".//templates/t")
         self.assertEqual(
             card.get("t-name"),
@@ -94,72 +109,78 @@ class TestAddView(StudioCase):
     def test_the_card_uses_real_fields_so_it_stays_editable(self):
         """A card written with t-esc renders identically and puts no field name
         in the DOM, so the builder could never select anything on it."""
-        result = self.editor.add_view(self.demo, "kanban", self.package.id)
-        view = self.env["ir.ui.view"].browse(result["view_id"])
-        root = etree.fromstring(view.arch.encode())
+        result = self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
+        view = typed.model(self.env, View).browse(result["view_id"])
+        root = etree.fromstring(cast("str", view.arch).encode())
         self.assertTrue(root.findall(".//templates//field"))
-        self.assertNotIn("t-esc", view.arch)
+        self.assertNotIn("t-esc", cast("str", view.arch))
 
     def test_a_calendar_is_created_on_the_chosen_date(self):
         result = self.editor.add_view(
-            self.demo, "calendar", self.package.id, date_field="x_when"
+            self.demo, "calendar", cast("int", self.package.id), date_field="x_when"
         )
-        view = self.env["ir.ui.view"].browse(result["view_id"])
-        root = etree.fromstring(view.arch.encode())
+        view = typed.model(self.env, View).browse(result["view_id"])
+        root = etree.fromstring(cast("str", view.arch).encode())
         self.assertEqual(root.get("date_start"), "x_when")
 
     def test_a_calendar_without_a_date_is_refused_readably(self):
         """date_start is mandatory, so this has to be caught before the view is
         created rather than surfacing as a render crash later."""
-        with self.assertRaises(UserError) as caught:
-            self.editor.add_view(self.demo, "calendar", self.package.id)
+        with raises(self, UserError) as caught:
+            self.editor.add_view(self.demo, "calendar", cast("int", self.package.id))
         self.assertIn("date", str(caught.exception))
 
     def test_the_new_view_belongs_to_the_package(self):
-        result = self.editor.add_view(self.demo, "kanban", self.package.id)
-        view = self.env["ir.ui.view"].browse(result["view_id"])
-        self.assertEqual(view.studio_package_id, self.package)
+        result = self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
+        view = typed.model(self.env, View).browse(result["view_id"])
+        self.assertEqual(cast("StudioOwnedMixin", view).studio_package_id, self.package)
 
     def test_creating_a_type_that_exists_is_refused(self):
-        self.editor.add_view(self.demo, "kanban", self.package.id)
-        with self.assertRaises(UserError):
-            self.editor.add_view(self.demo, "kanban", self.package.id)
+        self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
+        with raises(self, UserError):
+            self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
 
     # -- reachability, which is the half that is easy to forget -------------
 
     def test_the_new_type_is_added_to_our_own_action(self):
-        action = self.env["ir.actions.act_window"].create(
-            {"name": "Ours", "res_model": self.demo, "view_mode": "list,form"}
-        )
+        action_vals: dict[str, object] = {
+            "name": "Ours",
+            "res_model": self.demo,
+            "view_mode": "list,form",
+        }
+        action = typed.model(self.env, IrActionsActWindow).create(action_vals)  # pyright: ignore[reportArgumentType]
         self.package.studio_capture(action)
-        self.editor.add_view(self.demo, "kanban", self.package.id)
-        self.assertIn("kanban", action.view_mode)
+        self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
+        view_mode = cast("str", action.view_mode)
+        self.assertIn("kanban", view_mode)
         self.assertLess(
-            action.view_mode.index("kanban"),
-            action.view_mode.index("form"),
+            view_mode.index("kanban"),
+            view_mode.index("form"),
             "a form is a detail view and reads last",
         )
 
     def test_somebody_elses_action_is_left_alone(self):
         """The studio's whole premise is that it does not rewrite what it does
         not own."""
-        foreign = self.env["ir.actions.act_window"].create(
-            {"name": "Theirs", "res_model": self.demo, "view_mode": "list,form"}
-        )
-        self.editor.add_view(self.demo, "kanban", self.package.id)
-        self.assertNotIn("kanban", foreign.view_mode)
+        foreign_vals: dict[str, object] = {
+            "name": "Theirs",
+            "res_model": self.demo,
+            "view_mode": "list,form",
+        }
+        foreign = typed.model(self.env, IrActionsActWindow).create(foreign_vals)  # pyright: ignore[reportArgumentType]
+        self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
+        self.assertNotIn("kanban", cast("str", foreign.view_mode))
 
     def test_a_plain_user_cannot_create_views(self):
-        outsider = self.env["res.users"].create(
-            {
-                "name": "Nosy",
-                "login": "addview_outsider",
-                "groups_id": [(6, 0, [self.env.ref("base.group_user").id])],
-            }
-        )
-        with self.assertRaises(AccessError):
+        outsider_vals: dict[str, object] = {
+            "name": "Nosy",
+            "login": "addview_outsider",
+            "groups_id": [(6, 0, [typed.ref(self.env, "base.group_user").id])],
+        }
+        outsider = self.env["res.users"].create(outsider_vals)  # pyright: ignore[reportArgumentType]
+        with raises(self, AccessError):
             self.editor.with_user(outsider).sudo(False).add_view(
-                self.demo, "kanban", self.package.id
+                self.demo, "kanban", cast("int", self.package.id)
             )
 
 
@@ -175,89 +196,116 @@ class TestAddAndRemove(StudioCase):
     def _package_and_view(self):
         package = self.make_package()
         self.build_demo_content(package)
-        view = self.env["ir.ui.view"].search(
+        view = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
         return package, view
 
     def test_a_field_can_be_added_to_a_view_the_package_owns(self):
         package, view = self._package_and_view()
-        self.env["studio.view.editor"].add_field_at(
-            view.id, package.id, {"kind": "root"}, "x_active_flag"
+        typed.model(self.env, StudioViewEditor).add_field_at(
+            cast("int", view.id),
+            cast("int", package.id),
+            {"kind": "root"},
+            "x_active_flag",
         )
-        arch = self.env["ir.ui.view"].browse(view.id).get_combined_arch()
+        arch = (
+            typed.model(self.env, View).browse(cast("int", view.id)).get_combined_arch()
+        )
         self.assertIn('name="x_active_flag"', arch)
 
     def test_a_field_can_be_added_to_a_core_view_as_a_patch(self):
         """The headline case: a core form is patched, never rewritten."""
         package = self.make_package()
         self.build_demo_content(package)
-        core = self.env.ref("base.view_partner_form")
+        core = cast("View", typed.ref(self.env, "base.view_partner_form"))
         before = core.arch
-        self.env["studio.view.editor"].add_field_at(
-            core.id, package.id, {"kind": "root"}, "ref"
+        typed.model(self.env, StudioViewEditor).add_field_at(
+            cast("int", core.id), cast("int", package.id), {"kind": "root"}, "ref"
         )
         self.assertEqual(
-            self.env.ref("base.view_partner_form").arch,
+            cast("View", typed.ref(self.env, "base.view_partner_form")).arch,
             before,
             "a core view must never be rewritten in place",
         )
-        extension = self.env["ir.ui.view"].search(
+        extension = typed.model(self.env, View).search(
             [("inherit_id", "=", core.id), ("studio_package_id", "=", package.id)]
         )
         self.assertTrue(extension, "the edit must land in an inheriting view")
-        self.assertIn('name="ref"', extension.arch)
+        self.assertIn('name="ref"', cast("str", extension.arch))
 
     def test_a_field_can_be_removed_again(self):
         package, view = self._package_and_view()
-        editor = self.env["studio.view.editor"]
-        editor.remove_at(view.id, package.id, {"kind": "field", "name": "x_budget"})
-        arch = self.env["ir.ui.view"].browse(view.id).get_combined_arch()
+        editor = typed.model(self.env, StudioViewEditor)
+        editor.remove_at(
+            cast("int", view.id),
+            cast("int", package.id),
+            {"kind": "field", "name": "x_budget"},
+        )
+        arch = (
+            typed.model(self.env, View).browse(cast("int", view.id)).get_combined_arch()
+        )
         self.assertNotIn('name="x_budget"', arch)
 
     def test_a_tab_and_a_group_can_be_added(self):
         package, view = self._package_and_view()
-        editor = self.env["studio.view.editor"]
-        editor.add_container_at(view.id, package.id, {"kind": "sheet"}, "group")
-        editor.add_container_at(view.id, package.id, {"kind": "sheet"}, "page")
-        arch = self.env["ir.ui.view"].browse(view.id).get_combined_arch()
+        editor = typed.model(self.env, StudioViewEditor)
+        editor.add_container_at(
+            cast("int", view.id), cast("int", package.id), {"kind": "sheet"}, "group"
+        )
+        editor.add_container_at(
+            cast("int", view.id), cast("int", package.id), {"kind": "sheet"}, "page"
+        )
+        arch = (
+            typed.model(self.env, View).browse(cast("int", view.id)).get_combined_arch()
+        )
         self.assertIn("<page", arch)
 
     def test_an_unnamed_singleton_container_resolves_by_its_tag(self):
         """A form has one <sheet> and it has nothing else to be named by."""
         _package, view = self._package_and_view()
         root = etree.fromstring(view.get_combined_arch().encode())
-        node = self.env["studio.view.editor"]._find_descriptor(root, {"kind": "sheet"})
+        node = typed.model(self.env, StudioViewEditor)._find_descriptor(
+            root, {"kind": "sheet"}
+        )
         self.assertIsNotNone(node)
+        # `assertIsNotNone` is a runtime check only; it does not narrow
+        # `node` for pyright the way an `if`/`assert` would.
+        assert node is not None
         self.assertEqual(node.tag, "sheet")
 
     def test_an_ambiguous_container_is_refused_rather_than_guessed(self):
         """Two groups and no name is a question, not an answer."""
         package, view = self._package_and_view()
-        self.env["studio.view.editor"].add_container_at(
-            view.id, package.id, {"kind": "sheet"}, "group"
+        typed.model(self.env, StudioViewEditor).add_container_at(
+            cast("int", view.id), cast("int", package.id), {"kind": "sheet"}, "group"
         )
         root = etree.fromstring(
-            self.env["ir.ui.view"].browse(view.id).get_combined_arch().encode()
+            typed.model(self.env, View)
+            .browse(cast("int", view.id))
+            .get_combined_arch()
+            .encode()
         )
         self.assertGreater(len(root.findall(".//group")), 1, "sanity: two groups now")
-        node = self.env["studio.view.editor"]._find_descriptor(root, {"kind": "group"})
+        node = typed.model(self.env, StudioViewEditor)._find_descriptor(
+            root, {"kind": "group"}
+        )
         self.assertIsNone(node)
 
     # -- where exactly, when the gesture says ------------------------------
 
     def _fields_in_group(self, view):
         root = etree.fromstring(
-            self.env["ir.ui.view"].browse(view.id).get_combined_arch().encode()
+            typed.model(self.env, View).browse(view.id).get_combined_arch().encode()
         )
         return [f.get("name") for f in root.find(".//group").findall("field")]
 
     def test_a_named_position_wins_over_the_guess(self):
         """A click can only guess "after"; a drop knows it was before."""
         package, view = self._package_and_view()
-        self.env["studio.view.editor"].add_field_at(
-            view.id,
-            package.id,
+        typed.model(self.env, StudioViewEditor).add_field_at(
+            cast("int", view.id),
+            cast("int", package.id),
             {"kind": "field", "name": "x_budget"},
             "x_active_flag",
             position="before",
@@ -269,24 +317,31 @@ class TestAddAndRemove(StudioCase):
         """A preset that comes with a widget is one thing to the user, so it
         is one history entry -- not "added" followed by "changed widget"."""
         package, view = self._package_and_view()
-        editor = self.env["studio.view.editor"]
+        editor = typed.model(self.env, StudioViewEditor)
         editor.add_field_at(
-            view.id,
-            package.id,
+            cast("int", view.id),
+            cast("int", package.id),
             {"kind": "field", "name": "x_budget"},
             "x_active_flag",
             attrs={"widget": "boolean_toggle"},
         )
-        arch = self.env["ir.ui.view"].browse(view.id).arch
+        arch = cast(
+            "str", typed.model(self.env, View).browse(cast("int", view.id)).arch
+        )
         self.assertIn('<field name="x_active_flag" widget="boolean_toggle"/>', arch)
-        self.assertEqual(len(self.env["studio.view.edit"].history_for(view.id)), 1)
+        self.assertEqual(
+            len(
+                typed.model(self.env, StudioViewEdit).history_for(cast("int", view.id))
+            ),
+            1,
+        )
 
     def test_a_position_that_is_not_a_place_is_refused(self):
         package, view = self._package_and_view()
-        with self.assertRaises(UserError):
-            self.env["studio.view.editor"].add_field_at(
-                view.id,
-                package.id,
+        with raises(self, UserError):
+            typed.model(self.env, StudioViewEditor).add_field_at(
+                cast("int", view.id),
+                cast("int", package.id),
                 {"kind": "field", "name": "x_budget"},
                 "x_active_flag",
                 position="replace",
@@ -294,18 +349,27 @@ class TestAddAndRemove(StudioCase):
 
     def test_a_tab_can_be_placed_beside_another_tab(self):
         package, view = self._package_and_view()
-        editor = self.env["studio.view.editor"]
-        editor.add_container_at(view.id, package.id, {"kind": "sheet"}, "page", "One")
+        editor = typed.model(self.env, StudioViewEditor)
         editor.add_container_at(
-            view.id,
-            package.id,
+            cast("int", view.id),
+            cast("int", package.id),
+            {"kind": "sheet"},
+            "page",
+            "One",
+        )
+        editor.add_container_at(
+            cast("int", view.id),
+            cast("int", package.id),
             {"kind": "page", "index": 0},
             "page",
             "Zero",
             position="before",
         )
         root = etree.fromstring(
-            self.env["ir.ui.view"].browse(view.id).get_combined_arch().encode()
+            typed.model(self.env, View)
+            .browse(cast("int", view.id))
+            .get_combined_arch()
+            .encode()
         )
         self.assertEqual(
             [p.get("string") for p in root.iter("page")],
@@ -344,23 +408,22 @@ class TestOwnedViewWithForeignExtension(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.editor = self.env["studio.view.editor"]
+        self.editor = typed.model(self.env, StudioViewEditor)
         self.package = self.make_package()
         self.build_demo_content(self.package)
-        self.view = self.env["ir.ui.view"].search(
+        self.view = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
         self.view.arch = OWNED_FORM_WITH_A_TAB
         # Another module's extension: no package, a name of its own, and it
         # puts a tab *before* ours, so every positional path into the
         # notebook is off by one between the two trees.
-        self.env["ir.ui.view"].create(
-            {
-                "name": "x_studio_project.form.other_module",
-                "model": "x_studio_project",
-                "inherit_id": self.view.id,
-                "mode": "extension",
-                "arch": """
+        other_module_vals: dict[str, object] = {
+            "name": "x_studio_project.form.other_module",
+            "model": "x_studio_project",
+            "inherit_id": self.view.id,
+            "mode": "extension",
+            "arch": """
                     <data>
                         <xpath expr="//notebook" position="inside">
                             <page string="Foreign"><field name="x_partner_id"/></page>
@@ -370,8 +433,8 @@ class TestOwnedViewWithForeignExtension(StudioCase):
                         </xpath>
                     </data>
                 """,
-            }
-        )
+        }
+        self.env["ir.ui.view"].create(other_module_vals)  # pyright: ignore[reportArgumentType]
         self.before = self.view.arch
 
     def _refused(self, anchor, needle):
@@ -384,8 +447,8 @@ class TestOwnedViewWithForeignExtension(StudioCase):
         """
         try:
             self.editor.add_field_at(
-                self.view.id,
-                self.package.id,
+                cast("int", self.view.id),
+                cast("int", self.package.id),
                 anchor,
                 "x_budget",
                 position="inside",
@@ -396,7 +459,12 @@ class TestOwnedViewWithForeignExtension(StudioCase):
             self.fail("the locator has to be refused on the owned path")
         self.view.invalidate_recordset()
         self.assertEqual(self.view.arch, self.before)
-        self.assertEqual(self.env["studio.view.edit"].history_for(self.view.id), [])
+        self.assertEqual(
+            typed.model(self.env, StudioViewEdit).history_for(
+                cast("int", self.view.id)
+            ),
+            [],
+        )
 
     def test_a_positional_locator_past_the_foreign_tab_is_refused(self):
         """Our tab is page[2] in the combined arch and page[1] in ours: the
@@ -412,13 +480,13 @@ class TestOwnedViewWithForeignExtension(StudioCase):
 
     def test_a_named_locator_still_edits_in_place(self):
         self.editor.add_field_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "field", "name": "x_budget"},
             "x_active_flag",
         )
         self.view.invalidate_recordset()
-        self.assertIn('name="x_active_flag"', self.view.arch)
+        self.assertIn('name="x_active_flag"', cast("str", self.view.arch))
         self.assertFalse(
             self.env["ir.ui.view"].search(
                 [
@@ -432,10 +500,10 @@ class TestOwnedViewWithForeignExtension(StudioCase):
     def test_a_raw_locator_that_is_not_an_xpath_is_refused_readably(self):
         """Core's apply_inheritance_specs answers a bad expression with a
         bare lxml error on the owned path; the user gets a sentence."""
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             self.editor.apply_operation(
-                self.view.id,
-                self.package.id,
+                cast("int", self.view.id),
+                cast("int", self.package.id),
                 {
                     "type": "add_field",
                     "name": "x_active_flag",
@@ -487,20 +555,19 @@ class TestOwnedContainersWithoutNames(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.editor = self.env["studio.view.editor"]
+        self.editor = typed.model(self.env, StudioViewEditor)
         self.package = self.make_package()
         self.build_demo_content(self.package)
-        self.view = self.env["ir.ui.view"].search(
+        self.view = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
         self.view.arch = OWNED_FORM_WITH_BARE_GROUPS
-        self.env["ir.ui.view"].create(
-            {
-                "name": "x_studio_project.form.other_module",
-                "model": "x_studio_project",
-                "inherit_id": self.view.id,
-                "mode": "extension",
-                "arch": """
+        other_module_vals: dict[str, object] = {
+            "name": "x_studio_project.form.other_module",
+            "model": "x_studio_project",
+            "inherit_id": self.view.id,
+            "mode": "extension",
+            "arch": """
                     <data>
                         <xpath expr="//group[1]" position="before">
                             <group><field name="x_partner_id"/></group>
@@ -510,8 +577,8 @@ class TestOwnedContainersWithoutNames(StudioCase):
                         </xpath>
                     </data>
                 """,
-            }
-        )
+        }
+        self.env["ir.ui.view"].create(other_module_vals)  # pyright: ignore[reportArgumentType]
         self.before = self.view.arch
 
     def test_a_shifted_locator_onto_a_look_alike_sibling_is_refused(self):
@@ -521,8 +588,8 @@ class TestOwnedContainersWithoutNames(StudioCase):
         are what give it away."""
         try:
             self.editor.add_field_at(
-                self.view.id,
-                self.package.id,
+                cast("int", self.view.id),
+                cast("int", self.package.id),
                 {"kind": "group", "index": 1},
                 "x_active_flag",
                 position="inside",
@@ -539,14 +606,14 @@ class TestOwnedContainersWithoutNames(StudioCase):
         fields under it are the same, so it is the same page, and it is
         edited in place."""
         self.editor.add_field_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "page", "index": 0},
             "x_active_flag",
             position="inside",
         )
         self.view.invalidate_recordset()
-        root = etree.fromstring(self.view.arch.encode())
+        root = etree.fromstring(cast("str", self.view.arch).encode())
         page = root.find(".//page")
         self.assertEqual(
             [f.get("name") for f in page.findall("field")], ["x_stage", "x_active_flag"]
@@ -568,13 +635,12 @@ class TestOwnedContainersWithoutNames(StudioCase):
         an empty fingerprint must not count as a match either, or the
         "Budget" page would be edited when "Notes" was pointed at."""
         self.view.arch = OWNED_FORM_WITH_WRAPPED_PAGES
-        self.env["ir.ui.view"].create(
-            {
-                "name": "x_studio_project.form.other_tab",
-                "model": "x_studio_project",
-                "inherit_id": self.view.id,
-                "mode": "extension",
-                "arch": """
+        other_tab_vals: dict[str, object] = {
+            "name": "x_studio_project.form.other_tab",
+            "model": "x_studio_project",
+            "inherit_id": self.view.id,
+            "mode": "extension",
+            "arch": """
                     <data>
                         <xpath expr="//page[1]" position="before">
                             <page string="Theirs">
@@ -583,13 +649,13 @@ class TestOwnedContainersWithoutNames(StudioCase):
                         </xpath>
                     </data>
                 """,
-            }
-        )
+        }
+        self.env["ir.ui.view"].create(other_tab_vals)  # pyright: ignore[reportArgumentType]
         before = self.view.arch
         try:
             self.editor.add_field_at(
-                self.view.id,
-                self.package.id,
+                cast("int", self.view.id),
+                cast("int", self.package.id),
                 {"kind": "page", "index": 1},
                 "x_active_flag",
                 position="inside",
@@ -609,14 +675,14 @@ class TestOwnedContainersWithoutNames(StudioCase):
         self.view.arch = OWNED_FORM_WITH_WRAPPED_PAGES
         self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)]).unlink()
         self.editor.add_field_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "page", "index": 1},
             "x_active_flag",
             position="inside",
         )
         self.view.invalidate_recordset()
-        root = etree.fromstring(self.view.arch.encode())
+        root = etree.fromstring(cast("str", self.view.arch).encode())
         pages = root.findall(".//page")
         self.assertEqual(
             [f.get("name") for f in pages[1].iter("field")],
@@ -633,27 +699,31 @@ class TestActionButtonPortability(StudioCase):
         """
         package = self.make_package()
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        action = self.env["ir.actions.server"].create(
-            {
-                "name": "Do the thing",
-                "model_id": model.id,
-                "state": "code",
-                "code": "pass",
-            }
-        )
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        action_vals: dict[str, object] = {
+            "name": "Do the thing",
+            "model_id": model.id,
+            "state": "code",
+            "code": "pass",
+        }
+        action = self.env["ir.actions.server"].create(action_vals)  # pyright: ignore[reportArgumentType]
         package._assign(action)
-        view = self.env["ir.ui.view"].search(
+        view = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
-        self.env["studio.view.editor"].add_button_at(
-            view.id, package.id, {"kind": "sheet"}, {"action_id": action.id}
+        typed.model(self.env, StudioViewEditor).add_button_at(
+            cast("int", view.id),
+            cast("int", package.id),
+            {"kind": "sheet"},
+            {"action_id": action.id},
         )
         # Odoo's validator takes an integer or an xmlid in a stored arch, but
         # refuses `%(xmlid)d` -- convert.py resolves that while *loading*, and a
         # view written live has nothing to resolve it. So the xmlid goes in as
         # itself, which needs no rewriting on the way out either.
-        arch = self.env["ir.ui.view"].browse(view.id).get_combined_arch()
+        arch = (
+            typed.model(self.env, View).browse(cast("int", view.id)).get_combined_arch()
+        )
         self.assertIn("x_studio_demo.", arch)
         self.assertNotIn('name="%d"' % action.id, arch)
         emitted = "".join(package._render_files().values())
@@ -663,20 +733,19 @@ class TestActionButtonPortability(StudioCase):
         """An arch that arrived with a raw id still must not reach a file."""
         package = self.make_package()
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        action = self.env["ir.actions.server"].create(
-            {
-                "name": "Legacy",
-                "model_id": model.id,
-                "state": "code",
-                "code": "pass",
-            }
-        )
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        action_vals: dict[str, object] = {
+            "name": "Legacy",
+            "model_id": model.id,
+            "state": "code",
+            "code": "pass",
+        }
+        action = self.env["ir.actions.server"].create(action_vals)  # pyright: ignore[reportArgumentType]
         package._assign(action)
-        view = self.env["ir.ui.view"].search(
+        view = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
-        view.arch = view.arch.replace(
+        view.arch = cast("str", view.arch).replace(
             "</sheet>",
             '<button name="%d" type="action" string="Legacy"/></sheet>' % action.id,
         )
@@ -701,24 +770,27 @@ class TestViewTypeDiscovery(StudioCase):
         self.build_demo_content(package)
         return {
             entry["type"]: entry
-            for entry in self.env["studio.view.editor"].addable_view_types(
+            for entry in typed.model(self.env, StudioViewEditor).addable_view_types(
                 "x_studio_project"
             )
         }
 
     def test_every_registered_type_is_accounted_for(self):
         offered = self._offered()
-        known = set(self.env["ir.ui.view"].get_view_info())
-        expected = known - set(self.env["studio.view.editor"].NOT_ADDABLE)
+        # `get_view_info` is contributed by `web`, composed via `_inherit`
+        # rather than a real Python base -- same `WebView` cast
+        # `studio_view_editor.py` itself uses for the identical call.
+        known = set(cast("WebView", typed.model(self.env, View)).get_view_info())
+        expected = known - set(typed.model(self.env, StudioViewEditor).NOT_ADDABLE)
         self.assertEqual(set(offered), expected)
 
     def test_a_type_without_a_scaffold_says_so_rather_than_vanishing(self):
         """The type is installed and Odoo can render it, so "the builder cannot
         make one yet" is the true answer and a different one from "no such
         thing"."""
-        editor = self.env["studio.view.editor"]
+        editor = typed.model(self.env, StudioViewEditor)
         unscaffolded = (
-            set(self.env["ir.ui.view"].get_view_info())
+            set(cast("WebView", typed.model(self.env, View)).get_view_info())
             - set(editor.NOT_ADDABLE)
             - set(editor.VIEW_SCAFFOLDS)
         )
@@ -739,17 +811,21 @@ class TestViewTypeDiscovery(StudioCase):
         """An empty pivot is valid and useless: it opens on one Count cell."""
         package = self.make_package()
         self.build_demo_content(package)
-        self.env["studio.view.editor"].add_view("x_studio_project", "pivot", package.id)
-        view = self.env["ir.ui.view"].search(
+        typed.model(self.env, StudioViewEditor).add_view(
+            "x_studio_project", "pivot", cast("int", package.id)
+        )
+        view = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "pivot")], limit=1
         )
         self.assertTrue(view)
-        self.assertIn("type=", view.arch)
+        self.assertIn("type=", cast("str", view.arch))
 
     def test_a_graph_can_be_created(self):
         package = self.make_package()
         self.build_demo_content(package)
-        self.env["studio.view.editor"].add_view("x_studio_project", "graph", package.id)
+        typed.model(self.env, StudioViewEditor).add_view(
+            "x_studio_project", "graph", cast("int", package.id)
+        )
         view = self.env["ir.ui.view"].search(
             [("model", "=", "x_studio_project"), ("type", "=", "graph")], limit=1
         )

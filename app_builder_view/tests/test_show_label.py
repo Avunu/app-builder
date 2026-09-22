@@ -11,13 +11,35 @@ before it -- added by one call, taken away by removing the label's node,
 and carried along when the field moves.
 """
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tools import typed
+
+from ..models.studio_view_edit import StudioViewEdit
+from ..models.studio_view_editor import StudioViewEditor
+
+if TYPE_CHECKING:
+    # Only for the casts below; with `from __future__ import annotations`
+    # nothing here needs these at runtime. `canvas()` and the
+    # `DropSuccessJSON` shape `drop_at()` returns on its non-stale branch
+    # are declared on `studio_view_canvas.py`'s own pure `_inherit =
+    # "studio.view.editor"` extension -- the same `_name`, a different,
+    # unrelated Python class from `StudioViewEditor` above (`typed.py`'s
+    # own `model()`-vs-`_inherit` gap), aliased on import the same way
+    # `studio_view_new_field.py`'s own `StudioViewEditorCanvas` is.
+    from ..models.studio_view_canvas import StudioViewEditor as StudioViewEditorCanvas
+    from ..models.studio_view_editor import DropSuccessJSON
+    from ..tools.canvas_stamp import FieldLabel
 
 FORM_ARCH = """
 <form string="Label Demo">
@@ -43,38 +65,38 @@ FORM_ARCH = """
 class TestShowLabel(StudioCase):
     def setUp(self):
         super().setUp()
-        self.editor = self.env["studio.view.editor"]
+        self.editor = typed.model(self.env, StudioViewEditor)
         self.package = self.make_package(name="x_label_pkg")
-        self.env["ir.model"].create(
-            {
-                "name": "Label Demo",
-                "model": "x_label_demo",
-                "field_id": [
-                    Command.create(
-                        {"name": "x_name", "ttype": "char", "field_description": "Name"}
-                    ),
-                    Command.create(
-                        {"name": "x_note", "ttype": "html", "field_description": "Note"}
-                    ),
-                    Command.create(
-                        {"name": "x_when", "ttype": "date", "field_description": "When"}
-                    ),
-                ],
-            }
-        )
-        self.view = self.env["ir.ui.view"].create(
-            {
-                "name": "studio.label.test",
-                "model": "x_label_demo",
-                "type": "form",
-                "arch": FORM_ARCH,
-            }
-        )
+        model_vals: dict[str, object] = {
+            "name": "Label Demo",
+            "model": "x_label_demo",
+            "field_id": [
+                Command.create(
+                    {"name": "x_name", "ttype": "char", "field_description": "Name"}
+                ),
+                Command.create(
+                    {"name": "x_note", "ttype": "html", "field_description": "Note"}
+                ),
+                Command.create(
+                    {"name": "x_when", "ttype": "date", "field_description": "When"}
+                ),
+            ],
+        }
+        self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
+        view_vals: dict[str, object] = {
+            "name": "studio.label.test",
+            "model": "x_label_demo",
+            "type": "form",
+            "arch": FORM_ARCH,
+        }
+        self.view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
 
     # -- helpers -------------------------------------------------------------
 
     def _canvas(self):
-        return self.editor.canvas(self.view.id)
+        return cast("StudioViewEditorCanvas", self.editor).canvas(
+            cast("int", self.view.id)
+        )
 
     def _node(self, name, canvas=None):
         canvas = canvas or self._canvas()
@@ -88,8 +110,8 @@ class TestShowLabel(StudioCase):
         canvas = self._canvas()
         token, _node = self._node(name, canvas)
         return self.editor.show_label_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "node", "token": token, "arch_version": canvas["arch_version"]},
         )
 
@@ -111,14 +133,14 @@ class TestShowLabel(StudioCase):
     def test_the_canvas_says_where_each_label_comes_from(self):
         canvas = self._canvas()
         _token, in_group = self._node("x_name", canvas)
-        self.assertEqual(in_group["label"]["by"], "group")
+        self.assertEqual(cast("FieldLabel", in_group["label"])["by"], "group")
         _token, on_sheet = self._node("x_note", canvas)
         self.assertEqual(
             on_sheet["label"],
             {"shown": False, "by": None, "token": None, "in_group": False},
         )
         _token, in_page = self._node("x_when", canvas)
-        self.assertFalse(in_page["label"]["shown"])
+        self.assertFalse(cast("FieldLabel", in_page["label"])["shown"])
 
     # -- owned view: the label is written into the arch ------------------------
 
@@ -128,36 +150,40 @@ class TestShowLabel(StudioCase):
         root = self._combined()
         self.assertTrue(self._label_before(root, "x_note"))
         # The primary arch itself, since the package owns the view.
-        self.assertIn('<label for="x_note"', self.view.arch)
+        self.assertIn('<label for="x_note"', cast("str", self.view.arch))
         # And the table now knows the label, and which node it is.
         canvas = self._canvas()
         _token, node = self._node("x_note", canvas)
-        self.assertEqual(node["label"]["by"], "label")
-        self.assertEqual(canvas["nodes"][node["label"]["token"]]["tag"], "label")
-        self.assertEqual(canvas["nodes"][node["label"]["token"]]["string"], "x_note")
+        label = cast("FieldLabel", node["label"])
+        self.assertEqual(label["by"], "label")
+        self.assertEqual(canvas["nodes"][cast("str", label["token"])]["tag"], "label")
+        self.assertEqual(
+            canvas["nodes"][cast("str", label["token"])]["string"], "x_note"
+        )
 
     def test_the_label_is_taken_away_by_removing_its_node(self):
         self.package.studio_capture(self.view)
         self._show("x_note")
         canvas = self._canvas()
         _token, node = self._node("x_note", canvas)
+        label = cast("FieldLabel", node["label"])
         self.editor.remove_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {
                 "kind": "node",
-                "token": node["label"]["token"],
+                "token": label["token"],
                 "arch_version": canvas["arch_version"],
             },
         )
         root = self._combined()
         self.assertFalse(root.xpath("//label[@for='x_note']"))
-        self.assertFalse(self._node("x_note")[1]["label"]["shown"])
+        self.assertFalse(cast("FieldLabel", self._node("x_note")[1]["label"])["shown"])
 
     def test_a_second_label_is_refused(self):
         self.package.studio_capture(self.view)
         self._show("x_note")
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self._show("x_note")
         self.assertIn("already has a label", str(caught.exception))
         self.assertEqual(len(self._combined().xpath("//label[@for='x_note']")), 1)
@@ -166,10 +192,10 @@ class TestShowLabel(StudioCase):
         self.package.studio_capture(self.view)
         canvas = self._canvas()
         token = next(t for t, n in canvas["nodes"].items() if n["name"] == "nb")
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self.editor.show_label_at(
-                self.view.id,
-                self.package.id,
+                cast("int", self.view.id),
+                cast("int", self.package.id),
                 {
                     "kind": "node",
                     "token": token,
@@ -181,8 +207,8 @@ class TestShowLabel(StudioCase):
     def test_giving_a_label_is_one_history_entry_that_undoes(self):
         self.package.studio_capture(self.view)
         self._show("x_note")
-        history = self.env["studio.view.edit"]
-        entries = history.history_for(self.view.id)
+        history = typed.model(self.env, StudioViewEdit)
+        entries = history.history_for(cast("int", self.view.id))
         self.assertEqual(len(entries), 1)
         self.assertIn("label", entries[0]["summary"])
         history.browse(entries[0]["id"]).action_undo()
@@ -196,10 +222,10 @@ class TestShowLabel(StudioCase):
         self._show("x_note")
         self.view.invalidate_recordset()
         self.assertEqual(self.view.arch, before, "the base view is not rewritten")
-        patch = self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)])
+        patch = typed.model(self.env, View).search([("inherit_id", "=", self.view.id)])
         self.assertTrue(patch)
-        self.assertIn('<label for="x_note"', patch.arch)
-        self.assertIn('position="before"', patch.arch)
+        self.assertIn('<label for="x_note"', cast("str", patch.arch))
+        self.assertIn('position="before"', cast("str", patch.arch))
         self.assertTrue(self._label_before(self._combined(), "x_note"))
 
     def test_a_label_taken_away_on_a_foreign_view_can_be_given_again(self):
@@ -209,31 +235,35 @@ class TestShowLabel(StudioCase):
         self._show("x_note")
         canvas = self._canvas()
         _token, node = self._node("x_note", canvas)
+        label = cast("FieldLabel", node["label"])
         self.editor.remove_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {
                 "kind": "node",
-                "token": node["label"]["token"],
+                "token": label["token"],
                 "arch_version": canvas["arch_version"],
             },
         )
         self.assertFalse(self._combined().xpath("//label[@for='x_note']"))
         self._show("x_note")
         self.assertEqual(len(self._combined().xpath("//label[@for='x_note']")), 1)
-        self.assertTrue(self._node("x_note")[1]["label"]["shown"])
+        self.assertTrue(cast("FieldLabel", self._node("x_note")[1]["label"])["shown"])
 
     # -- a field's label follows the field --------------------------------------
 
     def _drop(self, anchor_name, position, payload):
         canvas = self._canvas()
         token, _node = self._node(anchor_name, canvas)
-        return self.editor.drop_at(
-            self.view.id,
-            self.package.id,
-            {"token": token, "position": position},
-            payload,
-            expected_arch_version=canvas["arch_version"],
+        return cast(
+            "DropSuccessJSON",
+            self.editor.drop_at(
+                cast("int", self.view.id),
+                cast("int", self.package.id),
+                {"token": token, "position": position},
+                payload,
+                expected_arch_version=canvas["arch_version"],
+            ),
         )
 
     def test_a_field_dropped_where_no_label_is_drawn_is_given_one(self):
@@ -244,11 +274,11 @@ class TestShowLabel(StudioCase):
         root = self._combined()
         self.assertTrue(self._label_before(root, "x_when"))
         self.assertEqual(root.find(".//field[@name='x_when']").getparent().tag, "sheet")
-        self.assertEqual(
-            result["canvas"]["nodes"][result["select"]]["label"]["by"], "label"
-        )
+        dropped = result["canvas"]["nodes"][cast("str", result["select"])]
+        self.assertEqual(cast("FieldLabel", dropped["label"])["by"], "label")
         # One edit: the label came with the field.
-        self.assertEqual(len(result["history"]["undo"]), 1)
+        history = cast("dict[str, list[object]]", result["history"])
+        self.assertEqual(len(history["undo"]), 1)
 
     def test_a_field_dropped_in_a_group_gets_no_label_of_its_own(self):
         self.package.studio_capture(self.view)
@@ -256,7 +286,7 @@ class TestShowLabel(StudioCase):
         root = self._combined()
         self.assertFalse(root.xpath("//label[@for='x_when']"))
         _token, node = self._node("x_when")
-        self.assertEqual(node["label"]["by"], "group")
+        self.assertEqual(cast("FieldLabel", node["label"])["by"], "group")
 
     def test_a_field_dropped_in_the_header_stays_bare(self):
         self.package.studio_capture(self.view)
@@ -266,8 +296,8 @@ class TestShowLabel(StudioCase):
         canvas = self._canvas()
         head = next(t for t, n in canvas["nodes"].items() if n["name"] == "head")
         self.editor.drop_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"token": head, "position": "inside"},
             {"kind": "existing_field", "name": "x_when"},
             expected_arch_version=canvas["arch_version"],
@@ -303,7 +333,9 @@ class TestShowLabel(StudioCase):
         self.assertFalse(root.xpath("//label[@for='x_note']"))
         left = root.find(".//group[@name='left']")
         self.assertEqual([c.get("name") for c in left], ["x_name", "x_note"])
-        self.assertEqual(self._node("x_note")[1]["label"]["by"], "group")
+        self.assertEqual(
+            cast("FieldLabel", self._node("x_note")[1]["label"])["by"], "group"
+        )
 
     def test_removing_a_field_removes_its_own_label(self):
         self.package.studio_capture(self.view)
@@ -311,8 +343,8 @@ class TestShowLabel(StudioCase):
         canvas = self._canvas()
         token, _node = self._node("x_note", canvas)
         self.editor.remove_at(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "node", "token": token, "arch_version": canvas["arch_version"]},
         )
         root = self._combined()
@@ -328,8 +360,8 @@ class TestShowLabel(StudioCase):
         source, _n = self._node("x_note", canvas)
         target, _n = self._node("x_when", canvas)
         self.editor.move_node(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "node", "token": source, "arch_version": canvas["arch_version"]},
             {"kind": "node", "token": target, "arch_version": canvas["arch_version"]},
             "after",
@@ -350,13 +382,14 @@ class TestShowLabel(StudioCase):
         self._show("x_note")
         canvas = self._canvas()
         source, node = self._node("x_note", canvas)
+        label = cast("FieldLabel", node["label"])
         self.editor.move_node(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "node", "token": source, "arch_version": canvas["arch_version"]},
             {
                 "kind": "node",
-                "token": node["label"]["token"],
+                "token": label["token"],
                 "arch_version": canvas["arch_version"],
             },
             "before",

@@ -2,24 +2,27 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """A rule using a formula must say which module it needs."""
 
+from __future__ import annotations
+
 import ast
 
 from odoo.tests import tagged
 
+from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.app_builder_base.tools import typed
 
 
 @tagged("post_install", "-at_install")
 class TestFormulaBridge(StudioCase):
     def _rule(self, package, **values):
-        rule = self.env["tier.definition"].create(
-            {
-                "name": "Conditioned",
-                "model_id": self.env["ir.model"]._get("res.partner").id,
-                "sequence": 10,
-                **values,
-            }
-        )
+        vals: dict[str, object] = {
+            "name": "Conditioned",
+            "model_id": typed.model(self.env, IrModel)._get("res.partner").id,
+            "sequence": 10,
+            **values,
+        }
+        rule = self.env["tier.definition"].create(vals)  # pyright: ignore[reportArgumentType]
         package._assign(rule)
         return rule
 

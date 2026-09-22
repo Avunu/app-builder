@@ -2,11 +2,43 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Menus, actions, access rules and automations, captured to source."""
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING, Any, cast
 
 from odoo.tests import tagged
 
+from odoo.addons.base.models.ir_actions import IrActionsServer
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.base_automation.models.base_automation import BaseAutomation
+from odoo.addons.app_builder_base.models.studio_package_model import StudioPackageModel
+from odoo.addons.app_builder_base.models.studio_security_surfaces import (
+    StudioAccessSurface,
+)
 from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.app_builder_base.tools import typed
+
+from ..models.studio_automation import StudioAutomation
+from ..models.studio_graduate_code import StudioGraduateCode
+from ..models.studio_menu_surface import StudioMenu
+
+if TYPE_CHECKING:
+    # Only for the casts below; with `from __future__ import annotations`
+    # nothing here needs these at runtime -- the same bargain every other
+    # Phase 1c file's own `TYPE_CHECKING` block makes. `IrActionsServer`/
+    # `IrModel`/`BaseAutomation`/`StudioPackageModel`/`StudioAccessSurface`/
+    # `StudioAutomation`/`StudioGraduateCode`/`StudioMenu` are real,
+    # top-level imports instead (above): `typed.model()` reads `cls._name`
+    # at runtime. `create_record`/`studio_package_id` live on mixins
+    # (`studio.record.surface`/`studio.owned.mixin`), registry-composed
+    # into the classes above rather than real Python bases of them -- the
+    # same gap `typed.py`'s own `security()`/`serializer()` document.
+    from odoo.addons.base.models.ir_model import IrModelFields
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.app_builder_base.models.studio_record_surface import (
+        StudioRecordSurface,
+    )
 
 
 @tagged("post_install", "-at_install")
@@ -21,29 +53,33 @@ class TestStudioUi(StudioCase):
         # model classes clean.
         self.addCleanup(self.env["base.automation"]._unregister_hook)
         self.package = self.make_package(name="x_ui_pkg")
-        self.model = self.env["ir.model"].create(
-            {
-                "name": "UI Demo",
-                "model": "x_ui_demo",
-                "field_id": [
-                    (
-                        0,
-                        0,
-                        {
-                            "name": "x_name",
-                            "field_description": "Name",
-                            "ttype": "char",
-                        },
-                    )
-                ],
-            }
-        )
+        model_vals: dict[str, object] = {
+            "name": "UI Demo",
+            "model": "x_ui_demo",
+            "field_id": [
+                (
+                    0,
+                    0,
+                    {
+                        "name": "x_name",
+                        "field_description": "Name",
+                        "ttype": "char",
+                    },
+                )
+            ],
+        }
+        self.model = typed.model(self.env, IrModel).create(model_vals)  # pyright: ignore[reportArgumentType]
         self.package.studio_capture(
-            [self.model, self.model.field_id.filtered(lambda f: f.state == "manual")]
+            [
+                self.model,
+                cast("IrModelFields", self.model.field_id).filtered(
+                    lambda f: f.state == "manual"
+                ),
+            ]
         )
 
     def _source(self, relative):
-        path = os.path.join(self.package.root_path, relative)
+        path = os.path.join(cast("str", self.package.root_path), relative)
         self.assertTrue(os.path.isfile(path), "expected %s" % relative)
         with open(path, encoding="utf-8") as handle:
             return handle.read()
@@ -53,25 +89,35 @@ class TestStudioUi(StudioCase):
     # it exists.
 
     def _menu(self, name):
-        return self.env["studio.menu"].create_record(
-            False,
-            self.package.id,
+        surface = cast("StudioRecordSurface", typed.model(self.env, StudioMenu))
+        return surface.create_record(
+            # `model_name` is declared `str`, but `_template_values` (the
+            # only place a template-driven `create_record` reads it) never
+            # looks at it -- it dispatches on `template` alone. `False`
+            # marks that on purpose, the same as `test_menu_pane_tour.py`'s
+            # own already-converted calls.
+            False,  # pyright: ignore[reportArgumentType]
+            cast("int", self.package.id),
             {"name": name, "opens_model": self.model.id},
             template="app",
         )
 
     def _access(self, **values):
-        return self.env["studio.access.surface"].create_record(
+        surface = cast(
+            "StudioRecordSurface", typed.model(self.env, StudioAccessSurface)
+        )
+        return surface.create_record(
             "x_ui_demo",
-            self.package.id,
-            {"group_id": self.env.ref("base.group_user").id, **values},
+            cast("int", self.package.id),
+            {"group_id": typed.ref(self.env, "base.group_user").id, **values},
             template="full",
         )
 
     def _automation(self, name, code):
-        return self.env["studio.automation"].create_record(
+        surface = cast("StudioRecordSurface", typed.model(self.env, StudioAutomation))
+        return surface.create_record(
             "x_ui_demo",
-            self.package.id,
+            cast("int", self.package.id),
             {"name": name, "trigger": "on_create", "steps.0.code": code},
             template="run_code",
         )
@@ -109,8 +155,9 @@ class TestStudioUi(StudioCase):
         self.assertIn('model="base.automation"', source)
 
         # And it is a live automation, not just a file.
-        record = self.env["x_ui_demo"].create({"x_name": "quiet"})
-        self.assertEqual(record.x_name, "QUIET")
+        record_vals: dict[str, object] = {"x_name": "quiet"}
+        record = self.env["x_ui_demo"].create(record_vals)  # pyright: ignore[reportArgumentType]
+        self.assertEqual(cast("Any", record).x_name, "QUIET")
 
     def test_automation_secret_is_not_committed(self):
         """webhook_uuid differs per database and must never reach source."""
@@ -119,13 +166,12 @@ class TestStudioUi(StudioCase):
         self.assertNotIn("webhook_uuid", source)
 
     def test_rule_is_written_to_security(self):
-        rule = self.env["ir.rule"].create(
-            {
-                "name": "own records only",
-                "model_id": self.model.id,
-                "domain_force": "[('create_uid', '=', user.id)]",
-            }
-        )
+        rule_vals: dict[str, object] = {
+            "name": "own records only",
+            "model_id": self.model.id,
+            "domain_force": "[('create_uid', '=', user.id)]",
+        }
+        rule = self.env["ir.rule"].create(rule_vals)  # pyright: ignore[reportArgumentType]
         self.package.studio_capture(rule)
         source = self._source("security/x_ui_demo_security.xml")
         self.assertIn("create_uid", source)
@@ -155,20 +201,22 @@ class TestAutomationSurface(StudioCase):
 
     def test_the_action_is_scoped_to_the_model(self):
         self.make_package()
-        action = self.env["studio.automation"].action_open(model_name="res.partner")
-        model = self.env["ir.model"]._get("res.partner")
+        action = typed.model(self.env, StudioAutomation).action_open(
+            model_name="res.partner"
+        )
+        model = typed.model(self.env, IrModel)._get("res.partner")
         self.assertIn(("model_id", "=", model.id), action["domain"])
         self.assertEqual(action["context"]["default_model_id"], model.id)
 
     def test_the_webhook_action_defaults_the_trigger(self):
         self.make_package()
-        action = self.env["studio.automation"].action_open(webhooks=True)
+        action = typed.model(self.env, StudioAutomation).action_open(webhooks=True)
         self.assertIn(("trigger", "=", "on_webhook"), action["domain"])
         self.assertEqual(action["context"]["default_trigger"], "on_webhook")
 
     def test_one_writable_package_is_not_worth_asking_about(self):
         package = self.make_package()
-        action = self.env["studio.automation"].action_open()
+        action = typed.model(self.env, StudioAutomation).action_open()
         self.assertEqual(action["context"]["studio_package_id"], package.id)
 
     def test_a_real_choice_is_not_guessed(self):
@@ -176,7 +224,7 @@ class TestAutomationSurface(StudioCase):
         which is only discovered at review time."""
         self.make_package(name="x_studio_one")
         self.make_package(name="x_studio_two")
-        action = self.env["studio.automation"].action_open()
+        action = typed.model(self.env, StudioAutomation).action_open()
         self.assertFalse(action["context"]["studio_package_id"])
 
     def test_the_consoles_choice_is_taken_over_a_guess(self):
@@ -185,49 +233,54 @@ class TestAutomationSurface(StudioCase):
         self.make_package(name="x_studio_one")
         two = self.make_package(name="x_studio_two")
         self.build_demo_content(two)
-        model = self.env["ir.model"]._get("x_studio_project")
-        action = self.env["studio.automation"].action_open(
-            model_name="x_studio_project", webhooks=True, package_id=two.id
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        action = typed.model(self.env, StudioAutomation).action_open(
+            model_name="x_studio_project", webhooks=True, package_id=cast("int", two.id)
         )
         self.assertEqual(action["context"]["studio_package_id"], two.id)
+        hook_vals: dict[str, object] = {"name": "Console hook", "model_id": model.id}
         automation = (
-            self.env["base.automation"]
+            typed.model(self.env, BaseAutomation)
             .with_context(**action["context"])
-            .create({"name": "Console hook", "model_id": model.id})
+            .create(hook_vals)  # pyright: ignore[reportArgumentType]
         )
         self.addCleanup(self.env["base.automation"]._unregister_hook)
         self.assertEqual(automation.trigger, "on_webhook")
-        self.assertEqual(automation.studio_package_id, two)
+        self.assertEqual(cast("StudioOwnedMixin", automation).studio_package_id, two)
 
     def test_a_rule_created_in_context_lands_in_source(self):
         package = self.make_package()
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        automation_vals: dict[str, object] = {
+            "name": "Captured",
+            "model_id": model.id,
+            "trigger": "on_create",
+        }
         automation = (
-            self.env["base.automation"]
+            typed.model(self.env, BaseAutomation)
             .with_context(studio_package_id=package.id)
-            .create(
-                {
-                    "name": "Captured",
-                    "model_id": model.id,
-                    "trigger": "on_create",
-                }
-            )
+            .create(automation_vals)  # pyright: ignore[reportArgumentType]
         )
         self.addCleanup(self.env["base.automation"]._unregister_hook)
-        self.assertEqual(automation.studio_package_id, package)
+        self.assertEqual(
+            cast("StudioOwnedMixin", automation).studio_package_id, package
+        )
         self.assertIn("Captured", "".join(package._render_files().values()))
 
     def test_nothing_is_captured_without_a_package_in_context(self):
         """Ordinary use of Settings → Technical must be unaffected."""
         package = self.make_package()
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        automation = self.env["base.automation"].create(
-            {"name": "Untouched", "model_id": model.id, "trigger": "on_create"}
-        )
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        untouched_vals: dict[str, object] = {
+            "name": "Untouched",
+            "model_id": model.id,
+            "trigger": "on_create",
+        }
+        automation = typed.model(self.env, BaseAutomation).create(untouched_vals)  # pyright: ignore[reportArgumentType]
         self.addCleanup(self.env["base.automation"]._unregister_hook)
-        self.assertFalse(automation.studio_package_id)
+        self.assertFalse(cast("StudioOwnedMixin", automation).studio_package_id)
 
 
 @tagged("post_install", "-at_install")
@@ -240,17 +293,16 @@ class TestGraduateCode(StudioCase):
     """
 
     def _action(self, package, model_name="x_studio_project", code="record.write({})"):
+        action_vals: dict[str, object] = {
+            "name": "Escalate",
+            "model_id": typed.model(self.env, IrModel)._get(model_name).id,
+            "state": "code",
+            "code": code,
+        }
         action = (
-            self.env["ir.actions.server"]
+            typed.model(self.env, IrActionsServer)
             .with_context(studio_package_id=package.id)
-            .create(
-                {
-                    "name": "Escalate",
-                    "model_id": self.env["ir.model"]._get(model_name).id,
-                    "state": "code",
-                    "code": code,
-                }
-            )
+            .create(action_vals)  # pyright: ignore[reportArgumentType]
         )
         return action
 
@@ -258,14 +310,16 @@ class TestGraduateCode(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         action = self._action(package, model_name="res.partner")
-        result = self.env["studio.graduate.code"].graduate(action.id, apply=False)
+        result = typed.model(self.env, StudioGraduateCode).graduate(
+            cast("int", action.id), apply=False
+        )
         self.assertTrue(result["method"].startswith("_studio_"))
         self.assertEqual(action.code, "(records or record).%s()" % result["method"])
-        entry = self.env["studio.package.model"].search(
+        entry = typed.model(self.env, StudioPackageModel).search(
             [("package_id", "=", package.id), ("model", "=", "res.partner")],
             limit=1,
         )
-        source = package._read_source(entry.python_path)
+        source = cast("str", package._read_source(cast("str", entry.python_path)))
         self.assertIn("def %s(self):" % result["method"], source)
         self.assertIn("record.write({})", source)
 
@@ -274,31 +328,35 @@ class TestGraduateCode(StudioCase):
         case that needed ModelSpec.extends before this could exist at all."""
         package = self.make_package()
         action = self._action(package, model_name="res.partner")
-        self.env["studio.graduate.code"].graduate(action.id, apply=False)
-        entry = self.env["studio.package.model"].search(
+        typed.model(self.env, StudioGraduateCode).graduate(
+            cast("int", action.id), apply=False
+        )
+        entry = typed.model(self.env, StudioPackageModel).search(
             [("package_id", "=", package.id), ("model", "=", "res.partner")], limit=1
         )
         self.assertTrue(entry.extends)
-        source = package._read_source(entry.python_path)
+        source = cast("str", package._read_source(cast("str", entry.python_path)))
         self.assertIn('_inherit = "res.partner"', source)
         self.assertNotIn("_name =", source)
 
     def test_graduating_twice_is_refused_rather_than_nested(self):
         package = self.make_package()
         action = self._action(package, model_name="res.partner")
-        self.env["studio.graduate.code"].graduate(action.id, apply=False)
+        typed.model(self.env, StudioGraduateCode).graduate(
+            cast("int", action.id), apply=False
+        )
         self.assertIn(
             "already calls",
-            self.env["studio.graduate.code"].can_graduate(action),
+            typed.model(self.env, StudioGraduateCode).can_graduate(action),
         )
 
     def test_two_actions_with_one_name_get_two_methods(self):
         package = self.make_package()
-        graduate = self.env["studio.graduate.code"].graduate
+        graduate = typed.model(self.env, StudioGraduateCode).graduate
 
         def promote():
             action = self._action(package, model_name="res.partner")
-            return graduate(action.id, apply=False)
+            return graduate(cast("int", action.id), apply=False)
 
         first, second = promote(), promote()
         self.assertNotEqual(first["method"], second["method"])
@@ -307,8 +365,9 @@ class TestGraduateCode(StudioCase):
         """Otherwise the package installs here and fails on a database without
         that module — design finding 4 all over again."""
         package = self.make_package()
-        self.env["studio.graduate.code"].graduate(
-            self._action(package, model_name="res.partner").id, apply=False
+        typed.model(self.env, StudioGraduateCode).graduate(
+            cast("int", self._action(package, model_name="res.partner").id),
+            apply=False,
         )
         import ast
 
@@ -319,26 +378,26 @@ class TestGraduateCode(StudioCase):
         """An unimported class is silently inert, which is the worst failure
         available: everything still loads."""
         package = self.make_package()
-        self.env["studio.graduate.code"].graduate(
-            self._action(package, model_name="res.partner").id, apply=False
+        typed.model(self.env, StudioGraduateCode).graduate(
+            cast("int", self._action(package, model_name="res.partner").id),
+            apply=False,
         )
-        init = package._read_source("models/__init__.py")
+        init = cast("str", package._read_source("models/__init__.py"))
         self.assertIn("res_partner", init)
 
     def test_an_unowned_action_says_why_not(self):
         package = self.make_package()
         self.build_demo_content(package)
-        action = self.env["ir.actions.server"].create(
-            {
-                "name": "Loose",
-                "model_id": self.env["ir.model"]._get("x_studio_project").id,
-                "state": "code",
-                "code": "pass",
-            }
-        )
+        action_vals: dict[str, object] = {
+            "name": "Loose",
+            "model_id": typed.model(self.env, IrModel)._get("x_studio_project").id,
+            "state": "code",
+            "code": "pass",
+        }
+        action = typed.model(self.env, IrActionsServer).create(action_vals)  # pyright: ignore[reportArgumentType]
         self.assertIn(
             "studio package",
-            self.env["studio.graduate.code"].can_graduate(action),
+            typed.model(self.env, StudioGraduateCode).can_graduate(action),
         )
 
     def test_a_non_code_action_has_nothing_to_promote(self):
@@ -348,5 +407,5 @@ class TestGraduateCode(StudioCase):
         action.state = "object_write"
         self.assertIn(
             "Execute Code",
-            self.env["studio.graduate.code"].can_graduate(action),
+            typed.model(self.env, StudioGraduateCode).can_graduate(action),
         )

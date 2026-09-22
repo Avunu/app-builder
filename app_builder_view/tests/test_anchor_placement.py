@@ -24,16 +24,64 @@ its placement run without the reload a real Apply needs; the reload half
 is ``probe_console_apply.py``.
 """
 
+from __future__ import annotations
+
 import json
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
-from lxml import etree
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
-from odoo.addons.app_builder_base.tools import modelspec
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tools import modelspec, typed
+from odoo.addons.app_builder_view.models.studio_view_edit import StudioViewEdit
+from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
+
+if TYPE_CHECKING:
+    # Only for the cast() calls and annotations below; with `from __future__
+    # import annotations` nothing here needs these at runtime, the same
+    # bargain every Phase 1c file's own `TYPE_CHECKING` block makes.
+    from odoo.addons.app_builder_base.models.studio_model_draft import (
+        DraftPayloadJSON,
+    )
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.app_builder_base.models.studio_package_model import (
+        StudioPackageModel,
+    )
+
+    # `app_builder_view`'s own pure `_inherit = "studio.model.draft"`
+    # extension declares the anchor store (`_anchors`/`set_anchor`/
+    # `_added_names`/`place_pending`/...) -- a real, different Python class
+    # than the base `StudioModelDraft` imported above, the same split
+    # `studio_view_new_field.py`'s own `_DraftHandle` Protocol worked
+    # around before this file was converted (its docstring: "replace it
+    # with a real aliased import, once those two convert"). `_place_anchored`/
+    # `_place_in_views`/`remove_field`/`action_discard`/`open_for_model` are
+    # declared on *both* classes (the base's own no-op fallback, overridden
+    # here); this alias is used for all of them, since it is the one that
+    # matches what actually runs.
+    from odoo.addons.app_builder_view.models.studio_model_draft import AnchorJSON
+    from odoo.addons.app_builder_view.models.studio_model_draft import (
+        StudioModelDraft as StudioModelDraftView,
+    )
+
+    # `canvas()` is composed onto `studio.view.editor` by
+    # `studio_view_canvas.py`'s own pure `_inherit` extension -- a different
+    # Python class than the real base `StudioViewEditor` imported above, the
+    # same split `test_console_tour.py`'s own `StudioViewEditorCanvas` alias
+    # already works around.
+    from odoo.addons.app_builder_view.models.studio_view_canvas import (
+        StudioViewEditor as StudioViewEditorCanvas,
+    )
+    from odoo.addons.app_builder_view.models.studio_view_editor import (
+        DropStagedFieldJSON,
+        DropSuccessJSON,
+    )
 
 OTHER_FORM = """
 <form>
@@ -58,27 +106,58 @@ def _named(nodes, name):
     return next(t for t, n in nodes.items() if n["name"] == name)
 
 
+def _staged_of(result: DropSuccessJSON) -> DropStagedFieldJSON:
+    """``result["staged"]``, narrowed: every drop this file makes lands on
+    a Python-owned model, so it is always staged -- ``staged`` is only
+    ``None`` on ``drop_at``'s live-create answer, which nothing here takes."""
+    return cast("DropStagedFieldJSON", result["staged"])
+
+
+def _pending_of(canvas) -> list[dict[str, object]]:
+    """``canvas["pending"]``: one dict per field the draft is adding, kept
+    as ``object`` on ``CanvasJSON`` itself since ``studio_view_editor.py``
+    never looks inside it -- only this file's own assertions do."""
+    return cast("list[dict[str, object]]", canvas["pending"])
+
+
 @tagged("post_install", "-at_install")
 class TestAnchorPlacement(StudioCase):
     def setUp(self):
         super().setUp()
-        self.editor = self.env["studio.view.editor"]
+        self.editor = typed.model(self.env, StudioViewEditor)
         self.package = self.make_package(name="x_anchor_pkg")
         self.build_demo_content(self.package)
         self.package.action_write_files()
         self.package.action_adopt(["x_studio_project"])
-        self.package_model = self.package.model_ids.filtered(
-            lambda m: m.model == "x_studio_project"
-        )
-        self.form = self.env["ir.ui.view"].search(
+        self.package_model = cast(
+            "StudioPackageModel", self.package.model_ids
+        ).filtered(lambda m: m.model == "x_studio_project")
+        self.form = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
 
     # -- helpers ---------------------------------------------------------------
 
-    def _draft(self):
-        Draft = self.env["studio.model.draft"]
-        return Draft.browse(Draft.open_for_model("x_studio_project")["id"])
+    def _draft(self) -> StudioModelDraftView:
+        Draft = typed.model(self.env, StudioModelDraft)
+        return cast(
+            "StudioModelDraftView",
+            Draft.browse(Draft.open_for_model("x_studio_project")["id"]),
+        )
+
+    def _draft_by_id(self, draft_id) -> StudioModelDraftView:
+        return cast(
+            "StudioModelDraftView",
+            typed.model(self.env, StudioModelDraft).browse(draft_id),
+        )
+
+    def _canvas(self, view_id, options=None):
+        """``self.editor.canvas(...)``, cast to the extension that declares
+        it (``StudioViewEditorCanvas``, see the ``TYPE_CHECKING`` block).
+        ``view_id`` stays unannotated: it is sometimes a real ``View.id``
+        (``IdType | Literal[False]``) and sometimes a plain ``int`` already,
+        and ``canvas()`` itself only ever wants the latter."""
+        return cast("StudioViewEditorCanvas", self.editor).canvas(view_id, options)
 
     def _added(self, draft, *names):
         """A spec/diff pair claiming ``names`` were just added; the fields
@@ -90,8 +169,15 @@ class TestAnchorPlacement(StudioCase):
             base = modelspec.without_field(base, name)
         return spec, modelspec.diff_specs(base, spec)
 
-    def _anchor(self, view, neighbour, position="after", **overrides):
-        anchor = {
+    def _anchor(
+        self, view, neighbour, position="after", **overrides
+    ) -> dict[str, object]:
+        """A plain ``dict[str, object]``, not ``AnchorJSON``: it satisfies
+        ``set_anchor``'s own (loose) parameter type as-is, every real
+        caller here, while a ``TypedDict`` cannot -- pyright treats a
+        ``TypedDict`` as narrower than a mutable ``dict``, never the other
+        way, so the `_place_anchored` callers below cast this back up."""
+        anchor: dict[str, object] = {
             "view_id": view.id,
             "xpath": "//field[@name='%s']" % neighbour,
             "position": position,
@@ -150,10 +236,13 @@ class TestAnchorPlacement(StudioCase):
         reload a real Apply needs.
         """
         draft = self._draft()
-        base = draft._spec()
+        base_draft = cast("StudioModelDraft", draft)
+        base = base_draft._spec()
         for name in names:
             base = modelspec.without_field(base, name)
-        draft.base_spec_json = json.dumps(modelspec.spec_to_json(base), sort_keys=True)
+        base_draft.base_spec_json = json.dumps(
+            modelspec.spec_to_json(base), sort_keys=True
+        )
         self.assertEqual(sorted(draft._added_names()), sorted(names))
         return draft
 
@@ -174,17 +263,21 @@ class TestAnchorPlacement(StudioCase):
             self.form, "x_budget", descriptor={"kind": "field", "name": "x_name"}
         )
         self.assertTrue(
-            draft._place_anchored(self.form, "x_active_flag", anchor, "boolean_toggle")
+            draft._place_anchored(
+                self.form, "x_active_flag", cast("AnchorJSON", anchor), "boolean_toggle"
+            )
         )
         self.assertEqual(
             self._siblings(self.form),
             ["x_name", "x_budget", "x_active_flag", "x_partner_id", "x_stage"],
         )
-        placed = etree.fromstring(self.form.arch.encode()).find(
+        placed = etree.fromstring(cast("str", self.form.arch).encode()).find(
             ".//field[@name='x_active_flag']"
         )
         self.assertEqual(placed.get("widget"), "boolean_toggle")
-        history = self.env["studio.view.edit"].stack_for(self.form.id)
+        history = typed.model(self.env, StudioViewEdit).stack_for(
+            cast("int", self.form.id)
+        )
         self.assertEqual(history["undo"][0]["summary"], "added x_active_flag")
 
     def test_a_field_anchored_where_no_label_is_drawn_is_given_one(self):
@@ -195,14 +288,31 @@ class TestAnchorPlacement(StudioCase):
         anchor = self._anchor(
             self.form, "x_budget", xpath="//sheet/group", descriptor=None
         )
-        self.assertTrue(draft._place_anchored(self.form, "x_active_flag", anchor, None))
+        self.assertTrue(
+            draft._place_anchored(
+                self.form,
+                "x_active_flag",
+                cast("AnchorJSON", anchor),
+                # `_place_anchored`'s own `widget` is declared `str`, but
+                # every real caller through `drop_at` can pass a falsy one
+                # (`{"widget": widget} if widget else {}"` in its own body);
+                # this test exercises that with `None` rather than `""`,
+                # a pre-existing, harmless gap between the two -- flagged,
+                # not "fixed" here, since it changes no behaviour either way.
+                None,  # pyright: ignore[reportArgumentType]
+            )
+        )
         self.form.invalidate_recordset()
-        sheet = etree.fromstring(self.form.get_combined_arch().encode()).find("sheet")
+        sheet = etree.fromstring(
+            cast("str", self.form.get_combined_arch()).encode()
+        ).find("sheet")
         self.assertEqual(
             [(c.tag, c.get("name") or c.get("for")) for c in sheet],
             [("group", None), ("label", "x_active_flag"), ("field", "x_active_flag")],
         )
-        history = self.env["studio.view.edit"].stack_for(self.form.id)
+        history = typed.model(self.env, StudioViewEdit).stack_for(
+            cast("int", self.form.id)
+        )
         self.assertEqual(len(history["undo"]), 1)
 
     def test_a_changed_view_finds_the_neighbour_again(self):
@@ -215,7 +325,11 @@ class TestAnchorPlacement(StudioCase):
             arch_version="older",
             descriptor={"kind": "field", "name": "x_name"},
         )
-        self.assertTrue(draft._place_anchored(self.form, "x_active_flag", anchor, ""))
+        self.assertTrue(
+            draft._place_anchored(
+                self.form, "x_active_flag", cast("AnchorJSON", anchor), ""
+            )
+        )
         self.assertEqual(
             self._siblings(self.form),
             ["x_name", "x_active_flag", "x_budget", "x_partner_id", "x_stage"],
@@ -225,7 +339,11 @@ class TestAnchorPlacement(StudioCase):
         draft = self._draft()
         anchor = self._anchor(self.form, "x_gone", arch_version="older")
         before = self.form.arch
-        self.assertFalse(draft._place_anchored(self.form, "x_active_flag", anchor, ""))
+        self.assertFalse(
+            draft._place_anchored(
+                self.form, "x_active_flag", cast("AnchorJSON", anchor), ""
+            )
+        )
         self.assertEqual(self.form.arch, before)
 
     def test_a_declined_anchor_falls_back_to_balanced_placement(self):
@@ -236,7 +354,7 @@ class TestAnchorPlacement(StudioCase):
         anchor = self._anchor(self.form, "x_gone", arch_version="older")
         with patch.object(Draft, "_anchors", return_value={"x_active_flag": anchor}):
             self.assertTrue(draft._place_in_views(*self._added(draft, "x_active_flag")))
-        self.assertIn('<field name="x_active_flag"/>', self.form.arch)
+        self.assertIn('<field name="x_active_flag"/>', cast("str", self.form.arch))
         self.assertEqual(draft._anchors(), {})
 
     def test_a_locator_core_cannot_apply_declines_rather_than_failing(self):
@@ -259,7 +377,9 @@ class TestAnchorPlacement(StudioCase):
             ),
         ):
             self.assertFalse(
-                draft._place_anchored(self.form, "x_active_flag", anchor, "")
+                draft._place_anchored(
+                    self.form, "x_active_flag", cast("AnchorJSON", anchor), ""
+                )
             )
 
     def test_an_xpath_that_finds_nothing_falls_back_to_the_descriptor(self):
@@ -267,7 +387,11 @@ class TestAnchorPlacement(StudioCase):
         that locates nothing is not an answer; the descriptor still is."""
         draft = self._draft()
         anchor = self._anchor(self.form, "x_budget", xpath="//group[@name='nope']")
-        self.assertTrue(draft._place_anchored(self.form, "x_active_flag", anchor, ""))
+        self.assertTrue(
+            draft._place_anchored(
+                self.form, "x_active_flag", cast("AnchorJSON", anchor), ""
+            )
+        )
         self.assertEqual(
             self._siblings(self.form),
             ["x_name", "x_budget", "x_active_flag", "x_partner_id", "x_stage"],
@@ -281,7 +405,9 @@ class TestAnchorPlacement(StudioCase):
         Editor = self.env.registry["studio.view.editor"]
         anchor = self._anchor(self.form, "x_budget", xpath="/form/sheet/group/field[2]")
         with patch.object(Editor, "apply_operation", autospec=True) as spy:
-            draft._place_anchored(self.form, "x_active_flag", anchor, "")
+            draft._place_anchored(
+                self.form, "x_active_flag", cast("AnchorJSON", anchor), ""
+            )
         operation = spy.call_args.args[3]
         self.assertEqual(operation["_expect"]["tag"], "field")
         self.assertEqual(operation["_expect"]["name"], "x_budget")
@@ -292,7 +418,10 @@ class TestAnchorPlacement(StudioCase):
         Package = self.env.registry["studio.package"]
         with patch.object(Package, "action_write_files", autospec=True) as spy:
             draft._place_anchored(
-                self.form, "x_active_flag", self._anchor(self.form, "x_budget"), ""
+                self.form,
+                "x_active_flag",
+                cast("AnchorJSON", self._anchor(self.form, "x_budget")),
+                "",
             )
         spy.assert_not_called()
 
@@ -302,22 +431,20 @@ class TestAnchorPlacement(StudioCase):
         """A form of the model that another module declares: it has an
         xmlid, since a patch has to name what it inherits, and it is not
         the package's to rewrite."""
-        view = self.env["ir.ui.view"].create(
-            {
-                "name": "x_studio_project.other",
-                "model": "x_studio_project",
-                "type": "form",
-                "arch": arch,
-            }
-        )
-        self.env["ir.model.data"].create(
-            {
-                "module": "base",
-                "name": "x_studio_project_other_form",
-                "model": "ir.ui.view",
-                "res_id": view.id,
-            }
-        )
+        view_vals: dict[str, object] = {
+            "name": "x_studio_project.other",
+            "model": "x_studio_project",
+            "type": "form",
+            "arch": arch,
+        }
+        view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
+        data_vals: dict[str, object] = {
+            "module": "base",
+            "name": "x_studio_project_other_form",
+            "model": "ir.ui.view",
+            "res_id": view.id,
+        }
+        self.env["ir.model.data"].create(data_vals)  # pyright: ignore[reportArgumentType]
         return view
 
     def test_a_foreign_view_is_patched_not_rewritten(self):
@@ -328,11 +455,15 @@ class TestAnchorPlacement(StudioCase):
         with patch.object(Draft, "_anchors", return_value={"x_active_flag": anchor}):
             self.assertTrue(draft._place_in_views(*self._added(draft, "x_active_flag")))
         other.invalidate_recordset()
-        self.assertNotIn("x_active_flag", other.arch, "never rewritten in place")
-        extension = self.env["ir.ui.view"].search([("inherit_id", "=", other.id)])
+        self.assertNotIn(
+            "x_active_flag", cast("str", other.arch), "never rewritten in place"
+        )
+        extension = typed.model(self.env, View).search([("inherit_id", "=", other.id)])
         self.assertEqual(len(extension), 1)
-        self.assertEqual(extension.studio_package_id, self.package)
-        self.assertIn("//field[@name='x_name']", extension.arch)
+        self.assertEqual(
+            cast("StudioOwnedMixin", extension).studio_package_id, self.package
+        )
+        self.assertIn("//field[@name='x_name']", cast("str", extension.arch))
         self.assertEqual(
             self._siblings(other, "other"), ["x_name", "x_active_flag", "x_budget"]
         )
@@ -361,9 +492,9 @@ class TestAnchorPlacement(StudioCase):
 
     def test_the_canvas_draws_a_ghost_at_the_anchor(self):
         draft = self._staged(self._draft())
-        canvas = self.editor.canvas(self.form.id, {"draft_id": draft.id})
+        canvas = self._canvas(self.form.id, {"draft_id": draft.id})
         self.assertEqual(canvas["draft_id"], draft.id)
-        arch = etree.fromstring(canvas["arch"].encode())
+        arch = etree.fromstring(cast("str", canvas["arch"]).encode())
         ghost = arch.find(".//widget[@name='app_builder_pending']")
         self.assertIsNotNone(ghost)
         self.assertEqual(ghost.getprevious().get("name"), "x_budget")
@@ -375,7 +506,7 @@ class TestAnchorPlacement(StudioCase):
         self.assertTrue(node["dom"])
         self.assertIsNone(node["hidden"])
         self.assertEqual(
-            node["pending"],
+            node.get("pending"),
             {
                 "draft_id": draft.id,
                 "name": "colour",
@@ -384,7 +515,7 @@ class TestAnchorPlacement(StudioCase):
                 "resolved": True,
             },
         )
-        parent = canvas["nodes"][node["parent"]]
+        parent = canvas["nodes"][cast("str", node["parent"])]
         children = parent["children"]
         self.assertEqual(
             children[children.index(_named(canvas["nodes"], "x_budget")) + 1],
@@ -408,17 +539,17 @@ class TestAnchorPlacement(StudioCase):
 
     def test_the_ghost_never_reaches_the_view(self):
         draft = self._staged(self._draft())
-        self.editor.canvas(self.form.id, {"draft_id": draft.id})
+        self._canvas(self.form.id, {"draft_id": draft.id})
         self.form.invalidate_recordset()
         self.assertNotIn("app_builder_pending", self.form.get_combined_arch())
-        self.assertNotIn("app_builder_pending", self.form.arch)
+        self.assertNotIn("app_builder_pending", cast("str", self.form.arch))
         self.assertNotIn(
             "app_builder_pending", "".join(self.package._render_files().values())
         )
 
     def test_the_users_own_draft_is_found_without_being_named(self):
         draft = self._staged(self._draft())
-        canvas = self.editor.canvas(self.form.id)
+        canvas = self._canvas(self.form.id)
         self.assertEqual(canvas["draft_id"], draft.id)
         self.assertIn("p_colour", canvas["nodes"])
 
@@ -428,30 +559,38 @@ class TestAnchorPlacement(StudioCase):
         field -- and says so, rather than being counted by the pill and
         shown nowhere."""
         draft = self._staged(self._draft(), neighbour="x_gone", arch_version="older")
-        canvas = self.editor.canvas(self.form.id, {"draft_id": draft.id})
+        canvas = self._canvas(self.form.id, {"draft_id": draft.id})
         self.assertIn("p_colour", canvas["nodes"])
-        self.assertFalse(canvas["nodes"]["p_colour"]["pending"]["resolved"])
-        arch = etree.fromstring(canvas["arch"].encode())
+        self.assertFalse(
+            cast("dict[str, object]", canvas["nodes"]["p_colour"].get("pending"))[
+                "resolved"
+            ]
+        )
+        arch = etree.fromstring(cast("str", canvas["arch"]).encode())
         ghost = arch.find(".//widget[@name='app_builder_pending']")
         self.assertIn("'resolved': False", ghost.get("options"))
         # The demo form has no two-column group, so `place_in_form` would
         # open one at the end of the sheet: that is where the ghost goes.
         self.assertEqual(ghost.getparent().tag, "sheet")
         self.assertIsNone(ghost.getnext(), "the last child, as place_in_form does")
-        self.assertEqual(len(canvas["pending"]), 1)
-        self.assertTrue(canvas["pending"][0]["placed"])
-        self.assertFalse(canvas["pending"][0]["resolved"])
+        pending = _pending_of(canvas)
+        self.assertEqual(len(pending), 1)
+        self.assertTrue(pending[0]["placed"])
+        self.assertFalse(pending[0]["resolved"])
 
     def test_a_field_anchored_on_another_view_is_listed_not_drawn(self):
         other = self._foreign_form()
         draft = self._draft()
-        draft.add_field({"name": "colour", "ttype": "char", "string": "Colour"})
+        cast("StudioModelDraft", draft).add_field(
+            {"name": "colour", "ttype": "char", "string": "Colour"}
+        )
         draft.set_anchor("colour", self._anchor(other, "x_name"))
-        canvas = self.editor.canvas(self.form.id, {"draft_id": draft.id})
+        canvas = self._canvas(self.form.id, {"draft_id": draft.id})
         self.assertNotIn("p_colour", canvas["nodes"])
-        self.assertEqual(len(canvas["pending"]), 1)
-        self.assertFalse(canvas["pending"][0]["placed"])
-        self.assertEqual(canvas["pending"][0]["view_id"], other.id)
+        pending = _pending_of(canvas)
+        self.assertEqual(len(pending), 1)
+        self.assertFalse(pending[0]["placed"])
+        self.assertEqual(pending[0]["view_id"], other.id)
 
     def test_another_users_draft_is_not_spliced_on_request(self):
         """Drafts are per user; naming somebody else's id does not make
@@ -460,28 +599,29 @@ class TestAnchorPlacement(StudioCase):
         builder = self.make_user(
             "anchor_builder", ["base.group_system", "app_builder_base.group_studio_user"]
         )
-        canvas = self.editor.with_user(builder).canvas(
-            self.form.id, {"draft_id": draft.id}
+        canvas = cast("StudioViewEditorCanvas", self.editor.with_user(builder)).canvas(
+            cast("int", self.form.id), {"draft_id": draft.id}
         )
         self.assertNotEqual(canvas["draft_id"], draft.id)
         self.assertNotIn("p_colour", canvas["nodes"])
         self.assertEqual(canvas["pending"], [])
 
     def test_a_ghost_on_a_list_is_a_column(self):
-        view = self.env["ir.ui.view"].create(
-            {
-                "name": "x_studio_project.list",
-                "model": "x_studio_project",
-                "type": "list",
-                "arch": LIST_ARCH,
-            }
-        )
+        view_vals: dict[str, object] = {
+            "name": "x_studio_project.list",
+            "model": "x_studio_project",
+            "type": "list",
+            "arch": LIST_ARCH,
+        }
+        view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         self.package.studio_capture(view)
         draft = self._draft()
-        draft.add_field({"name": "colour", "ttype": "char", "string": "Colour"})
+        cast("StudioModelDraft", draft).add_field(
+            {"name": "colour", "ttype": "char", "string": "Colour"}
+        )
         draft.set_anchor("colour", self._anchor(view, "x_name"))
-        canvas = self.editor.canvas(view.id, {"draft_id": draft.id})
-        arch = etree.fromstring(canvas["arch"].encode())
+        canvas = self._canvas(view.id, {"draft_id": draft.id})
+        arch = etree.fromstring(cast("str", canvas["arch"]).encode())
         self.assertEqual(
             [(c.tag, c.get("name")) for c in arch],
             [
@@ -497,7 +637,9 @@ class TestAnchorPlacement(StudioCase):
         """Resolved on the original tree, all of them, before any is
         spliced: the first ghost must not shift the second's locator."""
         draft = self._staged(self._draft(), "first")
-        draft.add_field({"name": "second", "ttype": "char", "string": "Second"})
+        cast("StudioModelDraft", draft).add_field(
+            {"name": "second", "ttype": "char", "string": "Second"}
+        )
         draft.set_anchor(
             "second",
             self._anchor(
@@ -507,8 +649,8 @@ class TestAnchorPlacement(StudioCase):
                 descriptor=None,
             ),
         )
-        canvas = self.editor.canvas(self.form.id, {"draft_id": draft.id})
-        arch = etree.fromstring(canvas["arch"].encode())
+        canvas = self._canvas(self.form.id, {"draft_id": draft.id})
+        arch = etree.fromstring(cast("str", canvas["arch"]).encode())
         group = arch.find(".//group")
         names = [
             c.get("name") if c.tag == "field" else c.get("options")
@@ -521,16 +663,19 @@ class TestAnchorPlacement(StudioCase):
 
     # -- the drop --------------------------------------------------------------
 
-    def _drop(self, view, neighbour, position, payload, options=None):
-        canvas = self.editor.canvas(view.id, options)
-        return self.editor.drop_at(
+    def _drop(
+        self, view, neighbour, position, payload, options=None
+    ) -> DropSuccessJSON:
+        canvas = self._canvas(view.id, options)
+        result = self.editor.drop_at(
             view.id,
-            self.package.id,
+            cast("int", self.package.id),
             {"token": _named(canvas["nodes"], neighbour), "position": position},
             payload,
             expected_arch_version=canvas["arch_version"],
             canvas_options=options,
         )
+        return cast("DropSuccessJSON", result)
 
     def test_a_new_field_on_a_python_model_is_staged_and_anchored(self):
         result = self._drop(
@@ -545,13 +690,14 @@ class TestAnchorPlacement(StudioCase):
         self.assertFalse(result["stale"])
         self.assertIsNone(result["created"])
         self.assertEqual(result["select"], "p_urgency")
-        draft = self.env["studio.model.draft"].browse(result["staged"]["draft_id"])
+        draft = self._draft_by_id(_staged_of(result)["draft_id"])
         self.assertEqual(
             result["staged"],
             {"name": "urgency", "label": "Urgency", "draft_id": draft.id},
         )
-        self.assertEqual(result["draft"]["id"], draft.id)
-        staged = next(f for f in result["draft"]["fields"] if f["name"] == "urgency")
+        loaded = cast("DraftPayloadJSON", result["draft"])
+        self.assertEqual(loaded["id"], draft.id)
+        staged = next(f for f in loaded["fields"] if f["name"] == "urgency")
         self.assertEqual(staged["ttype"], "selection", "the preset is expanded")
         self.assertEqual(len(staged["selection"]), 4)
         self.assertEqual(staged["placement"]["widget"], "priority")
@@ -564,7 +710,9 @@ class TestAnchorPlacement(StudioCase):
             "widget", anchor, "the placement says the widget; an anchor would go stale"
         )
         self.assertIsNone(anchor["pending"])
-        self.assertEqual(anchor["arch_version"], self.editor.arch_version(self.form.id))
+        self.assertEqual(
+            anchor["arch_version"], self.editor.arch_version(cast("int", self.form.id))
+        )
         self.assertIn("p_urgency", result["canvas"]["nodes"])
         self.assertEqual(result["canvas"]["draft_id"], draft.id)
         self.assertFalse(
@@ -593,11 +741,12 @@ class TestAnchorPlacement(StudioCase):
                 "kind": "new_field",
                 "values": {"ttype": "char", "field_description": "B"},
             },
-            options={"draft_id": first["staged"]["draft_id"]},
+            options={"draft_id": _staged_of(first)["draft_id"]},
         )
-        self.assertEqual(first["staged"]["draft_id"], second["staged"]["draft_id"])
-        self.assertEqual(len(second["canvas"]["pending"]), 2)
-        self.assertEqual(second["draft"]["change_count"], 2)
+        self.assertEqual(_staged_of(first)["draft_id"], _staged_of(second)["draft_id"])
+        self.assertEqual(len(_pending_of(second["canvas"])), 2)
+        loaded = cast("DraftPayloadJSON", second["draft"])
+        self.assertEqual(loaded["change_count"], 2)
 
     def test_a_label_the_model_already_uses_gets_a_suffix(self):
         """Two Text tiles dropped before either was renamed are both
@@ -619,10 +768,10 @@ class TestAnchorPlacement(StudioCase):
                 "kind": "new_field",
                 "values": {"ttype": "char", "field_description": "New Text"},
             },
-            options={"draft_id": first["staged"]["draft_id"]},
+            options={"draft_id": _staged_of(first)["draft_id"]},
         )
-        self.assertEqual(first["staged"]["name"], "new_text")
-        self.assertEqual(second["staged"]["name"], "new_text_2")
+        self.assertEqual(_staged_of(first)["name"], "new_text")
+        self.assertEqual(_staged_of(second)["name"], "new_text_2")
 
     def test_a_drop_after_a_ghost_is_anchored_on_the_ghost(self):
         """The gap after a ghost is a place: the second field names the
@@ -636,7 +785,7 @@ class TestAnchorPlacement(StudioCase):
                 "values": {"ttype": "char", "field_description": "A"},
             },
         )
-        options = {"draft_id": first["staged"]["draft_id"]}
+        options = {"draft_id": _staged_of(first)["draft_id"]}
         second = self._drop(
             self.form,
             "a",
@@ -647,7 +796,7 @@ class TestAnchorPlacement(StudioCase):
             },
             options=options,
         )
-        draft = self.env["studio.model.draft"].browse(options["draft_id"])
+        draft = self._draft_by_id(options["draft_id"])
         anchor = draft._anchors()["b"]
         self.assertEqual(anchor["pending"], "a")
         self.assertEqual(anchor["position"], "after")
@@ -671,7 +820,7 @@ class TestAnchorPlacement(StudioCase):
             self._ghost_order(third["canvas"]),
             ["x_name", "x_budget", "~c", "~a", "~b", "x_partner_id", "x_stage"],
         )
-        self.assertTrue(all(p["placed"] for p in third["canvas"]["pending"]))
+        self.assertTrue(all(p["placed"] for p in _pending_of(third["canvas"])))
 
     def test_a_ghost_cannot_be_dropped_into(self):
         first = self._drop(
@@ -683,7 +832,7 @@ class TestAnchorPlacement(StudioCase):
                 "values": {"ttype": "char", "field_description": "A"},
             },
         )
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             self._drop(
                 self.form,
                 "a",
@@ -692,7 +841,7 @@ class TestAnchorPlacement(StudioCase):
                     "kind": "new_field",
                     "values": {"ttype": "char", "field_description": "B"},
                 },
-                options={"draft_id": first["staged"]["draft_id"]},
+                options={"draft_id": _staged_of(first)["draft_id"]},
             )
 
     def test_something_real_dropped_beside_a_ghost_goes_beside_the_nearest_real_node(
@@ -710,7 +859,7 @@ class TestAnchorPlacement(StudioCase):
                 "values": {"ttype": "char", "field_description": "A"},
             },
         )
-        options = {"draft_id": first["staged"]["draft_id"]}
+        options = {"draft_id": _staged_of(first)["draft_id"]}
         result = self._drop(
             self.form,
             "a",
@@ -723,7 +872,8 @@ class TestAnchorPlacement(StudioCase):
             ["x_name", "x_budget", "~a", "x_active_flag", "x_partner_id", "x_stage"],
         )
         self.assertEqual(
-            result["canvas"]["nodes"][result["select"]]["name"], "x_active_flag"
+            result["canvas"]["nodes"][cast("str", result["select"])]["name"],
+            "x_active_flag",
         )
 
     # -- something real dropped beside a ghost keeps the ghost's side ---------
@@ -761,7 +911,8 @@ class TestAnchorPlacement(StudioCase):
             [n if n != "x_active_flag" else "~x_active_flag" for n in expected],
         )
         self.assertEqual(
-            result["canvas"]["nodes"][result["select"]]["name"], "x_budget_doubled"
+            result["canvas"]["nodes"][cast("str", result["select"])]["name"],
+            "x_budget_doubled",
         )
         anchor = draft._anchors()["x_active_flag"]
         self.assertEqual(anchor["position"], "after")
@@ -809,7 +960,7 @@ class TestAnchorPlacement(StudioCase):
         draft = self._unapplied("x_active_flag")
         draft.set_anchor("x_active_flag", self._anchor(self.form, "x_budget"))
         options = {"draft_id": draft.id}
-        canvas = self.editor.canvas(self.form.id, options)
+        canvas = self._canvas(self.form.id, options)
         result = self._drop(
             self.form,
             "x_active_flag",
@@ -831,7 +982,7 @@ class TestAnchorPlacement(StudioCase):
         draft = self._unapplied("x_active_flag")
         draft.set_anchor("x_active_flag", self._anchor(self.form, "x_budget"))
         options = {"draft_id": draft.id}
-        canvas = self.editor.canvas(self.form.id, options)
+        canvas = self._canvas(self.form.id, options)
         result = self._drop(
             self.form,
             "x_active_flag",
@@ -858,7 +1009,7 @@ class TestAnchorPlacement(StudioCase):
         )
         options = {"draft_id": draft.id}
         self.assertEqual(
-            self._ghost_order(self.editor.canvas(self.form.id, options)),
+            self._ghost_order(self._canvas(self.form.id, options)),
             [
                 "x_name",
                 "x_budget",
@@ -912,7 +1063,9 @@ class TestAnchorPlacement(StudioCase):
         """a <- b <- c, x_partner_id moved after b: a and b end up before
         it as a chain hanging off it, c after it, on the canvas and once
         placed -- whichever order the class lists the three in."""
-        self.form.arch = self.form.arch.replace('<field name="x_stage"/>', "")
+        self.form.arch = cast("str", self.form.arch).replace(
+            '<field name="x_stage"/>', ""
+        )
         draft = self._unapplied("x_active_flag", "x_budget_doubled", "x_stage")
         draft.set_anchor("x_active_flag", self._anchor(self.form, "x_budget"))
         draft.set_anchor(
@@ -928,7 +1081,7 @@ class TestAnchorPlacement(StudioCase):
             },
         )
         options = {"draft_id": draft.id}
-        canvas = self.editor.canvas(self.form.id, options)
+        canvas = self._canvas(self.form.id, options)
         self.assertEqual(
             self._ghost_order(canvas),
             [
@@ -1001,7 +1154,7 @@ class TestAnchorPlacement(StudioCase):
             "x_budget_doubled", self._anchor(self.form, "x_partner_id", "before")
         )
         options = {"draft_id": draft.id}
-        canvas = self.editor.canvas(self.form.id, options)
+        canvas = self._canvas(self.form.id, options)
         self.assertEqual(
             self._ghost_order(canvas)[2:4], ["~x_active_flag", "~x_budget_doubled"]
         )
@@ -1045,7 +1198,7 @@ class TestAnchorPlacement(StudioCase):
                 "values": {"ttype": "char", "field_description": "A"},
             },
         )
-        options = {"draft_id": first["staged"]["draft_id"]}
+        options = {"draft_id": _staged_of(first)["draft_id"]}
         self._drop(
             self.form,
             "a",
@@ -1067,7 +1220,7 @@ class TestAnchorPlacement(StudioCase):
             self._ghost_order(moved["canvas"]),
             ["x_name", "x_budget", "~b", "x_partner_id", "x_stage", "~a"],
         )
-        anchors = self.env["studio.model.draft"].browse(options["draft_id"])._anchors()
+        anchors = self._draft_by_id(options["draft_id"])._anchors()
         self.assertIsNone(anchors["b"]["pending"])
         self.assertEqual(
             anchors["b"]["descriptor"], {"kind": "field", "name": "x_budget"}
@@ -1086,7 +1239,7 @@ class TestAnchorPlacement(StudioCase):
                 "values": {"ttype": "char", "field_description": "A"},
             },
         )
-        options = {"draft_id": first["staged"]["draft_id"]}
+        options = {"draft_id": _staged_of(first)["draft_id"]}
         self._drop(
             self.form,
             "a",
@@ -1119,13 +1272,13 @@ class TestAnchorPlacement(StudioCase):
                 "values": {"ttype": "char", "field_description": "A"},
             },
         )
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self._drop(
                 self.form,
                 "a",
                 "after",
                 {"kind": "move_pending", "name": "a"},
-                options={"draft_id": first["staged"]["draft_id"]},
+                options={"draft_id": _staged_of(first)["draft_id"]},
             )
         self.assertIn("beside itself", str(caught.exception))
 
@@ -1139,7 +1292,7 @@ class TestAnchorPlacement(StudioCase):
                 "values": {"ttype": "char", "field_description": "A"},
             },
         )
-        options = {"draft_id": first["staged"]["draft_id"]}
+        options = {"draft_id": _staged_of(first)["draft_id"]}
         self._drop(
             self.form,
             "a",
@@ -1150,11 +1303,11 @@ class TestAnchorPlacement(StudioCase):
             },
             options=options,
         )
-        draft = self.env["studio.model.draft"].browse(options["draft_id"])
+        draft = self._draft_by_id(options["draft_id"])
         draft.remove_field("a")
         self.assertEqual(list(draft._anchors()), ["b"])
         self.assertIsNone(draft._anchors()["b"]["pending"])
-        canvas = self.editor.canvas(self.form.id, options)
+        canvas = self._canvas(self.form.id, options)
         self.assertEqual(
             self._ghost_order(canvas),
             ["x_name", "x_budget", "~b", "x_partner_id", "x_stage"],
@@ -1170,17 +1323,17 @@ class TestAnchorPlacement(StudioCase):
             options={"draft_id": draft.id},
         )
         self.assertEqual(result["select"], "p_colour")
-        self.assertEqual(result["staged"]["name"], "colour")
+        self.assertEqual(_staged_of(result)["name"], "colour")
         anchor = draft._anchors()["colour"]
         self.assertEqual(anchor["position"], "before")
         self.assertEqual(anchor["descriptor"], {"kind": "field", "name": "x_name"})
-        arch = etree.fromstring(result["canvas"]["arch"].encode())
+        arch = etree.fromstring(cast("str", result["canvas"]["arch"]).encode())
         ghost = arch.find(".//widget[@name='app_builder_pending']")
         self.assertEqual(ghost.getnext().get("name"), "x_name")
 
     def test_moving_a_field_that_is_not_pending_is_refused(self):
         draft = self._draft()
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self._drop(
                 self.form,
                 "x_name",
@@ -1193,21 +1346,24 @@ class TestAnchorPlacement(StudioCase):
     def test_a_drop_inside_the_sheet_anchors_on_a_singleton(self):
         """A container with no name is known by its kind alone when there
         is only one of it, which is enough to find it again."""
-        canvas = self.editor.canvas(self.form.id)
+        canvas = self._canvas(self.form.id)
         sheet = next(t for t, n in canvas["nodes"].items() if n["kind"] == "sheet")
-        result = self.editor.drop_at(
-            self.form.id,
-            self.package.id,
-            {"token": sheet, "position": "inside"},
-            {
-                "kind": "new_field",
-                "values": {"ttype": "text", "field_description": "Notes"},
-            },
+        result = cast(
+            "DropSuccessJSON",
+            self.editor.drop_at(
+                cast("int", self.form.id),
+                cast("int", self.package.id),
+                {"token": sheet, "position": "inside"},
+                {
+                    "kind": "new_field",
+                    "values": {"ttype": "text", "field_description": "Notes"},
+                },
+            ),
         )
-        draft = self.env["studio.model.draft"].browse(result["staged"]["draft_id"])
+        draft = self._draft_by_id(_staged_of(result)["draft_id"])
         self.assertEqual(draft._anchors()["notes"]["descriptor"], {"kind": "sheet"})
         self.assertEqual(draft._anchors()["notes"]["position"], "inside")
-        arch = etree.fromstring(result["canvas"]["arch"].encode())
+        arch = etree.fromstring(cast("str", result["canvas"]["arch"]).encode())
         self.assertEqual(arch.find("sheet")[-1].get("name"), "app_builder_pending")
 
     def test_a_neighbour_whose_name_the_view_repeats_is_not_described_by_it(self):
@@ -1216,27 +1372,31 @@ class TestAnchorPlacement(StudioCase):
         x_name" would be found again as the first, which is not the one
         dropped on. The exact xpath serves while the arch is unchanged;
         the fallback after."""
-        root = etree.fromstring(self.form.arch.encode())
+        root = etree.fromstring(cast("str", self.form.arch).encode())
         sheet = root.find("sheet")
         sheet.insert(0, etree.fromstring('<field name="x_name" invisible="1"/>'))
         self.form.arch = etree.tostring(root, encoding="unicode")
-        canvas = self.editor.canvas(self.form.id)
+        canvas = self._canvas(self.form.id)
         in_group = next(
             t
             for t, n in canvas["nodes"].items()
-            if n["name"] == "x_name" and canvas["nodes"][n["parent"]]["kind"] == "group"
+            if n["name"] == "x_name"
+            and canvas["nodes"][cast("str", n["parent"])]["kind"] == "group"
         )
-        result = self.editor.drop_at(
-            self.form.id,
-            self.package.id,
-            {"token": in_group, "position": "after"},
-            {
-                "kind": "new_field",
-                "values": {"ttype": "char", "field_description": "A"},
-            },
-            expected_arch_version=canvas["arch_version"],
+        result = cast(
+            "DropSuccessJSON",
+            self.editor.drop_at(
+                cast("int", self.form.id),
+                cast("int", self.package.id),
+                {"token": in_group, "position": "after"},
+                {
+                    "kind": "new_field",
+                    "values": {"ttype": "char", "field_description": "A"},
+                },
+                expected_arch_version=canvas["arch_version"],
+            ),
         )
-        draft = self.env["studio.model.draft"].browse(result["staged"]["draft_id"])
+        draft = self._draft_by_id(_staged_of(result)["draft_id"])
         anchor = draft._anchors()["a"]
         self.assertIsNone(anchor["descriptor"])
         self.assertEqual(anchor["xpath"], "/form/sheet/group/field[1]")
@@ -1256,16 +1416,19 @@ class TestAnchorPlacement(StudioCase):
         draft = self._staged(self._draft())
         draft.action_discard()
         self.assertEqual(draft._anchors(), {})
-        self.assertEqual(draft.load()["anchors"], {})
+        self.assertEqual(cast("StudioModelDraft", draft).load()["anchors"], {})
 
     def test_an_anchor_needs_a_pending_field(self):
         draft = self._draft()
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             draft.set_anchor("x_budget", self._anchor(self.form, "x_name"))
 
     def test_load_reports_the_anchors(self):
         draft = self._staged(self._draft())
-        self.assertEqual(draft.load()["anchors"]["colour"]["view_id"], self.form.id)
+        self.assertEqual(
+            cast("StudioModelDraft", draft).load()["anchors"]["colour"]["view_id"],
+            self.form.id,
+        )
 
     # -- after Apply ---------------------------------------------------------
 
@@ -1303,7 +1466,9 @@ class TestAnchorPlacement(StudioCase):
                 "x_stage",
             ],
         )
-        self.assertEqual(self.form.arch.count('name="x_budget_doubled"'), 1)
+        self.assertEqual(
+            cast("str", self.form.arch).count('name="x_budget_doubled"'), 1
+        )
 
     def test_a_field_anchored_on_one_that_cannot_be_placed_falls_back(self):
         draft = self._draft()
@@ -1320,8 +1485,8 @@ class TestAnchorPlacement(StudioCase):
         spec, diff = self._added(draft, "x_active_flag", "x_budget_doubled")
         with patch.object(Draft, "_anchors", return_value=anchors):
             self.assertTrue(draft._place_in_views(spec, diff))
-        self.assertIn('<field name="x_active_flag"/>', self.form.arch)
-        self.assertIn('<field name="x_budget_doubled"/>', self.form.arch)
+        self.assertIn('<field name="x_active_flag"/>', cast("str", self.form.arch))
+        self.assertIn('<field name="x_budget_doubled"/>', cast("str", self.form.arch))
 
     def test_placement_uses_the_anchor_once_and_is_idempotent(self):
         draft = self._draft()
@@ -1339,7 +1504,7 @@ class TestAnchorPlacement(StudioCase):
                 draft._place_in_views(*self._added(draft, "x_active_flag"))
             )
         self.assertEqual(self.form.arch, arch_after)
-        self.assertEqual(self.form.arch.count('name="x_active_flag"'), 1)
+        self.assertEqual(cast("str", self.form.arch).count('name="x_active_flag"'), 1)
 
     # -- after a reload that outran the request ------------------------------
 
@@ -1348,10 +1513,13 @@ class TestAnchorPlacement(StudioCase):
         the rest of the Apply is the placement and the baseline."""
         draft = self._draft()
         Draft = type(draft)
-        spec = draft._spec()
+        base_draft = cast("StudioModelDraft", draft)
+        spec = base_draft._spec()
         base = modelspec.without_field(spec, "x_active_flag")
-        draft.base_spec_json = json.dumps(modelspec.spec_to_json(base), sort_keys=True)
-        self.assertTrue(draft.dirty)
+        base_draft.base_spec_json = json.dumps(
+            modelspec.spec_to_json(base), sort_keys=True
+        )
+        self.assertTrue(base_draft.dirty)
         anchor = self._anchor(self.form, "x_budget")
         with patch.object(Draft, "_anchors", return_value={"x_active_flag": anchor}):
             result = draft.place_pending()
@@ -1360,7 +1528,7 @@ class TestAnchorPlacement(StudioCase):
             self._siblings(self.form),
             ["x_name", "x_budget", "x_active_flag", "x_partner_id", "x_stage"],
         )
-        self.assertFalse(draft.dirty, "the baseline moved with the file")
+        self.assertFalse(base_draft.dirty, "the baseline moved with the file")
 
     def test_place_pending_refuses_while_the_registry_lacks_the_field(self):
         draft = self._staged(self._draft())
@@ -1369,4 +1537,4 @@ class TestAnchorPlacement(StudioCase):
         self.assertFalse(result["placed"])
         self.assertIn("colour", result["reason"])
         self.assertEqual(self.form.arch, before)
-        self.assertTrue(draft.dirty)
+        self.assertTrue(cast("StudioModelDraft", draft).dirty)

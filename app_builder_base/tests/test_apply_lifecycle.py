@@ -12,15 +12,35 @@ it, so the snapshot records the bytes the file *had* and a rollback puts
 those back rather than the change itself.
 """
 
+from __future__ import annotations
+
 import contextlib
 import os
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tools import config
 
-from .common import StudioCase
+from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
+from odoo.addons.app_builder_base.models.studio_package_apply import StudioPackageApply
+from odoo.addons.app_builder_base.models.studio_workspace import StudioWorkspace
+from odoo.addons.app_builder_base.tools import typed
+
+from .common import StudioCase, raises
+
+if TYPE_CHECKING:
+    # Only for the cast() calls below; with `from __future__ import
+    # annotations` nothing here needs this at runtime. `StudioPackageApply`
+    # (above) is a real, top-level import -- every use of it is a runtime
+    # `typed.model()` call -- but its sibling `StudioPackageApplyFile` never
+    # appears outside a `cast("StudioPackageApplyFile", ...)` string, so it
+    # stays TYPE_CHECKING-only, the same split `studio_package_model.py`'s
+    # own comment on this file's `StudioPackage` documents.
+    from odoo.addons.app_builder_base.models.studio_package_apply import (
+        StudioPackageApplyFile,
+    )
 
 
 @tagged("post_install", "-at_install")
@@ -77,7 +97,7 @@ class TestApplyLifecycle(StudioCase):
                 overlay={"models/x_studio_project.py": after},
             )
         self.assertEqual(self._source(package), after, "the overlay is what lands")
-        entry = apply.file_ids.filtered(
+        entry = cast("StudioPackageApplyFile", apply.file_ids).filtered(
             lambda f: f.path == "models/x_studio_project.py"
         )
         self.assertEqual(
@@ -85,7 +105,9 @@ class TestApplyLifecycle(StudioCase):
             before,
             "the snapshot must hold the bytes the file had, not the change",
         )
-        backup = os.path.join(apply.backup_path, "models/x_studio_project.py")
+        backup = os.path.join(
+            cast("str", apply.backup_path), "models/x_studio_project.py"
+        )
         with open(backup, encoding="utf-8") as handle:
             self.assertEqual(handle.read(), before)
 
@@ -101,8 +123,8 @@ class TestApplyLifecycle(StudioCase):
                 overlay={"models/x_studio_project.py": after},
             )
             self.assertEqual(self._source(package), after)
-            diff = self.env["studio.workspace"].apply_diff(
-                apply.id, "models/x_studio_project.py"
+            diff = typed.model(self.env, StudioWorkspace).apply_diff(
+                cast("int", apply.id), "models/x_studio_project.py"
             )
             self.assertIn("Budget!", diff["diff"], "before against the disk now")
             result = apply.action_rollback()
@@ -114,10 +136,13 @@ class TestApplyLifecycle(StudioCase):
 
     def test_a_rollback_with_nothing_recorded_is_refused(self):
         package = self._python_package(name="x_life_empty")
-        apply = self.env["studio.package.apply"].create(
-            {"package_id": package.id, "state": "failed", "reason": "x"}
-        )
-        with self.assertRaises(UserError):
+        vals: dict[str, object] = {
+            "package_id": package.id,
+            "state": "failed",
+            "reason": "x",
+        }
+        apply = typed.model(self.env, StudioPackageApply).create(vals)  # pyright: ignore[reportArgumentType]
+        with raises(self, UserError):
             apply.action_rollback()
 
     def test_under_workers_every_apply_awaits_a_restart(self):
@@ -138,7 +163,7 @@ class TestApplyLifecycle(StudioCase):
 
     def test_a_draft_apply_under_workers_writes_and_stays_dirty(self):
         package = self._python_package(name="x_life_draft")
-        Draft = self.env["studio.model.draft"]
+        Draft = typed.model(self.env, StudioModelDraft)
         draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
         draft.add_field({"name": "x_life_extra", "ttype": "char", "string": "Extra"})
         self.assertTrue(draft.dirty)
@@ -157,7 +182,7 @@ class TestApplyLifecycle(StudioCase):
 
     def test_a_draft_apply_in_process_reports_applied(self):
         package = self._python_package(name="x_life_inproc")
-        Draft = self.env["studio.model.draft"]
+        Draft = typed.model(self.env, StudioModelDraft)
         draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
         draft.add_field({"name": "x_life_more", "ttype": "char", "string": "More"})
         before = self._source(package)
@@ -174,9 +199,9 @@ class TestApplyLifecycle(StudioCase):
         self.assertFalse(result["restart_required"])
         self.assertIn("x_life_more", self._source(package))
         self.assertFalse(draft.dirty, "the baseline moved with the file")
-        apply = self.env["studio.package.apply"].browse(result["apply_id"])
+        apply = typed.model(self.env, StudioPackageApply).browse(result["apply_id"])
         self.assertEqual(apply.state, "applied")
-        entry = apply.file_ids.filtered(
+        entry = cast("StudioPackageApplyFile", apply.file_ids).filtered(
             lambda f: f.path == "models/x_studio_project.py"
         )
         self.assertEqual(entry.content_before, before)
@@ -185,9 +210,9 @@ class TestApplyLifecycle(StudioCase):
         package = self._python_package(name="x_life_reload")
         with patch.dict(config.options, {"workers": 2, "dev_mode": []}):
             package.invalidate_recordset(["reload_mode"])
-            with self.assertRaises(UserError):
+            with raises(self, UserError):
                 package.action_reload()
             self.assertEqual(
-                self.env["studio.workspace"].reload(package.id),
+                typed.model(self.env, StudioWorkspace).reload(cast("int", package.id)),
                 {"restart_required": True, "reloaded": False},
             )

@@ -8,11 +8,19 @@ console never imports -- nor whether the breadcrumb brings the user back to a
 console that survived the round trip. Those are the two things this drives.
 """
 
+from __future__ import annotations
+
 import tempfile
+from typing import TYPE_CHECKING, cast
 
 from odoo.tests import tagged
 
+from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
+from odoo.addons.app_builder_base.tools import typed
+
+if TYPE_CHECKING:
+    from odoo.addons.base.models.res_users import Users
 
 
 @tagged("post_install", "-at_install")
@@ -35,17 +43,18 @@ class TestConsoleTabsTour(StudioHttpCase):
     def _package(self, name, label):
         # Exactly one writable package, so editing_context can suggest it
         # without the console having to ask which one to record into.
-        package = self.env["studio.package"].create(
-            {
-                "name": name,
-                "display_name_": label,
-                "root_path": tempfile.mkdtemp(prefix="studio-tour-"),
-                "auto_commit": "off",
-            }
-        )
-        self.env["ir.module.module"].create({"name": name, "state": "installed"})
+        vals = {
+            "name": name,
+            "display_name_": label,
+            "root_path": tempfile.mkdtemp(prefix="studio-tour-"),
+            "auto_commit": "off",
+        }
+        package = self.env["studio.package"].create(vals)  # pyright: ignore[reportArgumentType]
+        module_vals = {"name": name, "state": "installed"}
+        self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
-            self.env.ref("base.user_admin"), ["app_builder_base.group_studio_manager"]
+            cast("Users", typed.ref(self.env, "base.user_admin")),
+            ["app_builder_base.group_studio_manager"],
         )
         return package
 
@@ -53,8 +62,9 @@ class TestConsoleTabsTour(StudioHttpCase):
         """Automations of the model on the canvas, and only those, as a pane
         of the console; the canvas intact when the Views tab is clicked."""
         self._package("x_tour_tabs_pkg", "Tour Tabs")
-        partner_model = self.env["ir.model"]._get("res.partner")
-        other_model = self.env["ir.model"]._get("res.users")
+        ir_model = typed.model(self.env, IrModel)
+        partner_model = ir_model._get("res.partner")
+        other_model = ir_model._get("res.users")
         self.env["base.automation"].create(
             [
                 {
@@ -69,13 +79,12 @@ class TestConsoleTabsTour(StudioHttpCase):
                 },
             ]
         )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Contacts",
-                "res_model": "res.partner",
-                "view_mode": "list,form",
-            }
-        )
+        action_vals = {
+            "name": "Tour Contacts",
+            "res_model": "res.partner",
+            "view_mode": "list,form",
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
         self.start_tour(
             "/odoo/action-%s" % action.id,
             "app_builder_console_tabs_tour",

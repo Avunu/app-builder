@@ -10,6 +10,8 @@ serialises an exception's class name (``err.data.name``) and nothing else a
 client could match on reliably -- the message is translated.
 """
 
+from __future__ import annotations
+
 from odoo.exceptions import UserError
 from odoo.tools.translate import LazyTranslate
 
@@ -33,7 +35,7 @@ class StudioStaleView(UserError):
     against a tree that no longer exists.
     """
 
-    def __init__(self, message=None):
+    def __init__(self, message: str | None = None) -> None:
         super().__init__(message or str(STALE_VIEW_MESSAGE))
 
 
@@ -50,6 +52,6 @@ class StudioConfirmRequired(UserError):
     word its own question rather than re-parse this one.
     """
 
-    def __init__(self, message, count=0, fields=0):
+    def __init__(self, message: str, count: int = 0, fields: int = 0) -> None:
         super().__init__(message)
         self.context = {"confirm_required": True, "count": count, "fields": fields}

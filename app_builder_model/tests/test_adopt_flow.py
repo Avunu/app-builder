@@ -10,11 +10,26 @@ path to adopting it whatsoever. The console's Adopt flow goes through
 ``studio.app.builder.adoptable_models`` and ``adopt``, pinned here.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 from odoo import Command
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tools import typed
+
+from ..models.studio_app_builder import StudioAppBuilder
+
+if TYPE_CHECKING:
+    # Only for the cast() below; with `from __future__ import annotations`
+    # nothing here needs this at runtime.
+    from odoo.addons.app_builder_base.models.studio_package_model import (
+        StudioPackageModel,
+    )
 
 
 @tagged("post_install", "-at_install")
@@ -22,24 +37,23 @@ class TestAdoptFlow(StudioCase):
     def setUp(self):
         super().setUp()
         self.package = self.make_package(name="x_adopt_pkg")
-        self.builder = self.env["studio.app.builder"]
+        self.builder = typed.model(self.env, StudioAppBuilder)
 
     def _manual_model(self, model_name, label="Loose"):
-        return self.env["ir.model"].create(
-            {
-                "name": label,
-                "model": model_name,
-                "field_id": [
-                    Command.create(
-                        {
-                            "name": "x_name",
-                            "ttype": "char",
-                            "field_description": "Name",
-                        }
-                    )
-                ],
-            }
-        )
+        vals: dict[str, object] = {
+            "name": label,
+            "model": model_name,
+            "field_id": [
+                Command.create(
+                    {
+                        "name": "x_name",
+                        "ttype": "char",
+                        "field_description": "Name",
+                    }
+                )
+            ],
+        }
+        return typed.model(self.env, IrModel).create(vals)  # pyright: ignore[reportArgumentType]
 
     def _offered(self):
         return {m["model"]: m for m in self.builder.adoptable_models()}
@@ -78,29 +92,38 @@ class TestAdoptFlow(StudioCase):
 
     def test_adopting_captures_a_loose_model_into_the_chosen_package(self):
         self._manual_model("x_capture_me")
-        self.builder.adopt(self.package.id, ["x_capture_me"], apply=False)
+        self.builder.adopt(cast("int", self.package.id), ["x_capture_me"], apply=False)
         self.assertIn("x_capture_me", self.package._owned_model_names())
-        entry = self.package.model_ids.filtered(lambda m: m.model == "x_capture_me")
+        entry = cast("StudioPackageModel", self.package.model_ids).filtered(
+            lambda m: m.model == "x_capture_me"
+        )
         self.assertEqual(entry.source, "python")
 
     def test_adopting_a_loose_model_writes_its_class(self):
         self._manual_model("x_written_model")
-        self.builder.adopt(self.package.id, ["x_written_model"], apply=False)
-        entry = self.package.model_ids.filtered(lambda m: m.model == "x_written_model")
-        source = self.package._read_source(entry.python_path)
+        self.builder.adopt(
+            cast("int", self.package.id), ["x_written_model"], apply=False
+        )
+        entry = cast("StudioPackageModel", self.package.model_ids).filtered(
+            lambda m: m.model == "x_written_model"
+        )
+        source = self.package._read_source(cast("str", entry.python_path))
         self.assertIsNotNone(source, "adoption must leave a file behind")
+        # `assertIsNotNone` is a runtime check only; it does not narrow
+        # `source` for pyright the way an `if`/`assert` would.
+        assert source is not None
         self.assertIn("x_name", source)
 
     def test_nothing_selected_is_refused(self):
-        with self.assertRaises(UserError):
-            self.builder.adopt(self.package.id, [], apply=False)
+        with raises(self, UserError):
+            self.builder.adopt(cast("int", self.package.id), [], apply=False)
 
     def test_a_plain_user_cannot_adopt(self):
         """Adoption writes Python into an addons path, so it is exactly the
         kind of thing an ordinary user must not be able to reach by RPC."""
         self._manual_model("x_guarded_model")
         outsider = self.make_user("adopt_outsider", ["base.group_user"])
-        with self.assertRaises(AccessError):
+        with raises(self, AccessError):
             self.builder.with_user(outsider).adopt(
-                self.package.id, ["x_guarded_model"], apply=False
+                cast("int", self.package.id), ["x_guarded_model"], apply=False
             )

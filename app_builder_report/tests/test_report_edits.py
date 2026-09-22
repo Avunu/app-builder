@@ -8,22 +8,33 @@ an inheriting view, so editing a report Odoo ships still leaves Odoo's copy
 alone.
 """
 
+from __future__ import annotations
+
+from typing import cast
+
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.base.models.ir_actions_report import IrActionsReport
+from odoo.addons.base.models.ir_model import IrModel, IrModelFields
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
+
+from ..models.studio_report import StudioReport
 
 
 @tagged("post_install", "-at_install")
 class TestReportEdits(StudioCase):
     def _report(self, package):
-        made = self.env["studio.report"].create_report(
+        made = typed.model(self.env, StudioReport).create_report(
             package.id, "x_studio_project", "Job Sheet"
         )
-        return self.env["ir.ui.view"].browse(made["view_id"])
+        return typed.model(self.env, View).browse(made["view_id"])
 
     def _apply(self, view, package, **operation):
-        return self.env["studio.view.editor"].apply_operation(
+        return typed.model(self.env, StudioViewEditor).apply_operation(
             view.id, package.id, operation
         )
 
@@ -40,7 +51,9 @@ class TestReportEdits(StudioCase):
             model="x_studio_project",
             name="x_budget",
         )
-        arch = self.env["ir.ui.view"].browse(view.id).arch
+        arch = cast(
+            "str", typed.model(self.env, View).browse(cast("int", view.id)).arch
+        )
         self.assertIn('t-field="doc.x_budget"', arch)
 
     def test_a_label_and_its_value_are_one_unit(self):
@@ -57,7 +70,9 @@ class TestReportEdits(StudioCase):
             name="x_budget",
             label="Budget",
         )
-        arch = self.env["ir.ui.view"].browse(view.id).arch
+        arch = cast(
+            "str", typed.model(self.env, View).browse(cast("int", view.id)).arch
+        )
         self.assertIn("<strong>Budget</strong>", arch)
         self.assertIn('t-field="doc.x_budget"', arch)
 
@@ -76,23 +91,24 @@ class TestReportEdits(StudioCase):
                 model="x_studio_project",
                 name="x_budget",
             )
-        arch = self.env["ir.ui.view"].browse(view.id).arch
+        arch = cast(
+            "str", typed.model(self.env, View).browse(cast("int", view.id)).arch
+        )
         self.assertEqual(arch.count('t-field="doc.x_budget"'), 1)
 
     def test_a_binary_says_why_it_cannot_be_text(self):
         package = self.make_package()
         self.build_demo_content(package)
         view = self._report(package)
-        self.env["ir.model.fields"].create(
-            {
-                "name": "x_scan",
-                "ttype": "binary",
-                "field_description": "Scan",
-                "model_id": self.env["ir.model"]._get("x_studio_project").id,
-                "model": "x_studio_project",
-            }
-        )
-        with self.assertRaises(UserError) as caught:
+        field_vals: dict[str, object] = {
+            "name": "x_scan",
+            "ttype": "binary",
+            "field_description": "Scan",
+            "model_id": typed.model(self.env, IrModel)._get("x_studio_project").id,
+            "model": "x_studio_project",
+        }
+        typed.model(self.env, IrModelFields).create(field_vals)  # pyright: ignore[reportArgumentType]
+        with raises(self, UserError) as caught:
             self._apply(
                 view,
                 package,
@@ -108,19 +124,18 @@ class TestReportEdits(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         view = self._report(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        self.env["ir.model.fields"].create(
-            {
-                "name": "x_line_ids",
-                "ttype": "one2many",
-                "field_description": "Lines",
-                "model_id": model.id,
-                "model": "x_studio_project",
-                "relation": "res.partner",
-                "relation_field": "parent_id",
-            }
-        )
-        with self.assertRaises(UserError) as caught:
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        field_vals: dict[str, object] = {
+            "name": "x_line_ids",
+            "ttype": "one2many",
+            "field_description": "Lines",
+            "model_id": model.id,
+            "model": "x_studio_project",
+            "relation": "res.partner",
+            "relation_field": "parent_id",
+        }
+        typed.model(self.env, IrModelFields).create(field_vals)  # pyright: ignore[reportArgumentType]
+        with raises(self, UserError) as caught:
             self._apply(
                 view,
                 package,
@@ -138,28 +153,27 @@ class TestReportTables(StudioCase):
     def _setup(self):
         package = self.make_package()
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        self.env["ir.model.fields"].create(
-            {
-                "name": "x_line_ids",
-                "ttype": "one2many",
-                "field_description": "Lines",
-                "model_id": model.id,
-                "model": "x_studio_project",
-                "relation": "res.partner",
-                "relation_field": "parent_id",
-            }
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        field_vals: dict[str, object] = {
+            "name": "x_line_ids",
+            "ttype": "one2many",
+            "field_description": "Lines",
+            "model_id": model.id,
+            "model": "x_studio_project",
+            "relation": "res.partner",
+            "relation_field": "parent_id",
+        }
+        typed.model(self.env, IrModelFields).create(field_vals)  # pyright: ignore[reportArgumentType]
+        made = typed.model(self.env, StudioReport).create_report(
+            cast("int", package.id), "x_studio_project", "Job Sheet"
         )
-        made = self.env["studio.report"].create_report(
-            package.id, "x_studio_project", "Job Sheet"
-        )
-        return package, self.env["ir.ui.view"].browse(made["view_id"])
+        return package, typed.model(self.env, View).browse(made["view_id"])
 
     def test_a_table_loops_the_child_records(self):
         package, view = self._setup()
-        self.env["studio.view.editor"].apply_operation(
-            view.id,
-            package.id,
+        typed.model(self.env, StudioViewEditor).apply_operation(
+            cast("int", view.id),
+            cast("int", package.id),
             {
                 "type": "add_report_table",
                 "xpath": "//div[hasclass('page')]",
@@ -169,7 +183,9 @@ class TestReportTables(StudioCase):
                 "columns": ["name", "email"],
             },
         )
-        arch = self.env["ir.ui.view"].browse(view.id).arch
+        arch = cast(
+            "str", typed.model(self.env, View).browse(cast("int", view.id)).arch
+        )
         self.assertIn('t-foreach="doc.x_line_ids"', arch)
         self.assertIn('t-as="line"', arch)
         self.assertIn('t-field="line.name"', arch)
@@ -177,9 +193,9 @@ class TestReportTables(StudioCase):
 
     def test_the_header_names_the_columns(self):
         package, view = self._setup()
-        self.env["studio.view.editor"].apply_operation(
-            view.id,
-            package.id,
+        typed.model(self.env, StudioViewEditor).apply_operation(
+            cast("int", view.id),
+            cast("int", package.id),
             {
                 "type": "add_report_table",
                 "xpath": "//div[hasclass('page')]",
@@ -189,16 +205,18 @@ class TestReportTables(StudioCase):
                 "columns": ["name"],
             },
         )
-        arch = self.env["ir.ui.view"].browse(view.id).arch
+        arch = cast(
+            "str", typed.model(self.env, View).browse(cast("int", view.id)).arch
+        )
         self.assertIn("<th>", arch)
         self.assertIn("Name", arch)
 
     def test_a_table_needs_columns(self):
         package, view = self._setup()
-        with self.assertRaises(UserError):
-            self.env["studio.view.editor"].apply_operation(
-                view.id,
-                package.id,
+        with raises(self, UserError):
+            typed.model(self.env, StudioViewEditor).apply_operation(
+                cast("int", view.id),
+                cast("int", package.id),
                 {
                     "type": "add_report_table",
                     "xpath": "//div[hasclass('page')]",
@@ -211,10 +229,10 @@ class TestReportTables(StudioCase):
 
     def test_an_unknown_column_is_named(self):
         package, view = self._setup()
-        with self.assertRaises(UserError) as caught:
-            self.env["studio.view.editor"].apply_operation(
-                view.id,
-                package.id,
+        with raises(self, UserError) as caught:
+            typed.model(self.env, StudioViewEditor).apply_operation(
+                cast("int", view.id),
+                cast("int", package.id),
                 {
                     "type": "add_report_table",
                     "xpath": "//div[hasclass('page')]",
@@ -230,16 +248,16 @@ class TestReportTables(StudioCase):
         """The whole point, restated for the report operations."""
         package = self.make_package()
         self.build_demo_content(package)
-        report = self.env["ir.actions.report"].search(
+        report = typed.model(self.env, IrActionsReport).search(
             [("report_type", "=", "qweb-pdf")], limit=1
         )
-        view = self.env["studio.report"]._template_of(report)
+        view = typed.model(self.env, StudioReport)._template_of(report)
         if not view:
             self.skipTest("no editable core report here")
         before = view.arch
-        self.env["studio.view.editor"].apply_operation(
-            view.id,
-            package.id,
+        typed.model(self.env, StudioViewEditor).apply_operation(
+            cast("int", view.id),
+            cast("int", package.id),
             {
                 "type": "add_report_field",
                 "xpath": "//t[@t-call='web.html_container']",
@@ -248,9 +266,11 @@ class TestReportTables(StudioCase):
                 "name": "display_name",
             },
         )
-        self.assertEqual(self.env["ir.ui.view"].browse(view.id).arch, before)
-        extension = self.env["ir.ui.view"].search(
+        self.assertEqual(
+            typed.model(self.env, View).browse(cast("int", view.id)).arch, before
+        )
+        extension = typed.model(self.env, View).search(
             [("inherit_id", "=", view.id), ("studio_package_id", "=", package.id)]
         )
         self.assertTrue(extension)
-        self.assertIn("t-field", extension.arch)
+        self.assertIn("t-field", cast("str", extension.arch))

@@ -8,17 +8,37 @@ touch the registry, the tray must describe what will happen, and Apply must
 refuse rather than surprise.
 """
 
+from __future__ import annotations
+
 import json
 import os
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
 from odoo.exceptions import AccessError, UserError
 from odoo.fields import Command
 from odoo.tests import tagged
 
-from ..tools import modelspec
+from odoo.addons.base.models.ir_model import IrModel
+
+from ..models.studio_model_draft import StudioModelDraft
+from ..tools import modelspec, typed
 from ..tools import placement as placement_tool
-from .common import StudioCase
+from .common import StudioCase, raises
+
+if TYPE_CHECKING:
+    # Only for the casts below; with `from __future__ import annotations`
+    # nothing here needs these at runtime, the same bargain every other
+    # converted file's own `TYPE_CHECKING` block makes. `IrModel` and
+    # `StudioModelDraft` above are real, runtime imports instead -- both
+    # are passed to `typed.model()`, not just named in a cast string.
+    from odoo.sql_db import Cursor
+
+    from odoo.addons.base.models.ir_model import IrModelFields
+
+    from ..models.studio_package import StudioPackage
+    from ..models.studio_package_model import StudioPackageModel
+    from ..tools.modelspec import FieldSpec
 
 
 @tagged("post_install", "-at_install")
@@ -29,12 +49,12 @@ class TestModelDraft(StudioCase):
         self.build_demo_content(self.package)
         self.package.action_write_files()
         self.package.action_adopt(["x_studio_project"])
-        self.package_model = self.package.model_ids.filtered(
-            lambda m: m.model == "x_studio_project"
-        )
+        self.package_model = cast(
+            "StudioPackageModel", self.package.model_ids
+        ).filtered(lambda m: m.model == "x_studio_project")
 
     def _draft(self):
-        return self.env["studio.model.draft"].open_for(self.package_model)
+        return typed.model(self.env, StudioModelDraft).open_for(self.package_model)
 
     # -- opening ----------------------------------------------------------
 
@@ -47,7 +67,10 @@ class TestModelDraft(StudioCase):
 
     def test_a_frozen_model_cannot_be_opened(self):
         """Better to say why than to offer an editor that cannot save."""
-        path = os.path.join(self.package.root_path, self.package_model.python_path)
+        path = os.path.join(
+            cast("str", self.package.root_path),
+            cast("str", self.package_model.python_path),
+        )
         with open(path, encoding="utf-8") as handle:
             source = handle.read()
         from ..tools import pycodegen
@@ -62,7 +85,7 @@ class TestModelDraft(StudioCase):
         self.package_model._current_spec()  # freezes it
         self.assertEqual(self.package_model.source, "frozen")
 
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self._draft()
         self.assertIn("x_studio_project", str(caught.exception))
 
@@ -85,7 +108,7 @@ class TestModelDraft(StudioCase):
 
     def test_a_duplicate_field_is_refused(self):
         draft = self._draft()
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             draft.add_field({"name": "x_budget", "ttype": "float"})
 
     def test_updating_a_field_keeps_its_position(self):
@@ -94,11 +117,17 @@ class TestModelDraft(StudioCase):
         before = draft._spec().field_names
         draft.update_field("x_budget", {"string": "Renamed"})
         self.assertEqual(draft._spec().field_names, before)
-        self.assertEqual(draft._spec().field("x_budget").string, "Renamed")
+        # `x_budget` is one of `build_demo_content`'s own fixed fields, so
+        # `.field()` is never `None` here -- same reasoning as
+        # `studio_model_draft.py`'s own `spec_field = cast("FieldSpec",
+        # after.field(name))`.
+        self.assertEqual(
+            cast("FieldSpec", draft._spec().field("x_budget")).string, "Renamed"
+        )
 
     def test_updating_an_unknown_field_is_refused(self):
         draft = self._draft()
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             draft.update_field("x_nope", {"string": "x"})
 
     def test_moving_a_field_reorders_it(self):
@@ -111,7 +140,7 @@ class TestModelDraft(StudioCase):
         draft = self._draft()
         draft.set_model_options({"order": "x_name"})
         self.assertEqual(draft._spec().order, "x_name")
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             draft.set_model_options({"name": "something.else"})
 
     def test_discard_returns_to_the_file(self):
@@ -139,7 +168,10 @@ class TestModelDraft(StudioCase):
         draft = self._draft()
         draft.remove_field("x_budget")
         removed = next(c for c in draft.pending_changes() if c["kind"] == "removed")
-        self.assertTrue(removed["destructive"])
+        # `destructive` is `NotRequired`, but `_own_changes()` always sets it
+        # on a `"removed"` entry (its own docstring) -- `.get()` reads it
+        # without pyright's `reportTypedDictNotRequiredAccess`.
+        self.assertTrue(removed.get("destructive"))
 
     def test_preview_diff_shows_what_apply_would_write(self):
         """Apply should never be a leap of faith."""
@@ -163,13 +195,13 @@ class TestModelDraft(StudioCase):
     def test_apply_refuses_an_invalid_spec_before_writing(self):
         draft = self._draft()
         draft.add_field({"name": "class", "ttype": "char"})
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             draft.action_apply()
 
     def test_apply_refuses_a_destructive_change_unless_asked(self):
         draft = self._draft()
         draft.remove_field("x_budget")
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             draft.action_apply()
         message = str(caught.exception)
         self.assertTrue(
@@ -209,14 +241,16 @@ class TestModelDraft(StudioCase):
 
     def test_a_plain_user_cannot_stage_edits(self):
         draft = self._draft()
-        outsider = self.env["res.users"].create(
-            {
-                "name": "Nosy",
-                "login": "draft_outsider",
-                "groups_id": [(6, 0, [self.env.ref("base.group_user").id])],
-            }
-        )
-        with self.assertRaises(AccessError):
+        # `@api.model_create_multi`'s own stub gap (TYPING.md's "Known
+        # traps"): the single-dict form needs the named local + ignore
+        # idiom, the same as every other `.create(vals)` in this suite.
+        vals: dict[str, object] = {
+            "name": "Nosy",
+            "login": "draft_outsider",
+            "groups_id": [(6, 0, [typed.ref(self.env, "base.group_user").id])],
+        }
+        outsider = self.env["res.users"].create(vals)  # pyright: ignore[reportArgumentType]
+        with raises(self, AccessError):
             draft.with_user(outsider).sudo(False).add_field(
                 {"name": "x_sneaky", "ttype": "char"}
             )
@@ -237,9 +271,11 @@ class TestModelDraft(StudioCase):
                 ],
             }
         )
-        reloaded = modelspec.spec_from_json(json.loads(draft.spec_json))
+        reloaded = modelspec.spec_from_json(json.loads(cast("str", draft.spec_json)))
         self.assertEqual(reloaded, draft._spec())
-        self.assertEqual(len(reloaded.field("x_state").selection), 2)
+        # Just added above, so never `None` -- same reasoning as
+        # `test_updating_a_field_keeps_its_position`'s own cast.
+        self.assertEqual(len(cast("FieldSpec", reloaded.field("x_state")).selection), 2)
 
 
 @tagged("post_install", "-at_install")
@@ -260,35 +296,41 @@ class TestRelationships(StudioCase):
         self._make_sibling()
         self.package.action_write_files()
         self.package.action_adopt(["x_studio_project", "x_studio_task"])
-        self.project = self.package.model_ids.filtered(
+        self.project = cast("StudioPackageModel", self.package.model_ids).filtered(
             lambda m: m.model == "x_studio_project"
         )
-        self.task = self.package.model_ids.filtered(
+        self.task = cast("StudioPackageModel", self.package.model_ids).filtered(
             lambda m: m.model == "x_studio_task"
         )
 
     def _make_sibling(self):
-        model = self.env["ir.model"].create(
-            {
-                "name": "Studio Demo Task",
-                "model": "x_studio_task",
-                "field_id": [
-                    Command.create(
-                        {
-                            "name": "x_name",
-                            "ttype": "char",
-                            "field_description": "Name",
-                        }
-                    )
-                ],
-            }
-        )
+        # `@api.model_create_multi`'s own stub gap: named local first, same
+        # idiom as `common.py`'s own `build_demo_content`.
+        vals: dict[str, object] = {
+            "name": "Studio Demo Task",
+            "model": "x_studio_task",
+            "field_id": [
+                Command.create(
+                    {
+                        "name": "x_name",
+                        "ttype": "char",
+                        "field_description": "Name",
+                    }
+                )
+            ],
+        }
+        model = typed.model(self.env, IrModel).create(vals)  # pyright: ignore[reportArgumentType]
         self.package.studio_capture(
-            [model, model.field_id.filtered(lambda f: f.state == "manual")]
+            [
+                model,
+                cast("IrModelFields", model.field_id).filtered(
+                    lambda f: f.state == "manual"
+                ),
+            ]
         )
 
     def _draft(self):
-        return self.env["studio.model.draft"].open_for(self.project)
+        return typed.model(self.env, StudioModelDraft).open_for(self.project)
 
     # -- what the picker offers -------------------------------------------
 
@@ -324,8 +366,12 @@ class TestRelationships(StudioCase):
                 "string": "Owner",
             }
         )
-        self.task.package_id._write_files(
-            {self.task.python_path: companion._rewritten_source(companion._spec())}
+        cast("StudioPackage", self.task.package_id)._write_files(
+            {
+                cast("str", self.task.python_path): companion._rewritten_source(
+                    companion._spec()
+                )
+            }
         )
         options = draft.inverse_options("x_studio_task")
         self.assertEqual(
@@ -349,10 +395,11 @@ class TestRelationships(StudioCase):
                 "create_inverse": True,
             }
         )
-        companion = draft.companion_ids
+        companion = cast("StudioModelDraft", draft.companion_ids)
         self.assertEqual(len(companion), 1)
         self.assertEqual(companion.model, "x_studio_task")
-        inverse = companion._spec().field("x_studio_project_id")
+        # Just staged above as the one2many's inverse, so never `None`.
+        inverse = cast("FieldSpec", companion._spec().field("x_studio_project_id"))
         self.assertEqual(inverse.ttype, "many2one")
         self.assertEqual(inverse.comodel, "x_studio_project")
         self.assertEqual(
@@ -395,7 +442,11 @@ class TestRelationships(StudioCase):
         entries = draft.pending_changes()
         companion = [entry for entry in entries if entry.get("model")]
         self.assertEqual(len(companion), 1)
-        self.assertEqual(companion[0]["model"], "x_studio_task")
+        # `model` is `NotRequired`, but the filter above already proved it
+        # is set on this entry -- `.get()` reads it the same way
+        # `pending_changes()`'s own splice (`out.append({**change, "model":
+        # ...})`) sets it, without `reportTypedDictNotRequiredAccess`.
+        self.assertEqual(companion[0].get("model"), "x_studio_task")
         self.assertEqual(companion[0]["name"], "x_studio_project_id")
 
     def test_the_diff_shows_both_files(self):
@@ -439,7 +490,7 @@ class TestRelationships(StudioCase):
         would write every companion's file from that old spec, taking with
         it anything applied to the other model since. Reuse has to drop them
         the way discard does."""
-        Draft = self.env["studio.model.draft"]
+        Draft = typed.model(self.env, StudioModelDraft)
         draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
         draft.add_field(
             {
@@ -451,7 +502,7 @@ class TestRelationships(StudioCase):
                 "create_inverse": True,
             }
         )
-        companion = draft.companion_ids
+        companion = cast("StudioModelDraft", draft.companion_ids)
         self.assertEqual(companion.model, "x_studio_task", "sanity: staged")
         # Rebased the way action_apply does at the end -- without calling it,
         # since it reloads the registry.
@@ -464,8 +515,8 @@ class TestRelationships(StudioCase):
         # with it: this is what the stale companion would have overwritten.
         other = Draft.open_for(self.task)
         other.add_field({"name": "x_colour", "ttype": "char", "string": "Colour"})
-        self.task.package_id._write_files(
-            {self.task.python_path: other._rewritten_source(other._spec())}
+        cast("StudioPackage", self.task.package_id)._write_files(
+            {cast("str", self.task.python_path): other._rewritten_source(other._spec())}
         )
         other.base_spec_json = other.spec_json
 
@@ -485,7 +536,7 @@ class TestRelationships(StudioCase):
 
     def test_an_inverse_on_a_model_we_do_not_own_is_refused(self):
         draft = self._draft()
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             draft.add_field(
                 {
                     "name": "partner_ids",
@@ -531,17 +582,22 @@ class TestConsoleHooks(StudioCase):
         self.build_demo_content(self.package)
         self.package.action_write_files()
         self.package.action_adopt(["x_studio_project"])
-        self.package_model = self.package.model_ids.filtered(
-            lambda m: m.model == "x_studio_project"
-        )
+        self.package_model = cast(
+            "StudioPackageModel", self.package.model_ids
+        ).filtered(lambda m: m.model == "x_studio_project")
 
     def _draft(self):
-        return self.env["studio.model.draft"].open_for(self.package_model)
+        return typed.model(self.env, StudioModelDraft).open_for(self.package_model)
 
     def _age(self, draft, days):
         """Make a draft look idle for ``days``, the way the vacuum sees it."""
         self.env.flush_all()
-        self.env.cr.execute(
+        # `Environment.cr` is declared `BaseCursor`, which has no
+        # `.execute()` of its own -- only the real `Cursor` subclass every
+        # live request actually gets (TYPING.md's own "Known traps"), same
+        # cast `studio_package.py`'s own `cr = cast("Cursor", self.env.cr)`
+        # already uses.
+        cast("Cursor", self.env.cr).execute(
             "UPDATE studio_model_draft SET write_date = "
             "(now() AT TIME ZONE 'UTC') - interval '%s days' WHERE id = %s",
             (days, draft.id),
@@ -562,7 +618,7 @@ class TestConsoleHooks(StudioCase):
     def test_a_draft_survives_a_working_week_of_idleness(self):
         """The server default is an hour, and the daily vacuum would take a
         draft left open over lunch -- with the pending drops in it."""
-        Draft = self.env["studio.model.draft"]
+        Draft = typed.model(self.env, StudioModelDraft)
         self.assertEqual(Draft._transient_max_hours, 168)
         kept, gone = self._draft(), self._draft()
         self._age(kept, 2)
@@ -574,7 +630,7 @@ class TestConsoleHooks(StudioCase):
     # -- one draft per user and model ------------------------------------
 
     def test_open_for_model_reuses_this_users_draft(self):
-        Draft = self.env["studio.model.draft"]
+        Draft = typed.model(self.env, StudioModelDraft)
         first = Draft.open_for_model("x_studio_project")
         second = Draft.open_for_model("x_studio_project")
         self.assertEqual(first["id"], second["id"])
@@ -589,7 +645,7 @@ class TestConsoleHooks(StudioCase):
     def test_open_for_model_keeps_pending_edits(self):
         """Finding the draft again is the whole point: the drop staged a
         minute ago has to still be in it."""
-        Draft = self.env["studio.model.draft"]
+        Draft = typed.model(self.env, StudioModelDraft)
         draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
         draft.add_field({"name": "x_colour", "ttype": "char", "string": "Colour"})
         again = Draft.open_for_model("x_studio_project")
@@ -599,9 +655,9 @@ class TestConsoleHooks(StudioCase):
     def test_open_for_model_refreshes_a_clean_draft_from_disk(self):
         """A clean draft has nothing to lose and a baseline that may predate
         an Apply; staging on the stale one would write the old block back."""
-        Draft = self.env["studio.model.draft"]
+        Draft = typed.model(self.env, StudioModelDraft)
         draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
-        stale = json.loads(draft.base_spec_json)
+        stale = json.loads(cast("str", draft.base_spec_json))
         stale["description"] = "Stale"
         draft.write(
             {
@@ -616,8 +672,8 @@ class TestConsoleHooks(StudioCase):
     def test_open_for_model_refuses_a_model_no_package_defines(self):
         """The live x_ path is the right door for those, and a draft that
         could never be applied would only hide that."""
-        with self.assertRaises(UserError) as caught:
-            self.env["studio.model.draft"].open_for_model("res.partner")
+        with raises(self, UserError) as caught:
+            typed.model(self.env, StudioModelDraft).open_for_model("res.partner")
         self.assertIn("res.partner", str(caught.exception))
 
     # -- the anchored placement hook -------------------------------------
@@ -660,13 +716,13 @@ class TestConsoleHooks(StudioCase):
         ):
             self.assertTrue(draft._place_in_views(*self._added(draft, "x_active_flag")))
         hook.assert_called_once_with(draft, form, "x_active_flag", anchor, "")
-        self.assertIn('<field name="x_active_flag"/>', form.arch)
+        self.assertIn('<field name="x_active_flag"/>', cast("str", form.arch))
 
     def test_an_anchor_for_another_view_is_not_offered(self):
         """Anchors are per view; the hook is only asked about its own."""
         draft = self._draft()
         form = draft._owned_views()["form"]
-        anchor = {"view_id": form.id + 1000, "position": "after"}
+        anchor = {"view_id": cast("int", form.id) + 1000, "position": "after"}
         Draft = type(draft)
         with (
             patch.object(Draft, "_anchors", return_value={"x_active_flag": anchor}),
@@ -676,7 +732,7 @@ class TestConsoleHooks(StudioCase):
         ):
             draft._place_in_views(*self._added(draft, "x_active_flag"))
         hook.assert_not_called()
-        self.assertIn('<field name="x_active_flag"/>', form.arch)
+        self.assertIn('<field name="x_active_flag"/>', cast("str", form.arch))
 
     def test_placement_is_idempotent(self):
         """Under a restart reload the request can die mid-apply and the
@@ -697,4 +753,4 @@ class TestConsoleHooks(StudioCase):
                 draft._place_in_views(*self._added(draft, "x_active_flag"))
             )
         hook.assert_not_called()
-        self.assertEqual(form.arch.count('name="x_active_flag"'), 1)
+        self.assertEqual(cast("str", form.arch).count('name="x_active_flag"'), 1)

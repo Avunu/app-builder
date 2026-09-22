@@ -8,13 +8,22 @@ instead would silently drop them, and the loss would only show up on whichever
 database happened to have the other module installed.
 """
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import cast
+
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tools import typed
+
+from ..models.studio_view_edit import StudioViewEdit
+from ..models.studio_view_editor import StudioViewEditor
 
 LIST_ARCH = """
 <list string="Demo">
@@ -29,33 +38,31 @@ LIST_ARCH = """
 class TestMoveNode(StudioCase):
     def setUp(self):
         super().setUp()
-        self.editor = self.env["studio.view.editor"]
+        self.editor = typed.model(self.env, StudioViewEditor)
         self.package = self.make_package(name="x_move_pkg")
-        self.env["ir.model"].create(
-            {
-                "name": "Move Demo",
-                "model": "x_move_demo",
-                "field_id": [
-                    Command.create(
-                        {"name": "x_name", "ttype": "char", "field_description": "Name"}
-                    ),
-                    Command.create(
-                        {"name": "x_when", "ttype": "date", "field_description": "When"}
-                    ),
-                    Command.create(
-                        {"name": "x_note", "ttype": "char", "field_description": "Note"}
-                    ),
-                ],
-            }
-        )
-        self.view = self.env["ir.ui.view"].create(
-            {
-                "name": "studio.move.test",
-                "model": "x_move_demo",
-                "type": "list",
-                "arch": LIST_ARCH,
-            }
-        )
+        model_vals: dict[str, object] = {
+            "name": "Move Demo",
+            "model": "x_move_demo",
+            "field_id": [
+                Command.create(
+                    {"name": "x_name", "ttype": "char", "field_description": "Name"}
+                ),
+                Command.create(
+                    {"name": "x_when", "ttype": "date", "field_description": "When"}
+                ),
+                Command.create(
+                    {"name": "x_note", "ttype": "char", "field_description": "Note"}
+                ),
+            ],
+        }
+        self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
+        view_vals: dict[str, object] = {
+            "name": "studio.move.test",
+            "model": "x_move_demo",
+            "type": "list",
+            "arch": LIST_ARCH,
+        }
+        self.view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
 
     def _columns(self):
         root = etree.fromstring(self.view.get_combined_arch().encode())
@@ -63,8 +70,8 @@ class TestMoveNode(StudioCase):
 
     def _move(self, source, target, position="before"):
         return self.editor.move_node(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "column", "name": source},
             {"kind": "column", "name": target},
             position,
@@ -100,9 +107,9 @@ class TestMoveNode(StudioCase):
     def test_moving_in_a_foreign_view_writes_a_patch(self):
         self.make_package(name="x_move_owner").studio_capture(self.view)
         self._move("x_note", "x_name")
-        patch = self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)])
+        patch = typed.model(self.env, View).search([("inherit_id", "=", self.view.id)])
         self.assertTrue(patch)
-        self.assertIn('position="move"', patch.arch)
+        self.assertIn('position="move"', cast("str", patch.arch))
         # And the combined result is the reordering the user asked for.
         self.assertEqual(self._columns()[0], "x_note")
 
@@ -117,18 +124,18 @@ class TestMoveNode(StudioCase):
 
     def test_moving_a_node_relative_to_itself_is_refused(self):
         self.package.studio_capture(self.view)
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             self._move("x_name", "x_name")
 
     def test_an_unaddressable_end_is_refused(self):
         self.package.studio_capture(self.view)
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self._move("x_name", "x_nonexistent")
         self.assertIn("not a node the builder can address", str(caught.exception))
 
     def test_an_invalid_position_is_refused(self):
         self.package.studio_capture(self.view)
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             self._move("x_name", "x_note", position="replace")
 
     def test_moving_inside_the_root_makes_it_the_last_column(self):
@@ -136,8 +143,8 @@ class TestMoveNode(StudioCase):
         "append" -- the same in 18, 19 and master."""
         self.package.studio_capture(self.view)
         self.editor.move_node(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "column", "name": "x_name"},
             {"kind": "root"},
             "inside",
@@ -151,8 +158,8 @@ class TestMoveNode(StudioCase):
         self.view.invalidate_recordset()
         self.assertEqual(self._columns()[0], "x_note")
 
-        history = self.env["studio.view.edit"]
-        entry = history.browse(history.history_for(self.view.id)[0]["id"])
+        history = typed.model(self.env, StudioViewEdit)
+        entry = history.browse(history.history_for(cast("int", self.view.id))[0]["id"])
         entry.action_undo()
 
         self.view.invalidate_recordset()
@@ -189,30 +196,28 @@ class TestMoveInside(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.editor = self.env["studio.view.editor"]
+        self.editor = typed.model(self.env, StudioViewEditor)
         self.package = self.make_package(name="x_move_in_pkg")
-        self.env["ir.model"].create(
-            {
-                "name": "Move Inside Demo",
-                "model": "x_move_in_demo",
-                "field_id": [
-                    Command.create(
-                        {"name": "x_name", "ttype": "char", "field_description": "Name"}
-                    ),
-                    Command.create(
-                        {"name": "x_when", "ttype": "date", "field_description": "When"}
-                    ),
-                ],
-            }
-        )
-        self.view = self.env["ir.ui.view"].create(
-            {
-                "name": "studio.move.inside.test",
-                "model": "x_move_in_demo",
-                "type": "form",
-                "arch": FORM_ARCH,
-            }
-        )
+        model_vals: dict[str, object] = {
+            "name": "Move Inside Demo",
+            "model": "x_move_in_demo",
+            "field_id": [
+                Command.create(
+                    {"name": "x_name", "ttype": "char", "field_description": "Name"}
+                ),
+                Command.create(
+                    {"name": "x_when", "ttype": "date", "field_description": "When"}
+                ),
+            ],
+        }
+        self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
+        view_vals: dict[str, object] = {
+            "name": "studio.move.inside.test",
+            "model": "x_move_in_demo",
+            "type": "form",
+            "arch": FORM_ARCH,
+        }
+        self.view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         self.package.studio_capture(self.view)
 
     def _group(self, name):
@@ -222,8 +227,8 @@ class TestMoveInside(StudioCase):
 
     def test_a_field_moved_inside_an_empty_group_becomes_its_child(self):
         self.editor.move_node(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "field", "name": "x_when"},
             {"kind": "group", "name": "g_right"},
             "inside",
@@ -236,8 +241,8 @@ class TestMoveInside(StudioCase):
         """Append semantics, pinned: a drop into a container the node is
         already in is a reorder to the end, not a no-op."""
         self.editor.move_node(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "field", "name": "x_name"},
             {"kind": "group", "name": "g_left"},
             "inside",
@@ -246,10 +251,10 @@ class TestMoveInside(StudioCase):
         self.assertEqual(self._group("g_left"), ["x_when", "x_name"])
 
     def test_moving_a_page_into_a_group_it_contains_is_refused(self):
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self.editor.move_node(
-                self.view.id,
-                self.package.id,
+                cast("int", self.view.id),
+                cast("int", self.package.id),
                 {"kind": "page", "name": "page_main"},
                 {"kind": "group", "name": "g_left"},
                 "inside",
@@ -265,8 +270,8 @@ class TestMoveInside(StudioCase):
         # whatever the operation had written before refusing.
         try:
             self.editor.apply_operation(
-                self.view.id,
-                self.package.id,
+                cast("int", self.view.id),
+                cast("int", self.package.id),
                 {
                     "type": "move_node",
                     "xpath": "//page[@name='page_main']",
@@ -285,8 +290,8 @@ class TestMoveInside(StudioCase):
         """The page is the group's ancestor, not its descendant: this is a
         legitimate reorder to the end of the page."""
         self.editor.move_node(
-            self.view.id,
-            self.package.id,
+            cast("int", self.view.id),
+            cast("int", self.package.id),
             {"kind": "group", "name": "g_left"},
             {"kind": "page", "name": "page_main"},
             "inside",

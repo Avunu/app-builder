@@ -7,7 +7,17 @@ ownership of the record, the completeness guard reported clean, and the value
 existed in this database and nowhere else.
 """
 
+from __future__ import annotations
+
 from odoo.tests import tagged
+
+from odoo.addons.base.models.ir_cron import ir_cron as IrCron
+from odoo.addons.base.models.ir_default import IrDefault
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.app_builder_base.models.serializers.ir_default import (
+    IrDefaultSerializer,
+)
+from odoo.addons.app_builder_base.tools import typed
 
 from .common import StudioCase
 
@@ -22,9 +32,8 @@ class TestFieldDefaults(StudioCase):
     def test_a_default_is_written_to_source(self):
         package = self.make_package()
         self.build_demo_content(package)
-        default = self.env["ir.default"].create(
-            {"field_id": self._field().id, "json_value": "1500.0"}
-        )
+        vals = {"field_id": self._field().id, "json_value": "1500.0"}
+        default = self.env["ir.default"].create(vals)  # pyright: ignore[reportArgumentType]
         package.studio_capture(default)
 
         emitted = "".join(package._render_files().values())
@@ -34,16 +43,15 @@ class TestFieldDefaults(StudioCase):
     def test_a_default_survives_the_round_trip(self):
         package = self.make_package()
         self.build_demo_content(package)
-        self.env["ir.default"].create(
-            {"field_id": self._field().id, "json_value": "1500.0"}
-        )
+        vals = {"field_id": self._field().id, "json_value": "1500.0"}
+        self.env["ir.default"].create(vals)  # pyright: ignore[reportArgumentType]
         package._assign(self.env["ir.default"].search([]))
         files = package._render_files()
 
         self.wipe_package_records(package)
         self.load_rendered(package, files)
 
-        restored = self.env["ir.default"].search(
+        restored = typed.model(self.env, IrDefault).search(
             [("field_id.model", "=", "x_studio_project")]
         )
         self.assertEqual(len(restored), 1)
@@ -57,22 +65,20 @@ class TestFieldDefaults(StudioCase):
         """
         package = self.make_package()
         self.build_demo_content(package)
-        mine = self.env["ir.default"].create(
-            {
-                "field_id": self._field().id,
-                "json_value": "99.0",
-                "user_id": self.env.user.id,
-            }
-        )
-        serializer = self.env["studio.serializer.ir.default"]
+        vals = {
+            "field_id": self._field().id,
+            "json_value": "99.0",
+            "user_id": self.env.user.id,
+        }
+        mine = self.env["ir.default"].create(vals)  # pyright: ignore[reportArgumentType]
+        serializer = typed.model(self.env, IrDefaultSerializer)
         self.assertFalse(serializer._ownable(mine))
 
     def test_the_default_lands_beside_the_model_it_belongs_to(self):
         package = self.make_package()
         self.build_demo_content(package)
-        default = self.env["ir.default"].create(
-            {"field_id": self._field().id, "json_value": "1500.0"}
-        )
+        vals = {"field_id": self._field().id, "json_value": "1500.0"}
+        default = self.env["ir.default"].create(vals)  # pyright: ignore[reportArgumentType]
         package.studio_capture(default)
         self.assertIn(
             "data/x_studio_project_defaults.xml",
@@ -83,21 +89,19 @@ class TestFieldDefaults(StudioCase):
 @tagged("post_install", "-at_install")
 class TestScheduledActions(StudioCase):
     def _make_cron(self, package):
-        action = self.env["ir.actions.server"].create(
-            {
-                "name": "Nightly tidy",
-                "model_id": self.env["ir.model"]._get("x_studio_project").id,
-                "state": "code",
-                "code": "pass",
-            }
-        )
-        cron = self.env["ir.cron"].create(
-            {
-                "ir_actions_server_id": action.id,
-                "interval_number": 3,
-                "interval_type": "days",
-            }
-        )
+        action_vals = {
+            "name": "Nightly tidy",
+            "model_id": typed.model(self.env, IrModel)._get("x_studio_project").id,
+            "state": "code",
+            "code": "pass",
+        }
+        action = self.env["ir.actions.server"].create(action_vals)  # pyright: ignore[reportArgumentType]
+        cron_vals = {
+            "ir_actions_server_id": action.id,
+            "interval_number": 3,
+            "interval_type": "days",
+        }
+        cron = self.env["ir.cron"].create(cron_vals)  # pyright: ignore[reportArgumentType]
         package.studio_capture([action, cron])
         return action, cron
 
@@ -120,7 +124,9 @@ class TestScheduledActions(StudioCase):
         self.wipe_package_records(package)
         self.load_rendered(package, files)
 
-        restored = self.env["ir.cron"].search([("cron_name", "=", "Nightly tidy")])
+        restored = typed.model(self.env, IrCron).search(
+            [("cron_name", "=", "Nightly tidy")]
+        )
         self.assertEqual(len(restored), 1)
         self.assertEqual(restored.interval_number, 3)
         self.assertEqual(restored.interval_type, "days")
@@ -132,7 +138,9 @@ class TestScheduledActions(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         _action, cron = self._make_cron(package)
-        node = self.env["studio.serializer.ir.cron"]._serialize(cron, "pkg.cron_x")
+        node = typed.serializer(self.env["studio.serializer.ir.cron"])._serialize(
+            cron, "pkg.cron_x"
+        )
         emitted = {child.get("name") for child in node}
         self.assertNotIn("name", emitted)
         self.assertNotIn("code", emitted)

@@ -11,6 +11,8 @@ from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.app_builder_base.tools import domainspec
 
+from .common import raises
+
 
 @tagged("post_install", "-at_install")
 class TestDomainSpec(TransactionCase):
@@ -65,6 +67,9 @@ class TestDomainSpec(TransactionCase):
             rendered = domainspec.render(conditions, joiner)
             back = domainspec.parse(rendered)
             self.assertIsNotNone(back, rendered)
+            # `assertIsNotNone` is a runtime check only; it does not narrow
+            # `back` for pyright the way an `if`/`assert` would.
+            assert back is not None
             self.assertEqual(
                 [c.as_dict() for c in back[0]], [c.as_dict() for c in conditions]
             )
@@ -75,6 +80,7 @@ class TestDomainSpec(TransactionCase):
         """Odoo's own convention: no operator means every leaf must match."""
         parsed = domainspec.parse("[('a', '=', 1), ('b', '=', 2)]")
         self.assertIsNotNone(parsed)
+        assert parsed is not None
         self.assertEqual(parsed[1], domainspec.ALL)
         self.assertEqual(len(parsed[0]), 2)
 
@@ -87,7 +93,9 @@ class TestDomainSpec(TransactionCase):
         rendered = domainspec.render(conditions)
         self.assertIn("'!=', False", rendered)
         self.assertIn("'=', False", rendered)
-        back, _joiner = domainspec.parse(rendered)
+        parsed = domainspec.parse(rendered)
+        assert parsed is not None
+        back, _joiner = parsed
         self.assertEqual([c.operator for c in back], ["set", "not set"])
 
     def test_a_mixture_of_and_and_or_is_refused(self):
@@ -110,5 +118,5 @@ class TestDomainSpec(TransactionCase):
             self.assertIsNone(domainspec.parse(text), text)
 
     def test_an_unknown_joiner_is_a_programming_error(self):
-        with self.assertRaises(ValueError):
+        with raises(self, ValueError):
             domainspec.render([domainspec.Condition("a", "=", 1)], joiner="maybe")

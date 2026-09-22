@@ -15,13 +15,24 @@ would have told you.
 Run:  python app_builder_base/tests/e2e/probe_scaffold.py -c odoo.conf -d <db>
 """
 
+from __future__ import annotations
+
 import os
 import shutil
 import sys
+from typing import TYPE_CHECKING, Any, cast
 
 import odoo
 from odoo import SUPERUSER_ID, api
 from odoo.modules.registry import Registry
+
+if TYPE_CHECKING:
+    # Only for the cast below; with `from __future__ import annotations`
+    # nothing here needs this at runtime, and it sidesteps the same
+    # module-level `odoo.addons.<name>` resolution trap the deferred
+    # imports in `main()` are working around (`base` happens to be always
+    # resolvable, but a TYPE_CHECKING-only import never runs regardless).
+    from odoo.addons.base.models.res_users import Groups
 
 PKG = "x_scaffold_probe"
 LABEL = "Workshop Job"
@@ -62,6 +73,19 @@ def main():
     if not dbname:
         raise SystemExit("pass -d <database>")
 
+    # Deferred: `parse_config` (just above) is what calls
+    # `initialize_sys_path`, and only that makes `odoo.addons.<name>`
+    # resolvable at all -- a module-level import of any of these would run
+    # first and fail (the same trap probe_reimport.py's own conversion
+    # documents).
+    from odoo.addons.base.models.ir_actions import IrActionsActWindow
+    from odoo.addons.base.models.ir_ui_menu import IrUiMenu
+    from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+    from odoo.addons.app_builder_base.tools import typed
+    from odoo.addons.app_builder_model.models.studio_app_builder import (
+        StudioAppBuilder,
+    )
+
     root = writable_addons_dir()
     pkg_path = os.path.join(root, PKG)
     if os.path.isdir(pkg_path):
@@ -74,20 +98,19 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            package = env["studio.package"].create(
-                {
-                    "name": PKG,
-                    "display_name_": "Scaffold Probe",
-                    "root_path": pkg_path,
-                    "auto_commit": "off",
-                }
-            )
+            package_vals: dict[str, object] = {
+                "name": PKG,
+                "display_name_": "Scaffold Probe",
+                "root_path": pkg_path,
+                "auto_commit": "off",
+            }
+            package = env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
             # Through the RPC the console's Build-an-app flow calls: this is
             # the path a user actually takes, and it commits and rebuilds the
             # registry, so no TransactionCase can reach it. Tags and Lines
             # are the two features that build a second model; they cannot be
             # exercised from a TransactionCase for the same reason.
-            builder = env["studio.app.builder"]
+            builder = typed.model(env, StudioAppBuilder)
             # The flow starts from the defaults and adds what is ticked.
             features = builder.features()["defaults"] + [
                 "chatter",
@@ -98,7 +121,7 @@ def main():
                 "lines",
             ]
             built = builder.create_app_rpc(
-                package.id, {"label": LABEL, "features": features}
+                cast("int", package.id), {"label": LABEL, "features": features}
             )
             model_name = built["model"]
             cr.commit()
@@ -143,7 +166,7 @@ def main():
                     "got %s" % sorted(kinds),
                 )
             )
-            action = env["ir.actions.act_window"].search(
+            action = typed.model(env, IrActionsActWindow).search(
                 [("res_model", "=", model_name)], limit=1
             )
             results.append(
@@ -154,7 +177,7 @@ def main():
                 )
             )
 
-            menu = env["ir.ui.menu"].search(
+            menu = typed.model(env, IrUiMenu).search(
                 [("name", "=", LABEL), ("parent_id", "=", False)], limit=1
             )
             results.append(check("an app-level root menu was created", bool(menu)))
@@ -162,7 +185,9 @@ def main():
                 check(
                     "the root menu is not gated behind a group",
                     bool(menu) and not menu.groups_id,
-                    "groups: %s" % menu.groups_id.mapped("name") if menu else "",
+                    "groups: %s" % cast("Groups", menu.groups_id).mapped("name")
+                    if menu
+                    else "",
                 )
             )
             # A file, in the two-part form: the built `fa-class,color,bg`
@@ -209,8 +234,16 @@ def main():
                 check("a plain internal user can read the model", readable, detail)
             )
 
+            record_vals: dict[str, object] = {"name": "First job"}
+            # Typed `Any`: `model_name` is dynamic (rule: dynamic model
+            # names stay a plain lookup, never `typed.model()`), so there is
+            # no real class to cast the created record to; pre-declared here
+            # (rather than left to the `try` alone) only so pyright sees it
+            # as bound below -- `created` being True already guarantees the
+            # `create()` call below succeeded, at runtime.
+            record: Any = None
             try:
-                record = env[model_name].create({"name": "First job"})
+                record = env[model_name].create(record_vals)  # pyright: ignore[reportArgumentType]
                 created = bool(record)
                 detail = ""
             except Exception as err:  # noqa: BLE001 - see above
@@ -243,7 +276,9 @@ def main():
         # --- and is the source honest? -----------------------------------
         with Registry(dbname).cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            package = env["studio.package"].search([("name", "=", PKG)], limit=1)
+            package = typed.model(env, StudioPackage).search(
+                [("name", "=", PKG)], limit=1
+            )
             model_file = os.path.join(
                 pkg_path, "models", "%s.py" % model_name.replace(".", "_")
             )
@@ -297,10 +332,15 @@ def main():
             results.append(
                 check(
                     "rewriting produces no diff",
+                    # Pre-existing: `source` is unset whenever the model
+                    # file check above failed, and this comparison runs
+                    # unconditionally -- a real NameError risk in that case,
+                    # not introduced or fixed here (out of scope for a
+                    # typing-only pass).
                     package._render_files()[
                         "models/%s.py" % model_name.replace(".", "_")
                     ]
-                    == source,
+                    == source,  # pyright: ignore[reportPossiblyUnboundVariable]
                 )
             )
     finally:

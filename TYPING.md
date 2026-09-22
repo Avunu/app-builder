@@ -3433,6 +3433,101 @@ whole question. Full-tree `pyright` dropped from 2283 to 1978 (305
 errors) from this one file's own conversion plus the two helpers --
 confirming the leverage bet before spending it on the other 63 files.
 
+**The remaining 63 files, one large batch**: 63 draft agents (one per
+file, pipelined) plus 7 verify agents (one per addon, since a test
+file's own imports/fixtures are addon-scoped) -- 70 agents total, the
+largest single workflow this migration has run. Full-tree `pyright`
+dropped from 1978 to 13 -- the 13 being the pre-existing, unrelated
+`__init__.py` re-export warnings already noted throughout this
+document, present since before this migration started and untouched by
+any of it until the bonus cleanup below. **Every Python file in every
+one of the 8 addons -- every model, every tool, every test -- is now
+pyright- and ruff-clean.**
+
+Six of seven addons' batches passed verification outright (`app_builder_
+approval`, `app_builder_approval_formula`, `app_builder_model`,
+`app_builder_ui`, `app_builder_view` clean from the start;
+`app_builder_report`'s own verify agent found and fixed two same-addon-
+imported-fully-qualified mistakes itself, `app_builder_ui`'s trimmed one
+overlong inline comment). **One real, load-bearing regression** found
+by the `app_builder_base` verify agent and fixed in the main loop, not
+by any agent: `app_builder_base/tests/e2e/probe_reflection.py` and
+`probe_console_apply.py`'s draft conversions both added unconditional
+**module-top-level** imports of `odoo.addons.<this-repo's-own-addons>`
+classes (needed for `typed.model()`), but these two scripts are
+standalone e2e probes (`python probe_X.py -c odoo.conf -d <db>`, run by
+`run_probes.sh`, never through `TransactionCase`) where
+`odoo.addons.<name>` is only resolvable *after*
+`odoo.tools.config.parse_config()` runs inside `main()` -- a
+module-level import executes and crashes with `ModuleNotFoundError`
+before `main()` ever runs. The verify agent didn't just infer this: it
+reproduced the crash directly, both with a bare
+`python3 -c "import odoo.addons.app_builder_base"` before `parse_config`
+and by `runpy.run_path`-simulating each script's own real invocation.
+`pyright` could not see this at all (its own `extraPaths` resolves the
+same import through a separate, `parse_config`-oblivious mechanism) --
+a class of bug entirely outside this migration's own tooling, caught
+only because the verify agent went one step further than "does pyright
+pass" and asked "does this script actually run."
+
+Two sibling files in the SAME batch, `probe_reimport.py`/
+`probe_scaffold.py`, already had this right -- deferring the same
+imports to inside `main()`, after `parse_config()` -- and the fix for
+the two broken files matched that established shape, with one added
+wrinkle each: both `probe_reflection.py`'s `actual_reflection(env,
+spec)` and `probe_console_apply.py`'s `form_view(env, model_name)` are
+module-level helper functions (called *from* `main()`, but defined
+outside it) that also need the deferred names, so a plain "move the
+import into `main()`" would leave them with a `NameError` instead of a
+`ModuleNotFoundError`. Fixed by importing locally inside each helper
+function too -- the exact same pattern `probe_reflection.py`'s own
+`expected_reflection()` already used for its own `modelspec` import,
+sitting right next to the broken `actual_reflection()` the whole time.
+Re-verified against a real `ast.parse()` (syntax) plus `pyright`/`ruff`
+after the fix; the verify agent's own two other findings against these
+same files (idiom usage, cast reasoning) were otherwise sound and
+needed no further changes.
+
+**Bonus tree-wide cleanup**, done in the main loop after the 70-agent
+batch returned, going one step past Phase 1d's own stated scope since
+it closed the very last gaps standing between the repo and a fully
+clean `pyright`/`ruff` run: `app_builder_view/__init__.py` (one
+function, `uninstall_hook`) and `app_builder_view/exceptions.py` (two
+exception `__init__`s) had never been touched by any phase so far --
+not `models/` (Phase 1c), not `tools/` (Phase 1b), not `tests/` (Phase
+1d) -- so `.ruff.toml`'s `ANN` rule still fired on both. Annotated
+directly (both tiny, self-contained, no idiom decisions needed beyond
+what Phase 1c already established). Separately,
+`app_builder_base/tools/__init__.py` and `app_builder_view/tools/
+__init__.py` both re-export their own submodules (`from . import
+catalogue` etc., so `from ..tools import catalogue` resolves elsewhere
+in the tree) -- a legitimate, common Python pattern pyright's
+`reportUnusedImport` cannot distinguish from a genuinely dead import
+without an explicit `__all__`. Added one to each, listing exactly the
+re-exported names -- the last 13 pyright errors in the entire tree,
+gone.
+
+**Final state, confirmed by direct measurement, not estimation**:
+`(cd <repo root> && direnv exec . npx pyright)` → `0 errors, 9
+warnings, 0 informations` (the 9 warnings are `reportUnusedExpression`
+on `__manifest__.py` files -- Odoo's own bare-dict-literal manifest
+convention, `.ruff.toml` already exempts these from `B018`/`ANN`, not
+a gap to close). `direnv exec . ruff check .` → `All checks passed!`
+tree-wide. `direnv exec . ruff format --diff .` → clean, all 172
+files. `pyrightconfig.json`/`pyrightconfig.ci.json`/every addon's own
+`pyproject.toml`/`.ruff.toml` all confirmed unchanged throughout both
+Phase 1c and Phase 1d.
+
+**This closes Phase 1c and Phase 1d in full.** Every Python file this
+project owns -- `tools/`, `models/`, `tests/`, and the two small
+top-level files the bonus cleanup caught -- type-checks and lints
+clean under this migration's own "stage 1" standard-mode ratchet.
+Remaining, per TYPING.md's own original plan: Phase 1e (optional
+runtime enforcement via `typeguard`, explicitly deferred "decide after
+1c" in the plan's own text -- now decidable, not yet decided), Phase 2
+(TypeScript, unstarted), Phase 3 (CI/enforcement/docs, partially done --
+see "CI: the OCA container's real layout" below).
+
 ## CI: the OCA container's real layout
 
 ## CI: the OCA container's real layout

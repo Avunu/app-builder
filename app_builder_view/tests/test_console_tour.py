@@ -11,15 +11,36 @@ the console is closed. That last one is the failure that would cost the most
 trust and the one no server-side test can see.
 """
 
+from __future__ import annotations
+
 import os
 import tempfile
+from typing import TYPE_CHECKING, cast
 
-from lxml import etree
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo import Command
 from odoo.tests import tagged
 
+from odoo.addons.base.models.ir_model import IrModel, IrModelFields
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
+
+if TYPE_CHECKING:
+    # Only for the cast() calls below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every Phase 1c file's own `TYPE_CHECKING` block makes. `canvas()` is
+    # composed onto `studio.view.editor` by `studio_view_canvas.py`'s own
+    # pure `_inherit` extension -- a different Python class than the real
+    # base `StudioViewEditor` above, the same split `probe_console_apply.py`
+    # already worked around.
+    from odoo.addons.base.models.res_users import Users
+    from odoo.addons.app_builder_view.models.studio_view_canvas import (
+        StudioViewEditor as StudioViewEditorCanvas,
+    )
 
 
 @tagged("post_install", "-at_install")
@@ -27,29 +48,29 @@ class TestConsoleTour(StudioHttpCase):
     def _package(self, name, label):
         # Exactly one writable package, so editing_context can suggest it
         # without the console having to ask which one to record into.
-        package = self.env["studio.package"].create(
-            {
-                "name": name,
-                "display_name_": label,
-                "root_path": tempfile.mkdtemp(prefix="studio-tour-"),
-                "auto_commit": "off",
-            }
-        )
-        self.env["ir.module.module"].create({"name": name, "state": "installed"})
+        package_vals = {
+            "name": name,
+            "display_name_": label,
+            "root_path": tempfile.mkdtemp(prefix="studio-tour-"),
+            "auto_commit": "off",
+        }
+        package = typed.model(self.env, StudioPackage).create(package_vals)  # pyright: ignore[reportArgumentType]
+        module_vals = {"name": name, "state": "installed"}
+        self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
-            self.env.ref("base.user_admin"), ["app_builder_base.group_studio_manager"]
+            cast("Users", typed.ref(self.env, "base.user_admin")),
+            ["app_builder_base.group_studio_manager"],
         )
         return package
 
     def _manual_field(self, name, label):
-        return self.env["ir.model.fields"].create(
-            {
-                "name": name,
-                "field_description": label,
-                "ttype": "char",
-                "model_id": self.env["ir.model"]._get("res.partner").id,
-            }
-        )
+        field_vals = {
+            "name": name,
+            "field_description": label,
+            "ttype": "char",
+            "model_id": typed.model(self.env, IrModel)._get("res.partner").id,
+        }
+        return self.env["ir.model.fields"].create(field_vals)  # pyright: ignore[reportArgumentType]
 
     def _assert_nothing_leaked(self, package, views):
         """No render-time marker in what was written, on either side.
@@ -73,13 +94,12 @@ class TestConsoleTour(StudioHttpCase):
 
         # A plain list of a core model: the case the console must handle by
         # emitting an inheriting view rather than rewriting anything.
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Contacts",
-                "res_model": "res.partner",
-                "view_mode": "list,form",
-            }
-        )
+        action_vals = {
+            "name": "Tour Contacts",
+            "res_model": "res.partner",
+            "view_mode": "list,form",
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
 
         self.start_tour(
             "/odoo/action-%s" % action.id,
@@ -90,17 +110,19 @@ class TestConsoleTour(StudioHttpCase):
         # The tour asserts what the user sees; this asserts what was written.
         # A patch that renamed the column on screen but rewrote the base view
         # would look identical in the browser and be exactly wrong.
-        base = self.env.ref("base.view_partner_tree")
+        base = cast("View", typed.ref(self.env, "base.view_partner_tree"))
         self.assertNotIn(
-            "Full Name", base.arch, "the core view must not have been rewritten"
+            "Full Name",
+            cast("str", base.arch),
+            "the core view must not have been rewritten",
         )
         # Renamed, undone, redone: what is on disk at the end is the rename,
         # put back byte for byte by redo.
-        patch = self.env["ir.ui.view"].search(
+        patch = typed.model(self.env, View).search(
             [("inherit_id", "=", base.id), ("name", "like", "studio")]
         )
         self.assertTrue(patch, "the rename should live in an inheriting view")
-        self.assertIn("Full Name", patch.arch)
+        self.assertIn("Full Name", cast("str", patch.arch))
 
     def test_a_form_view_can_be_edited_by_clicking_it(self):
         """Selecting, toggling, undoing and adding from the palette, on a
@@ -108,27 +130,24 @@ class TestConsoleTour(StudioHttpCase):
         self._package("x_tour_form_pkg", "Tour Forms")
         # A field the form does not show, so the palette has something to
         # add that the tour can name.
-        self.env["ir.model.fields"].create(
-            {
-                "name": "x_tour_extra",
-                "field_description": "Tour Extra",
-                "ttype": "char",
-                "model_id": self.env["ir.model"]._get("res.partner").id,
-            }
-        )
+        field_vals = {
+            "name": "x_tour_extra",
+            "field_description": "Tour Extra",
+            "ttype": "char",
+            "model_id": typed.model(self.env, IrModel)._get("res.partner").id,
+        }
+        self.env["ir.model.fields"].create(field_vals)  # pyright: ignore[reportArgumentType]
         # With a job position, so that field is rendered rather than folded
         # away as empty, and its generated label has a widget beside it.
-        partner = self.env["res.partner"].create(
-            {"name": "Tour Subject", "function": "Tour Tester"}
-        )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Contact",
-                "res_model": "res.partner",
-                "view_mode": "form",
-                "res_id": partner.id,
-            }
-        )
+        partner_vals = {"name": "Tour Subject", "function": "Tour Tester"}
+        partner = self.env["res.partner"].create(partner_vals)  # pyright: ignore[reportArgumentType]
+        action_vals = {
+            "name": "Tour Contact",
+            "res_model": "res.partner",
+            "view_mode": "form",
+            "res_id": partner.id,
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
 
         self.start_tour(
             "/odoo/action-%s/%s" % (action.id, partner.id),
@@ -136,17 +155,17 @@ class TestConsoleTour(StudioHttpCase):
             login="admin",
         )
 
-        base = self.env.ref("base.view_partner_form")
-        self.assertNotIn("x_tour_extra", base.arch)
-        patch = self.env["ir.ui.view"].search(
+        base = cast("View", typed.ref(self.env, "base.view_partner_form"))
+        self.assertNotIn("x_tour_extra", cast("str", base.arch))
+        patch = typed.model(self.env, View).search(
             [("inherit_id", "=", base.id), ("name", "like", "studio")]
         )
         self.assertTrue(patch)
         # The group and the field the palette added are there; the required
         # toggle that was undone is not.
-        self.assertIn("<group", patch.arch)
-        self.assertIn('name="x_tour_extra"', patch.arch)
-        self.assertNotIn('required="1"', patch.arch)
+        self.assertIn("<group", cast("str", patch.arch))
+        self.assertIn('name="x_tour_extra"', cast("str", patch.arch))
+        self.assertNotIn('required="1"', cast("str", patch.arch))
 
     def test_a_search_view_is_edited_as_lists(self):
         """A search view is reached from another view's console and edited
@@ -155,21 +174,19 @@ class TestConsoleTour(StudioHttpCase):
         self._package("x_tour_search_pkg", "Tour Search")
         # A field no search view mentions, so there is something to add
         # whose name the tour can look for.
-        self.env["ir.model.fields"].create(
-            {
-                "name": "x_tour_search",
-                "field_description": "Tour Search",
-                "ttype": "char",
-                "model_id": self.env["ir.model"]._get("res.partner").id,
-            }
-        )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Contacts",
-                "res_model": "res.partner",
-                "view_mode": "list,form",
-            }
-        )
+        field_vals = {
+            "name": "x_tour_search",
+            "field_description": "Tour Search",
+            "ttype": "char",
+            "model_id": typed.model(self.env, IrModel)._get("res.partner").id,
+        }
+        self.env["ir.model.fields"].create(field_vals)  # pyright: ignore[reportArgumentType]
+        action_vals = {
+            "name": "Tour Contacts",
+            "res_model": "res.partner",
+            "view_mode": "list,form",
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
 
         self.start_tour(
             "/odoo/action-%s" % action.id,
@@ -178,13 +195,13 @@ class TestConsoleTour(StudioHttpCase):
         )
 
         # Added, undone, redone: the search view ends up with the field.
-        base = self.env.ref("base.view_res_partner_filter")
-        self.assertNotIn("x_tour_search", base.arch)
-        patch = self.env["ir.ui.view"].search(
+        base = cast("View", typed.ref(self.env, "base.view_res_partner_filter"))
+        self.assertNotIn("x_tour_search", cast("str", base.arch))
+        patch = typed.model(self.env, View).search(
             [("inherit_id", "=", base.id), ("name", "like", "studio")]
         )
         self.assertTrue(patch, "the field should live in an inheriting view")
-        self.assertIn('name="x_tour_search"', patch.arch)
+        self.assertIn('name="x_tour_search"', cast("str", patch.arch))
 
     def test_the_outline_navigates_and_reorders(self):
         """The tree above the sidebar's tabs: a row selects its node on
@@ -195,18 +212,20 @@ class TestConsoleTour(StudioHttpCase):
         # With a job position and a reference, so both fields are rendered
         # rather than folded away as empty: one to move, one on the second
         # tab to reveal.
-        partner = self.env["res.partner"].create(
-            {"name": "Tour Subject", "function": "Tour Tester", "ref": "TOUR-1"}
-        )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Contact",
-                "res_model": "res.partner",
-                "view_mode": "form",
-                "res_id": partner.id,
-            }
-        )
-        base = self.env.ref("base.view_partner_form")
+        partner_vals = {
+            "name": "Tour Subject",
+            "function": "Tour Tester",
+            "ref": "TOUR-1",
+        }
+        partner = self.env["res.partner"].create(partner_vals)  # pyright: ignore[reportArgumentType]
+        action_vals = {
+            "name": "Tour Contact",
+            "res_model": "res.partner",
+            "view_mode": "form",
+            "res_id": partner.id,
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
+        base = cast("View", typed.ref(self.env, "base.view_partner_form"))
 
         def placed():
             arch = etree.fromstring(base.get_combined_arch().encode())
@@ -249,17 +268,15 @@ class TestConsoleTour(StudioHttpCase):
         self._manual_field("x_tour_second", "Tour Second")
         # With a job position, so that field is rendered rather than folded
         # away as empty, and can be moved.
-        partner = self.env["res.partner"].create(
-            {"name": "Tour Subject", "function": "Tour Tester"}
-        )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Contact",
-                "res_model": "res.partner",
-                "view_mode": "form",
-                "res_id": partner.id,
-            }
-        )
+        partner_vals = {"name": "Tour Subject", "function": "Tour Tester"}
+        partner = self.env["res.partner"].create(partner_vals)  # pyright: ignore[reportArgumentType]
+        action_vals = {
+            "name": "Tour Contact",
+            "res_model": "res.partner",
+            "view_mode": "form",
+            "res_id": partner.id,
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
 
         self.start_tour(
             "/odoo/action-%s/%s" % (action.id, partner.id),
@@ -267,8 +284,8 @@ class TestConsoleTour(StudioHttpCase):
             login="admin",
         )
 
-        base = self.env.ref("base.view_partner_form")
-        patch = self.env["ir.ui.view"].search(
+        base = cast("View", typed.ref(self.env, "base.view_partner_form"))
+        patch = typed.model(self.env, View).search(
             [("inherit_id", "=", base.id), ("name", "like", "studio")]
         )
         self.assertTrue(patch, "the drops should live in an inheriting view")
@@ -318,9 +335,9 @@ class TestConsoleTour(StudioHttpCase):
         label = second[0].getprevious()
         self.assertEqual((label.tag, label.get("for")), ("label", "x_tour_second"))
         self.assertIsNone(label.get("string"))
-        self.assertIn('<label for="x_tour_second"', patch.arch)
+        self.assertIn('<label for="x_tour_second"', cast("str", patch.arch))
         self.assertEqual(
-            self.env["ir.model.fields"]
+            typed.model(self.env, IrModelFields)
             ._get("res.partner", "x_tour_second")
             .field_description,
             "Second Label",
@@ -333,13 +350,12 @@ class TestConsoleTour(StudioHttpCase):
         field dropped between two headings lands between them."""
         package = self._package("x_tour_list_drag_pkg", "Tour List Drag")
         self._manual_field("x_tour_extra", "Tour Extra")
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Contacts",
-                "res_model": "res.partner",
-                "view_mode": "list,form",
-            }
-        )
+        action_vals = {
+            "name": "Tour Contacts",
+            "res_model": "res.partner",
+            "view_mode": "list,form",
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
 
         self.start_tour(
             "/odoo/action-%s" % action.id,
@@ -347,7 +363,7 @@ class TestConsoleTour(StudioHttpCase):
             login="admin",
         )
 
-        base = self.env.ref("base.view_partner_tree")
+        base = cast("View", typed.ref(self.env, "base.view_partner_tree"))
         patch = self.env["ir.ui.view"].search(
             [("inherit_id", "=", base.id), ("name", "like", "studio")]
         )
@@ -368,17 +384,15 @@ class TestConsoleTour(StudioHttpCase):
         lands, placed after the field it was dropped on, and the Label row
         renames the field itself. Undo takes it off the view only."""
         package = self._package("x_tour_new_field_pkg", "Tour New Field")
-        partner = self.env["res.partner"].create(
-            {"name": "Tour Subject", "function": "Tour Tester"}
-        )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Contact",
-                "res_model": "res.partner",
-                "view_mode": "form",
-                "res_id": partner.id,
-            }
-        )
+        partner_vals = {"name": "Tour Subject", "function": "Tour Tester"}
+        partner = self.env["res.partner"].create(partner_vals)  # pyright: ignore[reportArgumentType]
+        action_vals = {
+            "name": "Tour Contact",
+            "res_model": "res.partner",
+            "view_mode": "form",
+            "res_id": partner.id,
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
 
         self.start_tour(
             "/odoo/action-%s/%s" % (action.id, partner.id),
@@ -388,7 +402,7 @@ class TestConsoleTour(StudioHttpCase):
 
         # The field is real, renamed through the Label row, and captured
         # into the package -- the tour saw it in the palette after the undo.
-        field = self.env["ir.model.fields"]._get("res.partner", "x_new_text")
+        field = typed.model(self.env, IrModelFields)._get("res.partner", "x_new_text")
         self.assertTrue(field, "the drop should have created x_new_text")
         self.assertEqual(field.state, "manual")
         self.assertEqual(field.ttype, "char")
@@ -417,8 +431,8 @@ class TestConsoleTour(StudioHttpCase):
         )
         # Undone: the view no longer shows it, and the core view was never
         # rewritten; the placement lived in an inheriting view.
-        base = self.env.ref("base.view_partner_form")
-        self.assertNotIn("x_new_text", base.arch)
+        base = cast("View", typed.ref(self.env, "base.view_partner_form"))
+        self.assertNotIn("x_new_text", cast("str", base.arch))
         root = etree.fromstring(base.get_combined_arch().encode())
         self.assertFalse(root.xpath("//field[@name='x_new_text']"))
         patches = self.env["ir.ui.view"].search(
@@ -442,38 +456,36 @@ class TestConsoleTour(StudioHttpCase):
         of the base, and the base has to have an xmlid for that view to
         be written to source.
         """
-        model = self.env["ir.model"].create(
-            {
-                "name": "Tour Kanban",
-                "model": "x_tour_kanban",
-                "field_id": [
-                    Command.create(
-                        {
-                            "name": "x_name",
-                            "ttype": "char",
-                            "field_description": "Name",
-                            "required": True,
-                        }
-                    ),
-                    Command.create(
-                        {"name": "x_note", "ttype": "char", "field_description": "Note"}
-                    ),
-                    Command.create(
-                        {
-                            "name": "x_extra",
-                            "ttype": "char",
-                            "field_description": "Extra",
-                        }
-                    ),
-                ],
-            }
-        )
-        view = self.env["ir.ui.view"].create(
-            {
-                "name": "x_tour_kanban.kanban",
-                "model": "x_tour_kanban",
-                "type": "kanban",
-                "arch": """
+        model_vals = {
+            "name": "Tour Kanban",
+            "model": "x_tour_kanban",
+            "field_id": [
+                Command.create(
+                    {
+                        "name": "x_name",
+                        "ttype": "char",
+                        "field_description": "Name",
+                        "required": True,
+                    }
+                ),
+                Command.create(
+                    {"name": "x_note", "ttype": "char", "field_description": "Note"}
+                ),
+                Command.create(
+                    {
+                        "name": "x_extra",
+                        "ttype": "char",
+                        "field_description": "Extra",
+                    }
+                ),
+            ],
+        }
+        model = typed.model(self.env, IrModel).create(model_vals)  # pyright: ignore[reportArgumentType]
+        view_vals = {
+            "name": "x_tour_kanban.kanban",
+            "model": "x_tour_kanban",
+            "type": "kanban",
+            "arch": """
                     <kanban>
                         <templates>
                             <t t-name="card" class="flex-row">
@@ -486,34 +498,31 @@ class TestConsoleTour(StudioHttpCase):
                         </templates>
                     </kanban>
                 """,
-            }
-        )
-        access = self.env["ir.model.access"].create(
-            {
-                "name": "x_tour_kanban all",
-                "model_id": model.id,
-                "group_id": self.env.ref("base.group_user").id,
-                "perm_read": True,
-                "perm_write": True,
-                "perm_create": True,
-                "perm_unlink": False,
-            }
-        )
+        }
+        view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
+        access_vals = {
+            "name": "x_tour_kanban all",
+            "model_id": model.id,
+            "group_id": typed.ref(self.env, "base.group_user").id,
+            "perm_read": True,
+            "perm_write": True,
+            "perm_create": True,
+            "perm_unlink": False,
+        }
+        access = self.env["ir.model.access"].create(access_vals)  # pyright: ignore[reportArgumentType]
         for letter in ("A", "B") if records else ():
-            self.env["x_tour_kanban"].create(
-                {
-                    "x_name": "Card %s" % letter,
-                    "x_note": "Note %s" % letter,
-                    "x_extra": "Extra %s" % letter,
-                }
-            )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Kanban",
-                "res_model": "x_tour_kanban",
-                "view_mode": "kanban",
+            record_vals = {
+                "x_name": "Card %s" % letter,
+                "x_note": "Note %s" % letter,
+                "x_extra": "Extra %s" % letter,
             }
-        )
+            self.env["x_tour_kanban"].create(record_vals)  # pyright: ignore[reportArgumentType]
+        action_vals = {
+            "name": "Tour Kanban",
+            "res_model": "x_tour_kanban",
+            "view_mode": "kanban",
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
         for owned in (model, model.field_id, view, action, access):
             package._assign(owned)
         package.action_write_files()
@@ -546,7 +555,7 @@ class TestConsoleTour(StudioHttpCase):
             ["x_name", "x_note", "x_extra"],
         )
         self.assertFalse(card.find("aside").findall("field"))
-        self.assertIn('name="x_extra"', view.arch)
+        self.assertIn('name="x_extra"', cast("str", view.arch))
         self._assert_nothing_leaked(package, view)
 
     def test_an_empty_kanban_takes_drops_on_its_sample_cards(self):
@@ -554,9 +563,8 @@ class TestConsoleTour(StudioHttpCase):
         drop into one still lands in the template."""
         package = self._package("x_tour_kanban_sample_pkg", "Tour Kanban Sample")
         view, action = self._kanban_model(package, records=False)
-        self.assertEqual(
-            self.env["studio.view.editor"].canvas(view.id)["record_count"], 0
-        )
+        editor = cast("StudioViewEditorCanvas", typed.model(self.env, StudioViewEditor))
+        self.assertEqual(editor.canvas(cast("int", view.id))["record_count"], 0)
 
         self.start_tour(
             "/odoo/action-%s" % action.id,
@@ -569,7 +577,9 @@ class TestConsoleTour(StudioHttpCase):
             [f.get("name") for f in root.find(".//t[@t-name='card']/main")],
             ["x_name", "x_note", "x_extra"],
         )
-        self.assertNotIn("sample", view.arch, "sample mode is the canvas's alone")
+        self.assertNotIn(
+            "sample", cast("str", view.arch), "sample mode is the canvas's alone"
+        )
         self._assert_nothing_leaked(package, view)
 
     def _python_owned_model(self, package):
@@ -583,34 +593,32 @@ class TestConsoleTour(StudioHttpCase):
         asks about (``python_owned``, ``open_for_model``) while the registry
         keeps the manual class it already has.
         """
-        model = self.env["ir.model"].create(
-            {
-                "name": "Tour Staged",
-                "model": "x_tour_staged",
-                "field_id": [
-                    Command.create(
-                        {
-                            "name": "x_name",
-                            "ttype": "char",
-                            "field_description": "Name",
-                            "required": True,
-                        }
-                    ),
-                    Command.create(
-                        {
-                            "name": "x_note",
-                            "ttype": "char",
-                            "field_description": "Note",
-                        }
-                    ),
-                ],
-            }
-        )
-        view = self.env["ir.ui.view"].create(
-            {
-                "name": "x_tour_staged.form",
-                "model": "x_tour_staged",
-                "arch": """
+        model_vals = {
+            "name": "Tour Staged",
+            "model": "x_tour_staged",
+            "field_id": [
+                Command.create(
+                    {
+                        "name": "x_name",
+                        "ttype": "char",
+                        "field_description": "Name",
+                        "required": True,
+                    }
+                ),
+                Command.create(
+                    {
+                        "name": "x_note",
+                        "ttype": "char",
+                        "field_description": "Note",
+                    }
+                ),
+            ],
+        }
+        model = typed.model(self.env, IrModel).create(model_vals)  # pyright: ignore[reportArgumentType]
+        view_vals = {
+            "name": "x_tour_staged.form",
+            "model": "x_tour_staged",
+            "arch": """
                     <form>
                         <sheet>
                             <group>
@@ -620,26 +628,24 @@ class TestConsoleTour(StudioHttpCase):
                         </sheet>
                     </form>
                 """,
-            }
-        )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Staged",
-                "res_model": "x_tour_staged",
-                "view_mode": "list,form",
-            }
-        )
-        access = self.env["ir.model.access"].create(
-            {
-                "name": "x_tour_staged all",
-                "model_id": model.id,
-                "group_id": self.env.ref("base.group_user").id,
-                "perm_read": True,
-                "perm_write": True,
-                "perm_create": True,
-                "perm_unlink": False,
-            }
-        )
+        }
+        view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
+        action_vals = {
+            "name": "Tour Staged",
+            "res_model": "x_tour_staged",
+            "view_mode": "list,form",
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
+        access_vals = {
+            "name": "x_tour_staged all",
+            "model_id": model.id,
+            "group_id": typed.ref(self.env, "base.group_user").id,
+            "perm_read": True,
+            "perm_write": True,
+            "perm_create": True,
+            "perm_unlink": False,
+        }
+        access = self.env["ir.model.access"].create(access_vals)  # pyright: ignore[reportArgumentType]
         package._assign(model)
         package._assign(model.field_id)
         package._assign(view)
@@ -655,12 +661,15 @@ class TestConsoleTour(StudioHttpCase):
         was created or written."""
         package = self._package("x_tour_staged_pkg", "Tour Staged")
         _model, view, action = self._python_owned_model(package)
-        record = self.env["x_tour_staged"].create({"x_name": "Staged Subject"})
+        record_vals = {"x_name": "Staged Subject"}
+        record = self.env["x_tour_staged"].create(record_vals)  # pyright: ignore[reportArgumentType]
         # Built from the App builder in real life; here the model is
         # adopted instead, since the builder's Apply cannot reload under
         # test -- see `_python_owned_model`.
         self.assertTrue(
-            self.env["studio.view.editor"].editing_context(view.id)["python_owned"]
+            typed.model(self.env, StudioViewEditor).editing_context(
+                cast("int", view.id)
+            )["python_owned"]
         )
         arch_before = view.arch
 
@@ -678,10 +687,10 @@ class TestConsoleTour(StudioHttpCase):
         self.assertTrue(draft, "the drop should have opened a draft")
         self.assertFalse(any(draft.mapped("dirty")))
         self.assertFalse(
-            self.env["ir.model.fields"]._get("x_tour_staged", "x_new_decimal")
+            typed.model(self.env, IrModelFields)._get("x_tour_staged", "x_new_decimal")
         )
         self.assertEqual(view.arch, arch_before)
-        for folder, _dirs, names in os.walk(package.root_path):
+        for folder, _dirs, names in os.walk(cast("str", package.root_path)):
             for name in names:
                 path = os.path.join(folder, name)
                 with open(path, encoding="utf-8", errors="ignore") as handle:

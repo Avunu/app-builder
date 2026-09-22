@@ -24,15 +24,38 @@ Three things are measured:
 Run:  python app_builder_base/tests/e2e/probe_console_apply.py -c odoo.conf -d <db>
 """
 
+from __future__ import annotations
+
 import os
 import shutil
 import sys
+from typing import TYPE_CHECKING, cast
 
-from lxml import etree
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 import odoo
 from odoo import SUPERUSER_ID, api
 from odoo.modules.registry import Registry
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, and this block does
+    # not need `initialize_sys_path` the way the REAL imports inside
+    # `form_view()`/`main()` do (see there for why those are deferred).
+    #
+    # `canvas()` is composed onto `studio.view.editor` by `studio_view_canvas
+    # .py`'s own pure `_inherit = "studio.view.editor"` -- a different
+    # Python class than `StudioViewEditor` below (same shape as that file's
+    # own `_ComposedViewEditor`/`StudioViewEditorBase` split), so the one
+    # call below casts to this one specifically rather than to the RPC
+    # base's own class, which does not declare it.
+    from odoo.addons.app_builder_view.models.studio_view_canvas import (
+        StudioViewEditor as StudioViewEditorCanvas,
+    )
+    from odoo.addons.app_builder_view.models.studio_view_editor import (
+        DropStagedFieldJSON,
+        DropSuccessJSON,
+    )
 
 PKG = "x_console_probe"
 LABEL = "Console Job"
@@ -56,8 +79,16 @@ def writable_addons_dir():
 
 
 def form_view(env, model_name):
-    View = env["ir.ui.view"]
-    return View.browse(View.default_view(model_name, "form"))
+    # Deferred the same way `main()`'s own real imports (below) are:
+    # `initialize_sys_path` (called from `parse_config`, inside `main()`)
+    # is what makes `odoo.addons.<name>` resolvable at all, and this is a
+    # module-level function `main()` calls only after that -- a top-level
+    # import here would run first and fail.
+    from odoo.addons.base.models.ir_ui_view import View as IrUiView
+    from odoo.addons.app_builder_base.tools import typed
+
+    View = typed.model(env, IrUiView)
+    return View.browse(cast("int", View.default_view(model_name, "form")))
 
 
 def next_after(arch, name):
@@ -99,7 +130,16 @@ def main():
     if not dbname:
         raise SystemExit("pass -d <database>")
     # Only importable once the config has set the addons path.
-    from odoo.addons.app_builder_base.tools import modelspec
+    from odoo.addons.base.models.ir_ui_view import View as IrUiView
+    from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
+    from odoo.addons.app_builder_base.tools import modelspec, typed
+    from odoo.addons.app_builder_model.models.studio_app_builder import (
+        StudioAppBuilder,
+    )
+    from odoo.addons.app_builder_view.models.studio_view_edit import StudioViewEdit
+    from odoo.addons.app_builder_view.models.studio_view_editor import (
+        StudioViewEditor,
+    )
 
     root = writable_addons_dir()
     pkg_path = os.path.join(root, PKG)
@@ -112,20 +152,20 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            package = env["studio.package"].create(
-                {
-                    "name": PKG,
-                    "display_name_": "Console Probe",
-                    "root_path": pkg_path,
-                    "auto_commit": "off",
-                }
-            )
+            vals = {
+                "name": PKG,
+                "display_name_": "Console Probe",
+                "root_path": pkg_path,
+                "auto_commit": "off",
+            }
+            package = env["studio.package"].create(vals)  # pyright: ignore[reportArgumentType]
             # The console's Build-an-app flow calls the same RPC.
-            built = env["studio.app.builder"].create_app_rpc(
-                package.id, {"label": LABEL, "features": ["chatter", "user"]}
+            built = typed.model(env, StudioAppBuilder).create_app_rpc(
+                cast("int", package.id),
+                {"label": LABEL, "features": ["chatter", "user"]},
             )
             model_name = built["model"]
-            package_id = package.id
+            package_id = cast("int", package.id)
             cr.commit()
         print("  built %s" % model_name)
 
@@ -133,21 +173,31 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            editor = env["studio.view.editor"]
+            editor = typed.model(env, StudioViewEditor)
             view = form_view(env, model_name)
-            canvas = editor.canvas(view.id)
+            canvas = cast("StudioViewEditorCanvas", editor).canvas(cast("int", view.id))
             token = next(
                 t for t, n in canvas["nodes"].items() if n["name"] == NEIGHBOUR
             )
-            result = editor.drop_at(
-                view.id,
-                package_id,
-                {"token": token, "position": "after"},
-                {
-                    "kind": "new_field",
-                    "values": {"ttype": "date", "field_description": "Due Date"},
-                },
-                expected_arch_version=canvas["arch_version"],
+            # `drop_at`'s own declared return is the stale-or-settled union
+            # (`DropAtJSON`); nothing below ever checked `result["stale"]`
+            # even before this conversion -- the scenario this probe drives
+            # cannot go stale, and the settled shape is what every existing
+            # read below already assumed. Cast, not narrowed, so that stays
+            # true rather than growing a check that changes nothing at
+            # runtime.
+            result = cast(
+                "DropSuccessJSON",
+                editor.drop_at(
+                    cast("int", view.id),
+                    package_id,
+                    {"token": token, "position": "after"},
+                    {
+                        "kind": "new_field",
+                        "values": {"ttype": "date", "field_description": "Due Date"},
+                    },
+                    expected_arch_version=canvas["arch_version"],
+                ),
             )
             results.append(
                 check(
@@ -166,7 +216,9 @@ def main():
                     ),
                 )
             )
-            ghost_arch = etree.fromstring(result["canvas"]["arch"].encode())
+            ghost_arch = etree.fromstring(
+                cast("str", result["canvas"]["arch"]).encode()
+            )
             neighbour = ghost_arch.find(".//field[@name='%s']" % NEIGHBOUR)
             ghost = neighbour.getnext() if neighbour is not None else None
             results.append(
@@ -183,7 +235,9 @@ def main():
                     result["select"] == "p_%s" % FIELD
                     and any(
                         p["name"] == FIELD and p["placed"]
-                        for p in result["canvas"]["pending"]
+                        for p in cast(
+                            "list[dict[str, object]]", result["canvas"]["pending"]
+                        )
                     ),
                 )
             )
@@ -194,15 +248,15 @@ def main():
                     "app_builder_pending" not in view.get_combined_arch(),
                 )
             )
-            draft_id = result["staged"]["draft_id"]
-            view_id = view.id
+            draft_id = cast("DropStagedFieldJSON", result["staged"])["draft_id"]
+            view_id = cast("int", view.id)
             cr.commit()
 
         # --- 2. apply: write, reload, place -----------------------------------
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            draft = env["studio.model.draft"].browse(draft_id)
+            draft = typed.model(env, StudioModelDraft).browse(draft_id)
             results.append(
                 check(
                     "the draft survived the round trip with its anchor",
@@ -218,8 +272,8 @@ def main():
             results.append(
                 check("the field is a real column", FIELD in env[model_name]._fields)
             )
-            view = env["ir.ui.view"].browse(view_id)
-            arch = etree.fromstring(view.arch.encode())
+            view = typed.model(env, IrUiView).browse(view_id)
+            arch = etree.fromstring(cast("str", view.arch).encode())
             results.append(
                 check(
                     "it sits exactly after the neighbour in the form arch",
@@ -243,10 +297,13 @@ def main():
             results.append(
                 check(
                     "the anchor is forgotten once the field is placed",
-                    FIELD not in env["studio.model.draft"].browse(draft_id)._anchors(),
+                    FIELD
+                    not in typed.model(env, StudioModelDraft)
+                    .browse(draft_id)
+                    ._anchors(),
                 )
             )
-            history = env["studio.view.edit"].stack_for(view_id)
+            history = typed.model(env, StudioViewEdit).stack_for(view_id)
             results.append(
                 check(
                     "the placement is in the view's history",
@@ -255,7 +312,7 @@ def main():
             )
 
             # --- 3. restart mode: placement runs again --------------------------
-            draft = env["studio.model.draft"].browse(draft_id)
+            draft = typed.model(env, StudioModelDraft).browse(draft_id)
             spec = draft._spec()
             diff = modelspec.diff_specs(modelspec.without_field(spec, FIELD), spec)
             again = draft._place_in_views(spec, diff)
@@ -263,7 +320,8 @@ def main():
             results.append(
                 check(
                     "running placement again changes nothing",
-                    not again and view.arch.count('name="%s"' % FIELD) == 1,
+                    not again
+                    and cast("str", view.arch).count('name="%s"' % FIELD) == 1,
                 )
             )
             cr.rollback()

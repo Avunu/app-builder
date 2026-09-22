@@ -120,6 +120,13 @@ def main():
     if not dbname:
         raise SystemExit("pass -d <database>")
 
+    # Deferred: `parse_config` (just above) is what calls
+    # `initialize_sys_path`, and only that makes `odoo.addons.<name>`
+    # resolvable at all -- a module-level import of either of these would
+    # run first and fail.
+    from odoo.addons.base.models.ir_module import Module
+    from odoo.addons.app_builder_base.tools import typed
+
     root = writable_addons_dir()
     print("addons dir: %s" % root)
     pkg_path = os.path.join(root, PKG)
@@ -133,8 +140,9 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            env["ir.module.module"].update_list()
-            module = env["ir.module.module"].search([("name", "=", PKG)], limit=1)
+            Module_ = typed.model(env, Module)
+            Module_.update_list()
+            module = Module_.search([("name", "=", PKG)], limit=1)
             if not module:
                 raise SystemExit("update_list did not see %s" % PKG)
             module.button_immediate_install()
@@ -154,7 +162,7 @@ def main():
         # Documents the trap rather than asserting a requirement.
         with Registry(dbname).cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            env["ir.module.module"].search(
+            typed.model(env, Module).search(
                 [("name", "=", PKG)], limit=1
             ).button_immediate_upgrade()
         naive = Registry(dbname)
@@ -176,7 +184,7 @@ def main():
         reimport_module(PKG)
         with Registry(dbname).cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            env["ir.module.module"].search(
+            typed.model(env, Module).search(
                 [("name", "=", PKG)], limit=1
             ).button_immediate_upgrade()
 
@@ -227,14 +235,15 @@ def main():
         # a pre-migration that renames the column aside first.
         with Registry(dbname).cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            env[MODEL].create({"x_alpha": "keep me", "x_beta": "DATA AT RISK"})
+            vals = {"x_alpha": "keep me", "x_beta": "DATA AT RISK"}
+            env[MODEL].create(vals)  # pyright: ignore[reportArgumentType]
             cr.commit()
 
         write_package(root, ["x_alpha"])
         reimport_module(PKG)
         with Registry(dbname).cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            env["ir.module.module"].search(
+            typed.model(env, Module).search(
                 [("name", "=", PKG)], limit=1
             ).button_immediate_upgrade()
 

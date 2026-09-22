@@ -2,10 +2,25 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Where "Compose" goes: the console, on a view the model has."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+
+if TYPE_CHECKING:
+    # `model_ids`' comodel is a plain string (`studio.package.model`), so
+    # `self.package.model_ids` reads as an untyped union pyright cannot call
+    # `.filtered()`/`.action_compose()` on -- same cast-at-the-read-site
+    # idiom every Phase 1c model file uses. This addon's own `_inherit`
+    # extension is the one whose `action_compose()` this suite actually
+    # calls (a real `ComposeActionJSON`, not the base's `NoReturn`).
+    from odoo.addons.app_builder_view.models.studio_package_model import (
+        StudioPackageModel,
+    )
 
 
 @tagged("post_install", "-at_install")
@@ -16,9 +31,9 @@ class TestComposeEntry(StudioCase):
         self.build_demo_content(self.package)
         self.package.action_write_files()
         self.package.action_adopt(["x_studio_project"])
-        self.package_model = self.package.model_ids.filtered(
-            lambda m: m.model == "x_studio_project"
-        )
+        self.package_model = cast(
+            "StudioPackageModel", self.package.model_ids
+        ).filtered(lambda m: m.model == "x_studio_project")
 
     def _views(self, view_type):
         return self.env["ir.ui.view"].search(
@@ -42,21 +57,25 @@ class TestComposeEntry(StudioCase):
         """The class is edited from the View tab whatever the canvas shows,
         so a list will do; only a model with no view at all is refused, with
         a sentence rather than an error about a missing arch."""
-        self.env["ir.ui.view"].create(
-            {
-                "name": "x_studio_project.list.compose",
-                "model": "x_studio_project",
-                "type": "list",
-                "arch": "<list><field name='x_name'/></list>",
-            }
-        )
+        vals = {
+            "name": "x_studio_project.list.compose",
+            "model": "x_studio_project",
+            "type": "list",
+            "arch": "<list><field name='x_name'/></list>",
+        }
+        self.env["ir.ui.view"].create(vals)  # pyright: ignore[reportArgumentType]
         self._views("form").unlink()
         action = self.package_model.action_compose()
         self.assertEqual(action["tag"], "app_builder_console")
         self.assertEqual(action["params"]["view_type"], "list")
         for view_type in ("list", "kanban", "search"):
             self._views(view_type).unlink()
-        with self.assertRaises(UserError, msg="no view to open on"):
+        # `common.py`'s own `raises()` only covers the 2-arg form; this
+        # call's `msg=` has no typed equivalent there, so the diagnostic is
+        # suppressed locally rather than dropping the failure message.
+        with self.assertRaises(  # pyright: ignore[reportOptionalContextManager]
+            UserError, msg="no view to open on"
+        ):
             self.package_model.action_compose()
 
     def test_the_engine_alone_says_what_it_is_missing(self):
@@ -65,7 +84,7 @@ class TestComposeEntry(StudioCase):
         Model = self.env.registry["studio.package.model"]
         for cls in Model.__mro__:
             if cls.__module__.endswith("app_builder_base.models.studio_package_model"):
-                with self.assertRaises(UserError):
+                with raises(self, UserError):
                     cls.action_compose(self.package_model)
                 break
         else:

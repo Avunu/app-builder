@@ -2,25 +2,43 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Serializer dispatch, field emission and file placement."""
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from .common import StudioCase
+from odoo.addons.base.models.ir_model import IrModel
+
+from ..models.studio_serializer import StudioSerializer
+from ..tools import typed
+from .common import StudioCase, raises
+
+if TYPE_CHECKING:
+    # Only for the cast below; with `from __future__ import annotations`
+    # nothing here needs this at runtime. `IrModel` above is a real (not
+    # TYPE_CHECKING-only) import instead, because `typed.model()` needs the
+    # actual class object at runtime, not just its name as a string.
+    from odoo.addons.base.models.ir_model import IrModelFields
 
 
 @tagged("post_install", "-at_install")
 class TestSerializer(StudioCase):
     def test_dispatch_by_naming_convention(self):
-        serializers = self.env["studio.serializer"]
+        serializers = typed.model(self.env, StudioSerializer)
         self.assertEqual(
-            serializers._for_model("ir.ui.view")._studio_model, "ir.ui.view"
+            cast(
+                "StudioSerializer", serializers._for_model("ir.ui.view")
+            )._studio_model,
+            "ir.ui.view",
         )
         self.assertIsNone(serializers._for_model("res.partner"))
 
     def test_known_models_are_registered(self):
-        known = set(self.env["studio.serializer"]._serializable_models())
+        known = set(typed.model(self.env, StudioSerializer)._serializable_models())
         for expected in (
             "ir.model",
             "ir.model.fields",
@@ -37,27 +55,25 @@ class TestSerializer(StudioCase):
     def test_missing_xmlid_raises_rather_than_emitting_an_id(self):
         """A raw id would not survive a fresh install, so refuse to emit one."""
         package = self.make_package()
-        model = self.env["ir.model"].create(
-            {
-                "name": "Orphan",
-                "model": "x_studio_orphan",
-                "field_id": [],
-            }
-        )
+        model_vals = {
+            "name": "Orphan",
+            "model": "x_studio_orphan",
+            "field_id": [],
+        }
+        model = self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
         # model_id deliberately not assigned an xmlid
-        field = self.env["ir.model.fields"].create(
-            {
-                "name": "x_thing",
-                "field_description": "Thing",
-                "ttype": "char",
-                "model_id": model.id,
-            }
-        )
+        field_vals = {
+            "name": "x_thing",
+            "field_description": "Thing",
+            "ttype": "char",
+            "model_id": model.id,
+        }
+        field = self.env["ir.model.fields"].create(field_vals)  # pyright: ignore[reportArgumentType]
         serializer = self.env["studio.serializer.ir.model.fields"].with_context(
             studio_package=package.name
         )
-        with self.assertRaises(UserError):
-            serializer._serialize(field, "%s.field_x" % package.name)
+        with raises(self, UserError):
+            typed.serializer(serializer)._serialize(field, "%s.field_x" % package.name)
 
     def test_same_module_refs_are_shortened(self):
         package = self.make_package()
@@ -74,14 +90,13 @@ class TestSerializer(StudioCase):
         """Skipping a False whose default is True would flip it on reload."""
         package = self.make_package()
         self.build_demo_content(package)
-        rule = self.env["ir.rule"].create(
-            {
-                "name": "demo rule",
-                "model_id": self.env["ir.model"]._get("x_studio_project").id,
-                "domain_force": "[(1, '=', 1)]",
-                "perm_unlink": False,
-            }
-        )
+        rule_vals = {
+            "name": "demo rule",
+            "model_id": typed.model(self.env, IrModel)._get("x_studio_project").id,
+            "domain_force": "[(1, '=', 1)]",
+            "perm_unlink": False,
+        }
+        rule = self.env["ir.rule"].create(rule_vals)  # pyright: ignore[reportArgumentType]
         package._assign(rule)
         rendered = package._render_files()
         security = rendered["security/x_studio_project_security.xml"]
@@ -99,16 +114,15 @@ class TestSerializer(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         # An ACL referencing base.group_user, and a view inheriting a core view.
-        ext = self.env["ir.ui.view"].create(
-            {
-                "name": "res.partner.form.studio.dep",
-                "model": "res.partner",
-                "inherit_id": self.env.ref("base.view_partner_form").id,
-                "priority": 99,
-                "arch": "<xpath expr=\"//field[@name='function']\" "
-                'position="after"><field name="ref"/></xpath>',
-            }
-        )
+        ext_vals = {
+            "name": "res.partner.form.studio.dep",
+            "model": "res.partner",
+            "inherit_id": typed.ref(self.env, "base.view_partner_form").id,
+            "priority": 99,
+            "arch": "<xpath expr=\"//field[@name='function']\" "
+            'position="after"><field name="ref"/></xpath>',
+        }
+        ext = self.env["ir.ui.view"].create(ext_vals)  # pyright: ignore[reportArgumentType]
         package._assign(ext)
 
         rendered = package._render_files()
@@ -123,13 +137,12 @@ class TestSerializer(StudioCase):
         action = self.env["ir.actions.act_window"].search(
             [("res_model", "=", "x_studio_project")], limit=1
         )
-        menu = self.env["ir.ui.menu"].create(
-            {
-                "name": "Nested Studio Menu",
-                "parent_id": self.env.ref("app_builder_base.menu_studio_root").id,
-                "action": "ir.actions.act_window,%d" % action.id,
-            }
-        )
+        menu_vals = {
+            "name": "Nested Studio Menu",
+            "parent_id": typed.ref(self.env, "app_builder_base.menu_studio_root").id,
+            "action": "ir.actions.act_window,%d" % action.id,
+        }
+        menu = self.env["ir.ui.menu"].create(menu_vals)  # pyright: ignore[reportArgumentType]
         package._assign(menu)
 
         import ast
@@ -181,7 +194,9 @@ class TestSerializer(StudioCase):
         """
         package = self.make_package()
         model = self.build_demo_content(package)
-        magic = model.field_id.filtered(lambda f: f.state == "base")
+        magic = cast("IrModelFields", model.field_id).filtered(
+            lambda f: f.state == "base"
+        )
         self.assertTrue(magic, "sanity: the model should have reflected base fields")
 
         owned = self.env["ir.model.data"].search(
@@ -231,16 +246,15 @@ class TestSerializer(StudioCase):
         base_view = self.env["ir.ui.view"].search(
             [("model", "=", "x_studio_project")], limit=1
         )
-        ext = self.env["ir.ui.view"].create(
-            {
-                "name": "x_studio_project.form.ext",
-                "model": "x_studio_project",
-                "inherit_id": base_view.id,
-                "priority": 99,
-                "arch": '<xpath expr="//sheet" position="inside">'
-                '<field name="x_active_flag"/></xpath>',
-            }
-        )
+        ext_vals = {
+            "name": "x_studio_project.form.ext",
+            "model": "x_studio_project",
+            "inherit_id": base_view.id,
+            "priority": 99,
+            "arch": '<xpath expr="//sheet" position="inside">'
+            '<field name="x_active_flag"/></xpath>',
+        }
+        ext = self.env["ir.ui.view"].create(ext_vals)  # pyright: ignore[reportArgumentType]
         package._assign(ext)
         views = package._render_files()["views/x_studio_project_views.xml"]
         self.assertLess(

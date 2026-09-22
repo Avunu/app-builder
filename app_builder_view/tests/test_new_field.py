@@ -14,45 +14,73 @@ the right widget, a refusal arrives as a sentence before the row exists,
 and a view operation that fails leaves no row and no file.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import patch
 
-from lxml import etree
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.base.models.ir_model import IrModelFields, IrModelSelection
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.models.studio_package_model import StudioPackageModel
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tools import typed
 
+from ..models.studio_view_new_field import StudioViewEditor as StudioViewEditorNewField
 from .test_drop_at import _snapshot
+
+if TYPE_CHECKING:
+    # `self.editor` is typed as the "new field" `_inherit` extension below
+    # (most of this file's own calls), so the other two real, different
+    # Python classes the registry composes onto the same `studio.view.editor`
+    # model -- the base (`drop_at`) and the canvas extension (`canvas`) --
+    # need a cast at their own call sites, the same aliased-on-import
+    # workaround `studio_view_new_field.py`'s own `TYPE_CHECKING` block uses
+    # for the identical composition.
+    from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+
+    from ..models.studio_view_canvas import StudioViewEditor as StudioViewEditorCanvas
+    from ..models.studio_view_editor import StudioViewEditor as StudioViewEditorBase
 
 
 @tagged("post_install", "-at_install")
 class TestNewFieldFromTheEditor(StudioCase):
     def setUp(self):
         super().setUp()
-        self.editor = self.env["studio.view.editor"]
+        self.editor = typed.model(self.env, StudioViewEditorNewField)
         self.package = self.make_package()
 
     def _core_form(self, model="res.partner"):
-        return self.env["ir.ui.view"].browse(
-            self.env["ir.ui.view"].default_view(model, "form")
-        )
+        View_ = typed.model(self.env, View)
+        # `default_view()`'s own body (core Odoo, unannotated) infers
+        # `IdType | Literal[False]` despite its docstring's `:rtype: int` --
+        # the same "declared type looser than the docstring" gap `typed.ref`
+        # already documents for `Environment.ref`, just on a plain method
+        # instead. Always a real id here: the view is created in `setUp`.
+        return View_.browse(cast("int", View_.default_view(model, "form")))
 
     def _create(self, values, model="res.partner", anchor=None):
         view = self._core_form(model)
         return view, self.editor.create_field_at(
-            view.id, self.package.id, anchor or {"kind": "root"}, values
+            cast("int", view.id),
+            cast("int", self.package.id),
+            anchor or {"kind": "root"},
+            values,
         )
 
     def _patch_of(self, view):
-        return self.env["ir.ui.view"].search(
+        return typed.model(self.env, View).search(
             [("inherit_id", "=", view.id), ("studio_package_id", "=", self.package.id)]
         )
 
     def _row(self, model, name):
         # A search, not `_get`: that one is cached, and a row the transaction
         # rolled back would still be answered from the cache.
-        return self.env["ir.model.fields"].search(
+        return typed.model(self.env, IrModelFields).search(
             [("model", "=", model), ("name", "=", name)]
         )
 
@@ -66,8 +94,20 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_a_core_model_can_take_a_field_here(self):
         view = self._core_form()
-        plan = self.env["studio.view.editor"].new_field_plan(view.id)
+        plan = typed.model(self.env, StudioViewEditorNewField).new_field_plan(
+            cast("int", view.id)
+        )
         self.assertTrue(plan["can_create"])
+        # `can_create` is `Literal[True]`/`Literal[False]` on the two halves
+        # of `NewFieldPlanJSON`'s own union -- narrows the discriminated
+        # TypedDict for `plan["prefix"]` below, the same shape
+        # `test_undo.py`'s own `assert found["found"]` already uses. Needs
+        # the `is True` form specifically: a bare truthy `assert
+        # plan["can_create"]` does not narrow a TypedDict subscript the way
+        # narrowing a plain variable would (confirmed with an isolated
+        # probe -- pyright's own discriminated-union narrowing for a
+        # TypedDict key only fires on an `is`/`==` literal comparison).
+        assert plan["can_create"] is True
         self.assertEqual(plan["prefix"], "x_")
 
     def test_creating_one_places_it_in_the_same_gesture(self):
@@ -80,7 +120,7 @@ class TestNewFieldFromTheEditor(StudioCase):
         self.assertIn("x_delivery_date", self.env["res.partner"]._fields)
         patch_view = self._patch_of(view)
         self.assertTrue(patch_view, "a core view must be patched, not rewritten")
-        self.assertIn("x_delivery_date", patch_view.arch)
+        self.assertIn("x_delivery_date", cast("str", patch_view.arch))
 
     def test_the_field_is_written_to_source(self):
         self._create({"field_description": "Delivery date", "ttype": "date"})
@@ -105,7 +145,7 @@ class TestNewFieldFromTheEditor(StudioCase):
         row = self._row("res.partner", "x_urgency")
         self.assertEqual(row.ttype, "selection")
         self.assertEqual(
-            [(s.value, s.name) for s in row.selection_ids],
+            [(s.value, s.name) for s in cast("IrModelSelection", row.selection_ids)],
             [("0", "Normal"), ("1", "Low"), ("2", "High"), ("3", "Very High")],
         )
         self.assertEqual(self._placed(view, "x_urgency").get("widget"), "priority")
@@ -156,11 +196,12 @@ class TestNewFieldFromTheEditor(StudioCase):
             }
         )
         row = self._row("res.partner", "x_tier")
-        self.assertEqual([s.value for s in row.selection_ids], ["gold", "silver"])
+        selection = cast("IrModelSelection", row.selection_ids)
+        self.assertEqual([s.value for s in selection], ["gold", "silver"])
         owned = self.env["ir.model.data"].search(
             [
                 ("model", "=", "ir.model.fields.selection"),
-                ("res_id", "in", row.selection_ids.ids),
+                ("res_id", "in", selection.ids),
                 ("module", "=", self.package.name),
             ]
         )
@@ -219,7 +260,7 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_a_name_the_user_typed_is_not_renamed(self):
         self._create({"field_description": "Nick", "ttype": "char"})
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self._create(
                 {"field_description": "Nick", "ttype": "char", "name": "x_nick"}
             )
@@ -234,7 +275,7 @@ class TestNewFieldFromTheEditor(StudioCase):
     # -- refusals, before the row exists --------------------------------------
 
     def _refused(self, values, model="res.partner"):
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self._create(values, model=model)
         return str(caught.exception)
 
@@ -308,14 +349,18 @@ class TestNewFieldFromTheEditor(StudioCase):
     def test_a_python_model_stages_rather_than_creating_live(self):
         package = self.package
         self.build_demo_content(package)
-        self.env["studio.package.model"]._adopt(
+        typed.model(self.env, StudioPackageModel)._adopt(
             package, "x_studio_project", source="python"
         )
         view = self.env["ir.ui.view"].search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
-        plan = self.env["studio.view.editor"].new_field_plan(view.id)
+        plan = typed.model(self.env, StudioViewEditorNewField).new_field_plan(
+            cast("int", view.id)
+        )
         self.assertFalse(plan["can_create"])
+        assert plan["can_create"] is False
+        assert "handoff" in plan
         self.assertEqual(plan["handoff"], package.id)
         self.assertIn("re-imported", plan["reason"])
 
@@ -324,16 +369,16 @@ class TestNewFieldFromTheEditor(StudioCase):
         to prevent, so the refusal is the point rather than a limitation."""
         package = self.package
         self.build_demo_content(package)
-        self.env["studio.package.model"]._adopt(
+        typed.model(self.env, StudioPackageModel)._adopt(
             package, "x_studio_project", source="python"
         )
         view = self.env["ir.ui.view"].search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
-        with self.assertRaises(UserError):
-            self.env["studio.view.editor"].create_field_at(
-                view.id,
-                package.id,
+        with raises(self, UserError):
+            typed.model(self.env, StudioViewEditorNewField).create_field_at(
+                cast("int", view.id),
+                cast("int", package.id),
                 {"kind": "root"},
                 {"field_description": "Late", "ttype": "boolean"},
             )
@@ -354,7 +399,7 @@ class TestNewFieldFromTheEditor(StudioCase):
             patch.object(
                 Editor, "_op_add_field", autospec=True, side_effect=UserError("boom")
             ),
-            self.assertRaises(UserError),
+            raises(self, UserError),
         ):
             self._create({"field_description": "Delivery date", "ttype": "date"})
         self.assertEqual(_snapshot(self.package.root_path), disk)
@@ -364,7 +409,7 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_an_anchor_that_does_not_resolve_leaves_no_file(self):
         disk = _snapshot(self.package.root_path)
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             self._create(
                 {"field_description": "Delivery date", "ttype": "date"},
                 anchor={"kind": "field", "name": "no_such_field"},
@@ -372,7 +417,7 @@ class TestNewFieldFromTheEditor(StudioCase):
         self.assertEqual(_snapshot(self.package.root_path), disk)
 
     def test_the_disk_is_written_once(self):
-        Package = self.env.registry["studio.package"]
+        Package = cast("type[StudioPackage]", self.env.registry["studio.package"])
         original = Package.action_write_files
         with patch.object(
             Package, "action_write_files", autospec=True, side_effect=original
@@ -384,11 +429,13 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_dropping_a_new_field_lands_it_and_selects_it(self):
         view = self._core_form()
-        canvas = self.editor.canvas(view.id)
+        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+            cast("int", view.id)
+        )
         email = next(t for t, n in canvas["nodes"].items() if n["name"] == "email")
-        result = self.editor.drop_at(
-            view.id,
-            self.package.id,
+        result = cast("StudioViewEditorBase", self.editor).drop_at(
+            cast("int", view.id),
+            cast("int", self.package.id),
             {"token": email, "position": "after"},
             {
                 "kind": "new_field",
@@ -397,13 +444,22 @@ class TestNewFieldFromTheEditor(StudioCase):
             expected_arch_version=canvas["arch_version"],
         )
         self.assertFalse(result["stale"])
+        # `stale: Literal[False]` on `DropSuccessJSON`, `Literal[True]` on
+        # `DropStaleJSON` -- narrows `DropAtJSON`'s own union for every
+        # `result[...]` read below, the same discriminated-TypedDict shape
+        # (and the same `is False` requirement) as `plan["can_create"]`
+        # above.
+        assert result["stale"] is False
         self.assertEqual(
             result["created"], {"name": "x_nick", "label": "Nick", "live": True}
         )
         self.assertIsNone(result["staged"])
         self.assertIsNone(result["draft"])
-        selected = result["canvas"]["nodes"][result["select"]]
+        selected = result["canvas"]["nodes"][cast("str", result["select"])]
         self.assertEqual(selected["name"], "x_nick")
+        # Only `None` on a node with no field at all (`StudioNode`'s own
+        # docstring); this one was just created as a field.
+        assert selected["field"] is not None
         self.assertEqual(selected["field"]["origin"], "manual")
         combined = etree.fromstring(view.get_combined_arch().encode())
         email_node = combined.find(".//field[@name='email']")
@@ -413,9 +469,17 @@ class TestNewFieldFromTheEditor(StudioCase):
         label = email_node.getnext()
         self.assertEqual((label.tag, label.get("for")), ("label", "x_nick"))
         self.assertEqual(label.getnext().get("name"), "x_nick")
+        # `None` only on a non-field node or a non-form view (`FieldLabel`'s
+        # own docstring); neither applies here.
+        assert selected["label"] is not None
         self.assertEqual(selected["label"]["by"], "label")
-        self.assertEqual(result["history"]["undo"][0]["summary"], "added x_nick")
-        self.assertEqual(len(result["history"]["undo"]), 1, "one edit, label included")
+        # `history` stays `object` on `CanvasJSON` itself (declared that way
+        # deliberately -- `studio_view_editor.py`'s own docstring: nothing
+        # in production code reads past passing it on whole); this test is
+        # the one real reader, so the honest shape is named here instead.
+        history = cast("dict[str, Any]", result["history"])
+        self.assertEqual(history["undo"][0]["summary"], "added x_nick")
+        self.assertEqual(len(history["undo"]), 1, "one edit, label included")
 
     # -- what the tiles say ---------------------------------------------------
 
@@ -443,7 +507,7 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_nothing_is_live_on_a_python_owned_model(self):
         self.build_demo_content(self.package)
-        self.env["studio.package.model"]._adopt(
+        typed.model(self.env, StudioPackageModel)._adopt(
             self.package, "x_studio_project", source="python"
         )
         entries = self.editor.field_types_for("x_studio_project")
@@ -454,7 +518,7 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_a_manual_field_definition_can_be_changed(self):
         self._create({"field_description": "Nick", "ttype": "char"})
-        Package = self.env.registry["studio.package"]
+        Package = cast("type[StudioPackage]", self.env.registry["studio.package"])
         original = Package.action_write_files
         with patch.object(
             Package, "action_write_files", autospec=True, side_effect=original
@@ -467,13 +531,17 @@ class TestNewFieldFromTheEditor(StudioCase):
                     "help": "What friends say",
                     "readonly": True,
                 },
-                self.package.id,
+                cast("int", self.package.id),
             )
         self.assertEqual(spy.call_count, 1)
         row = self._row("res.partner", "x_nick")
         self.assertEqual(row.field_description, "Nickname")
         self.assertEqual(row.help, "What friends say")
         self.assertTrue(row.readonly)
+        # Always populated on this path (a real manual field, just written):
+        # `update_manual_field`'s own `| None` covers a refusal this call
+        # never takes.
+        assert definition is not None
         self.assertEqual(definition["origin"], "manual")
         self.assertIn("field_description", definition["editable"])
         self.assertIn("translate", definition["editable"])
@@ -485,7 +553,9 @@ class TestNewFieldFromTheEditor(StudioCase):
         write, a missing value an unlink, a new value a create."""
         self._create({"field_description": "Urgency", "ttype": "priority"})
         row = self._row("res.partner", "x_urgency")
-        kept = row.selection_ids.filtered(lambda s: s.value == "2")
+        kept = cast("IrModelSelection", row.selection_ids).filtered(
+            lambda s: s.value == "2"
+        )
         definition = self.editor.update_manual_field(
             "res.partner",
             "x_urgency",
@@ -496,30 +566,35 @@ class TestNewFieldFromTheEditor(StudioCase):
                     {"value": "9", "label": "Fire", "sequence": 90},
                 ]
             },
-            self.package.id,
+            cast("int", self.package.id),
         )
         self.assertEqual(
-            [(s.value, s.name) for s in row.selection_ids],
+            [(s.value, s.name) for s in cast("IrModelSelection", row.selection_ids)],
             [("0", "Meh"), ("2", "High"), ("9", "Fire")],
         )
         self.assertTrue(kept.exists(), "the row for a kept value is the same row")
+        assert definition is not None
+        assert "selection" in definition["values"]
         self.assertEqual(
             [s["value"] for s in definition["values"]["selection"]], ["0", "2", "9"]
         )
         self.assertIn("Fire", "".join(self.package._render_files().values()))
 
     def test_a_core_field_definition_is_not_written(self):
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self.editor.update_manual_field(
-                "res.partner", "name", {"field_description": "Nom"}, self.package.id
+                "res.partner",
+                "name",
+                {"field_description": "Nom"},
+                cast("int", self.package.id),
             )
         self.assertIn("defined in Python", str(caught.exception))
         self.assertEqual(self._row("res.partner", "name").field_description, "Name")
 
     def test_a_key_the_panel_does_not_offer_is_refused(self):
         self._create({"field_description": "Nick", "ttype": "char"})
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             self.editor.update_manual_field(
-                "res.partner", "x_nick", {"ttype": "text"}, self.package.id
+                "res.partner", "x_nick", {"ttype": "text"}, cast("int", self.package.id)
             )
         self.assertIn("ttype", str(caught.exception))

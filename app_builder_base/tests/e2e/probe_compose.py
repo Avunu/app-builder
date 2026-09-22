@@ -25,13 +25,19 @@ Three of them:
 Run:  python app_builder_base/tests/e2e/probe_compose.py -c odoo.conf -d <db>
 """
 
+from __future__ import annotations
+
 import os
 import shutil
 import sys
+from typing import TYPE_CHECKING, cast
 
 import odoo
 from odoo import SUPERUSER_ID, api
 from odoo.modules.registry import Registry
+
+if TYPE_CHECKING:
+    from odoo.fields import One2many
 
 PKG = "x_compose_probe"
 LABEL = "Compose Job"
@@ -95,17 +101,16 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            package = env["studio.package"].create(
-                {
-                    "name": PKG,
-                    "display_name_": "Compose Probe",
-                    "root_path": pkg_path,
-                    "auto_commit": "off",
-                }
-            )
+            package_vals: dict[str, object] = {
+                "name": PKG,
+                "display_name_": "Compose Probe",
+                "root_path": pkg_path,
+                "auto_commit": "off",
+            }
+            package = env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
             parent = build_app(env, package, LABEL)
             child = build_app(env, package, CHILD)
-            package_id = package.id
+            package_id = cast("int", package.id)
             cr.commit()
         print("  built %s and %s" % (parent, child))
 
@@ -240,7 +245,8 @@ def main():
                 check(
                     "the related list resolves its inverse",
                     "line_ids" in parent_fields
-                    and parent_fields["line_ids"].inverse_name == inverse_name,
+                    and cast("One2many", parent_fields["line_ids"]).inverse_name
+                    == inverse_name,
                 )
             )
             form = arch_of(env, parent, "form")
@@ -259,12 +265,19 @@ def main():
                 )
             )
             # The real proof that the pair is sound: use it.
-            record = env[parent].create({"name": "Probe"})
-            env[child].create({"name": "Line", inverse_name: record.id})
+            record_vals: dict[str, object] = {"name": "Probe"}
+            record = env[parent].create(record_vals)  # pyright: ignore[reportArgumentType]
+            line_vals: dict[str, object] = {"name": "Line", inverse_name: record.id}
+            env[child].create(line_vals)  # pyright: ignore[reportArgumentType]
             results.append(
                 check(
                     "records can actually be linked through it",
-                    len(record.line_ids) == 1,
+                    # `parent`/`child` are runtime model names, not literal
+                    # strings -- no real Python class exists to cast to, so
+                    # this reads the field the same way `record[fname]` does
+                    # in `studio_serializer.py` (an already-established
+                    # idiom for exactly this "dynamic field name" shape).
+                    len(record["line_ids"]) == 1,
                 )
             )
     finally:

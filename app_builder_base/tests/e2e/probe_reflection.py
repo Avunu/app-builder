@@ -19,13 +19,27 @@ Two subtleties that will bite if unstated, both encoded below:
 Run:  python app_builder_base/tests/e2e/probe_reflection.py -c odoo.conf -d <db>
 """
 
+from __future__ import annotations
+
 import os
 import shutil
 import sys
+from typing import TYPE_CHECKING, cast
 
 import odoo
 from odoo import SUPERUSER_ID, api
 from odoo.modules.registry import Registry
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, and this block does
+    # not need `initialize_sys_path` the way the REAL imports inside
+    # `main()` do (see there for why those are deferred).
+    #
+    # `field_id` (an ir.model.fields One2many) reads as a messy union
+    # pyright cannot iterate over -- cast at the two read sites below, the
+    # same idiom every relational-field read uses (TYPING.md).
+    from odoo.addons.base.models.ir_model import IrModelFields
 
 PKG = "x_reflect_probe"
 MODEL = "x.reflect.probe"
@@ -110,10 +124,18 @@ def expected_reflection(spec):
 
 
 def actual_reflection(env, spec):
-    model = env["ir.model"].search([("model", "=", spec.name)], limit=1)
+    # Deferred the same way `expected_reflection`'s own `modelspec` import
+    # just above is: `initialize_sys_path` (called from `parse_config`,
+    # inside `main()`) is what makes `odoo.addons.<name>` resolvable at
+    # all, and this is a module-level function `main()` calls only after
+    # that -- a top-level import here would run first and fail.
+    from odoo.addons.base.models.ir_model import IrModel
+    from odoo.addons.app_builder_base.tools import typed
+
+    model = typed.model(env, IrModel).search([("model", "=", spec.name)], limit=1)
     rows = {}
     wanted = {f.name for f in spec.fields}
-    for record in model.field_id:
+    for record in cast("IrModelFields", model.field_id):
         if record.name not in wanted:
             continue
         rows[record.name] = {
@@ -135,7 +157,8 @@ def main():
 
     results = []
     try:
-        from odoo.addons.app_builder_base.tools import pycodegen
+        from odoo.addons.base.models.ir_module import Module
+        from odoo.addons.app_builder_base.tools import pycodegen, typed
         from odoo.addons.app_builder_base.tools.modelspec import (
             FieldSpec,
             ModelSpec,
@@ -183,8 +206,8 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            env["ir.module.module"].update_list()
-            module = env["ir.module.module"].search([("name", "=", PKG)], limit=1)
+            typed.model(env, Module).update_list()
+            module = typed.model(env, Module).search([("name", "=", PKG)], limit=1)
             if not module:
                 raise SystemExit("update_list did not see %s" % PKG)
             module.button_immediate_install()
@@ -231,7 +254,9 @@ def main():
                 )
 
             base_states = {
-                f.name: f.state for f in model.field_id if f.name in expected
+                f.name: f.state
+                for f in cast("IrModelFields", model.field_id)
+                if f.name in expected
             }
             results.append(
                 check(

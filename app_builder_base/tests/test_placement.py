@@ -2,12 +2,20 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Placement: a field the builder adds has to end up somewhere visible."""
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo.tests import BaseCase, tagged
 from odoo.tests.common import TransactionCase
 
 from ..tools import modelspec, placement, scaffold
+from .common import raises
+
+if TYPE_CHECKING:
+    from ..tools.modelspec import FieldSpec
 
 
 def _arch(source):
@@ -166,7 +174,7 @@ class TestFeatureRegistry(BaseCase):
         self.assertFalse(options.chatter)
 
     def test_an_unknown_feature_is_refused(self):
-        with self.assertRaises(ValueError):
+        with raises(self, ValueError):
             scaffold.ScaffoldOptions(nonsense=True)
 
     def test_a_feature_can_ask_for_a_view(self):
@@ -189,7 +197,11 @@ class TestFeatureRegistry(BaseCase):
             names.index("amount"),
             "the currency has to be defined before the amount that names it",
         )
-        self.assertEqual(spec.field("amount").currency_field, "currency_id")
+        # scaffold's own `monetary` feature always adds `amount` (scaffold.py)
+        # -- `.field()` is never `None` here, unlike its general
+        # `FieldSpec | None` signature.
+        amount = cast("FieldSpec", spec.field("amount"))
+        self.assertEqual(amount.currency_field, "currency_id")
 
     def test_contact_details_are_related_not_copied(self):
         """An address that goes stale when the contact is corrected is worse
@@ -197,7 +209,10 @@ class TestFeatureRegistry(BaseCase):
         spec = scaffold.scaffold_spec(
             "probe.model", "Probe", scaffold.ScaffoldOptions.from_keys(["contact"])
         )
-        self.assertEqual(spec.field("partner_email").related, "partner_id.email")
+        # scaffold's own `contact` feature always adds `partner_email`
+        # (scaffold.py) -- `.field()` is never `None` here.
+        partner_email = cast("FieldSpec", spec.field("partner_email"))
+        self.assertEqual(partner_email.related, "partner_id.email")
 
     def test_a_pipeline_gets_more_than_a_status_field(self):
         spec = scaffold.scaffold_spec(
@@ -213,7 +228,10 @@ class TestFeatureRegistry(BaseCase):
         spec = scaffold.scaffold_spec(
             "probe.model", "Probe", scaffold.ScaffoldOptions.from_keys(["user"])
         )
-        self.assertIn("share", spec.field("user_id").domain or "")
+        # scaffold's own `user` feature always adds `user_id` (scaffold.py)
+        # -- `.field()` is never `None` here.
+        user_id = cast("FieldSpec", spec.field("user_id"))
+        self.assertIn("share", user_id.domain or "")
 
     def test_every_scaffolded_spec_validates(self):
         """Each feature alone, and all of them together."""

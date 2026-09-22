@@ -3,12 +3,25 @@
 """The Menu pane, driven: a submenu made under the package's app, moved
 above its sibling, renamed -- and menus.xml afterwards."""
 
+from __future__ import annotations
+
 import os
 import tempfile
+from typing import TYPE_CHECKING, cast
 
 from odoo.tests import tagged
 
+from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
+from odoo.addons.app_builder_base.tools import typed
+
+from ..models.studio_menu_surface import StudioMenu
+
+if TYPE_CHECKING:
+    from odoo.addons.base.models.ir_actions import IrActionsActWindow
+    from odoo.addons.base.models.ir_ui_menu import IrUiMenu
+    from odoo.addons.base.models.res_users import Users
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
 
 
 @tagged("post_install", "-at_install")
@@ -24,28 +37,38 @@ class TestMenuPaneTour(StudioHttpCase):
 
     def test_a_submenu_is_made_moved_and_renamed_from_the_pane(self):
         root = tempfile.mkdtemp(prefix="studio-tour-")
-        package = self.env["studio.package"].create(
-            {
-                "name": "x_tour_menu_pkg",
-                "display_name_": "Tour Menus",
-                "root_path": root,
-                "auto_commit": "off",
-            }
-        )
-        self.env["ir.module.module"].create(
-            {"name": "x_tour_menu_pkg", "state": "installed"}
-        )
+        package_vals: dict[str, object] = {
+            "name": "x_tour_menu_pkg",
+            "display_name_": "Tour Menus",
+            "root_path": root,
+            "auto_commit": "off",
+        }
+        package = self.env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
+        module_vals: dict[str, object] = {
+            "name": "x_tour_menu_pkg",
+            "state": "installed",
+        }
+        self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
-            self.env.ref("base.user_admin"), ["app_builder_base.group_studio_manager"]
+            cast("Users", typed.ref(self.env, "base.user_admin")),
+            ["app_builder_base.group_studio_manager"],
         )
-        Surface = self.env["studio.menu"]
+        Surface = typed.model(self.env, StudioMenu)
         app = Surface.create_record(
-            False, package.id, {"name": "Tour Fixture App"}, template="app"
+            # `model_name` is declared `str`, but `_template_values` (the
+            # only place a template-driven `create_record` reads it) never
+            # looks at it -- it dispatches on `template` alone. `False`
+            # marks that on purpose, same as `test_menu_surface.py`'s own
+            # (unconverted) calls.
+            False,  # pyright: ignore[reportArgumentType]
+            cast("int", package.id),
+            {"name": "Tour Fixture App"},
+            template="app",
         )
-        users = self.env["ir.model"]._get("res.users")
+        users = typed.model(self.env, IrModel)._get("res.users")
         Surface.create_record(
-            False,
-            package.id,
+            False,  # pyright: ignore[reportArgumentType]
+            cast("int", package.id),
             {
                 "name": "Tour Fixture Sub",
                 "parent_id": app["id"],
@@ -53,22 +76,28 @@ class TestMenuPaneTour(StudioHttpCase):
             },
             template="submenu",
         )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Tour Contacts",
-                "res_model": "res.partner",
-                "view_mode": "list,form",
-            }
-        )
+        action_vals: dict[str, object] = {
+            "name": "Tour Contacts",
+            "res_model": "res.partner",
+            "view_mode": "list,form",
+        }
+        action = self.env["ir.actions.act_window"].create(action_vals)  # pyright: ignore[reportArgumentType]
         self.start_tour(
             "/odoo/action-%s" % action.id, "app_builder_menu_pane_tour", login="admin"
         )
-        menu = self.env["ir.ui.menu"].search([("name", "=", "Tour Contacts")])
+        menu = cast(
+            "IrUiMenu", self.env["ir.ui.menu"].search([("name", "=", "Tour Contacts")])
+        )
         self.assertEqual(len(menu), 1)
-        self.assertEqual(menu.parent_id.id, app["id"])
-        self.assertEqual(menu.action.res_model, "res.partner")
-        self.assertEqual(menu.studio_package_id, package)
-        sub = self.env["ir.ui.menu"].search([("name", "=", "Tour Fixture Sub")])
+        self.assertEqual(cast("IrUiMenu", menu.parent_id).id, app["id"])
+        self.assertEqual(
+            cast("IrActionsActWindow", menu.action).res_model, "res.partner"
+        )
+        self.assertEqual(cast("StudioOwnedMixin", menu).studio_package_id, package)
+        sub = cast(
+            "IrUiMenu",
+            self.env["ir.ui.menu"].search([("name", "=", "Tour Fixture Sub")]),
+        )
         self.assertLess(menu.sequence, sub.sequence)
         self.assertEqual((menu.sequence, sub.sequence), (10, 20))
         with open(os.path.join(root, "views", "menus.xml"), encoding="utf-8") as handle:

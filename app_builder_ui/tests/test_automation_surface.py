@@ -10,10 +10,30 @@ count from, a condition that cannot search, a rule from another module)
 say no before the file is written.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, cast
+
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.base_automation.models.base_automation import BaseAutomation
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tools import typed
+
+from ..models.studio_automation_surface import StudioAutomation, StudioAutomationStep
+
+if TYPE_CHECKING:
+    from odoo.addons.base.models.ir_actions import IrActionsServer
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.app_builder_base.models.studio_record_surface import (
+        RecordActionJSON,
+        RecordRowJSON,
+        StudioRecordSurface,
+    )
+
+    from ..models.studio_automation_surface import TriggerRowJSON
 
 MODEL = "x_studio_project"
 
@@ -23,8 +43,8 @@ class TestAutomationSurface(StudioCase):
     def setUp(self):
         super().setUp()
         self.addCleanup(self.env["base.automation"]._unregister_hook)
-        self.Surface = self.env["studio.automation"]
-        self.Step = self.env["studio.automation.step"]
+        self.Surface = typed.model(self.env, StudioAutomation)
+        self.Step = typed.model(self.env, StudioAutomationStep)
 
     def _package(self):
         package = self.make_package()
@@ -40,12 +60,19 @@ class TestAutomationSurface(StudioCase):
         """The Trigger row reads the live selection, so a trigger Odoo adds
         shows up; and each one has a group in the picker, so none is lost
         at the bottom of an ungrouped list."""
-        catalogue = self.Surface.catalogue(MODEL)
-        trigger = next(
-            row
-            for section in catalogue["sections"]
-            for row in section["rows"]
-            if row["name"] == "trigger"
+        catalogue = cast("StudioRecordSurface", self.Surface).catalogue(MODEL)
+        # `_section_json` (`studio_automation_surface.py`) sends the
+        # "trigger" row as a `TriggerRowJSON` (`groups`/`advanced_only`
+        # besides the base `RowJSON` keys) at runtime, but `catalogue()`'s
+        # own declared return only promises the base shape for every row.
+        trigger = cast(
+            "TriggerRowJSON",
+            next(
+                row
+                for section in catalogue["sections"]
+                for row in section["rows"]
+                if row["name"] == "trigger"
+            ),
         )
         live = (
             self.env["base.automation"]
@@ -59,7 +86,10 @@ class TestAutomationSurface(StudioCase):
     def test_the_mail_rows_follow_the_fields(self):
         """The Send Email section is declared once and dropped when the
         database has no ``template_id`` on server actions."""
-        sections = {s["id"] for s in self.Step.catalogue(MODEL)["sections"]}
+        sections = {
+            s["id"]
+            for s in cast("StudioRecordSurface", self.Step).catalogue(MODEL)["sections"]
+        }
         has_mail = "template_id" in self.env["ir.actions.server"]._fields
         self.assertEqual("mail" in sections, has_mail)
         self.assertEqual("activity" in sections, has_mail)
@@ -69,7 +99,11 @@ class TestAutomationSurface(StudioCase):
         self.assertIn("run_code", keys)
         self.assertIn("webhook_in", keys)
         for template in self.Surface.templates(MODEL):
-            for step in template["values"].get("steps", []):
+            # `values` is a plain `dict[str, object]` (`RecordTemplateJSON`);
+            # its `steps` entry is only ever a list of step vals at runtime.
+            for step in cast(
+                "list[dict[str, object]]", template["values"].get("steps", [])
+            ):
                 self.assertIn(
                     step["state"],
                     dict(
@@ -83,25 +117,42 @@ class TestAutomationSurface(StudioCase):
 
     def test_rows_are_the_models_rules_split_by_webhook(self):
         package = self._package()
-        model = self.env["ir.model"]._get(MODEL)
-        other = self.env["ir.model"]._get("res.users")
+        model = typed.model(self.env, IrModel)._get(MODEL)
+        other = typed.model(self.env, IrModel)._get("res.users")
         Automation = self.env["base.automation"].with_context(
             studio_package_id=package.id
         )
-        rule = Automation.create(
-            {"name": "Rule A", "model_id": model.id, "trigger": "on_create"}
+        # `@api.model_create_multi`'s own stub gap (TYPING.md's "Known
+        # traps"): every single-dict `.create(vals)` below needs the local
+        # `vals` variable so the `# pyright: ignore` lands on the call's own
+        # line, not somewhere inside a multi-line dict literal.
+        rule_vals: dict[str, object] = {
+            "name": "Rule A",
+            "model_id": model.id,
+            "trigger": "on_create",
+        }
+        rule = Automation.create(rule_vals)  # pyright: ignore[reportArgumentType]
+        hook_vals: dict[str, object] = {
+            "name": "Hook A",
+            "model_id": model.id,
+            "trigger": "on_webhook",
+        }
+        hook = Automation.create(hook_vals)  # pyright: ignore[reportArgumentType]
+        other_vals: dict[str, object] = {
+            "name": "Other",
+            "model_id": other.id,
+            "trigger": "on_create",
+        }
+        Automation.create(other_vals)  # pyright: ignore[reportArgumentType]
+        rows = cast("StudioRecordSurface", self.Surface).rows(
+            MODEL, cast("int", package.id)
         )
-        hook = Automation.create(
-            {"name": "Hook A", "model_id": model.id, "trigger": "on_webhook"}
-        )
-        Automation.create(
-            {"name": "Other", "model_id": other.id, "trigger": "on_create"}
-        )
-        rows = self.Surface.rows(MODEL, package.id)
         self.assertEqual([r["id"] for r in rows], [rule.id])
         self.assertTrue(rows[0]["owned"])
         self.assertTrue(rows[0]["editable"])
-        hooks = self.Surface.rows(MODEL, package.id, webhooks=True)
+        hooks = cast("StudioRecordSurface", self.Surface).rows(
+            MODEL, cast("int", package.id), webhooks=True
+        )
         self.assertEqual([r["id"] for r in hooks], [hook.id])
         self.assertIn("webhook", [b["key"] for b in hooks[0]["badges"]])
 
@@ -109,7 +160,7 @@ class TestAutomationSurface(StudioCase):
         package = self._package()
         row = self.Surface.create_record(
             MODEL,
-            package.id,
+            cast("int", package.id),
             {"name": "Set it", "filter_domain": "[('x_name', '!=', False)]"},
             template="set_field",
         )
@@ -123,14 +174,21 @@ class TestAutomationSurface(StudioCase):
         already in ``data/<model>_automation.xml`` -- steps included."""
         package = self._package()
         row = self.Surface.create_record(
-            MODEL, package.id, {"name": "On save"}, template="run_code"
+            MODEL, cast("int", package.id), {"name": "On save"}, template="run_code"
         )
-        rule = self.env["base.automation"].browse(row["id"])
+        rule = typed.model(self.env, BaseAutomation).browse(row["id"])
         self.assertEqual(rule.trigger, "on_create_or_write")
-        self.assertEqual(rule.action_server_ids.mapped("state"), ["code"])
-        self.assertEqual(rule.action_server_ids.usage, "base_automation")
-        self.assertEqual(rule.studio_package_id, package)
-        self.assertEqual(rule.action_server_ids.studio_package_id, package)
+        self.assertEqual(
+            cast("IrActionsServer", rule.action_server_ids).mapped("state"), ["code"]
+        )
+        self.assertEqual(
+            cast("IrActionsServer", rule.action_server_ids).usage, "base_automation"
+        )
+        self.assertEqual(cast("StudioOwnedMixin", rule).studio_package_id, package)
+        self.assertEqual(
+            cast("StudioOwnedMixin", rule.action_server_ids).studio_package_id,
+            package,
+        )
         rendered = self._file(package)
         self.assertIn("On save", rendered)
         self.assertIn('name="code"', rendered)
@@ -142,111 +200,147 @@ class TestAutomationSurface(StudioCase):
         package = self._package()
         row = self.Surface.create_record(
             MODEL,
-            package.id,
+            cast("int", package.id),
             {"name": "Tell them", "steps.0.webhook_url": "https://example.com/x"},
             template="webhook_out",
         )
-        rule = self.env["base.automation"].browse(row["id"])
-        step = rule.action_server_ids
+        rule = typed.model(self.env, BaseAutomation).browse(row["id"])
+        step = cast("IrActionsServer", rule.action_server_ids)
         self.assertEqual(step.state, "webhook")
         self.assertEqual(step.webhook_url, "https://example.com/x")
         self.assertIn("https://example.com/x", self._file(package))
 
     def test_a_delay_needs_a_date_to_count_from(self):
         package = self._package()
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             self.Surface.create_record(
                 MODEL,
-                package.id,
+                cast("int", package.id),
                 {"name": "Later", "trigger": "on_time", "trg_date_range": 2},
                 template="blank",
             )
 
     def test_a_condition_that_cannot_search_is_refused(self):
         package = self._package()
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             self.Surface.create_record(
                 MODEL,
-                package.id,
+                cast("int", package.id),
                 {"name": "Bad", "filter_domain": "[('x_no_such', '=', 1)]"},
                 template="blank",
             )
 
     def test_an_unknown_template_is_refused(self):
         package = self._package()
-        with self.assertRaises(UserError):
-            self.Surface.create_record(MODEL, package.id, {"name": "x"}, "nope")
+        with raises(self, UserError):
+            self.Surface.create_record(
+                MODEL, cast("int", package.id), {"name": "x"}, "nope"
+            )
 
     # -- describe and write --------------------------------------------------
 
     def test_describe_carries_the_steps_and_the_match_count(self):
         package = self._package()
         row = self.Surface.create_record(
-            MODEL, package.id, {"name": "Set it"}, template="set_field"
+            MODEL, cast("int", package.id), {"name": "Set it"}, template="set_field"
         )
-        described = self.Surface.describe(row["id"], package.id)
-        self.assertEqual(described["values"]["trigger"], "on_create_or_write")
-        steps = described["children"]
-        self.assertEqual(steps["surface"], "studio.automation.step")
-        self.assertEqual(len(steps["items"]), 1)
-        self.assertEqual(steps["items"][0]["values"]["state"], "object_write")
-        self.assertIn(["code", "Execute Code"], steps["kinds"])
-        self.assertIn("count", described["matches"])
+        described = cast("StudioRecordSurface", self.Surface).describe(
+            row["id"], cast("int", package.id)
+        )
+        # `describe()`'s own declared return is `dict[str, object]` -- every
+        # real subclass override widens it with keys of its own no base
+        # TypedDict enumerates (`studio_record_surface.py`'s own comment on
+        # `describe`), so each further key read here is its own cast at the
+        # real read site, the same way `test_report_surface.py` already
+        # reads a nested `described["values"]`.
         self.assertEqual(
-            described["advanced"]["context"]["studio_package_id"], package.id
+            cast("dict[str, object]", described["values"])["trigger"],
+            "on_create_or_write",
+        )
+        steps = cast("dict[str, object]", described["children"])
+        self.assertEqual(steps["surface"], "studio.automation.step")
+        items = cast("list[dict[str, object]]", steps["items"])
+        self.assertEqual(len(items), 1)
+        self.assertEqual(
+            cast("dict[str, object]", items[0]["values"])["state"], "object_write"
+        )
+        self.assertIn(["code", "Execute Code"], cast("list[list[str]]", steps["kinds"]))
+        self.assertIn("count", cast("dict[str, object]", described["matches"]))
+        self.assertEqual(
+            cast(
+                "dict[str, object]",
+                cast("dict[str, object]", described["advanced"])["context"],
+            )["studio_package_id"],
+            package.id,
         )
 
     def test_a_write_reaches_the_file(self):
         package = self._package()
         row = self.Surface.create_record(
-            MODEL, package.id, {"name": "Set it"}, template="set_field"
+            MODEL, cast("int", package.id), {"name": "Set it"}, template="set_field"
         )
-        self.Surface.write_record(
-            row["id"], {"filter_domain": "[('x_name', '=', 'a')]"}, package.id
+        cast("StudioRecordSurface", self.Surface).write_record(
+            row["id"],
+            {"filter_domain": "[('x_name', '=', 'a')]"},
+            cast("int", package.id),
         )
         self.assertIn("x_name", self._file(package))
-        with self.assertRaises(UserError):
-            self.Surface.write_record(
-                row["id"], {"trigger": "on_time", "trg_date_id": False}, package.id
+        with raises(self, UserError):
+            cast("StudioRecordSurface", self.Surface).write_record(
+                row["id"],
+                {"trigger": "on_time", "trg_date_id": False},
+                cast("int", package.id),
             )
 
     def test_a_rule_of_another_module_is_shown_and_not_edited(self):
         """A foreign rule is a row with the honest reason, refused on write,
         and offered as a switched-off copy."""
         package = self._package()
-        model = self.env["ir.model"]._get(MODEL)
-        theirs = self.env["base.automation"].create(
-            {"name": "Theirs", "model_id": model.id, "trigger": "on_create"}
-        )
-        self.env["ir.model.data"].create(
-            {
-                "module": "some_module",
-                "name": "theirs",
-                "model": "base.automation",
-                "res_id": theirs.id,
-            }
-        )
+        model = typed.model(self.env, IrModel)._get(MODEL)
+        theirs_vals: dict[str, object] = {
+            "name": "Theirs",
+            "model_id": model.id,
+            "trigger": "on_create",
+        }
+        theirs = typed.model(self.env, BaseAutomation).create(theirs_vals)  # pyright: ignore[reportArgumentType]
+        data_vals: dict[str, object] = {
+            "module": "some_module",
+            "name": "theirs",
+            "model": "base.automation",
+            "res_id": theirs.id,
+        }
+        self.env["ir.model.data"].create(data_vals)  # pyright: ignore[reportArgumentType]
         row = next(
-            r for r in self.Surface.rows(MODEL, package.id) if r["id"] == theirs.id
+            r
+            for r in cast("StudioRecordSurface", self.Surface).rows(
+                MODEL, cast("int", package.id)
+            )
+            if r["id"] == theirs.id
         )
         self.assertFalse(row["editable"])
         self.assertIn("some_module", row["reason"])
-        with self.assertRaises(UserError):
-            self.Surface.write_record(theirs.id, {"name": "Mine"}, package.id)
-        copy = self.Surface.duplicate_record(theirs.id, package.id)
-        copied = self.env["base.automation"].browse(copy["id"])
+        with raises(self, UserError):
+            cast("StudioRecordSurface", self.Surface).write_record(
+                cast("int", theirs.id), {"name": "Mine"}, cast("int", package.id)
+            )
+        copy = cast("StudioRecordSurface", self.Surface).duplicate_record(
+            cast("int", theirs.id), cast("int", package.id)
+        )
+        copied = typed.model(self.env, BaseAutomation).browse(copy["id"])
         self.assertFalse(copied.active)
-        self.assertEqual(copied.studio_package_id, package)
+        self.assertEqual(cast("StudioOwnedMixin", copied).studio_package_id, package)
         self.assertTrue(theirs.active)
 
     def test_rotating_the_secret_never_touches_the_file(self):
         package = self._package()
         row = self.Surface.create_record(
-            MODEL, package.id, {"name": "Hook"}, template="webhook_in"
+            MODEL, cast("int", package.id), {"name": "Hook"}, template="webhook_in"
         )
-        rule = self.env["base.automation"].browse(row["id"])
+        rule = typed.model(self.env, BaseAutomation).browse(row["id"])
         before_url, before_file = rule.url, self._file(package)
-        self.Surface.run(row["id"], "rotate_secret", package.id)
+        cast("StudioRecordSurface", self.Surface).run(
+            row["id"], "rotate_secret", cast("int", package.id)
+        )
         self.assertNotEqual(rule.url, before_url)
         self.assertEqual(self._file(package), before_file)
         self.assertNotIn(rule.webhook_uuid, before_file)
@@ -254,10 +348,18 @@ class TestAutomationSurface(StudioCase):
     def test_remove_takes_the_rule_and_its_steps_out_of_source(self):
         package = self._package()
         row = self.Surface.create_record(
-            MODEL, package.id, {"name": "Gone soon"}, template="run_code"
+            MODEL,
+            cast("int", package.id),
+            {"name": "Gone soon"},
+            template="run_code",
         )
-        step_ids = self.env["base.automation"].browse(row["id"]).action_server_ids.ids
-        self.Surface.remove_record(row["id"], package.id, force=True)
+        step_ids = cast(
+            "IrActionsServer",
+            typed.model(self.env, BaseAutomation).browse(row["id"]).action_server_ids,
+        ).ids
+        cast("StudioRecordSurface", self.Surface).remove_record(
+            row["id"], cast("int", package.id), force=True
+        )
         self.assertFalse(self.env["ir.actions.server"].browse(step_ids).exists())
         self.assertNotIn("Gone soon", "".join(package._render_files().values()))
 
@@ -266,25 +368,43 @@ class TestAutomationSurface(StudioCase):
     def test_steps_are_added_and_kept_in_order(self):
         package = self._package()
         row = self.Surface.create_record(
-            MODEL, package.id, {"name": "Two things"}, template="run_code"
+            MODEL,
+            cast("int", package.id),
+            {"name": "Two things"},
+            template="run_code",
         )
         added = self.Step.add_step(
-            row["id"], package.id, {"state": "webhook", "webhook_url": "https://x"}
+            row["id"],
+            cast("int", package.id),
+            {"state": "webhook", "webhook_url": "https://x"},
         )
-        rule = self.env["base.automation"].browse(row["id"])
-        self.assertEqual(rule.action_server_ids.mapped("state"), ["code", "webhook"])
-        steps = self.Step.rows(MODEL, package.id, automation_id=row["id"])
-        self.assertEqual([s["id"] for s in steps], rule.action_server_ids.ids)
+        rule = typed.model(self.env, BaseAutomation).browse(row["id"])
+        self.assertEqual(
+            cast("IrActionsServer", rule.action_server_ids).mapped("state"),
+            ["code", "webhook"],
+        )
+        steps = self.Step.rows(MODEL, cast("int", package.id), automation_id=row["id"])
+        self.assertEqual(
+            [s["id"] for s in steps],
+            cast("IrActionsServer", rule.action_server_ids).ids,
+        )
         self.Step.move_step(
-            added["row"]["id"], rule.action_server_ids[0].id, package.id
+            cast("RecordRowJSON", added["row"])["id"],
+            cast("int", cast("IrActionsServer", rule.action_server_ids)[0].id),
+            cast("int", package.id),
         )
         rule.invalidate_recordset()
         self.assertEqual(
-            rule.action_server_ids.sorted("sequence").mapped("state"),
+            cast("IrActionsServer", rule.action_server_ids)
+            .sorted("sequence")
+            .mapped("state"),
             ["webhook", "code"],
         )
         self.assertEqual(
-            rule.action_server_ids.sorted("sequence").mapped("sequence"), [10, 20]
+            cast("IrActionsServer", rule.action_server_ids)
+            .sorted("sequence")
+            .mapped("sequence"),
+            [10, 20],
         )
 
     def test_a_step_of_every_kind_round_trips(self):
@@ -297,11 +417,11 @@ class TestAutomationSurface(StudioCase):
         package = self._package()
         model = "res.partner"
         row = self.Surface.create_record(
-            model, package.id, {"name": "Kinds"}, template="blank"
+            model, cast("int", package.id), {"name": "Kinds"}, template="blank"
         )
         self.Step.add_step(
             row["id"],
-            package.id,
+            cast("int", package.id),
             {
                 "state": "object_write",
                 "update_path": "ref",
@@ -311,42 +431,45 @@ class TestAutomationSurface(StudioCase):
         )
         self.Step.add_step(
             row["id"],
-            package.id,
+            cast("int", package.id),
             {"state": "webhook", "webhook_url": "https://example.com/hook"},
         )
         Server = self.env["ir.actions.server"]
         has_mail = "template_id" in Server._fields
         if has_mail:
-            template = self.env["mail.template"].create(
-                {"name": "T", "model_id": self.env["ir.model"]._get(model).id}
-            )
+            template_vals: dict[str, object] = {
+                "name": "T",
+                "model_id": typed.model(self.env, IrModel)._get(model).id,
+            }
+            template = self.env["mail.template"].create(template_vals)  # pyright: ignore[reportArgumentType]
             # A template only this database has cannot be pointed at from a
             # file; the step says so before anything is written.
-            with self.assertRaises(UserError):
+            with raises(self, UserError):
                 self.Step.add_step(
                     row["id"],
-                    package.id,
+                    cast("int", package.id),
                     {"state": "mail_post", "template_id": template.id},
                 )
-            self.env["ir.model.data"].create(
-                {
-                    "module": "some_module",
-                    "name": "template_t",
-                    "model": "mail.template",
-                    "res_id": template.id,
-                }
-            )
+            data_vals: dict[str, object] = {
+                "module": "some_module",
+                "name": "template_t",
+                "model": "mail.template",
+                "res_id": template.id,
+            }
+            self.env["ir.model.data"].create(data_vals)  # pyright: ignore[reportArgumentType]
             self.Step.add_step(
                 row["id"],
-                package.id,
+                cast("int", package.id),
                 {"state": "mail_post", "template_id": template.id},
             )
             self.Step.add_step(
                 row["id"],
-                package.id,
+                cast("int", package.id),
                 {
                     "state": "next_activity",
-                    "activity_type_id": self.env.ref("mail.mail_activity_data_todo").id,
+                    "activity_type_id": typed.ref(
+                        self.env, "mail.mail_activity_data_todo"
+                    ).id,
                     "activity_summary": "Look",
                     "activity_date_deadline_range": 3,
                     "activity_date_deadline_range_type": "days",
@@ -354,8 +477,12 @@ class TestAutomationSurface(StudioCase):
                     "activity_user_id": self.env.user.id,
                 },
             )
-        rule = self.env["base.automation"].browse(row["id"])
-        states = rule.action_server_ids.sorted("sequence").mapped("state")
+        rule = typed.model(self.env, BaseAutomation).browse(row["id"])
+        states = (
+            cast("IrActionsServer", rule.action_server_ids)
+            .sorted("sequence")
+            .mapped("state")
+        )
         files = package._render_files()
         rendered = files["data/res_partner_automation.xml"]
         self.assertIn("renamed", rendered)
@@ -364,44 +491,75 @@ class TestAutomationSurface(StudioCase):
             self.assertIn("mail_post", rendered)
             self.assertIn("Look", rendered)
         rule_xmlid = rule.get_external_id()[rule.id]
-        rule.action_server_ids.unlink()
+        cast("IrActionsServer", rule.action_server_ids).unlink()
         rule.unlink()
         self.load_rendered(package, files)
-        reloaded = self.env.ref(rule_xmlid)
+        reloaded = cast("BaseAutomation", typed.ref(self.env, rule_xmlid))
         self.assertEqual(
-            reloaded.action_server_ids.sorted("sequence").mapped("state"), states
+            cast("IrActionsServer", reloaded.action_server_ids)
+            .sorted("sequence")
+            .mapped("state"),
+            states,
         )
-        by_state = {s.state: s for s in reloaded.action_server_ids}
+        by_state = {
+            s.state: s for s in cast("IrActionsServer", reloaded.action_server_ids)
+        }
         self.assertEqual(by_state["object_write"].update_path, "ref")
         self.assertEqual(by_state["object_write"].value, "renamed")
         self.assertEqual(by_state["webhook"].webhook_url, "https://example.com/hook")
         if has_mail:
-            self.assertEqual(by_state["mail_post"].template_id.name, "T")
-            self.assertEqual(by_state["next_activity"].activity_summary, "Look")
-            self.assertEqual(by_state["next_activity"].activity_user_id, self.env.user)
+            # `template_id`/`activity_summary`/`activity_user_id` are added
+            # by the `mail` addon's own extension of `ir.actions.server`,
+            # not by the base `IrActionsServer` this method otherwise casts
+            # to -- the same `cast("Any", ...)` fix `_step_label`
+            # (`studio_automation_surface.py`) already uses for the
+            # identical shape.
+            self.assertEqual(cast("Any", by_state["mail_post"]).template_id.name, "T")
+            self.assertEqual(
+                cast("Any", by_state["next_activity"]).activity_summary, "Look"
+            )
+            self.assertEqual(
+                cast("Any", by_state["next_activity"]).activity_user_id,
+                self.env.user,
+            )
 
     def test_graduate_is_offered_on_code_steps_only(self):
         package = self._package()
         row = self.Surface.create_record(
-            MODEL, package.id, {"name": "Code"}, template="set_field"
+            MODEL, cast("int", package.id), {"name": "Code"}, template="set_field"
         )
-        rule = self.env["base.automation"].browse(row["id"])
-        described = self.Step.describe(rule.action_server_ids.id, package.id)
-        self.assertNotIn("graduate", [a["key"] for a in described["actions"]])
-        code = self.Step.add_step(row["id"], package.id, {"state": "code"})
-        self.assertIn("graduate", [a["key"] for a in code["actions"]])
+        rule = typed.model(self.env, BaseAutomation).browse(row["id"])
+        described = cast("StudioRecordSurface", self.Step).describe(
+            cast("int", cast("IrActionsServer", rule.action_server_ids).id),
+            cast("int", package.id),
+        )
+        self.assertNotIn(
+            "graduate",
+            [a["key"] for a in cast("list[RecordActionJSON]", described["actions"])],
+        )
+        code = self.Step.add_step(row["id"], cast("int", package.id), {"state": "code"})
+        self.assertIn(
+            "graduate",
+            [a["key"] for a in cast("list[RecordActionJSON]", code["actions"])],
+        )
 
     def test_reads_need_a_studio_user_and_writes_a_manager(self):
         package = self._package()
         row = self.Surface.create_record(
-            MODEL, package.id, {"name": "Guarded"}, template="run_code"
+            MODEL, cast("int", package.id), {"name": "Guarded"}, template="run_code"
         )
         builder = self.make_user("builder", ["app_builder_base.group_studio_user"])
-        self.assertTrue(self.Surface.with_user(builder).rows(MODEL, package.id))
-        with self.assertRaises(AccessError):
-            self.Surface.with_user(builder).write_record(
-                row["id"], {"name": "Renamed"}, package.id
+        self.assertTrue(
+            cast("StudioRecordSurface", self.Surface.with_user(builder)).rows(
+                MODEL, cast("int", package.id)
+            )
+        )
+        with raises(self, AccessError):
+            cast("StudioRecordSurface", self.Surface.with_user(builder)).write_record(
+                row["id"], {"name": "Renamed"}, cast("int", package.id)
             )
         nobody = self.make_user("nobody", ["base.group_user"])
-        with self.assertRaises(AccessError):
-            self.Surface.with_user(nobody).rows(MODEL, package.id)
+        with raises(self, AccessError):
+            cast("StudioRecordSurface", self.Surface.with_user(nobody)).rows(
+                MODEL, cast("int", package.id)
+            )

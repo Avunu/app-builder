@@ -11,9 +11,12 @@ pin the fix: under ``--dev=reload`` the studio reloads in process, and the
 watcher looks away from a package for a few seconds around a write.
 """
 
+from __future__ import annotations
+
 import os
 import shutil
 import tempfile
+from typing import cast
 from unittest.mock import patch
 
 from odoo.service import server as odoo_server
@@ -53,7 +56,12 @@ class TestDevWatcher(StudioCase):
         and a developer's own file elsewhere still restarts the server."""
         with patch.dict(config.options, {"dev_mode": ["reload"]}):
             self.package._write_files({"models/watched.py": "x = 1\n"})
-            written = os.path.join(self.package.root_path, "models", "watched.py")
+            # `_write_files` just above raises if `root_path` were falsy --
+            # same invariant `studio_package.py`'s own `cast("str", ...)`
+            # call sites rely on for this field.
+            written = os.path.join(
+                cast("str", self.package.root_path), "models", "watched.py"
+            )
             self.assertFalse(self._handle(written), "the studio's write: no restart")
             elsewhere = tempfile.mkdtemp(prefix="studio-watch-")
             self.addCleanup(shutil.rmtree, elsewhere, True)
@@ -67,8 +75,10 @@ class TestDevWatcher(StudioCase):
         again: an edit the developer makes there later is theirs."""
         with patch.dict(config.options, {"dev_mode": ["reload"]}):
             self.package._write_files({"models/later.py": "z = 3\n"})
-            later = os.path.join(self.package.root_path, "models", "later.py")
-            root = os.path.realpath(self.package.root_path)
+            later = os.path.join(
+                cast("str", self.package.root_path), "models", "later.py"
+            )
+            root = os.path.realpath(cast("str", self.package.root_path))
             self.assertIn(root, package_module._WATCHER_MUTED_UNTIL)
             package_module._WATCHER_MUTED_UNTIL[root] = 0.0
             self.assertTrue(self._handle(later))

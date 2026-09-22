@@ -1,7 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from . import models
 
+if TYPE_CHECKING:
+    from odoo import api
 
-def uninstall_hook(env):
+
+def uninstall_hook(env: api.Environment) -> None:
     """The Studio root menu belongs to app_builder_base; this addon pointed it
     at the console. Uninstalled, the action goes with it and the reference
     would dangle."""

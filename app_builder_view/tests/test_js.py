@@ -21,6 +21,8 @@ keep this test green while running nothing. The runner's count line is read
 back from the browser log and has to say that something ran.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from urllib.parse import quote
@@ -38,6 +40,15 @@ SUITE_PREFIX = "@app_builder_view/"
 RE_PASSED = re.compile(r"\[HOOT\] Passed (\d+) tests?\b")
 NO_TESTS = "[HOOT] no tests to run"
 
+# `logging.RUNBOT` is a custom level `odoo/netsvc.py` adds to the stdlib
+# module at import time (between INFO and WARNING, for the browser-relayed
+# hoot/tour lines this file reads); typeshed's `logging` stub has no such
+# attribute. Grabbing it once behind one documented suppression keeps the
+# "Unknown attribute of an unstubbed module" gap to a single line instead of
+# a `# pyright: ignore` at each of the three sites below -- same idiom as
+# the `etree.Element` raw-attribute grabs elsewhere in this migration.
+_RUNBOT: int = logging.RUNBOT  # pyright: ignore[reportAttributeAccessIssue]
+
 
 class _RunnerLines(logging.Handler):
     """Collect the browser's console lines as ``browser_js`` relays them.
@@ -48,7 +59,7 @@ class _RunnerLines(logging.Handler):
     """
 
     def __init__(self):
-        super().__init__(logging.RUNBOT)
+        super().__init__(_RUNBOT)
         self.messages = []
 
     def emit(self, record):
@@ -68,8 +79,8 @@ class TestJs(StudioHttpCase):
         # those, and put back afterwards.
         logger = self._logger
         level = logger.level
-        if logger.getEffectiveLevel() > logging.RUNBOT:
-            logger.setLevel(logging.RUNBOT)
+        if logger.getEffectiveLevel() > _RUNBOT:
+            logger.setLevel(_RUNBOT)
         logger.addHandler(lines)
         try:
             self.browser_js(

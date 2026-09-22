@@ -7,18 +7,49 @@ from the feature tests because their value is entirely in *not* regressing --
 several of these were silent, and two would have destroyed user data.
 """
 
+from __future__ import annotations
+
 import ast
 import os
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
-from lxml import etree
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 from odoo.tools import config
 
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.base.models.res_lang import Lang
+from odoo.addons.app_builder_base.models.studio_package_apply import StudioPackageApply
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
+
 from ..tools import checksum, migrationgen, pycodegen, xml_writer
-from .common import StudioCase
+from .common import StudioCase, raises
+
+if TYPE_CHECKING:
+    # Only for the cast() calls below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every Phase 1c file's own `TYPE_CHECKING` block makes. `StudioPackageApply`
+    # (above) is a real, top-level import -- every use of it is a runtime
+    # `typed.model()` call -- but its siblings below never appear outside a
+    # `cast("...", ...)` string, so they stay `TYPE_CHECKING`-only, the same
+    # split `studio_package_model.py`'s own comment on `StudioPackage`
+    # documents.
+    from odoo.sql_db import Cursor
+
+    from odoo.addons.base.models.res_users import Users
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.app_builder_base.models.studio_package import StudioPackageFile
+    from odoo.addons.app_builder_base.models.studio_package_apply import (
+        StudioPackageApplyFile,
+    )
+    from odoo.addons.app_builder_base.models.studio_package_model import (
+        StudioPackageModel,
+    )
 
 
 @tagged("post_install", "-at_install")
@@ -32,14 +63,13 @@ class TestLoadOrder(StudioCase):
         """
         package = self.make_package(name="x_order_pkg")
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
-        rule = self.env["ir.rule"].create(
-            {
-                "name": "order rule",
-                "model_id": model.id,
-                "domain_force": "[(1, '=', 1)]",
-            }
-        )
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        rule_vals: dict[str, object] = {
+            "name": "order rule",
+            "model_id": model.id,
+            "domain_force": "[(1, '=', 1)]",
+        }
+        rule = self.env["ir.rule"].create(rule_vals)  # pyright: ignore[reportArgumentType]
         package._assign(rule)
 
         data = ast.literal_eval(package._render_files()["__manifest__.py"])["data"]
@@ -66,15 +96,14 @@ class TestLoadOrder(StudioCase):
         """The end-to-end consequence of getting load order wrong."""
         package = self.make_package(name="x_installable")
         self.build_demo_content(package)
-        model = self.env["ir.model"]._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        installable_rule_vals: dict[str, object] = {
+            "name": "installable rule",
+            "model_id": model.id,
+            "domain_force": "[(1, '=', 1)]",
+        }
         package._assign(
-            self.env["ir.rule"].create(
-                {
-                    "name": "installable rule",
-                    "model_id": model.id,
-                    "domain_force": "[(1, '=', 1)]",
-                }
-            )
+            self.env["ir.rule"].create(installable_rule_vals)  # pyright: ignore[reportArgumentType]
         )
         rendered = package._render_files()
         self.wipe_package_records(package)
@@ -92,7 +121,7 @@ class TestTranslationNeutrality(StudioCase):
         the language silently failed, there would be no translation to leak and
         every assertion would hold for the wrong reason.
         """
-        self.env["res.lang"]._activate_lang("fr_FR")
+        typed.model(self.env, Lang)._activate_lang("fr_FR")
         model.with_context(lang="fr_FR").name = french
         self.env.flush_all()
         self.assertEqual(model.with_context(lang="fr_FR").name, french)
@@ -133,7 +162,7 @@ class TestTranslationNeutrality(StudioCase):
         self.wipe_package_records(package)
         self.load_rendered(package, rendered)
 
-        reloaded = self.env["ir.model"]._get("x_studio_project")
+        reloaded = typed.model(self.env, IrModel)._get("x_studio_project")
         self.assertEqual(
             reloaded.with_context(lang="en_US").name,
             "Studio Demo Project",
@@ -147,21 +176,22 @@ class TestRawIdRefusal(StudioCase):
         """Its value is a raw id and would not survive a fresh install."""
         package = self.make_package(name="x_m2oref")
         model = self.build_demo_content(package)
-        field = self.env["ir.model.fields"].create(
-            {
-                "name": "x_ref",
-                "field_description": "Ref",
-                "ttype": "many2one_reference",
-                "model_id": model.id,
-            }
-        )
+        m2o_ref_vals: dict[str, object] = {
+            "name": "x_ref",
+            "field_description": "Ref",
+            "ttype": "many2one_reference",
+            "model_id": model.id,
+        }
+        field = self.env["ir.model.fields"].create(m2o_ref_vals)  # pyright: ignore[reportArgumentType]
         package._assign(field)
-        serializer = self.env["studio.serializer.ir.model.fields"].with_context(
-            studio_package=package.name
+        serializer = typed.serializer(
+            self.env["studio.serializer.ir.model.fields"].with_context(
+                studio_package=package.name
+            )
         )
         record = self.env["res.partner"].search([], limit=1)
         # A record whose many2one_reference actually holds a value.
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             serializer._field_node(
                 self.env["base.automation"].new(
                     {"trg_field_ref": record.id, "model_id": model.id}
@@ -176,11 +206,14 @@ class TestOwnershipConflicts(StudioCase):
         """Returning silently made 'assign to my package' a no-op."""
         first = self.make_package(name="x_owner_a")
         second = self.make_package(name="x_owner_b")
-        model = self.env["ir.model"].create(
-            {"name": "Shared", "model": "x_shared", "field_id": []}
-        )
+        shared_model_vals: dict[str, object] = {
+            "name": "Shared",
+            "model": "x_shared",
+            "field_id": [],
+        }
+        model = self.env["ir.model"].create(shared_model_vals)  # pyright: ignore[reportArgumentType]
         first._assign(model)
-        with self.assertRaises(UserError):
+        with raises(self, UserError):
             second._assign(model)
 
 
@@ -191,7 +224,7 @@ class TestTeardownKeepsFiles(StudioCase):
         package = self.make_package(name="x_keepfiles")
         self.build_demo_content(package)
         package.action_write_files()
-        source = os.path.join(package.root_path, "models/x_studio_project.xml")
+        source = os.path.join(package.root_path or "", "models/x_studio_project.xml")
         self.assertTrue(os.path.isfile(source))
 
         package.action_delete_records()
@@ -233,7 +266,7 @@ class TestDriftAccounting(StudioCase):
         self.build_demo_content(package)
         package.action_write_files()
         self.assertFalse(
-            package.file_ids.filtered("drifted"),
+            cast("StudioPackageFile", package.file_ids).filtered("drifted"),
             "nothing can be drifted immediately after we wrote it",
         )
         self.assertEqual(package.state, "synced")
@@ -246,10 +279,12 @@ class TestDeterministicRefs(StudioCase):
         is a translated, non-unique column."""
         package = self.make_package(name="x_refsort")
         self.build_demo_content(package)
-        view = self.env["ir.ui.view"].search(
+        view = typed.model(self.env, View).search(
             [("model", "=", "x_studio_project")], limit=1
         )
-        groups = self.env.ref("base.group_user") + self.env.ref("base.group_system")
+        groups = typed.ref(self.env, "base.group_user") + typed.ref(
+            self.env, "base.group_system"
+        )
         view.groups_id = [(6, 0, groups.ids)]
         rendered = package._render_files()["views/x_studio_project_views.xml"]
         refs = [
@@ -271,33 +306,34 @@ class TestStudioAccessControl(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.outsider = self.env["res.users"].create(
-            {
-                "name": "Nosy Employee",
-                "login": "studio_outsider",
-                "groups_id": [(6, 0, [self.env.ref("base.group_user").id])],
-            }
-        )
+        outsider_vals: dict[str, object] = {
+            "name": "Nosy Employee",
+            "login": "studio_outsider",
+            "groups_id": [(6, 0, [typed.ref(self.env, "base.group_user").id])],
+        }
+        self.outsider = self.env["res.users"].create(outsider_vals)  # pyright: ignore[reportArgumentType]
 
     def test_view_editor_methods_refuse_a_plain_user(self):
-        editor = self.env["studio.view.editor"].with_user(self.outsider)
-        view = self.env.ref("base.view_partner_form")
+        editor = typed.model(self.env, StudioViewEditor).with_user(self.outsider)
+        view = typed.ref(self.env, "base.view_partner_form")
+        view_id = cast("int", view.id)
         package = self.make_package(name="x_acl_probe")
+        package_id = cast("int", package.id)
         for call in (
-            lambda: editor.locate_target(view.id, {"kind": "root"}),
-            lambda: editor.editing_context(view.id),
-            lambda: editor.search_elements(view.id),
+            lambda: editor.locate_target(view_id, {"kind": "root"}),
+            lambda: editor.editing_context(view_id),
+            lambda: editor.search_elements(view_id),
             lambda: editor.addable_view_types("res.partner"),
-            lambda: editor.add_view("res.partner", "kanban", package.id),
+            lambda: editor.add_view("res.partner", "kanban", package_id),
             lambda: editor.move_node(
-                view.id,
-                package.id,
+                view_id,
+                package_id,
                 {"kind": "field", "name": "vat"},
                 {"kind": "field", "name": "function"},
             ),
             lambda: editor.apply_operation(
-                view.id,
-                package.id,
+                view_id,
+                package_id,
                 {
                     "type": "add_field",
                     "name": "ref",
@@ -306,7 +342,7 @@ class TestStudioAccessControl(StudioCase):
                 },
             ),
         ):
-            with self.assertRaises(AccessError):
+            with raises(self, AccessError):
                 call()
 
     def test_package_write_methods_refuse_a_plain_user(self):
@@ -314,18 +350,18 @@ class TestStudioAccessControl(StudioCase):
         # sudo() to dodge the record-level ACL so we are proving the *method*
         # guard fires, not merely that the user cannot read studio.package.
         as_outsider = package.with_user(self.outsider).sudo(False)
-        with self.assertRaises(AccessError):
+        with raises(self, AccessError):
             as_outsider.action_write_files()
-        with self.assertRaises(AccessError):
+        with raises(self, AccessError):
             as_outsider.action_reload()
-        with self.assertRaises(AccessError):
+        with raises(self, AccessError):
             as_outsider.action_delete_records()
 
     def test_superuser_and_settings_admin_still_pass(self):
         """The guard must not lock out install, data loading, or the admin."""
         package = self.make_package(name="x_acl_ok")
         self.assertTrue(package.action_check_drift())
-        admin = self.env.ref("base.user_admin")
+        admin = cast("Users", typed.ref(self.env, "base.user_admin"))
         self.assertTrue(admin.has_group("app_builder_base.group_studio_manager"))
 
 
@@ -348,8 +384,8 @@ class TestLocatorAmbiguity(StudioCase):
         node-list API that used to expose it has been retired along with the
         editor that consumed it.
         """
-        editor = self.env["studio.view.editor"]
-        view = self.env.ref("base.view_partner_form")
+        editor = typed.model(self.env, StudioViewEditor)
+        view = cast("View", typed.ref(self.env, "base.view_partner_form"))
         root = etree.fromstring(view.get_combined_arch().encode())
         occurrences = editor._occurrences(root)
         return root, [
@@ -398,21 +434,20 @@ class TestOrphanManualField(StudioCase):
 
     def test_manual_field_on_a_core_model_is_captured_via_context(self):
         package = self.make_package(name="x_orphan_pkg")
-        partner_model = self.env["ir.model"]._get("res.partner")
+        partner_model = typed.model(self.env, IrModel)._get("res.partner")
+        loyalty_field_vals: dict[str, object] = {
+            "name": "x_studio_loyalty",
+            "ttype": "integer",
+            "field_description": "Loyalty",
+            "model_id": partner_model.id,
+        }
         field = (
             self.env["ir.model.fields"]
             .with_context(studio_package_id=package.id)
-            .create(
-                {
-                    "name": "x_studio_loyalty",
-                    "ttype": "integer",
-                    "field_description": "Loyalty",
-                    "model_id": partner_model.id,
-                }
-            )
+            .create(loyalty_field_vals)  # pyright: ignore[reportArgumentType]
         )
         self.assertEqual(
-            field.studio_package_id,
+            cast("StudioOwnedMixin", field).studio_package_id,
             package,
             "a manual field on a core model must land in the editing package",
         )
@@ -425,18 +460,17 @@ class TestOrphanManualField(StudioCase):
     def test_orphan_field_warns_rather_than_raising(self):
         """A non-studio caller creating a manual field is legitimate and must
         not be forced into a package -- but it must not be silent either."""
-        partner_model = self.env["ir.model"]._get("res.partner")
+        partner_model = typed.model(self.env, IrModel)._get("res.partner")
+        unowned_field_vals: dict[str, object] = {
+            "name": "x_studio_unowned",
+            "ttype": "char",
+            "field_description": "Unowned",
+            "model_id": partner_model.id,
+        }
         with self.assertLogs(
             "odoo.addons.app_builder_base.models.studio_owned_mixin", "WARNING"
         ) as logs:
-            field = self.env["ir.model.fields"].create(
-                {
-                    "name": "x_studio_unowned",
-                    "ttype": "char",
-                    "field_description": "Unowned",
-                    "model_id": partner_model.id,
-                }
-            )
+            field = self.env["ir.model.fields"].create(unowned_field_vals)  # pyright: ignore[reportArgumentType]
         self.assertTrue(field.exists())
         self.assertTrue(any("x_studio_unowned" in line for line in logs.output))
 
@@ -448,8 +482,8 @@ class TestAddableFieldScope(StudioCase):
     name and the palette came back empty on core models."""
 
     def test_subview_fields_do_not_mask_parent_model_fields(self):
-        editor = self.env["studio.view.editor"]
-        view = self.env.ref("base.view_partner_form")
+        editor = typed.model(self.env, StudioViewEditor)
+        view = cast("View", typed.ref(self.env, "base.view_partner_form"))
         root = etree.fromstring(view.get_combined_arch().encode())
         nested_only = {
             el.get("name")
@@ -460,7 +494,10 @@ class TestAddableFieldScope(StudioCase):
             for el in root.iter("field")
             if el.get("name") and not any(a.tag == "field" for a in el.iterancestors())
         }
-        addable = {f["name"] for f in editor.get_addable_fields("res.partner", view.id)}
+        addable = {
+            f["name"]
+            for f in editor.get_addable_fields("res.partner", cast("int", view.id))
+        }
         real = {n for n in nested_only if n in self.env["res.partner"]._fields}
         self.assertTrue(real, "fixture assumes the subview introduces a name")
         self.assertTrue(
@@ -476,18 +513,20 @@ class TestAddFieldIdempotence(StudioCase):
 
     def test_same_field_twice_is_a_no_op(self):
         package = self.make_package(name="x_idem_pkg")
-        editor = self.env["studio.view.editor"]
-        view = self.env.ref("base.view_partner_form")
-        operation = {
+        package_id = cast("int", package.id)
+        editor = typed.model(self.env, StudioViewEditor)
+        view = typed.ref(self.env, "base.view_partner_form")
+        view_id = cast("int", view.id)
+        operation: dict[str, object] = {
             "type": "add_field",
             "name": "ref",
             "xpath": "//field[@name='function']",
             "position": "after",
         }
-        editor.apply_operation(view.id, package.id, operation)
-        result = editor.apply_operation(view.id, package.id, operation)
+        editor.apply_operation(view_id, package_id, operation)
+        result = editor.apply_operation(view_id, package_id, operation)
         root = etree.fromstring(
-            self.env["ir.ui.view"].browse(result["view_id"]).arch.encode()
+            (typed.model(self.env, View).browse(result["view_id"]).arch or "").encode()
         )
         added = [f for x in root.findall("xpath") for f in x.findall("field")]
         self.assertEqual(
@@ -500,23 +539,22 @@ class TestAddFieldIdempotence(StudioCase):
         """Merging them would silently reverse the order the user added them:
         two position="after" blocks apply in sequence, one block does not."""
         package = self.make_package(name="x_order_pkg")
-        editor = self.env["studio.view.editor"]
-        view = self.env.ref("base.view_partner_form")
+        package_id = cast("int", package.id)
+        editor = typed.model(self.env, StudioViewEditor)
+        view = typed.ref(self.env, "base.view_partner_form")
+        view_id = cast("int", view.id)
         for name in ("ref", "lang"):
-            editor.apply_operation(
-                view.id,
-                package.id,
-                {
-                    "type": "add_field",
-                    "name": name,
-                    "xpath": "//field[@name='function']",
-                    "position": "after",
-                },
-            )
-        extension = self.env["ir.ui.view"].search(
-            [("inherit_id", "=", view.id), ("priority", "=", 99)], limit=1
+            add_field_operation: dict[str, object] = {
+                "type": "add_field",
+                "name": name,
+                "xpath": "//field[@name='function']",
+                "position": "after",
+            }
+            editor.apply_operation(view_id, package_id, add_field_operation)
+        extension = typed.model(self.env, View).search(
+            [("inherit_id", "=", view_id), ("priority", "=", 99)], limit=1
         )
-        root = etree.fromstring(extension.arch.encode())
+        root = etree.fromstring((extension.arch or "").encode())
         self.assertEqual(len(root.findall("xpath")), 2)
 
 
@@ -528,28 +566,33 @@ class TestOwnedViewsAreEditedDirectly(StudioCase):
 
     def _owned_form(self, package):
         self.build_demo_content(package)
-        return self.env["ir.ui.view"].search(
+        return typed.model(self.env, View).search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
 
     def test_a_package_edits_its_own_primary_view_in_place(self):
         package = self.make_package(name="x_owned_pkg")
         form = self._owned_form(package)
-        self.assertEqual(form.studio_package_id, package, "fixture must own it")
+        self.assertEqual(
+            cast("StudioOwnedMixin", form).studio_package_id,
+            package,
+            "fixture must own it",
+        )
         before = self.env["ir.ui.view"].search_count([("inherit_id", "=", form.id)])
-        result = self.env["studio.view.editor"].apply_operation(
-            form.id,
-            package.id,
-            {
-                "type": "add_field",
-                "name": "x_budget",
-                "xpath": "//field[@name='x_name']",
-                "position": "after",
-            },
+        own_add_field_operation: dict[str, object] = {
+            "type": "add_field",
+            "name": "x_budget",
+            "xpath": "//field[@name='x_name']",
+            "position": "after",
+        }
+        result = typed.model(self.env, StudioViewEditor).apply_operation(
+            cast("int", form.id),
+            cast("int", package.id),
+            own_add_field_operation,
         )
         self.assertEqual(result["view_id"], form.id, "must edit the view itself")
-        self.assertIn('name="x_budget"', form.arch)
-        self.assertNotIn("<xpath", form.arch, "no patch against our own view")
+        self.assertIn('name="x_budget"', form.arch or "")
+        self.assertNotIn("<xpath", form.arch or "", "no patch against our own view")
         self.assertEqual(
             self.env["ir.ui.view"].search_count([("inherit_id", "=", form.id)]),
             before,
@@ -559,19 +602,20 @@ class TestOwnedViewsAreEditedDirectly(StudioCase):
     def test_a_foreign_view_still_gets_an_inheriting_patch(self):
         """The invariant that makes this project worth using is unchanged."""
         package = self.make_package(name="x_foreign_pkg")
-        core_view = self.env.ref("base.view_partner_form")
+        core_view = cast("View", typed.ref(self.env, "base.view_partner_form"))
         original = core_view.arch
-        result = self.env["studio.view.editor"].apply_operation(
-            core_view.id,
-            package.id,
-            {
-                "type": "add_field",
-                "name": "ref",
-                "xpath": "//field[@name='function']",
-                "position": "after",
-            },
+        foreign_add_field_operation: dict[str, object] = {
+            "type": "add_field",
+            "name": "ref",
+            "xpath": "//field[@name='function']",
+            "position": "after",
+        }
+        result = typed.model(self.env, StudioViewEditor).apply_operation(
+            cast("int", core_view.id),
+            cast("int", package.id),
+            foreign_add_field_operation,
         )
-        extension = self.env["ir.ui.view"].browse(result["view_id"])
+        extension = typed.model(self.env, View).browse(result["view_id"])
         self.assertNotEqual(extension, core_view)
         self.assertEqual(extension.inherit_id, core_view)
         self.assertEqual(extension.mode, "extension")
@@ -645,7 +689,9 @@ class TestEmitterIsIdempotent(StudioCase):
 
         package.action_write_files()
 
-        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
+        entry = cast("StudioPackageModel", package.model_ids).filtered(
+            lambda m: m.model == "x_studio_project"
+        )
         self.assertEqual(entry.source, "python", "must still be builder-owned")
         source = self._source(package)
         self.assertIn("def shouty", source, "the developer's code must survive")
@@ -667,7 +713,9 @@ class TestEmitterIsIdempotent(StudioCase):
 
         package.action_write_files()
 
-        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
+        entry = cast("StudioPackageModel", package.model_ids).filtered(
+            lambda m: m.model == "x_studio_project"
+        )
         self.assertEqual(entry.source, "frozen")
         self.assertTrue(entry.parse_error)
         self.assertIn("_inherits", self._source(package), "the file must be kept")
@@ -727,23 +775,21 @@ class TestDeleteRecordsSpareReflection(StudioCase):
 
         # Simulate what reflection does for a code-defined model: a base-state
         # metadata row carrying this package's module name.
-        reflected = self.env["ir.model.fields"].create(
-            {
-                "name": "x_reflected",
-                "ttype": "char",
-                "field_description": "Reflected",
-                "model_id": model.id,
-                "state": "base",
-            }
-        )
-        self.env["ir.model.data"].create(
-            {
-                "module": package.name,
-                "name": "field_x_studio_project__x_reflected",
-                "model": "ir.model.fields",
-                "res_id": reflected.id,
-            }
-        )
+        reflected_vals: dict[str, object] = {
+            "name": "x_reflected",
+            "ttype": "char",
+            "field_description": "Reflected",
+            "model_id": model.id,
+            "state": "base",
+        }
+        reflected = self.env["ir.model.fields"].create(reflected_vals)  # pyright: ignore[reportArgumentType]
+        reflected_data_vals: dict[str, object] = {
+            "module": package.name,
+            "name": "field_x_studio_project__x_reflected",
+            "model": "ir.model.fields",
+            "res_id": reflected.id,
+        }
+        self.env["ir.model.data"].create(reflected_data_vals)  # pyright: ignore[reportArgumentType]
 
         deletable = package._deletable_data()
         self.assertNotIn(
@@ -809,7 +855,9 @@ class TestDestructiveApplyGate(StudioCase):
 
         package._render_files()
 
-        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
+        entry = cast("StudioPackageModel", package.model_ids).filtered(
+            lambda m: m.model == "x_studio_project"
+        )
         self.assertEqual(entry.source, "frozen")
 
     def test_an_ordinary_change_is_not_destructive(self):
@@ -820,6 +868,7 @@ class TestDestructiveApplyGate(StudioCase):
         rendered = migrationgen.render_pre_migration(
             "x_studio_project", ["x_budget"], "20260728120000"
         )
+        assert rendered is not None, "fixture must produce a pre-migration"
         ast.parse(rendered)  # it has to be importable by Odoo's migration loader
         self.assertIn("RENAME COLUMN", rendered)
         self.assertNotIn("DROP COLUMN", rendered)
@@ -849,7 +898,7 @@ class TestApplyIsRecoverable(StudioCase):
         file is written, the next request re-imports it and the database will
         not boot for anybody."""
         package = self._python_package()
-        with self.assertRaises(UserError) as caught:
+        with raises(self, UserError) as caught:
             package._assert_sources_compile(
                 {"models/broken.py": "class Nope(:\n    pass\n"}
             )
@@ -858,11 +907,13 @@ class TestApplyIsRecoverable(StudioCase):
     def test_generated_python_that_cannot_be_reparsed_is_refused(self):
         package = self._python_package()
         package.action_adopt(["x_studio_project"])
-        entry = package.model_ids.filtered(lambda m: m.model == "x_studio_project")
-        with self.assertRaises(UserError):
+        entry = cast("StudioPackageModel", package.model_ids).filtered(
+            lambda m: m.model == "x_studio_project"
+        )
+        with raises(self, UserError):
             package._assert_specs_reparse(
                 {
-                    entry.python_path: (
+                    entry.python_path or "": (
                         "from odoo import fields, models\n\n\n"
                         "class X(models.Model):\n"
                         '    _name = "x_studio_project"\n'
@@ -874,23 +925,25 @@ class TestApplyIsRecoverable(StudioCase):
     def test_snapshot_records_the_bytes_that_were_there(self):
         package = self._python_package()
         files = package._render_files()
-        apply = self.env["studio.package.apply"]._snapshot(
+        apply = typed.model(self.env, StudioPackageApply)._snapshot(
             package, files, reason="test", stamp="20260728120000"
         )
         self.assertEqual(apply.state, "pending")
         self.assertTrue(apply.file_ids)
-        manifest = apply.file_ids.filtered(lambda f: f.path == "__manifest__.py")
+        manifest = cast("StudioPackageApplyFile", apply.file_ids).filtered(
+            lambda f: f.path == "__manifest__.py"
+        )
         self.assertTrue(manifest.existed)
-        self.assertIn("__manifest__", manifest.path)
-        self.assertIn('"depends"', manifest.content_before)
+        self.assertIn("__manifest__", manifest.path or "")
+        self.assertIn('"depends"', manifest.content_before or "")
 
     def test_restore_puts_the_previous_bytes_back(self):
         package = self._python_package()
         files = package._render_files()
-        apply = self.env["studio.package.apply"]._snapshot(
+        apply = typed.model(self.env, StudioPackageApply)._snapshot(
             package, files, reason="test", stamp="20260728120001"
         )
-        target = os.path.join(package.root_path, "__manifest__.py")
+        target = os.path.join(package.root_path or "", "__manifest__.py")
         with open(target, "w", encoding="utf-8") as handle:
             handle.write("# clobbered\n")
 
@@ -901,10 +954,10 @@ class TestApplyIsRecoverable(StudioCase):
 
     def test_restore_removes_files_that_did_not_exist_before(self):
         package = self._python_package()
-        apply = self.env["studio.package.apply"]._snapshot(
+        apply = typed.model(self.env, StudioPackageApply)._snapshot(
             package, {"views/brand_new.xml": "<odoo/>"}, stamp="20260728120002"
         )
-        target = os.path.join(package.root_path, "views/brand_new.xml")
+        target = os.path.join(package.root_path or "", "views/brand_new.xml")
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, "w", encoding="utf-8") as handle:
             handle.write("<odoo/>")
@@ -922,7 +975,7 @@ class TestApplyIsRecoverable(StudioCase):
         never completed; one this process started, or one a sibling worker
         started a moment ago, is in progress and is left alone."""
         package = self._python_package()
-        Apply = self.env["studio.package.apply"]
+        Apply = typed.model(self.env, StudioPackageApply)
         own = Apply._snapshot(
             package, {"__manifest__.py": "{}"}, stamp="20260728120003"
         )
@@ -931,7 +984,7 @@ class TestApplyIsRecoverable(StudioCase):
         own.write({"boot_id": "someotherprocess"})
         self.assertFalse(Apply._reap_abandoned(package), "too young to be abandoned")
 
-        self.env.cr.execute(
+        cast("Cursor", self.env.cr).execute(
             "UPDATE studio_package_apply"
             " SET create_date = now() - interval '10 minutes' WHERE id = %s",
             (own.id,),
@@ -940,7 +993,7 @@ class TestApplyIsRecoverable(StudioCase):
         reaped = Apply._reap_abandoned(package)
         self.assertEqual(reaped, own)
         self.assertEqual(own.state, "failed")
-        self.assertIn("stopped", own.error)
+        self.assertIn("stopped", own.error or "")
 
     def test_multi_worker_deployments_refuse_an_in_process_reload(self):
         """Other workers would rebuild against the Python already in their own
@@ -949,7 +1002,7 @@ class TestApplyIsRecoverable(StudioCase):
         with patch.dict(config.options, {"workers": 4, "dev_mode": []}):
             package.invalidate_recordset(["reload_mode"])
             self.assertEqual(package.reload_mode, "manual")
-            with self.assertRaises(UserError) as caught:
+            with raises(self, UserError) as caught:
                 package._reload_now()
         self.assertIn("worker", str(caught.exception))
 
@@ -975,10 +1028,10 @@ class TestPartialWriteDoesNotPrune(StudioCase):
         self.package.action_write_files()
 
     def _paths(self):
-        return set(self.package.file_ids.mapped("path"))
+        return set(cast("StudioPackageFile", self.package.file_ids).mapped("path"))
 
     def _on_disk(self, relative):
-        return os.path.isfile(os.path.join(self.package.root_path, relative))
+        return os.path.isfile(os.path.join(self.package.root_path or "", relative))
 
     def test_a_partial_write_leaves_the_rest_of_the_package_alone(self):
         before = self._paths()
@@ -999,17 +1052,16 @@ class TestPartialWriteDoesNotPrune(StudioCase):
         generating should not linger and get imported."""
         self.package._write_files({"__manifest__.py": "{'name': 'x'}\n"})
         self.package._sync_file_records({"__manifest__.py": "{'name': 'x'}\n"})
-        orphan = os.path.join(self.package.root_path, "views/leftover.xml")
+        orphan = os.path.join(self.package.root_path or "", "views/leftover.xml")
         os.makedirs(os.path.dirname(orphan), exist_ok=True)
         with open(orphan, "w", encoding="utf-8") as handle:
             handle.write("<odoo/>\n")
-        record = self.env["studio.package.file"].create(
-            {
-                "package_id": self.package.id,
-                "path": "views/leftover.xml",
-                "generated_checksum": checksum.hash_text("<odoo/>\n"),
-            }
-        )
+        leftover_vals: dict[str, object] = {
+            "package_id": self.package.id,
+            "path": "views/leftover.xml",
+            "generated_checksum": checksum.hash_text("<odoo/>\n"),
+        }
+        record = self.env["studio.package.file"].create(leftover_vals)  # pyright: ignore[reportArgumentType]
         self.package.invalidate_recordset(["file_ids"])
 
         self.package._write_files({"__manifest__.py": "{'name': 'x'}\n"}, prune=True)

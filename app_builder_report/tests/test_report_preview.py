@@ -2,22 +2,47 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Rendering a report for the editor, and resolving a click back to the arch."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
+
+from ..models.studio_report import StudioReport
+from ..models.studio_report_preview import StudioReportPreview
+
+if TYPE_CHECKING:
+    # Only for the casts below; with `from __future__ import annotations`
+    # nothing here needs these at runtime, the same bargain every Phase 1c
+    # file's own `TYPE_CHECKING` block makes. `View`/`StudioViewEditor`/
+    # `StudioReport`/`StudioReportPreview` are real, top-level imports
+    # instead (`typed.model()` reads `cls._name` at runtime, the same
+    # reason `common.py`'s own fixtures import their real classes that way)
+    # -- only the `locate_expression()`/`body_anchor()` union's own narrower
+    # branches are cast-only and need no runtime binding.
+    from ..models.studio_report_preview import (
+        _BodyAnchorFoundJSON,
+        _LocateExpressionFoundJSON,
+        _LocateExpressionNotFoundJSON,
+    )
 
 
 @tagged("post_install", "-at_install")
 class TestReportPreview(StudioCase):
     def _report(self, package):
-        made = self.env["studio.report"].create_report(
+        made = typed.model(self.env, StudioReport).create_report(
             package.id, "x_studio_project", "Job Sheet"
         )
-        return self.env["ir.ui.view"].browse(made["view_id"])
+        return typed.model(self.env, View).browse(made["view_id"])
 
     def _placed(self, package, view, name="x_budget"):
-        self.env["studio.view.editor"].apply_operation(
+        typed.model(self.env, StudioViewEditor).apply_operation(
             view.id,
             package.id,
             {
@@ -33,8 +58,10 @@ class TestReportPreview(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         view = self._report(package)
-        self.env["x_studio_project"].create({"x_name": "Bridge survey"})
-        result = self.env["studio.report"].preview_html(view.id)
+        self.env["x_studio_project"].create({"x_name": "Bridge survey"})  # pyright: ignore[reportArgumentType]
+        result = typed.model(self.env, StudioReportPreview).preview_html(
+            cast("int", view.id)
+        )
         self.assertFalse(result["reason"])
         self.assertIn("Job Sheet", result["html"])
         self.assertIn("Bridge survey", result["html"])
@@ -45,8 +72,10 @@ class TestReportPreview(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         view = self._report(package)
-        self.env["x_studio_project"].create({"x_name": "Bridge survey"})
-        html = self.env["studio.report"].preview_html(view.id)["html"]
+        self.env["x_studio_project"].create({"x_name": "Bridge survey"})  # pyright: ignore[reportArgumentType]
+        html = typed.model(self.env, StudioReportPreview).preview_html(
+            cast("int", view.id)
+        )["html"]
         self.assertIn("data-oe-expression", html)
         self.assertIn("doc.display_name", html)
 
@@ -55,17 +84,26 @@ class TestReportPreview(StudioCase):
         self.build_demo_content(package)
         view = self._report(package)
         self.env["x_studio_project"].search([]).unlink()
-        result = self.env["studio.report"].preview_html(view.id)
+        result = typed.model(self.env, StudioReportPreview).preview_html(
+            cast("int", view.id)
+        )
         self.assertEqual(result["html"], "")
-        self.assertIn("preview this on", result["reason"])
+        self.assertIn("preview this on", cast("str", result["reason"]))
 
     def test_a_click_resolves_to_a_locator(self):
         package = self.make_package()
         self.build_demo_content(package)
         view = self._report(package)
         self._placed(package, view)
-        found = self.env["studio.report"].locate_expression(view.id, "doc.x_budget")
+        found = typed.model(self.env, StudioReportPreview).locate_expression(
+            cast("int", view.id), "doc.x_budget"
+        )
         self.assertTrue(found["found"])
+        # Narrows the `found()`/`not found()` union after the runtime check
+        # above has already proven which branch this is -- same shape as
+        # `typed.py`'s own relational-field casts, aimed at a TypedDict
+        # union instead of a `env[...]` lookup.
+        found = cast("_LocateExpressionFoundJSON", found)
         self.assertIn("t-field='doc.x_budget'", found["xpath"])
 
     def test_the_locator_survives_a_second_field(self):
@@ -76,26 +114,33 @@ class TestReportPreview(StudioCase):
         self._placed(package, view, "x_budget")
         self._placed(package, view, "x_name")
         for name in ("x_budget", "x_name"):
-            found = self.env["studio.report"].locate_expression(
-                view.id, "doc.%s" % name
+            found = typed.model(self.env, StudioReportPreview).locate_expression(
+                cast("int", view.id), "doc.%s" % name
             )
             self.assertTrue(found["found"])
+            found = cast("_LocateExpressionFoundJSON", found)
             self.assertIn(name, found["xpath"])
 
     def test_an_expression_we_cannot_point_at_says_why(self):
         package = self.make_package()
         self.build_demo_content(package)
         view = self._report(package)
-        found = self.env["studio.report"].locate_expression(view.id, "doc.nope")
+        found = typed.model(self.env, StudioReportPreview).locate_expression(
+            cast("int", view.id), "doc.nope"
+        )
         self.assertFalse(found["found"])
+        found = cast("_LocateExpressionNotFoundJSON", found)
         self.assertIn("cannot point at", found["reason"])
 
     def test_the_body_anchor_is_the_page(self):
         package = self.make_package()
         self.build_demo_content(package)
         view = self._report(package)
-        anchor = self.env["studio.report"].body_anchor(view.id)
+        anchor = typed.model(self.env, StudioReportPreview).body_anchor(
+            cast("int", view.id)
+        )
         self.assertTrue(anchor["found"])
+        anchor = cast("_BodyAnchorFoundJSON", anchor)
         self.assertIn("page", anchor["xpath"])
 
     def test_the_anchor_is_usable_as_an_operation_target(self):
@@ -103,10 +148,15 @@ class TestReportPreview(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         view = self._report(package)
-        anchor = self.env["studio.report"].body_anchor(view.id)
-        self.env["studio.view.editor"].apply_operation(
-            view.id,
-            package.id,
+        anchor = cast(
+            "_BodyAnchorFoundJSON",
+            typed.model(self.env, StudioReportPreview).body_anchor(
+                cast("int", view.id)
+            ),
+        )
+        typed.model(self.env, StudioViewEditor).apply_operation(
+            cast("int", view.id),
+            cast("int", package.id),
             {
                 "type": "add_report_field",
                 "xpath": anchor["xpath"],
@@ -116,7 +166,8 @@ class TestReportPreview(StudioCase):
             },
         )
         self.assertIn(
-            't-field="doc.x_budget"', self.env["ir.ui.view"].browse(view.id).arch
+            't-field="doc.x_budget"',
+            cast("str", typed.model(self.env, View).browse(cast("int", view.id)).arch),
         )
 
     def test_a_form_view_is_not_a_report(self):
@@ -125,5 +176,7 @@ class TestReportPreview(StudioCase):
         form = self.env["ir.ui.view"].search(
             [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
         )
-        with self.assertRaises(UserError):
-            self.env["studio.report"].preview_html(form.id)
+        with raises(self, UserError):
+            typed.model(self.env, StudioReportPreview).preview_html(
+                cast("int", form.id)
+            )
