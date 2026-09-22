@@ -537,6 +537,17 @@ hoot `onRpc` mocks typed against the same map.
   translate(env: api.Environment, source: str, *args: object, **kwargs:
   object) -> str: return env._(source, *args, **kwargs)`) is worth
   introducing to avoid dozens of near-duplicate ignores per file.
+  **Confirmed, first Phase 1c file (`studio_security.py`): the plain
+  module-level `_` (`from odoo import _`, i.e. `odoo.tools.translate
+  .get_text_alias`) has the identical gap** -- `reveal_type` shows `(source:
+  str, ...) -> str`, the same unannotated-`*args`/`**kwargs` shape, under a
+  file-scoped strict-equivalent `executionEnvironment` probe. Given how
+  pervasive plain `_("...")` calls are (every translatable string in every
+  model file), fixing this per call site was deliberately deferred rather
+  than solved on file 1 -- see the new "two-stage ratchet" note below;
+  revisit once several more model files confirm the same scale of
+  recurrence, the same "promote only once a real, cross-file pattern is
+  confirmed" discipline `lxml_types.py` was built under.
 - A method decorated with `@tools.ormcache(...)` (e.g. `IrModel._get_id`)
   reads as `() -> ((...) -> Any)` under pyright, not its real signature --
   confirmed with `reveal_type` and traced to the installed `decorator`
@@ -563,6 +574,47 @@ hoot `onRpc` mocks typed against the same map.
   separately-defined, explicitly-annotated named functions in place of
   the inline lambdas (`scaffold.py`'s `SCAFFOLD_BUILDERS`, nine
   `_build_*` functions replacing nine lambdas).
+- `Environment.user` (`odoo/api.py`) carries no return annotation of its
+  own; pyright infers one from its body (`self(su=True)['res.users']
+  .browse(self.uid)`), which bottoms out at the bare `BaseModel` every
+  `Environment.__getitem__` call returns -- the same untyped hole
+  `typed.model()` exists for, but `self.env.user` is an *already-obtained
+  record*, not a model *name* to turn into a handle, so `typed.model()`
+  doesn't apply here (it would return an empty `res.users` recordset, not
+  the current user's own record). Fix: a direct, narrow `cast("Users",
+  self.env.user)` at the point of use, `Users` imported `TYPE_CHECKING`-only
+  from `odoo.addons.base.models.res_users` (`studio_security.py`'s
+  `_assert_studio_group`). Cast inline inside a boolean expression rather
+  than into a variable above it, when the original code short-circuited
+  around the property read -- `self.env.user` is cheap and side-effect-free
+  (`browse` never queries), but preserving the exact original evaluation
+  order costs nothing and removes any doubt about a behavior change. Likely
+  to recur anywhere else `self.env.user`'s own methods/fields (not just
+  `.id`/`.login`, which `BaseModel` doesn't have either) are read directly.
+- **Two-stage ratchet for `models/`, discovered on the first Phase 1c
+  file.** The plan's own text says "`# pyright: strict` at the top the
+  moment a file passes; `reportUnknownMemberType`-class rules on last" --
+  tested literally on `studio_security.py` via a temporary file-scoped
+  `executionEnvironment` probe (same individual-rule mechanism `tools/`
+  uses, not a bare `# pyright: strict` comment, per the composition trap
+  already documented in "Where it starts from"/1a). Result: escalating a
+  file to the full strict-equivalent rule bundle immediately surfaces
+  `odoo._`'s own unannotated-varargs gap (see above) -- confirming the
+  plan's own instinct that `reportUnknownMemberType`-class rules need to
+  come *after* something, not immediately per-file. Rather than solve
+  that infrastructure question (a shared translation wrapper, or blanket
+  per-call-site ignores) off a single file's evidence, **Phase 1c's own
+  stage 1 is: full annotations (signatures, `Self`, typed relational
+  fields, `typed.model()`/direct casts for the ORM's own untyped holes)
+  verified clean under this project's existing top-level `standard` mode
+  plus the `ANN`/`TC`/etc. ruff rules -- no per-file strict escalation
+  yet.** Stage 2 (flipping on the strict-equivalent bundle, file by file
+  or in bigger groups) is deferred until enough files have gone through
+  stage 1 to see the real, cross-file shape of "every `Any` OCB leaks"
+  (translation calls being the first confirmed one) rather than guessing
+  at shared infrastructure from one data point -- the same "promote only
+  once a real pattern is confirmed across readers" discipline
+  `lxml_types.py` was built under.
 
 ## Implemented so far
 
@@ -2337,6 +2389,110 @@ than reasoned about:
   recordset methods, `TYPE_CHECKING`-guarded relational field imports,
   RPC `TypedDict`s in `wire.py`, per-file strictness ratchet), per
   TYPING.md's own original Phase 1 plan.
+
+- **Python (1c kickoff: `typed.py`, the dependency map, and the first
+  model file).** Phase 1c's own scope is ~16.3k lines across 47 model
+  files in 8 addons (a full re-survey found 9 more lines/files than the
+  plan's own original estimate: `app_builder_base/models/serializers/`, a
+  subpackage of 8 files/1058 lines the first line-count pass missed by
+  globbing `models/*.py` without recursing).
+
+  **`app_builder_base/tools/typed.py`** (new): `model(env, cls)` replaces
+  `self.env["model.name"]` throughout. `Environment.__getitem__` returns
+  the bare `BaseModel` regardless of which model was asked for; this
+  reads the real name off the class itself (`cls._name`) instead of
+  asking for it a second time as a string, so the model name and the
+  class it names can never drift apart at a call site, and the one cast
+  this needs lives here instead of at every one of them. One real
+  implementation wrinkle: `cast(cls, ...)` (the value, following the
+  plan's own literal example text) trips ruff's `TC006` ("add quotes to
+  type expression"), which auto-fixes it to the broken `cast("cls", ...)`
+  -- `"cls"` is not a valid forward reference, it is a parameter holding
+  a runtime value. Fixed by casting to the type parameter `M` itself,
+  by name (`cast("M", ...)`), the standard generic-helper idiom and
+  arguably more correct anyway: the return type genuinely *is* `M`, not
+  "whatever `cls` happens to hold." Verified against a real class from
+  the merged tree (`IrModel._name` resolves to a plain `str`, as
+  expected) and a fake-ORM smoke test.
+
+  Also fixed, in passing, a small pre-existing gap `compat.py` carried
+  from an earlier wave (its `api`/`Field` imports were not
+  `TYPE_CHECKING`-guarded, failing a plain `ruff check` -- flagged twice,
+  independently, by wave-3's own agents as out-of-scope-but-worth-fixing;
+  fixed now since `typed.py` sits right beside it).
+
+  **Dependency map.** Before converting anything, mapped every model
+  file's own `_name`/`_inherit` and every real reference to another
+  `app_builder`-defined model (via a `fields.Many2one/One2many/Many2many`
+  comodel string or a literal `self.env["studio...."]` key -- dynamic
+  `self.env[some_variable]` dispatch onto an arbitrary *target app*
+  model, which most "surface" files do constantly, is not a graph edge
+  and was excluded). Full per-file breakdown is not reproduced here (it
+  would rot fast); the headline structure:
+  - Addon-level layers confirmed from real `__manifest__.py` `depends`
+    (corrects an assumption in the original 1c plan text):
+    L0 `app_builder_base` → L1 `{app_builder_view, app_builder_ui,
+    app_builder_mail, app_builder_approval}` → L2 `{app_builder_model
+    (needs app_builder_view), app_builder_approval_formula (needs
+    app_builder_approval), app_builder_report (needs app_builder_ui +
+    app_builder_view)}`. `app_builder_model`'s one file never actually
+    references any `app_builder_view` model in Python despite the
+    manifest dependency (that dependency is for JS/menu assets, not
+    model references) -- worth remembering so that dependency does not
+    over-block its own conversion.
+  - File-level wave order within that (6 waves, roots to leaves): wave 0
+    = `studio_security.py`, `studio_serializer.py`, `res_users.py`
+    (nothing in scope depends on anything else); wave 1 adds
+    `studio_package.py`, `studio_domain.py`, and everything that only
+    extends `studio.serializer` directly (`base_automation_serializer
+    .py`, `tier_serializers.py`, all 8 of `serializers/*.py`); waves 2-5
+    build outward through the surface-mixin hierarchy
+    (`studio_record_surface.py` → `studio_security_surfaces.py`/
+    `studio_menu_surface.py`/`studio_automation_surface.py`/
+    `studio_report_surface.py`/`studio_approval_surface.py`) and the
+    view/report/approval leaves.
+  - **Three real circular references found**, not resolved, just noted
+    for whoever converts each pair: `studio_package.py` ↔
+    `studio_package_model.py` and `studio_package.py` ↔
+    `studio_package_apply.py` (aggregate-root/child FK pairs -- convert
+    `studio_package.py` first, forward `TYPE_CHECKING` imports for the
+    other two's classes); `studio_view_editor.py` ↔ `studio_view_edit.py`
+    (convert the shallower `studio_view_edit.py` first, one forward
+    `TYPE_CHECKING` ref back into `StudioViewEditor`).
+  - Most `studio.*` classes are `AbstractModel` (no table of their own,
+    never instantiated standalone) -- `typed.model()`'s own semantics
+    (an empty recordset handle for a real, table-backed model) need a
+    second look for these once one is actually converted: methods still
+    need typing, but "the model" isn't a thing with rows to type against
+    the way `studio.package`/`studio.package.model`/`studio.view.edit`
+    (real tables) are.
+  - RPC-heaviest files (`@api.model`-decorated public method count,
+    `wire.py` `TypedDict` candidates once that phase starts):
+    `studio_view_editor.py` (74, the de facto RPC surface for the whole
+    console, including `canvas()` -- the plan's own named "model case"
+    for this, in `studio_view_canvas.py`), `studio_record_surface.py`
+    (42), `studio_automation_surface.py` (33), `studio_workspace.py`
+    (32), `studio_serializer.py` (26).
+
+  **`studio_security.py`** (66 lines, wave 0, the literal security root
+  every other mixin inherits) -- the first model file converted, and
+  where the two new "Known traps" above (the plain `_` import, `env
+  .user` -> `BaseModel`) were found. `Literal[True]` for the three guard
+  methods (`_assert_studio_user`/`_assert_studio_manager`/
+  `_assert_studio_group`): each either returns `True` or raises, never
+  reaches a `False`, confirmed by checking every real call site (~110
+  across the whole suite) -- all bare statement-level calls for the
+  side effect, none reading the return value, so the precision costs
+  nothing and states the real invariant, the same spirit as
+  `checksum.py`'s own `str | Literal[False]`. Verified: `pyright`
+  (0 errors under stage-1/standard mode) / `ruff check` / `ruff format
+  --diff` clean; the diff reviewed by hand to confirm it is exactly
+  annotations plus the one inline cast, with the boolean expression's
+  original short-circuit evaluation order deliberately preserved rather
+  than simplified into an eagerly-evaluated intermediate variable; the
+  module imports and registers cleanly against the real merged tree.
+  Next: the rest of wave 0 (`studio_serializer.py`, `res_users.py`),
+  then wave 1.
 
 ## CI: the OCA container's real layout
 

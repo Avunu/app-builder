@@ -23,8 +23,17 @@ administrators only", while leaving the two-tier split available if the groups
 are ever surfaced.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal, cast
+
 from odoo import _, api, models
 from odoo.exceptions import AccessError
+
+if TYPE_CHECKING:
+    # Only for the `cast` below; with `from __future__ import annotations`
+    # nothing here needs it at runtime.
+    from odoo.addons.base.models.res_users import Users
 
 STUDIO_USER = "app_builder_base.group_studio_user"
 STUDIO_MANAGER = "app_builder_base.group_studio_manager"
@@ -35,7 +44,7 @@ class StudioSecurityMixin(models.AbstractModel):
     _description = "Studio Access Guard"
 
     @api.model
-    def _assert_studio_user(self):
+    def _assert_studio_user(self) -> Literal[True]:
         """Guard for methods that only read studio metadata."""
         return self._assert_studio_group(
             STUDIO_USER,
@@ -43,7 +52,7 @@ class StudioSecurityMixin(models.AbstractModel):
         )
 
     @api.model
-    def _assert_studio_manager(self):
+    def _assert_studio_manager(self) -> Literal[True]:
         """Guard for anything that writes a record, a file, or the registry."""
         return self._assert_studio_group(
             STUDIO_MANAGER,
@@ -55,11 +64,25 @@ class StudioSecurityMixin(models.AbstractModel):
         )
 
     @api.model
-    def _assert_studio_group(self, group, message):
+    def _assert_studio_group(self, group: str, message: str) -> Literal[True]:
         # env.su is the trusted-internal-code path: module install, data
         # loading and the test bootstrap all run as superuser and must not be
         # locked out of their own machinery. Core's own IrModelAccess.check
         # short-circuits on env.su for exactly this reason. RPC never sets it.
-        if self.env.su or self.env.user.has_group(group):
+        #
+        # `Environment.user` (`odoo/api.py`) carries no return annotation of
+        # its own; pyright infers one from its body (`self(su=True)['res
+        # .users'].browse(self.uid)`), which bottoms out at the bare
+        # `BaseModel` every `Environment.__getitem__` call returns -- the
+        # same untyped hole `typed.model()` exists for elsewhere, but that
+        # helper turns a model *name* into an empty recordset handle
+        # (`env[cls._name]`), not an already-obtained record like this one,
+        # so a direct, narrow `cast` is the honest fix here instead. Cast
+        # inline, inside the `or`, rather than into a variable above it:
+        # `self.env.user` is cheap and side-effect-free either way (`browse`
+        # never queries), but keeping it inside the boolean expression means
+        # `self.env.su` being true still short-circuits it exactly as the
+        # original did, with no restructuring to reason about.
+        if self.env.su or cast("Users", self.env.user).has_group(group):
             return True
         raise AccessError(message)
