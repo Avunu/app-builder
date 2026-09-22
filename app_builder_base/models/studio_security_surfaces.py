@@ -9,13 +9,43 @@ security: lines add up and rules combine, so a core module's row is never
 loosened from a package -- only joined by a row of the package's own.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, cast
+
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from ..tools import compat
+from odoo.addons.base.models.ir_rule import IrRule
+from odoo.addons.base.models.res_users import Groups
+
+from ..tools import compat, typed
 from ..tools.catalogue import Row, Section
+from .studio_record_surface import RecordRowJSON
+
+if TYPE_CHECKING:
+    # Only used inside annotations/casts below (`from __future__ import
+    # annotations` defers all of them to strings), never at runtime -- same
+    # bargain every other Phase 1c file's `TYPE_CHECKING` block makes.
+    # `IrRule`/`Groups` are real, top-level imports instead (above):
+    # `typed.model()` reads `cls._name` at *runtime*, the same reason
+    # `studio_record_surface.py` imports `IrModel`/`IrModelData` for real.
+    from odoo.models import BaseModel
+
+    from odoo.addons.base.models.ir_model import IrModel, IrModelAccess
+
+    from .studio_package import StudioPackage
+    from .studio_record_surface import RecordTemplateJSON, StudioRecordSurface
 
 _PERMS = ("perm_read", "perm_write", "perm_create", "perm_unlink")
+
+
+class AccessRowJSON(RecordRowJSON):
+    """``StudioAccessSurface._row``'s own return: the base row plus the two
+    keys only an access line's card carries."""
+
+    title: str
+    perms: dict[str, bool]
 
 
 class StudioAccessSurface(models.AbstractModel):
@@ -91,23 +121,34 @@ class StudioAccessSurface(models.AbstractModel):
     )
 
     @api.model
-    def _sentence(self, record):
+    def _sentence(self, record: BaseModel) -> str:
         letters = "".join(
             letter if record[perm] else "–"
             for letter, perm in zip("RWCD", _PERMS, strict=True)
         )
-        who = record.group_id.full_name if record.group_id else _("Everyone")
+        access = cast("IrModelAccess", record)
+        group = cast("Groups", access.group_id)
+        # `full_name` is a computed Char, `str | Literal[False]` by the
+        # field descriptor's own declared type -- but `_compute_full_name`
+        # (`res_users.py`) always sets a real string, never leaves it
+        # `False`, the same true-by-construction cast `_subject_model`'s own
+        # `.model` read already makes (`studio_record_surface.py`).
+        who = cast("str", group.full_name) if group else _("Everyone")
         return "%s · %s" % (who, letters)
 
     @api.model
-    def _row(self, record, package):
-        row = super()._row(record, package)
-        row["title"] = record.group_id.full_name if record.group_id else _("Everyone")
+    def _row(self, record: BaseModel, package: StudioPackage) -> AccessRowJSON:
+        row = cast(
+            "AccessRowJSON", cast("StudioRecordSurface", super())._row(record, package)
+        )
+        access = cast("IrModelAccess", record)
+        group = cast("Groups", access.group_id)
+        row["title"] = cast("str", group.full_name) if group else _("Everyone")
         row["perms"] = {perm: bool(record[perm]) for perm in _PERMS}
         return row
 
     @api.model
-    def _foreign_reason(self, record, module):
+    def _foreign_reason(self, record: BaseModel, module: str) -> str:
         return _(
             "Access lines add up: a line in your package can only grant more "
             "than %s does, never less. Add a line of your own here; to narrow "
@@ -116,10 +157,18 @@ class StudioAccessSurface(models.AbstractModel):
         )
 
     @api.model
-    def _create_defaults(self, model_name, package, template, vals):
-        defaults = {"active": True}
+    def _create_defaults(
+        self,
+        model_name: str,
+        package: StudioPackage,
+        template: str | None,
+        vals: dict[str, object],
+    ) -> dict[str, object]:
+        defaults: dict[str, object] = {"active": True}
         if not vals.get("name"):
-            group = self.env["res.groups"].browse(vals.get("group_id") or [])
+            group = typed.model(self.env, Groups).browse(
+                cast("Any", vals.get("group_id")) or []
+            )
             defaults["name"] = "%s %s" % (
                 model_name,
                 group.full_name if group else _("everyone"),
@@ -202,11 +251,11 @@ class StudioRuleSurface(models.AbstractModel):
     )
 
     @api.model
-    def _groups_field(self):
+    def _groups_field(self) -> str:
         return compat.groups_field(self.env, "ir.rule")
 
     @api.model
-    def _sentence(self, record):
+    def _sentence(self, record: BaseModel) -> str:
         groups = record[self._groups_field()]
         who = (
             ", ".join(groups.mapped("full_name")) if groups else _("Everyone (global)")
@@ -215,27 +264,47 @@ class StudioRuleSurface(models.AbstractModel):
             letter if record[perm] else "–"
             for letter, perm in zip("RWCD", _PERMS, strict=True)
         )
-        return "%s · %s · %s" % (who, record.domain_force or "[]", letters)
+        rule = cast("IrRule", record)
+        return "%s · %s · %s" % (who, rule.domain_force or "[]", letters)
 
     @api.model
-    def _virtual_value(self, record, name):
+    def _virtual_value(
+        self, record: BaseModel, name: str
+    ) -> list[dict[str, object]] | str:
+        # Base declares `-> str` (`""`, the base default); this override
+        # widens it to the list of refs a "groups" row actually needs -- no
+        # LSP/override-compatibility check applies to `_inherit`-only
+        # composition (TYPING.md, confirmed elsewhere in this migration), so
+        # the honest, wider return type here is the correct annotation, not
+        # a `# pyright: ignore`.
         if name == "groups":
             return [
                 {"id": group.id, "display_name": group.full_name}
                 for group in record[self._groups_field()]
             ]
-        return super()._virtual_value(record, name)
+        return cast("StudioRecordSurface", super())._virtual_value(record, name)
 
     @api.model
-    def _coerce_virtual(self, row, value, model_name):
+    def _coerce_virtual(
+        self, row: Row, value: object, model_name: str
+    ) -> dict[str, object]:
         if row.name == "groups":
-            ids = [v.get("id") if isinstance(v, dict) else v for v in (value or [])]
+            ids = [
+                v.get("id") if isinstance(v, dict) else v
+                for v in (cast("Any", value) or [])
+            ]
             return {self._groups_field(): [(6, 0, [int(i) for i in ids if i])]}
-        return super()._coerce_virtual(row, value, model_name)
+        return cast("StudioRecordSurface", super())._coerce_virtual(
+            row, value, model_name
+        )
 
     @api.model
-    def _coerce(self, model_name, values, creating=False):
-        vals = super()._coerce(model_name, values, creating=creating)
+    def _coerce(
+        self, model_name: str, values: dict[str, object], creating: bool = False
+    ) -> dict[str, object]:
+        vals = cast("StudioRecordSurface", super())._coerce(
+            model_name, values, creating=creating
+        )
         if any(perm in vals for perm in _PERMS) and not any(
             vals.get(perm, True) for perm in _PERMS
         ):
@@ -248,7 +317,7 @@ class StudioRuleSurface(models.AbstractModel):
         return vals
 
     @api.model
-    def _foreign_reason(self, record, module):
+    def _foreign_reason(self, record: BaseModel, module: str) -> str:
         return _(
             "Rules of one group are OR-ed and global rules AND-ed, so a rule "
             "of %s cannot be loosened from your package -- only tightened by "
@@ -257,19 +326,28 @@ class StudioRuleSurface(models.AbstractModel):
         )
 
     @api.model
-    def _domain_eval_context(self, model_name):
+    def _domain_eval_context(self, model_name: str) -> dict[str, object] | None:
         # What ir.rule itself evaluates a domain with: user, company_ids, time.
-        return self.env["ir.rule"]._eval_context()
+        return typed.model(self.env, IrRule)._eval_context()
 
     @api.model
-    def _describe_extra(self, record, package):
-        check = self._check_domain(record.model_id.model, record.domain_force or "[]")
+    def _describe_extra(
+        self, record: BaseModel, package: StudioPackage
+    ) -> dict[str, object]:
+        rule = cast("IrRule", record)
+        model = cast("IrModel", rule.model_id)
+        # `_check_domain` is declared on `studio.record.surface`, reached
+        # only via `_inherit` -- invisible to pyright on `self` the same way
+        # `super()._method()` is invisible on a bare `super()` (rule 4/6).
+        check = cast("StudioRecordSurface", self)._check_domain(
+            model.model, rule.domain_force or "[]"
+        )
         return {"matches": check}
 
     @api.model
-    def templates(self, model_name=None):
+    def templates(self, model_name: str | None = None) -> list[RecordTemplateJSON]:
         """Only the presets whose field the model has."""
-        out = super().templates(model_name)
+        out = cast("StudioRecordSurface", super()).templates(model_name)
         if not model_name or model_name not in self.env:
             return out
         fields_ = self.env[model_name]._fields

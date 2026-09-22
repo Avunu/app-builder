@@ -17,16 +17,172 @@ writes, so no ``setup_models``, and no cluster-wide registry invalidation until
 the user actually asks for one.
 """
 
+from __future__ import annotations
+
 import difflib
 import json
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
-from lxml import etree
+# lxml ships no type stubs in this environment, the same gap `xml_writer.py`/
+# `placement.py`/`studio_serializer.py` already document -- `reportMissingTypeStubs`
+# only escalates to `error` under `tools/`'s own `executionEnvironments` override
+# (`pyrightconfig.json`), not at this (model) level, so the one real hit here
+# (`etree` itself, an unresolvable import symbol with no stub) is the only one
+# that needs silencing.
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+from typing_extensions import NotRequired
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from ..tools import modelspec, pycodegen, xml_writer
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.base.models.ir_ui_view import View
+
+from ..tools import modelspec, pycodegen, typed, xml_writer
 from ..tools import placement as placement_tool
+from .studio_package_model import StudioPackageModel
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from collections.abc import Mapping
+
+    from odoo.fields import Field
+
+    from ..tools.lxml_types import LxmlElement
+    from ..tools.modelspec import (
+        FieldSpec,
+        FieldTypeJSON,
+        ModelSpec,
+        PlacementJSON,
+        SpecDiff,
+    )
+    from .studio_package import StudioPackage
+
+
+# -- wire types -----------------------------------------------------------
+#
+# Traced from what each method below actually builds, cross-checked against
+# `app_builder_view/static/src/console/wire.ts`'s own hand-kept interfaces
+# (`shell/draft_model.ts`'s cluster, TypeScript conversion 2b). Named
+# `<Thing>JSON` per this migration's own convention even where `wire.ts`
+# itself drops the suffix (`DraftPayload`, `InverseOptions`,
+# `ResolveRelatedResult`) -- each docstring below cites the `wire.ts` name.
+
+
+class DraftPackageJSON(TypedDict):
+    """``load()``'s own ``package`` key (``wire.ts:DraftPackageJSON``)."""
+
+    id: int
+    name: str
+    writable: bool
+    reload_mode: str
+
+
+class PendingChangeJSON(TypedDict):
+    """One entry of ``DraftPayloadJSON.pending`` (``_own_changes()``/
+    ``pending_changes()``, matching ``wire.ts:PendingChangeJSON``).
+    ``destructive`` is only ever sent on a ``"removed"`` entry; ``model``
+    only on a companion model's change, spliced in by ``pending_changes``
+    -- this file's own change dicts never carry it."""
+
+    kind: Literal["model", "added", "changed", "removed"]
+    name: str
+    detail: str
+    destructive: NotRequired[bool]
+    model: NotRequired[str]
+
+
+class _PreviewUnavailableJSON(TypedDict):
+    available: Literal[False]
+    reason: str
+
+
+class _PreviewAvailableJSON(TypedDict):
+    available: Literal[True]
+    res_model: str
+    view_id: int | Literal[False]
+
+
+#: ``_preview_view()``'s own answer: which view the live preview should
+#: render, or why it cannot. No `wire.ts` cousin yet -- `load()`'s own
+#: `view` key stays `unknown` there (nothing reads it yet, its own comment).
+PreviewViewJSON: TypeAlias = _PreviewUnavailableJSON | _PreviewAvailableJSON
+
+
+class AnchorJSON(TypedDict):
+    """Where one staged field was dropped, keyed by field name in
+    ``DraftPayloadJSON.anchors``. Only ``view_id`` is guaranteed by this
+    file's own base implementation (``_anchors()``'s docstring) --
+    ``app_builder_view``'s override supplies the rest of the shape."""
+
+    view_id: int
+
+
+class DraftPayloadJSON(TypedDict):
+    """``load()``'s whole round trip (``wire.ts:DraftPayload``). ``spec``
+    and each entry of ``fields`` stay ``dict[str, Any]``-shaped: both are
+    built by spreading ``modelspec.spec_to_json()``'s own genuinely dynamic
+    (``asdict()``) return, the same open-ended judgment call
+    ``studio_record_surface.py`` already made for ``describe()``."""
+
+    id: int
+    model: str
+    package: DraftPackageJSON
+    spec: dict[str, Any]
+    fields: list[dict[str, Any]]
+    pending: list[PendingChangeJSON]
+    change_count: int
+    field_types: list[FieldTypeJSON]
+    errors: list[str]
+    view: PreviewViewJSON
+    anchors: dict[str, AnchorJSON]
+
+
+class InverseCandidateJSON(TypedDict):
+    """One entry of ``InverseOptionsJSON.candidates``."""
+
+    name: str
+    string: str
+
+
+class InverseOptionsJSON(TypedDict):
+    """``inverse_options()``'s whole return (``wire.ts:InverseOptions``)."""
+
+    candidates: list[InverseCandidateJSON]
+    can_create: bool
+    suggested: str
+    reason: str
+
+
+class _ResolveRelatedOkJSON(TypedDict):
+    ok: Literal[True]
+    ttype: str
+    comodel: str
+    string: str
+    stored: bool
+
+
+class _ResolveRelatedFailJSON(TypedDict):
+    ok: Literal[False]
+    reason: str
+
+
+#: ``resolve_related()``'s whole return (``wire.ts:ResolveRelatedResult``).
+ResolveRelatedJSON: TypeAlias = _ResolveRelatedOkJSON | _ResolveRelatedFailJSON
+
+
+class ModelDraftApplyJSON(TypedDict):
+    """``action_apply()``'s whole return: what changed, and whether a
+    restart is needed before it takes effect. No `wire.ts` cousin yet --
+    nothing on the TypeScript side reads this call's result shape."""
+
+    apply_id: int
+    state: str
+    applied: bool
+    restart_required: bool
+    placed: bool
 
 
 class StudioModelDraft(models.TransientModel):
@@ -40,7 +196,14 @@ class StudioModelDraft(models.TransientModel):
     # over lunch could be gone by the afternoon, taking the drops the user
     # placed on the canvas with it. Pending placements have to survive a
     # working week; a week of idleness is long enough to mean "abandoned".
-    _transient_max_hours = 168
+    #
+    # `_transient_max_hours` is declared `@lazy_classproperty` on
+    # `models.py` (`BaseModel`), typed `lazy_classproperty[Unknown | None]`.
+    # The plain-int override every `TransientModel` subclass writes --
+    # Odoo's own documented idiom, throughout core -- is not assignable to
+    # that descriptor type under this stub: a real, traced vendor-stub gap
+    # (TYPING.md's own "Known traps"), not fixable from this side.
+    _transient_max_hours = 168  # pyright: ignore[reportAssignmentType]
 
     package_model_id = fields.Many2one(
         "studio.package.model", required=True, ondelete="cascade"
@@ -83,20 +246,23 @@ class StudioModelDraft(models.TransientModel):
     # -- lifecycle --------------------------------------------------------
 
     @api.model
-    def open_for(self, package_model):
+    def open_for(self, package_model: StudioPackageModel) -> StudioModelDraft:
         """A draft holding whatever is on disk right now."""
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         payload = self._payload_for(package_model)
-        return self.create(
-            {
-                "package_model_id": package_model.id,
-                "base_spec_json": payload,
-                "spec_json": payload,
-            }
-        )
+        vals = {
+            "package_model_id": package_model.id,
+            "base_spec_json": payload,
+            "spec_json": payload,
+        }
+        # `create()` only declares `list[ValuesType]`; the single-dict form
+        # is accepted at runtime (`@api.model_create_multi`), the same
+        # decorator-stub gap `studio_package_model.py`'s own `_adopt`
+        # already documents.
+        return self.create(vals)  # pyright: ignore[reportArgumentType]
 
     @api.model
-    def _payload_for(self, package_model):
+    def _payload_for(self, package_model: StudioPackageModel) -> str:
         """The on-disk spec as the JSON a draft stores, or why there is none."""
         spec = package_model._current_spec()
         if spec is None:
@@ -111,7 +277,7 @@ class StudioModelDraft(models.TransientModel):
         return json.dumps(modelspec.spec_to_json(spec), sort_keys=True)
 
     @api.model
-    def open_for_model(self, model_name):
+    def open_for_model(self, model_name: str) -> DraftPayloadJSON:
         """This user's draft for a model, found or made, as ``load()`` returns it.
 
         The view editor knows a model name and a drop location, not a draft
@@ -141,8 +307,8 @@ class StudioModelDraft(models.TransientModel):
         with one of those is a caller bug worth naming rather than a draft
         that could never be applied.
         """
-        self._assert_studio_manager()
-        package_model = self.env["studio.package.model"].search(
+        typed.security(self)._assert_studio_manager()
+        package_model = typed.model(self.env, StudioPackageModel).search(
             [("model", "=", model_name), ("source", "in", ("python", "frozen"))],
             limit=1,
         )
@@ -167,7 +333,7 @@ class StudioModelDraft(models.TransientModel):
             draft = self.open_for(package_model)
         elif not draft.dirty:
             payload = self._payload_for(package_model)
-            draft.companion_ids.unlink()
+            cast("StudioModelDraft", draft.companion_ids).unlink()
             draft.write(
                 {
                     "base_spec_json": payload,
@@ -177,24 +343,45 @@ class StudioModelDraft(models.TransientModel):
             )
         return draft.load()
 
-    def load(self):
+    # `load` collides with `BaseModel.load(fields, data)` (the CSV-import
+    # endpoint) on signature only -- an unrelated method that happens to
+    # share this name, not an override in the RPC sense. Renaming is out of
+    # scope for a type-only pass (the console already calls this one by
+    # name over RPC); flagged, not fixed.
+    def load(self) -> DraftPayloadJSON:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Everything the console needs of the draft, in one round trip."""
         self.ensure_one()
         spec = self._spec()
         placement = self._placement()
+        package = cast("StudioPackage", self.package_id)
+        package_model = cast("StudioPackageModel", self.package_model_id)
         return {
-            "id": self.id,
-            "model": self.model,
+            "id": cast("int", self.id),
+            "model": cast("str", self.model),
             "package": {
-                "id": self.package_id.id,
-                "name": self.package_id.name,
-                "writable": self.package_id.writable,
-                "reload_mode": self.package_id.reload_mode,
+                "id": cast("int", package.id),
+                "name": cast("str", package.name),
+                "writable": package.writable,
+                # Compute-only (`_compute_reload_mode`), never actually
+                # `False` in practice -- the same "declared optional, never
+                # actually absent" cast as every required-field read
+                # elsewhere; `wire.ts:DraftPackageJSON` already assumes a
+                # plain `string` here too.
+                "reload_mode": cast("str", package.reload_mode),
             },
             "spec": modelspec.spec_to_json(spec),
             "fields": [
                 {
-                    **modelspec.spec_to_json(f),
+                    # `spec_to_json`'s own declared param is `ModelSpec`,
+                    # but `asdict()` (its real implementation,
+                    # `modelspec.py`) is generic over any dataclass -- `f`
+                    # here is a `FieldSpec`, the same frozen-dataclass
+                    # shape, reused deliberately for one field's own JSON
+                    # rather than the whole model's. Not a signature this
+                    # file can narrow (`modelspec.py` is Phase 1b, out of
+                    # scope); the same reuse `update_field`'s own `merged`
+                    # makes below.
+                    **modelspec.spec_to_json(f),  # pyright: ignore[reportArgumentType]
                     "type_label": self._type_label(f.ttype),
                     "placement": placement.get(
                         f.name, modelspec.default_placement(f.ttype)
@@ -206,12 +393,12 @@ class StudioModelDraft(models.TransientModel):
             "change_count": self.change_count,
             "field_types": modelspec.available_field_types(spec),
             "errors": self.validate(),
-            "view": self._preview_view(self.package_model_id),
+            "view": self._preview_view(package_model),
             "anchors": self._anchors(),
         }
 
     @api.model
-    def _preview_view(self, package_model):
+    def _preview_view(self, package_model: StudioPackageModel) -> PreviewViewJSON:
         """Which view the live preview should render, or why it cannot.
 
         A model with no access rule is a normal state -- it is exactly what a
@@ -232,7 +419,7 @@ class StudioModelDraft(models.TransientModel):
                 ),
             }
         try:
-            self.env[model_name].check_access("read")
+            self.env[cast("str", model_name)].check_access("read")
         except AccessError:
             return {
                 "available": False,
@@ -243,26 +430,26 @@ class StudioModelDraft(models.TransientModel):
                     model_name,
                 ),
             }
-        view = self.env["ir.ui.view"].search(
+        view = typed.model(self.env, View).search(
             [("model", "=", model_name), ("type", "=", "form")],
             order="priority,id",
             limit=1,
         )
         return {
             "available": True,
-            "res_model": model_name,
-            "view_id": view.id or False,
+            "res_model": cast("str", model_name),
+            "view_id": cast("int", view.id) or False,
         }
 
-    def _spec(self):
+    def _spec(self) -> ModelSpec:
         self.ensure_one()
-        return modelspec.spec_from_json(json.loads(self.spec_json))
+        return modelspec.spec_from_json(json.loads(cast("str", self.spec_json)))
 
-    def _base_spec(self):
+    def _base_spec(self) -> ModelSpec:
         self.ensure_one()
-        return modelspec.spec_from_json(json.loads(self.base_spec_json))
+        return modelspec.spec_from_json(json.loads(cast("str", self.base_spec_json)))
 
-    def _store(self, spec):
+    def _store(self, spec: ModelSpec) -> Literal[True]:
         self.ensure_one()
         self.spec_json = json.dumps(modelspec.spec_to_json(spec), sort_keys=True)
         return True
@@ -273,7 +460,7 @@ class StudioModelDraft(models.TransientModel):
         "companion_ids.spec_json",
         "companion_ids.base_spec_json",
     )
-    def _compute_dirty(self):
+    def _compute_dirty(self) -> None:
         for draft in self:
             # Companions count: staging a related list changes two models, and
             # an Apply button that stayed grey would be lying about it.
@@ -288,14 +475,14 @@ class StudioModelDraft(models.TransientModel):
 
     # -- operations -------------------------------------------------------
 
-    def add_field(self, values):
+    def add_field(self, values: dict[str, Any]) -> Literal[True]:
         """Stage a new field. ``values`` is a FieldSpec-shaped dict.
 
         ``placement`` rides along but is not part of the spec: it says which
         views should show the field, which is a fact about the arch and not
         about the class.
         """
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
         placement = values.pop("placement", None) if isinstance(values, dict) else None
         create_inverse = (
@@ -325,7 +512,7 @@ class StudioModelDraft(models.TransientModel):
         return True
 
     @api.model
-    def _resolve_computed(self, values):
+    def _resolve_computed(self, values: Mapping[str, Any] | None) -> dict[str, Any]:
         """Give a compute body the method name and dependencies it needs.
 
         The field editor asks for the body, because that is the part somebody has an
@@ -359,7 +546,7 @@ class StudioModelDraft(models.TransientModel):
         values.setdefault("store", False)
         return values
 
-    def resolve_related(self, path):
+    def resolve_related(self, path: str) -> ResolveRelatedJSON:
         """What a related path points at, so the picker can fill in the rest.
 
         A related field has no type of its own: ``partner_id.email`` is a char
@@ -372,7 +559,7 @@ class StudioModelDraft(models.TransientModel):
         a typo in the middle names the step that failed instead of failing the
         whole Apply later.
         """
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         self.ensure_one()
         steps = [part for part in (path or "").split(".") if part]
         if not steps:
@@ -385,7 +572,7 @@ class StudioModelDraft(models.TransientModel):
                     "ok": False,
                     "reason": _("%s is not a model this database has.", model_name),
                 }
-            field = self.env[model_name]._fields.get(step)
+            field = self.env[cast("str", model_name)]._fields.get(step)
             if field is None:
                 return {
                     "ok": False,
@@ -404,6 +591,12 @@ class StudioModelDraft(models.TransientModel):
                             "%s is not a relation, so nothing can follow it.", step
                         ),
                     }
+        # `steps` is non-empty (checked above), so the loop always runs at
+        # least once and assigns `field` before falling through here --
+        # pyright cannot see that a `for` loop over a non-literal-length
+        # list always executes, so the guarantee is asserted with a cast
+        # rather than left as `Field | None`.
+        field = cast("Field", field)
         return {
             "ok": True,
             "ttype": field.type,
@@ -414,7 +607,7 @@ class StudioModelDraft(models.TransientModel):
 
     # -- relationships ----------------------------------------------------
 
-    def inverse_options(self, comodel):
+    def inverse_options(self, comodel: str) -> InverseOptionsJSON:
         """What could link ``comodel`` back to this model, for the picker.
 
         Odoo needs a many2one on the other side before a related list can
@@ -424,7 +617,12 @@ class StudioModelDraft(models.TransientModel):
         in the same breath rather than failing on Apply.
         """
         self.ensure_one()
-        out = {"candidates": [], "can_create": False, "suggested": "", "reason": ""}
+        out: InverseOptionsJSON = {
+            "candidates": [],
+            "can_create": False,
+            "suggested": "",
+            "reason": "",
+        }
         if not comodel:
             return out
         sibling = self._sibling(comodel)
@@ -444,14 +642,18 @@ class StudioModelDraft(models.TransientModel):
             )
         return out
 
-    def _sibling(self, comodel):
+    def _sibling(self, comodel: str) -> StudioPackageModel:
         """The package model for ``comodel``, if we may write to its class."""
         self.ensure_one()
-        return self.package_id.model_ids.filtered(
+        package = cast("StudioPackage", self.package_id)
+        model_ids = cast("StudioPackageModel", package.model_ids)
+        return model_ids.filtered(
             lambda m: m.model == comodel and m.source == "python"
         )[:1]
 
-    def _links_back_from(self, comodel, sibling):
+    def _links_back_from(
+        self, comodel: str, sibling: StudioPackageModel
+    ) -> dict[str, str]:
         """``{name: label}`` for every many2one on ``comodel`` aimed here.
 
         Read from the sibling's *file* when we own it, and only from the
@@ -475,7 +677,7 @@ class StudioModelDraft(models.TransientModel):
             }
         return {}
 
-    def _names_on(self, comodel, sibling):
+    def _names_on(self, comodel: str, sibling: StudioPackageModel) -> set[str]:
         """Every field name already used on ``comodel``, from the same source."""
         self.ensure_one()
         if sibling:
@@ -483,9 +685,9 @@ class StudioModelDraft(models.TransientModel):
             return {f.name for f in (spec.fields if spec else ())}
         return set(self.env[comodel]._fields) if comodel in self.env else set()
 
-    def _suggest_inverse_name(self, comodel):
+    def _suggest_inverse_name(self, comodel: str) -> str:
         """``workshop.project`` linked from its lines becomes ``project_id``."""
-        base = self.model.rsplit(".", 1)[-1]
+        base = cast("str", self.model).rsplit(".", 1)[-1]
         taken = self._names_on(comodel, self._sibling(comodel))
         candidate = "%s_id" % base
         suffix = 2
@@ -494,10 +696,10 @@ class StudioModelDraft(models.TransientModel):
             suffix += 1
         return candidate
 
-    def _companion_for(self, package_model):
+    def _companion_for(self, package_model: StudioPackageModel) -> StudioModelDraft:
         """The staged edit for another model, created on first need."""
         self.ensure_one()
-        existing = self.companion_ids.filtered(
+        existing = cast("StudioModelDraft", self.companion_ids).filtered(
             lambda d: d.package_model_id == package_model
         )
         if existing:
@@ -506,11 +708,15 @@ class StudioModelDraft(models.TransientModel):
         companion.parent_draft_id = self.id
         return companion
 
-    def _stage_inverse(self, spec_field):
+    def _stage_inverse(self, spec_field: FieldSpec) -> StudioModelDraft:
         """Put the many2one that makes ``spec_field`` resolvable on the other
         model, in the same changeset so one Apply covers both."""
         self.ensure_one()
-        sibling = self._sibling(spec_field.comodel)
+        # `comodel`/`inverse_name` are both required for a one2many by
+        # `validate_spec` (`modelspec.py`) -- both genuinely `str` by the
+        # time a one2many reaches here, the same "declared optional, never
+        # actually absent" cast as every required-field read elsewhere.
+        sibling = self._sibling(cast("str", spec_field.comodel))
         if not sibling:
             raise UserError(
                 _(
@@ -520,7 +726,7 @@ class StudioModelDraft(models.TransientModel):
                 )
             )
         companion = self._companion_for(sibling)
-        if companion._spec().field(spec_field.inverse_name):
+        if companion._spec().field(cast("str", spec_field.inverse_name)):
             # Already there -- reusing it is exactly what the picker offers.
             return companion
         companion.add_field(
@@ -539,19 +745,21 @@ class StudioModelDraft(models.TransientModel):
 
     # -- placement --------------------------------------------------------
 
-    def _placement(self):
+    def _placement(self) -> dict[str, Any]:
         self.ensure_one()
         return json.loads(self.placement_json or "{}")
 
-    def _set_placement(self, name, values):
+    def _set_placement(self, name: str, values: PlacementJSON) -> Literal[True]:
         data = self._placement()
         data[name] = values
         self.placement_json = json.dumps(data, sort_keys=True)
         return True
 
-    def set_placement(self, name, values):
+    def set_placement(
+        self, name: str, values: Mapping[str, object] | None
+    ) -> Literal[True]:
         """Change which views a staged field will appear in."""
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
         spec_field = self._spec().field(name)
         if not spec_field:
@@ -560,9 +768,9 @@ class StudioModelDraft(models.TransientModel):
             name, modelspec.clean_placement(values, spec_field.ttype)
         )
 
-    def update_field(self, name, values):
+    def update_field(self, name: str, values: dict[str, Any]) -> Literal[True]:
         """Replace one field, keeping its position in the class."""
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
         placement = values.pop("placement", None) if isinstance(values, dict) else None
         spec = self._spec()
@@ -580,13 +788,20 @@ class StudioModelDraft(models.TransientModel):
             if widget and "widget" not in placement:
                 placement["widget"] = widget
             self._set_placement(name, modelspec.clean_placement(placement, picker_key))
-        merged = {**modelspec.spec_to_json(existing), **values, "name": name}
+        # Same `spec_to_json`-on-a-`FieldSpec` reuse as `load()`'s own
+        # `fields` comprehension above -- see its comment for why this is a
+        # deliberate, safe (if narrowly-typed) call rather than a bug.
+        merged = {
+            **modelspec.spec_to_json(existing),  # pyright: ignore[reportArgumentType]
+            **values,
+            "name": name,
+        }
         return self._store(
             modelspec.with_field(spec, modelspec.field_spec_from_json(merged))
         )
 
-    def remove_field(self, name):
-        self._assert_studio_manager()
+    def remove_field(self, name: str) -> Literal[True]:
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
         spec = self._spec()
         if not spec.field(name):
@@ -596,10 +811,10 @@ class StudioModelDraft(models.TransientModel):
             self.placement_json = json.dumps(data, sort_keys=True)
         return self._store(modelspec.without_field(spec, name))
 
-    def move_field(self, name, before=None):
+    def move_field(self, name: str, before: str | None = None) -> Literal[True]:
         """Reorder. Field order is class order, which is the order the
         scaffolded views show them in -- so this is a layout gesture."""
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
         spec = self._spec()
         moving = spec.field(name)
@@ -615,9 +830,9 @@ class StudioModelDraft(models.TransientModel):
 
         return self._store(_replace(spec, fields=tuple(ordered)))
 
-    def set_model_options(self, values):
+    def set_model_options(self, values: dict[str, Any]) -> Literal[True]:
         """Change what the class says about itself: order, display field, mixins."""
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
         allowed = {
             "description",
@@ -641,14 +856,14 @@ class StudioModelDraft(models.TransientModel):
 
     # -- features ---------------------------------------------------------
 
-    def _features(self):
+    def _features(self) -> list[str]:
         self.ensure_one()
         try:
-            return list(json.loads(self.features_json or "[]"))
+            return cast("list[str]", list(json.loads(self.features_json or "[]")))
         except ValueError:
             return []
 
-    def stage_feature(self, key):
+    def stage_feature(self, key: str) -> list[str]:
         """Remember that ``key`` was added; its fields are staged separately."""
         self.ensure_one()
         keys = self._features()
@@ -657,7 +872,7 @@ class StudioModelDraft(models.TransientModel):
             self.features_json = json.dumps(keys)
         return keys
 
-    def _apply_features(self):
+    def _apply_features(self) -> bool:
         """The view work a feature owes once its columns are live.
 
         Nothing here: a package without the view editor has no way to add
@@ -670,7 +885,7 @@ class StudioModelDraft(models.TransientModel):
 
     # -- what the tray shows ----------------------------------------------
 
-    def pending_changes(self):
+    def pending_changes(self) -> list[PendingChangeJSON]:
         """One entry per staged edit, in the order a person would read them.
 
         Companion edits are listed with their model, because "you are also
@@ -679,16 +894,16 @@ class StudioModelDraft(models.TransientModel):
         """
         self.ensure_one()
         out = self._own_changes()
-        for companion in self.companion_ids:
+        for companion in cast("StudioModelDraft", self.companion_ids):
             for change in companion._own_changes():
-                out.append({**change, "model": companion.model})
+                out.append({**change, "model": cast("str", companion.model)})
         return out
 
-    def _own_changes(self):
+    def _own_changes(self) -> list[PendingChangeJSON]:
         self.ensure_one()
         before, after = self._base_spec(), self._spec()
         diff = modelspec.diff_specs(before, after)
-        out = []
+        out: list[PendingChangeJSON] = []
         for attr in diff.model_changed:
             out.append(
                 {
@@ -703,7 +918,11 @@ class StudioModelDraft(models.TransientModel):
                 }
             )
         for name in diff.added:
-            spec_field = after.field(name)
+            # `name` comes from `diff.added`, which `diff_specs`
+            # (`modelspec.py`) only ever populates with names already
+            # present in `after` -- `.field(name)` is therefore never
+            # `None` here, unlike its general `FieldSpec | None` signature.
+            spec_field = cast("FieldSpec", after.field(name))
             out.append(
                 {
                     "kind": "added",
@@ -732,12 +951,12 @@ class StudioModelDraft(models.TransientModel):
         return out
 
     @api.model
-    def _type_label(self, ttype):
+    def _type_label(self, ttype: str) -> str:
         entry = modelspec.FIELD_TYPES_BY_TTYPE.get(ttype)
         return entry.label if entry else ttype
 
     @api.model
-    def field_types(self, spec_json=None):
+    def field_types(self, spec_json: str | None = None) -> list[FieldTypeJSON]:
         """The picker's contents, for the current draft state."""
         spec = (
             modelspec.spec_from_json(json.loads(spec_json))
@@ -746,12 +965,12 @@ class StudioModelDraft(models.TransientModel):
         )
         return modelspec.available_field_types(spec)
 
-    def preview_source(self):
+    def preview_source(self) -> str:
         """The block exactly as Apply would write it."""
         self.ensure_one()
         return pycodegen.render_block(self._spec())
 
-    def preview_diff(self):
+    def preview_diff(self) -> str:
         """A unified diff of every block Apply will write, so it is never a
         leap of faith -- including the one on the other model."""
         self.ensure_one()
@@ -773,7 +992,7 @@ class StudioModelDraft(models.TransientModel):
                 chunks.append(body)
         return "\n".join(chunks)
 
-    def validate(self):
+    def validate(self) -> list[str]:
         """Problems the user can still fix, before anything is written.
 
         Companions are validated too: they apply in the same transaction, so a
@@ -781,11 +1000,16 @@ class StudioModelDraft(models.TransientModel):
         it afterwards would mean finding it during a rollback.
         """
         self.ensure_one()
-        known = set(self.env["ir.model"].sudo().search([]).mapped("model"))
-        out = []
+        known = set(
+            cast(
+                "list[str]",
+                typed.model(self.env, IrModel).sudo().search([]).mapped("model"),
+            )
+        )
+        out: list[str] = []
         for draft in self | self.companion_ids:
             errors = modelspec.validate_spec(
-                draft._spec(), taken_model_names=known - {draft.model}
+                draft._spec(), taken_model_names=known - {cast("str", draft.model)}
             )
             prefix = "" if draft == self else "%s: " % draft.model
             out.extend("%s%s" % (prefix, error) for error in errors)
@@ -793,7 +1017,7 @@ class StudioModelDraft(models.TransientModel):
 
     # -- commit -----------------------------------------------------------
 
-    def action_apply(self, allow_destructive=False):
+    def action_apply(self, allow_destructive: bool = False) -> ModelDraftApplyJSON:
         """Write every staged block and reload, once, for the whole changeset.
 
         A related list and the link back are two files and must be one reload:
@@ -801,22 +1025,25 @@ class StudioModelDraft(models.TransientModel):
         inverse that does not exist yet, and the setup it fails is the setup
         that was meant to create it.
         """
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
         errors = self.validate()
         if errors:
             raise UserError(
                 _("This change cannot be applied:\n\n%s", "\n".join(errors))
             )
-        package = self.package_id
+        package = cast("StudioPackage", self.package_id)
         package._assert_writable()
 
         drafts = self | self.companion_ids
-        payload = {}
-        planned = []
+        payload: dict[str, str] = {}
+        planned: list[tuple[StudioModelDraft, ModelSpec, SpecDiff]] = []
         for draft in drafts:
             spec = draft._spec()
-            payload[draft.package_model_id.python_path] = draft._rewritten_source(spec)
+            package_model = cast("StudioPackageModel", draft.package_model_id)
+            payload[cast("str", package_model.python_path)] = draft._rewritten_source(
+                spec
+            )
             diff = modelspec.diff_specs(draft._base_spec(), spec)
             planned.append((draft, spec, diff))
 
@@ -844,8 +1071,8 @@ class StudioModelDraft(models.TransientModel):
             # -- the draft stays dirty until `place_pending` runs after the
             # restart, which is the honest state of a change not yet live.
             return {
-                "apply_id": applied.id,
-                "state": applied.state,
+                "apply_id": cast("int", applied.id),
+                "state": cast("str", applied.state),
                 "applied": False,
                 "restart_required": True,
                 "placed": False,
@@ -859,18 +1086,19 @@ class StudioModelDraft(models.TransientModel):
         for draft in drafts:
             draft.base_spec_json = draft.spec_json
         return {
-            "apply_id": applied.id,
-            "state": applied.state,
+            "apply_id": cast("int", applied.id),
+            "state": cast("str", applied.state),
             "applied": True,
             "restart_required": False,
             "placed": True,
         }
 
-    def _rewritten_source(self, spec):
+    def _rewritten_source(self, spec: ModelSpec) -> str:
         """This model's file with the studio block replaced by ``spec``."""
         self.ensure_one()
-        package_model = self.package_model_id
-        source = self.package_id._read_source(package_model.python_path)
+        package_model = cast("StudioPackageModel", self.package_model_id)
+        package = cast("StudioPackage", self.package_id)
+        source = package._read_source(cast("str", package_model.python_path))
         if source is None:
             raise UserError(
                 _("%s has no source file to write into.", package_model.model)
@@ -881,25 +1109,25 @@ class StudioModelDraft(models.TransientModel):
 
     # -- views ------------------------------------------------------------
 
-    def _owned_views(self):
+    def _owned_views(self) -> dict[str, View]:
         """The views this package owns for this model, by type."""
-        views = self.env["ir.ui.view"].search(
+        views = typed.model(self.env, View).search(
             [
                 ("model", "=", self.model),
                 ("mode", "=", "primary"),
-                ("studio_package_id", "=", self.package_id.id),
+                ("studio_package_id", "=", cast("StudioPackage", self.package_id).id),
                 ("type", "in", ("form", "list", "search")),
             ]
         )
-        return {view.type: view for view in views}
+        return {cast("str", view.type): view for view in views}
 
-    def _retract_from_views(self, diff):
+    def _retract_from_views(self, diff: SpecDiff) -> bool:
         """Take dropped fields out of the arches, before the reload sees them."""
         if not diff.removed:
             return False
-        touched = self.env["ir.ui.view"].browse()
+        touched = typed.model(self.env, View).browse()
         for view in self._owned_views().values():
-            root = xml_writer.parse_arch(view.arch)
+            root = xml_writer.parse_arch(cast("str", view.arch))
             changed = False
             for name in diff.removed:
                 changed |= placement_tool.remove_field(root, name)
@@ -907,12 +1135,12 @@ class StudioModelDraft(models.TransientModel):
                 self._write_arch(view, root)
                 touched |= view
         if touched:
-            self.package_id.studio_capture(touched)
+            cast("StudioPackage", self.package_id).studio_capture(touched)
         # Deliberately no file write: the apply that follows renders the whole
         # package anyway, and these arches are part of what it renders.
         return bool(touched)
 
-    def _anchors(self):
+    def _anchors(self) -> dict[str, AnchorJSON]:
         """Where each staged field was dropped, keyed by field name.
 
         Nothing here: the slots in ``placement_json`` say *which* views show a
@@ -925,7 +1153,9 @@ class StudioModelDraft(models.TransientModel):
         self.ensure_one()
         return {}
 
-    def _place_anchored(self, view, name, anchor, widget):
+    def _place_anchored(
+        self, view: View, name: str, anchor: AnchorJSON, widget: str
+    ) -> bool:
         """Put one field exactly where it was dropped, or say it could not.
 
         The hook ``_place_in_views`` tries before the balanced placement.
@@ -939,7 +1169,7 @@ class StudioModelDraft(models.TransientModel):
         self.ensure_one()
         return False
 
-    def _place_in_views(self, spec, diff):
+    def _place_in_views(self, spec: ModelSpec, diff: SpecDiff) -> bool:
         """Put added fields on screen, now that the columns exist.
 
         Safe to run twice. Under a ``restart`` reload the request can die
@@ -951,13 +1181,13 @@ class StudioModelDraft(models.TransientModel):
             return False
         placement = self._placement()
         anchors = self._anchors()
-        touched = self.env["ir.ui.view"].browse()
+        touched = typed.model(self.env, View).browse()
         anchored = False
         for view_type, view in self._owned_views().items():
             # Anchored fields go first and through the hook, which writes the
             # view on its own. The arch the balanced fallback edits is parsed
             # only afterwards, so writing it back cannot clobber the hook's.
-            fallback = []
+            fallback: list[tuple[str, FieldSpec, Any, str]] = []
             for name in diff.added:
                 spec_field = spec.field(name)
                 if not spec_field or spec_field.name in placement_tool.NEVER_PLACE:
@@ -978,7 +1208,7 @@ class StudioModelDraft(models.TransientModel):
                 fallback.append((name, spec_field, where, widget))
             if not fallback:
                 continue
-            root = xml_writer.parse_arch(view.arch)
+            root = xml_writer.parse_arch(cast("str", view.arch))
             changed = False
             for name, spec_field, where, widget in fallback:
                 label = spec_field.string or name
@@ -997,25 +1227,27 @@ class StudioModelDraft(models.TransientModel):
                 self._write_arch(view, root)
                 touched |= view
         if touched:
-            self.package_id.studio_capture(touched)
+            cast("StudioPackage", self.package_id).studio_capture(touched)
         if touched or anchored:
             # Views are data: they take effect immediately and need no reload,
             # so writing the files here keeps git in step without a second one.
-            self.package_id.action_write_files()
+            cast("StudioPackage", self.package_id).action_write_files()
         return bool(touched or anchored)
 
     @api.model
-    def _arch_names(self, view, name):
+    def _arch_names(self, view: View, name: str) -> bool:
         """Whether a view's own arch already shows ``name`` anywhere.
 
         Anywhere, subviews included: a field rendered twice in one form is the
         bug users report as "it saved my value in the wrong box".
         """
         return bool(
-            xml_writer.parse_arch(view.arch).xpath(".//field[@name='%s']" % name)
+            xml_writer.parse_arch(cast("str", view.arch)).xpath(
+                ".//field[@name='%s']" % name
+            )
         )
 
-    def _write_arch(self, view, root):
+    def _write_arch(self, view: View, root: LxmlElement) -> View:
         xml_writer.canonicalize_attributes(root)
         xml_writer.indent(root)
         try:
@@ -1032,12 +1264,12 @@ class StudioModelDraft(models.TransientModel):
             ) from err
         return view
 
-    def action_discard(self):
+    def action_discard(self) -> Literal[True]:
         self.ensure_one()
         self.spec_json = self.base_spec_json
         self.placement_json = "{}"
         self.features_json = "[]"
         # A companion exists only to serve an edit on this draft, so discarding
         # that edit leaves nothing for it to do.
-        self.companion_ids.unlink()
+        cast("StudioModelDraft", self.companion_ids).unlink()
         return True

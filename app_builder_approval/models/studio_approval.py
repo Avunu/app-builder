@@ -27,12 +27,68 @@ Both are plain declarative Python, which is why this is a code generator rather
 than a pile of data records.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, TypedDict, cast
+
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.app_builder_base.tools import modelspec, pycodegen
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.models.studio_package_model import StudioPackageModel
+from odoo.addons.app_builder_base.tools import modelspec, pycodegen, typed
+
+if TYPE_CHECKING:
+    # Only for the cast below; with `from __future__ import annotations`
+    # nothing here needs `Selection` at runtime. `field` (`_selection_values`)
+    # is read off a dynamically-named model's `_fields` dict, so its static
+    # type is the base `Field`, which does not declare
+    # `_description_selection` -- only its `Selection` subclass does (`odoo
+    # /fields.py`). True by construction only for a field `enable()` and
+    # `candidate_state_fields()` already established is a stored selection;
+    # invisible to pyright the same way every other traced dynamic-field gap
+    # in this migration is.
+    from odoo.fields import Selection
 
 MIXIN = "tier.validation"
+
+
+class ApprovalActionJSON(TypedDict):
+    """``action_open()``'s return: base_tier_validation's own rule list, scoped."""
+
+    type: str
+    name: str
+    res_model: str
+    view_mode: str
+    views: list[tuple[bool, str]]
+    domain: list[tuple[str, str, object]]
+    context: dict[str, object]
+    help: str
+
+
+class StateValueJSON(TypedDict):
+    """One value a candidate state field can hold, as ``candidate_state_fields()``
+    reports it."""
+
+    value: str
+    label: str
+
+
+class StateFieldJSON(TypedDict):
+    """One selection field ``enable()`` could gate on, as ``candidate_state_fields()``
+    returns it."""
+
+    name: str
+    string: str
+    values: list[StateValueJSON]
+
+
+class EnableApprovalJSON(TypedDict):
+    """``enable()``'s return: which model was gated, and whether it applied."""
+
+    model: str
+    applied: bool
 
 
 class StudioApproval(models.AbstractModel):
@@ -43,7 +99,9 @@ class StudioApproval(models.AbstractModel):
     # -- the rules themselves ---------------------------------------------
 
     @api.model
-    def action_open(self, model_name=None, package_id=None):
+    def action_open(
+        self, model_name: str | None = None, package_id: int | None = None
+    ) -> ApprovalActionJSON:
         """base_tier_validation's own rule list, scoped and with a package.
 
         The console's Approvals tab. Not a form of our own: the engine's
@@ -58,14 +116,14 @@ class StudioApproval(models.AbstractModel):
         help text saying that the gate comes first, since a rule on a model
         without the mixin is not an error -- it silently never fires.
         """
-        self._assert_studio_user()
-        package = self.env["studio.package"]._chosen(package_id)
-        domain = []
-        context = {"studio_package_id": package.id or False}
+        typed.security(self)._assert_studio_user()
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
+        domain: list[tuple[str, str, object]] = []
+        context: dict[str, object] = {"studio_package_id": package.id or False}
         if model_name:
             if model_name not in self.env:
                 raise UserError(_("Unknown model '%s'.", model_name))
-            model = self.env["ir.model"]._get(model_name)
+            model = typed.model(self.env, IrModel)._get(model_name)
             # `model` is the stored related the engine matches on, and the
             # column its own search view filters by.
             domain.append(("model", "=", model_name))
@@ -84,8 +142,16 @@ class StudioApproval(models.AbstractModel):
         }
 
     @api.model
-    def _empty_state(self, model_name):
-        gated = model_name and MIXIN in self.env[model_name]._inherit_module
+    def _empty_state(self, model_name: str | None) -> str:
+        # `_inherit_module` (`odoo/models.py`) is assigned per concrete
+        # model class by the registry-building metaclass, never declared as
+        # a typed attribute on `BaseModel` itself -- a real, traced
+        # vendor-stub gap (confirmed by reading `models.py`'s own class
+        # body; there is no such declaration), not fixable from this side.
+        # `self.env[model_name]` is the dynamically-named-model exception
+        # (rule 2), so it stays the plain lookup its bare `BaseModel`
+        # return type already implies.
+        gated = model_name and MIXIN in self.env[model_name]._inherit_module  # pyright: ignore[reportAttributeAccessIssue]
         if model_name and not gated:
             return "<p class='o_view_nocontent_smiling_face'>%s</p><p>%s</p>" % (
                 _("Approvals are not switched on for %s yet", model_name),
@@ -106,7 +172,7 @@ class StudioApproval(models.AbstractModel):
     # -- what a model needs before it can be gated ------------------------
 
     @api.model
-    def candidate_state_fields(self, model_name):
+    def candidate_state_fields(self, model_name: str) -> list[StateFieldJSON]:
         """Selection fields that could carry the transition being gated.
 
         A model with none cannot be gated at all: the engine's guard
@@ -114,10 +180,10 @@ class StudioApproval(models.AbstractModel):
         (`tier_validation.py:512`), so a rule on a stateless model is not an
         error -- it simply never fires, which is worse.
         """
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
-        out = []
+        out: list[StateFieldJSON] = []
         for name, field in sorted(self.env[model_name]._fields.items()):
             if field.type != "selection" or not field.store:
                 continue
@@ -134,17 +200,37 @@ class StudioApproval(models.AbstractModel):
         return out
 
     @api.model
-    def _selection_values(self, model_name, field_name):
+    def _selection_values(
+        self, model_name: str, field_name: str
+    ) -> list[tuple[str, str]]:
         field = self.env[model_name]._fields[field_name]
         try:
-            return field._description_selection(self.env) or []
+            # See this file's own `TYPE_CHECKING` note: `_description_selection`
+            # is `Selection`'s own, not the base `Field`'s -- true here only
+            # because every real caller already established `field_name`
+            # names a stored selection field. Its own return type is a wide,
+            # partly-`Unknown` union (three branches: a callable's own
+            # return, `ir.model.fields.get_field_selection`, or the raw
+            # `selection` attribute) -- the same untyped-vendor-method gap
+            # `studio_domain.py`'s own `fields_for` already documents for
+            # the sibling accessor (`get_description(...).get("selection")`);
+            # cast to what the method's own docstring promises ("pairs
+            # (value, label)").
+            selection = cast("Selection", field)._description_selection(self.env)
+            return cast("list[tuple[str, str]]", selection or [])
         except Exception:  # noqa: BLE001
             # A selection built by a callable can need a record to evaluate.
             # Offering no values is honest; guessing is not.
             return []
 
     @api.model
-    def _validate_transition(self, model_name, state_field, state_from, state_to):
+    def _validate_transition(
+        self,
+        model_name: str,
+        state_field: str,
+        state_from: list[str],
+        state_to: list[str],
+    ) -> None:
         values = {v for v, _label in self._selection_values(model_name, state_field)}
         if not values:
             return  # nothing to check against; the field may be dynamic
@@ -175,22 +261,22 @@ class StudioApproval(models.AbstractModel):
     @api.model
     def enable(
         self,
-        package_id,
-        model_name,
-        state_field="state",
-        state_from=None,
-        state_to=None,
-        cancel_state=None,
-        apply=True,
-    ):
+        package_id: int,
+        model_name: str,
+        state_field: str = "state",
+        state_from: list[str] | None = None,
+        state_to: list[str] | None = None,
+        cancel_state: str | None = None,
+        apply: bool = True,
+    ) -> EnableApprovalJSON:
         """Give ``model_name`` an approval gate, as source.
 
         ``apply`` reloads the module, which is what makes the mixin live.
         Separable for the same reason it is in code graduation: `action_apply`
         commits, and a commit is unreachable from a `TransactionCase`.
         """
-        self._assert_studio_manager()
-        package = self.env["studio.package"].browse(package_id).exists()
+        typed.security(self)._assert_studio_manager()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a studio package to record this in."))
         package._assert_writable()
@@ -227,9 +313,15 @@ class StudioApproval(models.AbstractModel):
 
     @api.model
     def _write_gated_model(
-        self, package, model_name, state_field, state_from, state_to, cancel_state
-    ):
-        entry = self.env["studio.package.model"].search(
+        self,
+        package: StudioPackage,
+        model_name: str,
+        state_field: str,
+        state_from: list[str],
+        state_to: list[str],
+        cancel_state: str | None,
+    ) -> StudioPackageModel:
+        entry = typed.model(self.env, StudioPackageModel).search(
             [("package_id", "=", package.id), ("model", "=", model_name)], limit=1
         )
         if entry and entry.source != "python":
@@ -241,7 +333,7 @@ class StudioApproval(models.AbstractModel):
                 )
             )
         if not entry:
-            entry = self.env["studio.package.model"]._adopt(
+            entry = typed.model(self.env, StudioPackageModel)._adopt(
                 package, model_name, extends=True
             )
         spec = entry._current_spec() or modelspec.ModelSpec(
@@ -280,7 +372,9 @@ class StudioApproval(models.AbstractModel):
         return entry
 
     @api.model
-    def _write_model_picker(self, package, model_name):
+    def _write_model_picker(
+        self, package: StudioPackage, model_name: str
+    ) -> StudioPackageModel:
         """Append the model to tier.definition's picker.
 
         ``_get_tier_validation_model_names`` returns ``[]`` in
@@ -289,12 +383,12 @@ class StudioApproval(models.AbstractModel):
         rule cannot be created through Odoo's own form -- which is where we send
         people, so it is not optional.
         """
-        entry = self.env["studio.package.model"].search(
+        entry = typed.model(self.env, StudioPackageModel).search(
             [("package_id", "=", package.id), ("model", "=", "tier.definition")],
             limit=1,
         )
         if not entry:
-            entry = self.env["studio.package.model"]._adopt(
+            entry = typed.model(self.env, StudioPackageModel)._adopt(
                 package, "tier.definition", extends=True
             )
         spec = entry._current_spec() or modelspec.ModelSpec(
@@ -317,15 +411,15 @@ class StudioApproval(models.AbstractModel):
         return entry
 
     @api.model
-    def _gated_models(self, package):
+    def _gated_models(self, package: StudioPackage) -> list[str]:
         """Models in this package that already carry the mixin."""
-        out = []
-        for entry in package.model_ids:
+        out: list[str] = []
+        for entry in cast("StudioPackageModel", package.model_ids):
             if entry.model == "tier.definition" or entry.source != "python":
                 continue
             spec = entry._current_spec()
             if spec is not None and MIXIN in spec.inherit:
-                out.append(entry.model)
+                out.append(cast("str", entry.model))
         return out
 
 

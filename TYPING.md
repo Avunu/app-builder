@@ -3087,14 +3087,94 @@ than reasoned about:
   (adopt the helper everywhere, or remove it too for the same reason
   `serializer_super()` was removed) rather than a default either way.
 
-  This closes Phase 1c wave 2 in full. Next: wave 3 per the dependency
-  map above (`studio_model_draft.py`/`studio_security_surfaces.py` in
-  `app_builder_base`, `studio_package_model.py` in `app_builder_view` --
-  a different, not-yet-converted file of the same name as the
-  already-converted `app_builder_base` one, a pure `_inherit` extension --
-  `studio_graduate_code.py`/`studio_menu_surface.py`/`studio_owned.py`
-  in `app_builder_ui`, `ir_actions_report.py`/`studio_report_surface.py`
-  in `app_builder_report`, `studio_approval.py` in `app_builder_approval`).
+  This closes Phase 1c wave 2 in full.
+
+- **Wave 3** (9 files across 5 addons, converted as one batch -- 8 draft
+  agents in a pipeline plus a dedicated 9th for the one big file, then
+  two parallel verify agents, one per batch): `studio_model_draft.py`/
+  `studio_security_surfaces.py` (`app_builder_base`), `studio_package_model
+  .py` (`app_builder_view` -- the pure-`_inherit`-extension file, a
+  different Python class from the already-converted `app_builder_base`
+  one of the identical name), `studio_graduate_code.py`/
+  `studio_menu_surface.py`/`studio_owned.py` (`app_builder_ui`),
+  `ir_actions_report.py`/`studio_report_surface.py` (`app_builder_report`),
+  `studio_approval.py` (`app_builder_approval`). Full-tree `pyright`
+  dropped from 2923 to 2741 (182 errors). `pyrightconfig.json`/
+  `pyrightconfig.ci.json`/every addon's own `pyproject.toml` confirmed
+  unchanged.
+
+  **`studio_owned.py`** needed zero changes -- confirmed to be, on closer
+  reading, *seven* (not the dependency map's five) zero-method
+  `_inherit`-composition classes wiring `studio.owned.mixin`/
+  `studio.captured.on.create` onto core models, with nothing for pyright
+  to check. Same "if already clean, make no changes" call as
+  `res_users.py` (wave 0).
+
+  **`studio_package_model.py`** (`app_builder_view`) is a pure `_inherit
+  = "studio.package.model"` extension with no `_name` of its own -- a
+  new shape of the `_inherit`-invisibility gap: not a mixin's method on
+  `self`, but a DIFFERENT file's `_name`-sharing class's own FIELDS
+  (`source`/`model`/`package_id`, all declared in the real
+  `StudioPackageModel` over in `app_builder_base`) being invisible to
+  pyright on this file's own `self`. Fixed the same way every other
+  `_inherit`-invisibility case in this migration is fixed --
+  `cast("StudioPackageModelBase", self)` at each real read, the base
+  class imported `TYPE_CHECKING`-only and aliased (this file's own class
+  is *also* named `StudioPackageModel`, a real Python name collision
+  otherwise). `action_compose()`'s own override legitimately widens the
+  base's declared `-> NoReturn` to a real return type for the branch
+  that actually returns -- no override-compatibility check fires for
+  `_inherit`-only composition (the same confirmed-elsewhere deviation
+  `_sort_key`'s widening relied on in wave 1).
+
+  **`studio_report_surface.py`** (`app_builder_report`) hit the identical
+  same-name collision one level further: it declares its own
+  `class StudioReport` (`_name = "studio.report"`, `_inherit =
+  ["studio.record.surface", "studio.report"]`), which the registry
+  merges with the *other*, already-converted `class StudioReport` in
+  the same addon's `studio_report.py` at the SAME `_name` -- two
+  distinct Python classes, same name, same file's own import statement
+  would collide. Fixed with an aliased import
+  (`from .studio_report import StudioReport as StudioReportBase`),
+  `cast("StudioReportBase", self)` wherever this file's own methods
+  need the other class's `_template_of`/`create_report`.
+
+  **`studio_security_surfaces.py`**, **`studio_menu_surface.py`** and
+  **`studio_report_surface.py`** are this wave's three
+  `studio.record.surface` subclasses (the base, `studio_record_surface
+  .py`, converted in wave 2) -- the first real test of that base's own
+  declared override contracts against real subclasses. All matched
+  cleanly, with one new, reusable pattern: **TypedDict subclassing**,
+  for the three `_row()`/`rows()` overrides that add MORE keys to every
+  dict than the base's own closed `RecordRowJSON` declares (`title`/
+  `perms` for access rows; `depth`/`parent_id`/`opens`/`highlight` for
+  menu rows, which are also `wire.ts`'s own long-predicted widening,
+  now finally backed by a real override; `view_id`/`report_name`/
+  `patched` for report rows) -- `class MenuRowJSON(RecordRowJSON): ...`
+  etc., each with a REAL (never `TYPE_CHECKING`-only) import of
+  `RecordRowJSON`, since a `class X(Y):` statement executes at import
+  time unlike a plain `cast()` target. `studio_menu_surface.py` also
+  hit `wire.ts`'s already-documented `Reference` field trap
+  (`record.action`) at real call sites for the first time in a Python
+  file since `Environment.cr`/`.user` established the pattern.
+
+  **`studio_model_draft.py`** (1043 -> 1276 lines, ~46 methods, the
+  `TransientModel` behind the console's entire "add/edit a field, live"
+  workflow) got the same dedicated draft-then-independently-verify
+  treatment as `studio_package.py` and `studio_record_surface.py`
+  before it, given its size and centrality -- a full side-by-side
+  method-by-method behavioral read against the original, not a sampled
+  diff review. Verified clean with no defects: every `self.env[...]`
+  literal routed through `typed.model()`, all 10 real security-gate call
+  sites routed through `typed.security(self)`, every new TypedDict
+  spot-checked against its real literal-dict call sites.
+
+  This closes Phase 1c wave 3 in full. Next: wave 4 and beyond, working
+  outward through the remaining surface-mixin hierarchy and the
+  view/report/approval leaves per the dependency map above -- not yet
+  enumerated file-by-file here; the addons' own `models/` directories
+  and this document's running "Implemented so far" list are the
+  authoritative record of what remains.
 
 ## CI: the OCA container's real layout
 

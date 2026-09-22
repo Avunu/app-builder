@@ -8,12 +8,20 @@ inheriting views alongside it with no indication of which is which. That is the
 technical view of the thing. This is the editing one.
 """
 
+from __future__ import annotations
+
+from typing import cast
+
 from odoo import models
+
+from odoo.addons.app_builder_base.tools import typed
+
+from .studio_report import OpenConsoleActionJSON, StudioReport
 
 
 class IrActionsReport(models.Model):
     _inherit = "ir.actions.report"
 
-    def action_studio_edit(self):
+    def action_studio_edit(self) -> OpenConsoleActionJSON:
         self.ensure_one()
-        return self.env["studio.report"].edit_action(self.id)
+        return typed.model(self.env, StudioReport).edit_action(cast("int", self.id))

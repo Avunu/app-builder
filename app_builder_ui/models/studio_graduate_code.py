@@ -23,10 +23,34 @@ the same thing that made *that* possible for a model the package does not own,
 which is why it could not be built until ``ModelSpec.extends`` existed.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, TypedDict, cast
+
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.app_builder_base.tools import modelspec, pycodegen
+from odoo.addons.base.models.ir_actions import IrActionsServer
+from odoo.addons.app_builder_base.models.studio_package_model import StudioPackageModel
+from odoo.addons.app_builder_base.tools import modelspec, pycodegen, typed
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime -- the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    # `StudioPackageModel` is a real, top-level import instead (above):
+    # `typed.model()` reads `cls._name` at runtime.
+    from odoo.addons.base.models.ir_model import IrModel
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+
+
+class GraduateJSON(TypedDict):
+    """``graduate()``'s return: the method it wrote, and where."""
+
+    method: str
+    model: str
+    applied: bool
 
 
 class StudioGraduateCode(models.AbstractModel):
@@ -35,7 +59,7 @@ class StudioGraduateCode(models.AbstractModel):
     _description = "Studio: Promote Automation Code to Source"
 
     @api.model
-    def can_graduate(self, action):
+    def can_graduate(self, action: IrActionsServer) -> str:
         """Why this action's code cannot become a method, or nothing."""
         if action.state != "code":
             return _("Only an Execute Code action has code to promote.")
@@ -43,7 +67,17 @@ class StudioGraduateCode(models.AbstractModel):
             return _("There is no code here to promote.")
         if not action.model_id:
             return _("The action does not say which model it runs on.")
-        package = action.studio_package_id
+        # `studio_package_id` is a field from `studio.owned.mixin`, composed
+        # onto `ir.actions.server` in `app_builder_ui/models/studio_owned.py`
+        # (`_inherit`, never a real Python base class) -- invisible to
+        # pyright on `action` itself without the first cast, same idiom as
+        # `typed.security()`'s own docstring. The second cast is the plain-
+        # string-comodel one (rule 5, `typed.py`'s own docstring): the field
+        # is declared `Many2one("studio.package", ...)`, unsubscripted, so
+        # its read type is the bound `BaseModel`, not `StudioPackage`.
+        package = cast(
+            "StudioPackage", cast("StudioOwnedMixin", action).studio_package_id
+        )
         if not package:
             return _(
                 "This action does not belong to a studio package, so there is "
@@ -61,14 +95,14 @@ class StudioGraduateCode(models.AbstractModel):
         return ""
 
     @api.model
-    def _already_promoted(self, action):
+    def _already_promoted(self, action: IrActionsServer) -> bool:
         """A one-line body that is just a call is one we wrote."""
         body = (action.code or "").strip()
         prefix = "(records or record).%s" % modelspec.STUDIO_METHOD_PREFIX
         return body.startswith(prefix)
 
     @api.model
-    def graduate(self, action_id, apply=True):
+    def graduate(self, action_id: int, apply: bool = True) -> GraduateJSON:
         """Move the body into a method and leave the action calling it.
 
         ``apply`` writes the source *and* reloads the module, which is what
@@ -79,16 +113,23 @@ class StudioGraduateCode(models.AbstractModel):
         transformation is testable in the ordinary suite and the reload is
         exercised where reloads are.
         """
-        self._assert_studio_manager()
-        action = self.env["ir.actions.server"].browse(action_id).exists()
+        typed.security(self)._assert_studio_manager()
+        action = typed.model(self.env, IrActionsServer).browse(action_id).exists()
         if not action:
             raise UserError(_("That action no longer exists."))
         problem = self.can_graduate(action)
         if problem:
             raise UserError(problem)
 
-        package = action.studio_package_id
-        model_name = action.model_id.model
+        # Same `studio.owned.mixin` self-cast, and same plain-string-comodel
+        # cast, as `can_graduate` above.
+        package = cast(
+            "StudioPackage", cast("StudioOwnedMixin", action).studio_package_id
+        )
+        # `model_id` is likewise `Many2one("ir.model", ...)`, unsubscripted;
+        # `model` is `ir.model`'s own required Char, declared `str | False`
+        # but never actually empty -- same cast as `ir_model.py`'s serializer.
+        model_name = cast("str", cast("IrModel", action.model_id).model)
         entry = self._python_entry(package, model_name)
         spec = entry._current_spec()
         if spec is None:
@@ -101,8 +142,13 @@ class StudioGraduateCode(models.AbstractModel):
             )
 
         method = modelspec.MethodSpec(
-            name=self._unique_method_name(spec, action.name),
-            body=action.code.strip("\n"),
+            name=self._unique_method_name(spec, cast("str", action.name)),
+            # `code` is declared `str | False` (`odoo/fields.py`'s own `Text`
+            # read type); `can_graduate` above already required it non-empty
+            # -- same "declared too abstract for what is really there"
+            # cast as every other required-by-validation read in this
+            # migration.
+            body=cast("str", action.code).strip("\n"),
             doc=_("Promoted from the automation %s.", action.name),
         )
         from dataclasses import replace as _replace
@@ -119,7 +165,9 @@ class StudioGraduateCode(models.AbstractModel):
         return {"method": method.name, "model": model_name, "applied": apply}
 
     @api.model
-    def _python_entry(self, package, model_name):
+    def _python_entry(
+        self, package: StudioPackage, model_name: str
+    ) -> StudioPackageModel:
         """The package's Python class for this model, extending if need be.
 
         A model the package declares already has one. Anything else -- which is
@@ -127,7 +175,7 @@ class StudioGraduateCode(models.AbstractModel):
         gets an extension: `_inherit` with no `_name`, which adds to the model
         rather than competing with it.
         """
-        PackageModel = self.env["studio.package.model"]
+        PackageModel = typed.model(self.env, StudioPackageModel)
         entry = PackageModel.search(
             [("package_id", "=", package.id), ("model", "=", model_name)], limit=1
         )
@@ -154,7 +202,7 @@ class StudioGraduateCode(models.AbstractModel):
         return entry
 
     @api.model
-    def _unique_method_name(self, spec, label):
+    def _unique_method_name(self, spec: modelspec.ModelSpec, label: str) -> str:
         base = pycodegen.method_name_for(label)
         taken = {m.name for m in spec.methods}
         if base not in taken:

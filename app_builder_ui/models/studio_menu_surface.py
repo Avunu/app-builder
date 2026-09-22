@@ -14,13 +14,47 @@ submenu made from here is a menu and a list+form action, created and
 removed as one.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Literal, cast
+
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.app_builder_base.tools import compat
+from odoo.addons.base.models.ir_actions import IrActionsActWindow
+from odoo.addons.base.models.ir_model import IrModel, IrModelData
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.models.studio_record_surface import RecordRowJSON
+from odoo.addons.app_builder_base.tools import compat, typed
 from odoo.addons.app_builder_base.tools.catalogue import Row, Section
 
+if TYPE_CHECKING:
+    # Only for annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime -- the same bargain
+    # `studio_record_surface.py`'s own `TYPE_CHECKING` block makes.
+    # `IrActionsActWindow`/`IrModel`/`IrModelData`/`StudioPackage`/
+    # `RecordRowJSON` are real, top-level imports instead (above):
+    # `typed.model()` reads `cls._name` at *runtime*, and `RecordRowJSON` is
+    # subclassed below (a real class statement, not a bare annotation).
+    from odoo.models import BaseModel
+
+    from odoo.addons.base.models.ir_ui_menu import IrUiMenu
+    from odoo.addons.app_builder_base.models.studio_record_surface import (
+        StudioRecordSurface,
+    )
+
 DEFAULT_ICON = "fa fa-cubes,#875A7B,#FFFFFF"
+
+
+class MenuRowJSON(RecordRowJSON):
+    """One row of ``rows()``: the base's eleven keys plus tree position and
+    what the menu opens (``rows()``'s own ``walk()``, matching ``wire.ts``'s
+    optional ``depth``/``parent_id`` extensions to ``RecordRowJSON``)."""
+
+    depth: int
+    parent_id: int | Literal[False]
+    opens: str
+    highlight: bool
 
 
 class StudioMenu(models.AbstractModel):
@@ -103,32 +137,34 @@ class StudioMenu(models.AbstractModel):
     # -- rows ------------------------------------------------------------------
 
     @api.model
-    def _subject_model(self, record):
+    def _subject_model(self, record: BaseModel) -> str:
         return ""
 
     @api.model
-    def _subject_vals(self, model_name):
+    def _subject_vals(self, model_name: str) -> dict[str, object]:
         return {}
 
     @api.model
-    def _groups_field(self):
+    def _groups_field(self) -> str:
         return compat.groups_field(self.env, "ir.ui.menu")
 
     @api.model
-    def rows(self, model_name, package_id=None, **kwargs):
+    def rows(
+        self, model_name: str, package_id: int | None = None, **kwargs: object
+    ) -> list[MenuRowJSON]:
         """The package's menus in tree order, under the foreign parents
         they hang from; ``model_name`` marks the ones that open it."""
-        self._assert_studio_user()
-        package = self.env["studio.package"]._chosen(package_id)
+        typed.security(self)._assert_studio_user()
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
         Menu = self._menus()
         owned = Menu
         if package:
             data = (
-                self.env["ir.model.data"]
+                typed.model(self.env, IrModelData)
                 .sudo()
                 .search([("module", "=", package.name), ("model", "=", "ir.ui.menu")])
             )
-            owned = Menu.browse(data.mapped("res_id")).exists()
+            owned = Menu.browse(cast("list[int]", data.mapped("res_id"))).exists()
         # The package's menus, the parents they hang from, and whatever
         # else sits beside them under those parents -- greyed, so the order
         # a person sees in the menu bar is the order shown here.
@@ -136,58 +172,81 @@ class StudioMenu(models.AbstractModel):
         if owned:
             shown |= Menu.search([("parent_id", "in", owned.ids)])
         for menu in owned:
-            parent = menu.parent_id
+            parent = cast("IrUiMenu", menu.parent_id)
             while parent and parent not in shown:
                 shown |= parent
-                parent = parent.parent_id
-        by_parent = {}
+                parent = cast("IrUiMenu", parent.parent_id)
+        by_parent: dict[int | Literal[False], list[IrUiMenu]] = {}
         for menu in shown:
-            key = menu.parent_id.id if menu.parent_id in shown else 0
+            # `.id` is `int | NewId | Literal[False]` (`odoo.api.IdType`,
+            # plus the field's own `Literal[False]` for an unset many2one);
+            # every menu reachable here is a persisted record, so only the
+            # `NewId` half of that union is cast away -- `Literal[False]`
+            # stays, the same honest fallback `row["parent_id"]` below uses.
+            key = (
+                cast("int | Literal[False]", cast("IrUiMenu", menu.parent_id).id)
+                if menu.parent_id in shown
+                else 0
+            )
             by_parent.setdefault(key, []).append(menu)
-        rows = []
+        rows: list[MenuRowJSON] = []
 
-        def walk(parent_id, depth):
-            for menu in sorted(
-                by_parent.get(parent_id, []), key=lambda m: (m.sequence, m.id)
-            ):
-                row = self._row(menu, package)
+        def walk(parent_id: int | Literal[False], depth: int) -> None:
+            siblings: list[IrUiMenu] = by_parent.get(parent_id, [])
+            for menu in sorted(siblings, key=lambda m: (m.sequence, m.id)):
+                row = cast("MenuRowJSON", self._row(menu, package))
                 row["depth"] = depth
                 row["parent_id"] = (
-                    menu.parent_id.id if menu.parent_id in shown else False
+                    cast("int | Literal[False]", cast("IrUiMenu", menu.parent_id).id)
+                    if menu.parent_id in shown
+                    else False
                 )
                 row["opens"] = self._opens(menu)
                 row["highlight"] = bool(model_name) and row["opens"] == model_name
                 rows.append(row)
-                walk(menu.id, depth + 1)
+                walk(cast("int | Literal[False]", menu.id), depth + 1)
 
         walk(0, 0)
         return rows
 
     @api.model
-    def _row(self, record, package):
-        row = super()._row(record, package)
+    def _row(self, record: BaseModel, package: StudioPackage) -> RecordRowJSON:
+        row = cast("StudioRecordSurface", super())._row(record, package)
         # display_name is the whole path; the tree shows the path already.
-        row["title"] = record.name
+        # `name` is `required=True` on `ir.ui.menu`, the same true-by-
+        # construction idiom `_subject_model`'s own `.model` cast uses
+        # (`studio_record_surface.py`).
+        row["title"] = cast("str", cast("IrUiMenu", record).name)
         return row
 
     @api.model
-    def _menus(self):
+    def _menus(self) -> IrUiMenu:
         """Every menu, not only the ones the menu bar would show: a folder
         with no children yet is hidden from an ordinary search."""
-        return self._model().with_context(
-            active_test=False, **{"ir.ui.menu.full_list": True}
+        # `_model` lives on `studio.record.surface` (`studio_record_surface
+        # .py`, a *different* file's class body for the same `_inherit`-
+        # composed model) -- invisible to pyright on plain `self` the same
+        # way `_assert_studio_user` is on `studio.security.mixin` (rule 6,
+        # `typed.py`'s own docstring).
+        return cast(
+            "IrUiMenu",
+            cast("StudioRecordSurface", self)
+            ._model()
+            .with_context(active_test=False, **{"ir.ui.menu.full_list": True}),
         )
 
     @api.model
-    def _opens(self, menu):
-        action = menu.action
+    def _opens(self, menu: IrUiMenu) -> str:
+        action = cast("IrActionsActWindow", menu.action)
         if action and action._name == "ir.actions.act_window":
-            return action.res_model
+            # `res_model` is `required=True` on `ir.actions.act_window`, the
+            # same true-by-construction idiom as `_row`'s own `.name` cast.
+            return cast("str", action.res_model)
         return ""
 
     @api.model
-    def _sentence(self, record):
-        action = record.action
+    def _sentence(self, record: BaseModel) -> str:
+        action = cast("IrActionsActWindow", cast("IrUiMenu", record).action)
         if not action:
             return _("Opens nothing: a folder for the menus under it.")
         if action._name == "ir.actions.act_window":
@@ -199,7 +258,7 @@ class StudioMenu(models.AbstractModel):
         return _("Opens %s", action.display_name)
 
     @api.model
-    def _foreign_reason(self, record, module):
+    def _foreign_reason(self, record: BaseModel, module: str) -> str:
         return _(
             "Defined by %s. Shown here so you can see where yours sit; edit "
             "it in that module.",
@@ -209,26 +268,25 @@ class StudioMenu(models.AbstractModel):
     # -- values --------------------------------------------------------------
 
     @api.model
-    def _values(self, record):
-        values = super()._values(record)
+    def _values(self, record: BaseModel) -> dict[str, object]:
+        values = cast("StudioRecordSurface", super())._values(record)
+        action = cast("BaseModel", cast("IrUiMenu", record).action)
         values["action"] = (
-            "%s (%s)" % (record.action.display_name, record.action._name)
-            if record.action
-            else ""
+            "%s (%s)" % (action.display_name, action._name) if action else ""
         )
         return values
 
     @api.model
-    def _virtual_value(self, record, name):
+    def _virtual_value(self, record: BaseModel, name: str) -> object:
         if name == "groups":
             return [
                 {"id": group.id, "display_name": group.full_name}
                 for group in record[self._groups_field()]
             ]
         if name == "opens_model":
-            model_name = self._opens(record)
+            model_name = self._opens(cast("IrUiMenu", record))
             ir_model = (
-                self.env["ir.model"]
+                typed.model(self.env, IrModel)
                 .sudo()
                 .search([("model", "=", model_name)], limit=1)
                 if model_name
@@ -239,25 +297,38 @@ class StudioMenu(models.AbstractModel):
                 if ir_model
                 else False
             )
-        return super()._virtual_value(record, name)
+        return cast("StudioRecordSurface", super())._virtual_value(record, name)
 
     @api.model
-    def _coerce_virtual(self, row, value, model_name):
+    def _coerce_virtual(
+        self, row: Row, value: object, model_name: str
+    ) -> dict[str, object]:
         if row.name == "groups":
-            ids = [v.get("id") if isinstance(v, dict) else v for v in (value or [])]
+            ids = [
+                v.get("id") if isinstance(v, dict) else v
+                for v in (cast("Any", value) or [])
+            ]
             ids = [int(i) for i in ids if i]
-            self._assert_in_source(row, ids)
+            # `_assert_in_source` lives on `studio.record.surface` -- same
+            # rule 6 gap as `_model` above.
+            cast("StudioRecordSurface", self)._assert_in_source(row, ids)
             return {self._groups_field(): [(6, 0, ids)]}
         if row.name == "opens_model":
             # Turned into an action after the write / on create (see below).
             if isinstance(value, dict):
                 value = value.get("id")
-            return {"_opens_model_id": int(value) if value else False}
-        return super()._coerce_virtual(row, value, model_name)
+            return {"_opens_model_id": int(cast("Any", value)) if value else False}
+        return cast("StudioRecordSurface", super())._coerce_virtual(
+            row, value, model_name
+        )
 
     @api.model
-    def _coerce(self, model_name, values, creating=False):
-        vals = super()._coerce(model_name, values, creating=creating)
+    def _coerce(
+        self, model_name: str, values: dict[str, object], creating: bool = False
+    ) -> dict[str, object]:
+        vals = cast("StudioRecordSurface", super())._coerce(
+            model_name, values, creating=creating
+        )
         # Not a field: popped by the caller and turned into an action.
         vals["_opens"] = vals.pop("_opens_model_id", None)
         return vals
@@ -265,42 +336,46 @@ class StudioMenu(models.AbstractModel):
     # -- the action a menu opens ----------------------------------------------
 
     @api.model
-    def _make_action(self, name, model_id, package):
-        ir_model = self.env["ir.model"].sudo().browse(model_id).exists()
+    def _make_action(
+        self, name: str, model_id: int, package: StudioPackage
+    ) -> IrActionsActWindow:
+        ir_model = typed.model(self.env, IrModel).sudo().browse(model_id).exists()
         if not ir_model:
             raise UserError(_("Say which model the menu opens."))
+        vals = {
+            "name": name,
+            "res_model": ir_model.model,
+            "view_mode": "list,form",
+        }
         action = (
-            self.env["ir.actions.act_window"]
+            typed.model(self.env, IrActionsActWindow)
             .sudo()
             .with_context(studio_package_id=package.id)
-            .create(
-                {
-                    "name": name,
-                    "res_model": ir_model.model,
-                    "view_mode": "list,form",
-                }
-            )
+            .create(vals)  # pyright: ignore[reportArgumentType] -- see `create_record`'s own comment (`studio_record_surface.py`).
         )
         package.studio_capture(action, write_files=False)
         return action
 
     @api.model
-    def _point_at(self, menu, model_id, package):
+    def _point_at(self, menu: BaseModel, model_id: int, package: StudioPackage) -> None:
         """Make the menu open a new list+form action on ``model_id``; the old
         action goes when nothing else opens it."""
-        old = menu.action
+        old = cast("IrActionsActWindow", cast("IrUiMenu", menu).action)
         if (
             old
             and old._name == "ir.actions.act_window"
-            and old.res_model == (self.env["ir.model"].sudo().browse(model_id).model)
+            and old.res_model
+            == (typed.model(self.env, IrModel).sudo().browse(model_id).model)
         ):
             return
-        action = self._make_action(menu.name, model_id, package)
+        action = self._make_action(
+            cast("str", cast("IrUiMenu", menu).name), model_id, package
+        )
         menu.write({"action": "ir.actions.act_window,%d" % action.id})
         self._drop_orphan_action(old, package)
 
     @api.model
-    def _drop_orphan_action(self, action, package):
+    def _drop_orphan_action(self, action: BaseModel, package: StudioPackage) -> None:
         if not action or action._name != "ir.actions.act_window":
             return
         others = self._menus().search(
@@ -308,38 +383,56 @@ class StudioMenu(models.AbstractModel):
         )
         if others:
             return
-        owner = self._owner(action)
+        # `_owner` lives on `studio.record.surface` -- same rule 6 gap as
+        # `_model`/`_assert_in_source` above.
+        owner = cast("StudioRecordSurface", self)._owner(action)
         if owner["package"] == package:
             action.unlink()
 
     # -- writing -----------------------------------------------------------------
 
     @api.model
-    def write_record(self, record_id, values, package_id=None):
-        self._assert_studio_manager()
-        record = self._record(record_id)
-        package = self.env["studio.package"]._chosen(package_id)
-        owner = self._assert_editable(record, package)
+    def write_record(
+        self, record_id: int, values: dict[str, object], package_id: int | None = None
+    ) -> RecordRowJSON:
+        typed.security(self)._assert_studio_manager()
+        # `_record`/`_assert_editable` live on `studio.record.surface` --
+        # same rule 6 gap as `_model`/`_assert_in_source`/`_owner` above.
+        record = cast("StudioRecordSurface", self)._record(record_id)
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
+        owner = cast("StudioRecordSurface", self)._assert_editable(record, package)
         vals = self._coerce("", values)
         opens = vals.pop("_opens", None)
         if vals:
             record.write(vals)
         if opens:
-            self._point_at(record, opens, owner)
+            self._point_at(record, cast("int", opens), owner)
         if vals or opens:
             owner.studio_capture(record)
         return self._row(record, owner)
 
     @api.model
-    def create_record(self, model_name, package_id, values, template=None):
-        self._assert_studio_manager()
-        package = self.env["studio.package"]._chosen(package_id)
+    def create_record(
+        self,
+        model_name: str,
+        package_id: int | None,
+        values: dict[str, object] | None,
+        template: str | None = None,
+    ) -> RecordRowJSON:
+        typed.security(self)._assert_studio_manager()
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
         if not package:
             raise UserError(_("Choose a package to record this in first."))
         package._assert_writable()
-        merged = {}
+        merged: dict[str, object] = {}
         if template:
-            merged.update(self._template_values(template, model_name, values))
+            # `_template_values` lives on `studio.record.surface` -- same
+            # rule 6 gap as `_model`/`_record`/`_assert_editable` above.
+            merged.update(
+                cast("StudioRecordSurface", self)._template_values(
+                    template, model_name, values
+                )
+            )
         merged.update(values or {})
         vals = self._coerce("", merged, creating=True)
         opens = vals.pop("_opens", None)
@@ -354,45 +447,79 @@ class StudioMenu(models.AbstractModel):
             )
             vals["sequence"] = max(siblings.mapped("sequence") or [0]) + 10
         if opens:
-            action = self._make_action(vals["name"], opens, package)
+            action = self._make_action(
+                cast("str", vals["name"]), cast("int", opens), package
+            )
             vals["action"] = "ir.actions.act_window,%d" % action.id
-        menu = self._model().with_context(studio_package_id=package.id).create(vals)
+        menu = (
+            cast("StudioRecordSurface", self)
+            ._model()
+            .with_context(studio_package_id=package.id)
+            .create(vals)  # pyright: ignore[reportArgumentType] -- see `create_record`'s own comment (`studio_record_surface.py`).
+        )
         package.studio_capture(menu)
         return self._row(menu, package)
 
     @api.model
-    def _before_remove(self, record, package, force=False):
+    def _before_remove(
+        self, record: BaseModel, package: StudioPackage, force: bool = False
+    ) -> None:
         # The children go with the parent (Odoo cascades), and so does the
         # action when nothing else opens it -- after the menu is gone.
         return
 
     @api.model
-    def remove_record(self, record_id, package_id=None, force=False):
-        record = self._record(record_id)
-        action = record.action
-        package = self.env["studio.package"]._chosen(package_id)
-        result = super().remove_record(record_id, package_id, force=force)
+    def remove_record(
+        self, record_id: int, package_id: int | None = None, force: bool = False
+    ) -> bool:
+        record = cast("StudioRecordSurface", self)._record(record_id)
+        action = cast("BaseModel", cast("IrUiMenu", record).action)
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
+        result = cast("StudioRecordSurface", super()).remove_record(
+            record_id, package_id, force=force
+        )
         self._drop_orphan_action(action, package)
         if package:
             package.action_write_files()
         return result
 
     @api.model
-    def move(self, menu_id, parent_id=None, before_id=None, package_id=None):
+    def move(
+        self,
+        menu_id: int,
+        parent_id: int | None = None,
+        before_id: int | None = None,
+        package_id: int | None = None,
+    ) -> list[int]:
         """Put ``menu_id`` under ``parent_id`` (or at the root) before
         ``before_id``, or last; the owned siblings are renumbered 10/20/30
         and the others keep their numbers."""
-        self._assert_studio_manager()
-        menu = self._record(menu_id)
-        package = self.env["studio.package"]._chosen(package_id)
-        owner = self._assert_editable(menu, package)
-        parent = (
-            self._model().browse(parent_id).exists() if parent_id else self._model()
+        typed.security(self)._assert_studio_manager()
+        # `_record`/`_assert_editable` live on `studio.record.surface` --
+        # same rule 6 gap as `_model`/`_assert_in_source`/`_owner` above.
+        menu = cast("IrUiMenu", cast("StudioRecordSurface", self)._record(menu_id))
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
+        owner = cast("StudioRecordSurface", self)._assert_editable(menu, package)
+        parent = cast(
+            "IrUiMenu",
+            cast("StudioRecordSurface", self)._model().browse(parent_id).exists()
+            if parent_id
+            else cast("StudioRecordSurface", self)._model(),
         )
-        if parent and parent.parent_path.startswith(menu.parent_path):
+        # `parent_path` is `_parent_store`-computed, always set on a
+        # persisted `ir.ui.menu` -- the same true-by-construction idiom as
+        # `_row`'s own `.name` cast above.
+        if parent and cast("str", parent.parent_path).startswith(
+            cast("str", menu.parent_path)
+        ):
             raise UserError(_("A menu cannot go under itself."))
         if parent:
-            self._assert_in_source(self._rows_by_name()["parent_id"], [parent.id])
+            # `_rows_by_name` lives on `studio.record.surface` -- same rule
+            # 6 gap as `_model`/`_record`/`_assert_editable` above.
+            cast("StudioRecordSurface", self)._assert_in_source(
+                cast("StudioRecordSurface", self)._rows_by_name()["parent_id"],
+                [cast("int", parent.id)],
+            )
         if menu.parent_id != parent:
             menu.write({"parent_id": parent.id or False})
         siblings = [
@@ -412,9 +539,9 @@ class StudioMenu(models.AbstractModel):
         # Renumber what this package owns; a foreign sibling keeps its number
         # and its place is respected by numbering around it.
         sequence = 0
-        touched = self._model()
+        touched = cast("IrUiMenu", cast("StudioRecordSurface", self)._model())
         for entry in siblings:
-            if self._owner(entry)["package"] == owner:
+            if cast("StudioRecordSurface", self)._owner(entry)["package"] == owner:
                 sequence = sequence // 10 * 10 + 10
                 if entry.sequence != sequence:
                     entry.write({"sequence": sequence})
@@ -422,4 +549,4 @@ class StudioMenu(models.AbstractModel):
             else:
                 sequence = max(sequence, entry.sequence)
         owner.studio_capture(touched | menu)
-        return [s.id for s in siblings]
+        return [cast("int", s.id) for s in siblings]
