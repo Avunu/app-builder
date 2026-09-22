@@ -8,10 +8,14 @@ Kept to one file so a port is a diff of one file, the way the console's
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from odoo import api
-from odoo.fields import Field
+if TYPE_CHECKING:
+    # Only for `groups_field`'s own annotations below; with `from __future__
+    # import annotations` (above) nothing here needs these at runtime, and
+    # this file stays importable with no Odoo on the path.
+    from odoo import api
+    from odoo.fields import Field
 
 
 def groups_field(env: api.Environment, model: str = "res.users") -> str:
