@@ -2,29 +2,98 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Shared fixtures for the studio test suite."""
 
+from __future__ import annotations
+
 import ast
 import io
 import os
 import tempfile
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from odoo import Command
 from odoo.tests import HttpCase, TransactionCase
 from odoo.tools.convert import convert_csv_import, convert_xml_import
 from odoo.tools.translate import TranslationImporter
 
+from odoo.addons.base.models.ir_actions import IrActionsActWindow
+from odoo.addons.base.models.ir_model import (
+    IrModel,
+    IrModelAccess,
+    IrModelData,
+    IrModelFields,
+    IrModelSelection,
+)
+from odoo.addons.base.models.ir_module import Module
+from odoo.addons.base.models.ir_ui_menu import IrUiMenu
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.base.models.res_users import Users
+
 # The one the package itself uses. A second copy here had already drifted:
 # it predated base.automation and ir.cron, and a wipe that deletes a server
 # action while a cron still references it fails on the foreign key.
-from odoo.addons.app_builder_base.models.studio_package import UNLINK_ORDER
+from odoo.addons.app_builder_base.models.studio_package import (
+    UNLINK_ORDER,
+    StudioPackage,
+)
+from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.app_builder_base.tools.compat import groups_field
 
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every Phase 1c file's own `TYPE_CHECKING` block makes. Phase 1d
+    # ("tests stay `basic`, annotate only where it helps the checker read
+    # `self.env` results") is why this file, unlike a Phase 1c model file,
+    # only imports what its own fixture methods' return types need -- not
+    # every model this suite ever touches.
+    import unittest
+    from unittest.case import _AssertRaisesContext
 
-def join_groups(users, group_xmlids):
+
+_E = TypeVar("_E", bound=BaseException)
+
+
+def raises(case: unittest.TestCase, exception: type[_E]) -> _AssertRaisesContext[_E]:
+    """``case.assertRaises(exception)``, typed through the ancestor
+    ``unittest.TestCase`` rather than Odoo's own override (``odoo/tests
+    /common.py``'s own ``BaseCase.assertRaises``).
+
+    Odoo's own is one unannotated function branching on an optional
+    ``func``: given one, it calls it and returns ``None``; without one
+    (every real call in this suite -- always the context-manager form,
+    ``with self.assertRaises(X) as caught:``), it returns the context
+    manager. pyright infers the *union* of both branches for every call
+    regardless of which branch a given call site actually takes, so a
+    bare ``with self.assertRaises(X):`` reports "Object of type None
+    cannot be used with with" tree-wide (``reportOptionalContextManager``)
+    -- the exact class of gap ``typed.py``'s own ``ref()`` documents for
+    ``Environment.ref``, just on the test framework's own base class
+    instead of the ORM's.
+
+    ``unittest.TestCase.assertRaises`` -- the real base ``BaseCase``
+    itself inherits from -- is correctly overloaded for exactly this
+    shape in typeshed: called with only an exception (no callable), it
+    returns ``_AssertRaisesContext[_E]``, never ``None``. Typing this
+    function's own ``case`` parameter as the ANCESTOR rather than
+    ``StudioCase``/``TransactionCase`` changes nothing about which method
+    actually runs at runtime (Python always dispatches through ``case``'s
+    real class, i.e. Odoo's own override, identical behavior for this
+    call shape) -- only which stub pyright reads to type the result.
+    """
+    return case.assertRaises(exception)
+
+
+def join_groups(users: Users, group_xmlids: list[str]) -> None:
     """Put ``users`` in the groups named by ``group_xmlids``, keeping the
     ones they already have."""
     env = users.env
     users.write(
-        {groups_field(env): [Command.link(env.ref(xmlid).id) for xmlid in group_xmlids]}
+        {
+            groups_field(env): [
+                Command.link(cast("int", typed.ref(env, xmlid).id))
+                for xmlid in group_xmlids
+            ]
+        }
     )
 
 
@@ -33,12 +102,12 @@ def join_groups(users, group_xmlids):
 class _NamedBytesIO(io.BytesIO):
     """BytesIO with a .name, which convert_xml_import reads for error reports."""
 
-    def __init__(self, content, name):
+    def __init__(self, content: bytes, name: str) -> None:
         super().__init__(content)
         self.name = name
 
 
-def prime_memoized_class_attributes():
+def prime_memoized_class_attributes() -> None:
     """Give every model class the three attributes ``setup_models``
     memoizes, before the leak detector takes its snapshot.
 
@@ -67,7 +136,7 @@ class StudioHttpCase(HttpCase):
     """``HttpCase`` for the console's tours, with the snapshot primed."""
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         prime_memoized_class_attributes()
         super().setUpClass()
 
@@ -82,48 +151,57 @@ class StudioCase(TransactionCase):
     """
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         prime_memoized_class_attributes()
         super().setUpClass()
         cls.registry.enter_test_mode(cls.cr)
         cls.addClassCleanup(cls.registry.leave_test_mode)
 
-    def setUp(self):
+    def setUp(self) -> None:
         # Must be registered before anything else so it runs last.
         self.addCleanup(self.registry.reset_changes)
         super().setUp()
 
     # -- fixtures ---------------------------------------------------------
 
-    def make_package(self, name="x_studio_demo", installed=True, **overrides):
+    def make_package(
+        self, name: str = "x_studio_demo", installed: bool = True, **overrides: object
+    ) -> StudioPackage:
         tmp = tempfile.mkdtemp(prefix="studio-test-")
-        values = {
+        values: dict[str, object] = {
             "name": name,
             "display_name_": "Studio Demo",
             "root_path": tmp,
             "auto_commit": "off",
         }
         values.update(overrides)
-        package = self.env["studio.package"].create(values)
+        package = typed.model(self.env, StudioPackage).create(values)  # pyright: ignore[reportArgumentType]
         if installed:
-            self.register_module(package.name)
+            self.register_module(cast("str", package.name))
         return package
 
-    def make_user(self, login, group_xmlids, **overrides):
+    def make_user(
+        self, login: str, group_xmlids: list[str], **overrides: object
+    ) -> Users:
         """A user in exactly ``group_xmlids``, whichever field holds them
         (``groups_field``)."""
-        User = self.env["res.users"]
-        values = {
+        User = typed.model(self.env, Users)
+        values: dict[str, object] = {
             "name": login,
             "login": login,
             groups_field(self.env): [
-                Command.set([self.env.ref(xmlid).id for xmlid in group_xmlids])
+                Command.set(
+                    [
+                        cast("int", typed.ref(self.env, xmlid).id)
+                        for xmlid in group_xmlids
+                    ]
+                )
             ],
         }
         values.update(overrides)
-        return User.create(values)
+        return User.create(values)  # pyright: ignore[reportArgumentType]
 
-    def unwritable_path(self):
+    def unwritable_path(self) -> str:
         """A path nothing can write to, whatever user the suite runs as.
 
         Deliberately not `chmod 0500`. This suite runs as root in CI, and root
@@ -137,7 +215,7 @@ class StudioCase(TransactionCase):
             pass
         return os.path.join(blocker, "package")
 
-    def register_module(self, name):
+    def register_module(self, name: str) -> Module:
         """Register the package as an installed module.
 
         Graduation refuses to run otherwise, and rightly so: Odoo only imports
@@ -145,75 +223,81 @@ class StudioCase(TransactionCase):
         leave the model with no definition at all. Tests have to satisfy the
         same precondition the UI does.
         """
-        Module = self.env["ir.module.module"]
-        existing = Module.search([("name", "=", name)], limit=1)
+        Module_ = typed.model(self.env, Module)
+        existing = Module_.search([("name", "=", name)], limit=1)
         if existing:
             existing.state = "installed"
             return existing
-        return Module.create({"name": name, "state": "installed"})
+        return Module_.create({"name": name, "state": "installed"})  # pyright: ignore[reportArgumentType]
 
-    def build_demo_content(self, package):
+    def build_demo_content(self, package: StudioPackage) -> IrModel:
         """Create a representative slice of everything the studio can emit."""
-        model = self.env["ir.model"].create(
-            {
-                "name": "Studio Demo Project",
-                "model": "x_studio_project",
-                "field_id": [
-                    Command.create(
-                        {
-                            "name": "x_name",
-                            "ttype": "char",
-                            "field_description": "Name",
-                            "required": True,
-                        }
-                    ),
-                    Command.create(
-                        {
-                            "name": "x_budget",
-                            "ttype": "float",
-                            "field_description": "Budget",
-                        }
-                    ),
-                    Command.create(
-                        {
-                            "name": "x_active_flag",
-                            "ttype": "boolean",
-                            "field_description": "Is Active",
-                        }
-                    ),
-                    Command.create(
-                        {
-                            "name": "x_partner_id",
-                            "ttype": "many2one",
-                            "field_description": "Customer",
-                            "relation": "res.partner",
-                            "on_delete": "set null",
-                        }
-                    ),
-                    Command.create(
-                        {
-                            "name": "x_stage",
-                            "ttype": "selection",
-                            "field_description": "Stage",
-                        }
-                    ),
-                ],
-            }
-        )
+        # `@api.model_create_multi`'s own stub gap (TYPING.md's "Known
+        # traps"): every single-dict `.create(vals)` below needs the
+        # `# pyright: ignore[reportArgumentType]` that idiom already
+        # established -- assigned to a `vals` local first in each case, so
+        # the ignore comment lands on the actual `create(vals)` call's own
+        # line rather than somewhere inside a multi-line dict literal
+        # pyright would not attribute the diagnostic to.
+        model_vals: dict[str, object] = {
+            "name": "Studio Demo Project",
+            "model": "x_studio_project",
+            "field_id": [
+                Command.create(
+                    {
+                        "name": "x_name",
+                        "ttype": "char",
+                        "field_description": "Name",
+                        "required": True,
+                    }
+                ),
+                Command.create(
+                    {
+                        "name": "x_budget",
+                        "ttype": "float",
+                        "field_description": "Budget",
+                    }
+                ),
+                Command.create(
+                    {
+                        "name": "x_active_flag",
+                        "ttype": "boolean",
+                        "field_description": "Is Active",
+                    }
+                ),
+                Command.create(
+                    {
+                        "name": "x_partner_id",
+                        "ttype": "many2one",
+                        "field_description": "Customer",
+                        "relation": "res.partner",
+                        "on_delete": "set null",
+                    }
+                ),
+                Command.create(
+                    {
+                        "name": "x_stage",
+                        "ttype": "selection",
+                        "field_description": "Stage",
+                    }
+                ),
+            ],
+        }
+        model = typed.model(self.env, IrModel).create(model_vals)  # pyright: ignore[reportArgumentType]
         # A stored computed field: proof that "compute" is data, not code.
-        self.env["ir.model.fields"].create(
-            {
-                "name": "x_budget_doubled",
-                "field_description": "Budget Doubled",
-                "ttype": "float",
-                "model_id": model.id,
-                "store": True,
-                "depends": "x_budget",
-                "compute": "for r in self:\n    r['x_budget_doubled'] = r.x_budget * 2",
-            }
-        )
-        stage_field = model.field_id.filtered(lambda f: f.name == "x_stage")
-        self.env["ir.model.fields.selection"].create(
+        field_vals: dict[str, object] = {
+            "name": "x_budget_doubled",
+            "field_description": "Budget Doubled",
+            "ttype": "float",
+            "model_id": model.id,
+            "store": True,
+            "depends": "x_budget",
+            "compute": "for r in self:\n    r['x_budget_doubled'] = r.x_budget * 2",
+        }
+        typed.model(self.env, IrModelFields).create(field_vals)  # pyright: ignore[reportArgumentType]
+        fields = cast("IrModelFields", model.field_id)
+        stage_field = fields.filtered(lambda f: f.name == "x_stage")
+        typed.model(self.env, IrModelSelection).create(
             [
                 {
                     "field_id": stage_field.id,
@@ -229,11 +313,10 @@ class StudioCase(TransactionCase):
                 },
             ]
         )
-        view = self.env["ir.ui.view"].create(
-            {
-                "name": "x_studio_project.form",
-                "model": "x_studio_project",
-                "arch": """
+        view_vals: dict[str, object] = {
+            "name": "x_studio_project.form",
+            "model": "x_studio_project",
+            "arch": """
                     <form>
                         <sheet>
                             <group>
@@ -245,36 +328,33 @@ class StudioCase(TransactionCase):
                         </sheet>
                     </form>
                 """,
-            }
-        )
-        action = self.env["ir.actions.act_window"].create(
-            {
-                "name": "Studio Demo Projects",
-                "res_model": "x_studio_project",
-                "view_mode": "list,form",
-            }
-        )
-        menu = self.env["ir.ui.menu"].create(
-            {
-                "name": "Studio Demo Projects",
-                "action": "ir.actions.act_window,%d" % action.id,
-            }
-        )
-        access = self.env["ir.model.access"].create(
-            {
-                "name": "x_studio_project all",
-                "model_id": model.id,
-                "group_id": self.env.ref("base.group_user").id,
-                "perm_read": True,
-                "perm_write": True,
-                "perm_create": True,
-                "perm_unlink": False,
-            }
-        )
+        }
+        view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
+        action_vals: dict[str, object] = {
+            "name": "Studio Demo Projects",
+            "res_model": "x_studio_project",
+            "view_mode": "list,form",
+        }
+        action = typed.model(self.env, IrActionsActWindow).create(action_vals)  # pyright: ignore[reportArgumentType]
+        menu_vals: dict[str, object] = {
+            "name": "Studio Demo Projects",
+            "action": "ir.actions.act_window,%d" % action.id,
+        }
+        menu = typed.model(self.env, IrUiMenu).create(menu_vals)  # pyright: ignore[reportArgumentType]
+        access_vals: dict[str, object] = {
+            "name": "x_studio_project all",
+            "model_id": model.id,
+            "group_id": cast("int", typed.ref(self.env, "base.group_user").id),
+            "perm_read": True,
+            "perm_write": True,
+            "perm_create": True,
+            "perm_unlink": False,
+        }
+        access = typed.model(self.env, IrModelAccess).create(access_vals)  # pyright: ignore[reportArgumentType]
 
         package._assign(model)
-        package._assign(model.field_id)
-        package._assign(stage_field.selection_ids)
+        package._assign(fields)
+        package._assign(cast("IrModelSelection", stage_field.selection_ids))
         package._assign(view)
         package._assign(action)
         package._assign(menu)
@@ -283,12 +363,16 @@ class StudioCase(TransactionCase):
 
     # -- round-trip helpers ----------------------------------------------
 
-    def wipe_package_records(self, package):
+    def wipe_package_records(self, package: StudioPackage) -> None:
         """Remove every record the package owns, plus its xmlids."""
-        data = self.env["ir.model.data"].search([("module", "=", package.name)])
-        by_model = {}
+        data = typed.model(self.env, IrModelData).search(
+            [("module", "=", package.name)]
+        )
+        by_model: dict[str, list[int]] = {}
         for entry in data:
-            by_model.setdefault(entry.model, []).append(entry.res_id)
+            by_model.setdefault(cast("str", entry.model), []).append(
+                cast("int", entry.res_id)
+            )
         # Same flag Odoo's own _module_data_uninstall uses; without it
         # _prepare_update refuses to drop columns that carry module data.
         env = self.env(context=dict(self.env.context, _force_unlink=True))
@@ -302,7 +386,9 @@ class StudioCase(TransactionCase):
         data.exists().unlink()
         self.env.flush_all()
 
-    def load_translations(self, package, files):
+    def load_translations(
+        self, package: StudioPackage, files: dict[str, str]
+    ) -> list[str]:
         """Load the generated PO files the way a module install would.
 
         `load_rendered` walks the manifest's `data`, and PO files are not in it
@@ -315,7 +401,7 @@ class StudioCase(TransactionCase):
         # refusal with `suppress(FileNotFoundError)`, so a temp file loads
         # nothing and reports success.
         importer = TranslationImporter(self.env.cr, verbose=False)
-        loaded = []
+        loaded: list[str] = []
         for relative, content in files.items():
             if not relative.startswith("i18n/") or not relative.endswith(".po"):
                 continue
@@ -331,14 +417,14 @@ class StudioCase(TransactionCase):
             self.env.flush_all()
         return loaded
 
-    def load_rendered(self, package, files):
+    def load_rendered(self, package: StudioPackage, files: dict[str, str]) -> None:
         """Feed rendered content back through Odoo's own XML/CSV importer.
 
         Going through ``convert_xml_import`` rather than a bespoke loader is the
         point: it proves the output is consumable by the real install path, not
         merely by our own parser.
         """
-        idref = {}
+        idref: dict[str, Any] = {}
         manifest = ast.literal_eval(files["__manifest__.py"])
         for relative in manifest["data"]:
             content = files[relative].encode("utf-8")

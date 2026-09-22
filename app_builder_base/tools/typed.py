@@ -54,6 +54,29 @@ def model(env: api.Environment, cls: type[M]) -> M:
     return cast("M", env[cast("str", cls._name)])
 
 
+def ref(env: api.Environment, xml_id: str) -> BaseModel:
+    """``env.ref(xml_id)``, typed as the real record it returns by default.
+
+    ``Environment.ref`` (``odoo/api.py``) is one unannotated function whose
+    return genuinely depends on ``raise_if_not_found`` (default ``True``,
+    the only form this helper accepts): true, it either returns a real
+    record or raises ``ValueError`` -- ``None`` is only reachable on the
+    ``raise_if_not_found=False`` path this helper does not expose. pyright
+    infers the union of every branch in the unannotated body regardless of
+    which argument a given call actually passes, so every real call site
+    sees ``BaseModel | None`` whether or not ``None`` is reachable there --
+    the same "one optional parameter, no overloads, union-of-branches
+    inference" shape TYPING.md's own "Known traps" section already
+    documents for ``Environment.get`` (a different method, same root cause)
+    and, in the test suite, ``TestCase.assertRaises`` (``common.py``'s own
+    ``raises()``).
+    """
+    # `Environment.ref` is unannotated, so this file's own strict `tools/`
+    # setting (`reportUnknownMemberType`) flags the call itself, not just
+    # its return -- same shape as `compat.py`'s own `env[model]._fields`.
+    return cast("BaseModel", env.ref(xml_id))  # pyright: ignore[reportUnknownMemberType]
+
+
 def security(self: BaseModel) -> StudioSecurityMixin:
     """``self``, cast to the guard every studio RPC method calls first.
 

@@ -3346,8 +3346,92 @@ than reasoned about:
   aliased casts would be a pure style change with no correctness
   benefit, out of this pass's own "annotate, don't refactor" mandate.
 
-  Phase 1c's next step is Phase 1d (tests) per TYPING.md's own original
-  plan -- not started yet -- or whatever the user directs next.
+## Phase 1d -- tests
+
+Kicked off after Phase 1c closed in full. Scope confirmed directly, not
+assumed: 66 test files across 7 addons (`app_builder_mail` has none),
+19,052 lines total -- bigger by line count than the entire Phase 1c
+model sweep. The plan's own mandate (above, "1d. Tests") is
+deliberately lighter than Phase 1c's: `basic` mode, no `ANN` rule
+(already exempted tree-wide, `.ruff.toml`'s own `"*/tests/*" = ["ANN"]`,
+set back in Phase 1a and never touched since), annotate only where it
+helps the checker read `self.env` results. Confirmed by measurement,
+not assumption: a full-tree `pyright` immediately after Phase 1c closed
+showed **2270 of 2283 total errors were inside a `tests/` directory** --
+the other 13 are the pre-existing, unrelated `__init__.py` re-export
+warnings noted throughout this document. Every one of Phase 1c's ~48
+model files is genuinely error-free; Phase 1d's error surface is the
+whole remaining count.
+
+**Every one of the 66 test files imports `StudioCase` from
+`app_builder_base/tests/common.py`** (confirmed by grep, not assumed) --
+the one shared fixture base the entire suite depends on, so it went
+first, converted directly in the main loop rather than delegated (small
+enough, 359 lines, and too foundational to risk a subagent's own
+judgment calls propagating uncorrected into 63 other files' worth of
+casts against its return types).
+
+**Two new, general-purpose helpers**, both instances of the identical
+"one unannotated function, an optional parameter silently switches
+between two different real return shapes, pyright infers the union of
+both regardless of which branch a given call actually takes" gap
+`typed.model()`/`Environment.get`/`assertRaises` already established as
+a recurring class of Odoo-vendor-stub problem, not three unrelated
+ones:
+
+- **`typed.ref(env, xml_id) -> BaseModel`** (`app_builder_base/tools
+  /typed.py`, general-purpose, not test-only -- `Environment.ref`
+  (`odoo/api.py`) can only return `None` on the `raise_if_not_found=
+  False` path this helper does not expose; with the default `True` it
+  always either returns a real record or raises, but pyright cannot see
+  that without an overload, so every call anywhere sees `BaseModel |
+  None`). Needed its own `# pyright: ignore[reportUnknownMemberType]`
+  since `typed.py` lives under `tools/`'s own strict
+  `executionEnvironment` and `Environment.ref` is itself unannotated,
+  same shape as `compat.py`'s own `env[model]._fields` ignore.
+- **`common.py`'s own `raises(case, exception) ->
+  _AssertRaisesContext[_E]`** (test-only, so it lives here rather than
+  in `typed.py`) -- Odoo's own `BaseCase.assertRaises` (`odoo/tests
+  /common.py:507`) is one unannotated function that either calls a
+  given callable and returns `None`, or (every real call in this suite)
+  returns a context manager when no callable is given; pyright's
+  inferred return type is the union of both branches regardless of the
+  call, so every `with self.assertRaises(X) as caught:` in the suite
+  reported `reportOptionalContextManager` (142 of the 2270 errors, the
+  single largest non-`reportAttributeAccessIssue` bucket). Fixed with a
+  genuinely elegant trick rather than a `cast()`: type the helper's own
+  `case` parameter as the ANCESTOR `unittest.TestCase`, not
+  `StudioCase`/`TransactionCase`. Typeshed's own `unittest.TestCase
+  .assertRaises` is correctly overloaded for exactly this shape (no
+  callable -> `_AssertRaisesContext[_E]`, never `None`); Python still
+  dispatches `case.assertRaises` through `case`'s REAL class at runtime
+  regardless of the parameter's static type (identical behavior for
+  this call shape, Odoo's own override included), so calling through
+  the ancestor type changes nothing about which method runs -- only
+  which stub pyright reads to type the result. No `cast()` needed at
+  all. Verified with an isolated probe before adopting it (a toy
+  `OdooLikeBase`/`StudioCase` pair reproducing the exact shape), not
+  assumed to work.
+
+`common.py`'s own conversion: `make_package`/`make_user`/
+`register_module`/`build_demo_content` all now return real types
+(`StudioPackage`/`Users`/`Module`/`IrModel`) via `typed.model()`, so
+every one of the other 63 test files calling e.g. `self.make_package(
+...)` gets a correctly-typed `StudioPackage` back with **no change
+needed in that calling file** for that specific call -- the same
+leverage-multiplication reasoning that made `studio_record_surface.py`
+worth its own dedicated pass in Phase 1c. Every single-dict
+`.create(vals)` call restructured to assign to a `vals` local first,
+then `# pyright: ignore[reportArgumentType]` on the `create(vals)` line
+itself -- the established `@api.model_create_multi` stub-gap idiom, but
+applied more carefully than some Phase 1c files did: pyright attributes
+the diagnostic to the call's own line, which a trailing comment after a
+multi-line dict literal's closing brace does NOT reliably land on (a
+trap a couple of Phase 1c draft agents already hit and self-corrected
+in earlier waves) -- assigning to a named local first sidesteps the
+whole question. Full-tree `pyright` dropped from 2283 to 1978 (305
+errors) from this one file's own conversion plus the two helpers --
+confirming the leverage bet before spending it on the other 63 files.
 
 ## CI: the OCA container's real layout
 
