@@ -17,9 +17,34 @@ If that holds, writing the DB and the file in the same transaction is an
 optimisation rather than two competing sources of truth.
 """
 
-import logging
+from __future__ import annotations
 
-from lxml import etree
+import logging
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
+
+if TYPE_CHECKING:
+    # Only used inside annotations (`from __future__ import annotations`
+    # defers all of them to strings), never at runtime -- same bargain
+    # `compat.py`'s own `TYPE_CHECKING`-guarded imports make.
+    from collections.abc import Callable
+
+    from odoo.fields import Field
+    from odoo.models import BaseModel
+
+# lxml ships no type stubs in this environment (a compiled extension with no
+# `.pyi`/`py.typed` marker; `lxml-stubs`/`types-lxml` is not an installed
+# dependency here), so pyright cannot resolve `etree` as an exported member
+# of `lxml` at all -- confirmed directly, `from lxml import etree` alone
+# reports both `reportMissingTypeStubs` (on `lxml`) and
+# `reportAttributeAccessIssue` ("etree" is unknown import symbol, on
+# `etree`). Ignored narrowly on each name rather than rewriting the import
+# (e.g. `import lxml.etree as etree`), which trades this gap for a different
+# one: ruff's own `PLR0402` auto-fixes that form straight back to `from lxml
+# import etree` (`fix = true` project-wide), silently reintroducing the
+# failure. Same pattern as `xml_writer.py`/`placement.py`/`canvas_stamp.py`.
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 
 from odoo import api, models
 from odoo.exceptions import UserError
@@ -27,7 +52,30 @@ from odoo.tools.translate import _
 
 from ..tools import xml_writer
 
+# `LxmlElement` (`tools/lxml_types.py`, shared with `xml_writer.py`,
+# `placement.py` and `app_builder_view/tools/canvas_stamp.py`) is the real,
+# checkable type for every element this module builds -- a <record>/<field>
+# node. Used below to build the `Element` alias itself (a runtime
+# assignment, not only an annotation), so -- unlike the `TYPE_CHECKING`-only
+# names above -- it cannot be guarded the same way; same as `placement.py`'s
+# own top-level `from .lxml_types import LxmlElement`.
+from ..tools.lxml_types import LxmlElement
+
 _logger = logging.getLogger(__name__)
+
+Element: TypeAlias = LxmlElement
+
+# `etree.Element` is the one constructor this module calls; grabbing it once,
+# behind a single documented cast, keeps the "Unknown member of an unstubbed
+# module" gap to two lines instead of a `# pyright: ignore` at each of the
+# three call sites. Same idiom as `placement.py`'s own `_element`/
+# `_sub_element` wrapper -- this file never calls `etree.SubElement`, so only
+# the one wrapper is needed. The raw attribute access is unavoidably Unknown
+# twice over -- pyright cannot name the member's own type, so it cannot name
+# the *variable's* type either -- hence two rule codes on the one line that
+# touches `etree` directly.
+_element_raw = etree.Element  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+_element: Callable[..., Element] = cast("Callable[..., Element]", _element_raw)
 
 # Relative emission order between serializers. Referencing records must sort
 # after what they reference, because a data file is loaded top to bottom.
@@ -57,30 +105,30 @@ class StudioSerializer(models.AbstractModel):
     _description = "Studio Serializer"
 
     # -- subclass contract ------------------------------------------------
-    _studio_model = None  # target model name
-    _studio_sequence = 100  # emission order across serializers
-    _studio_fields = ()  # ordered list of significant fields
-    _studio_ignored = ()  # stored fields knowingly *not* emitted
-    _studio_refused = {}  # {field: why setting it cannot be written to source}
-    _studio_dir = "data"  # subdirectory under the package root
-    _studio_suffix = ""  # filename suffix before '.xml'
-    _studio_format = "xml"  # 'xml' or 'csv'
-    _studio_noupdate = False  # emit inside <data noupdate="1">
+    _studio_model: str | None = None  # target model name
+    _studio_sequence: int = 100  # emission order across serializers
+    _studio_fields: tuple[str, ...] = ()  # ordered list of significant fields
+    _studio_ignored: tuple[str, ...] = ()  # stored fields knowingly *not* emitted
+    _studio_refused: dict[str, str] = {}  # {field: why it cannot be written to source}
+    _studio_dir: str = "data"  # subdirectory under the package root
+    _studio_suffix: str = ""  # filename suffix before '.xml'
+    _studio_format: Literal["xml", "csv"] = "xml"
+    _studio_noupdate: bool = False  # emit inside <data noupdate="1">
 
     # -- dispatch ---------------------------------------------------------
 
     @api.model
-    def _for_model(self, model_name):
+    def _for_model(self, model_name: str) -> BaseModel | None:
         """Return the serializer for ``model_name``, or ``None``."""
         return self.env.get("studio.serializer.%s" % model_name)
 
     @api.model
-    def _suggest_xmlid(self, record):
+    def _suggest_xmlid(self, record: BaseModel) -> str | None:
         """An xmlid stem for ``record``, or None to let the package decide."""
         return
 
     @api.model
-    def _ownable(self, record):
+    def _ownable(self, record: BaseModel) -> bool:
         """Whether a studio package may take ownership of ``record``.
 
         Defaults to True; subclasses narrow it. The important case is
@@ -93,7 +141,7 @@ class StudioSerializer(models.AbstractModel):
         return True
 
     @api.model
-    def _serializable_models(self):
+    def _serializable_models(self) -> list[str]:
         """Every model the studio knows how to emit."""
         prefix = "studio.serializer."
         return sorted(
@@ -103,18 +151,18 @@ class StudioSerializer(models.AbstractModel):
     # -- xmlid helpers ----------------------------------------------------
 
     @api.model
-    def _package_name(self):
+    def _package_name(self) -> str | None:
         return self.env.context.get("studio_package")
 
     @api.model
-    def _xmlid_of(self, record):
+    def _xmlid_of(self, record: BaseModel) -> str | Literal[False]:
         """Full xmlid of ``record``, or ``False``."""
         if not record:
             return False
         return record.get_external_id().get(record.id) or False
 
     @api.model
-    def _ref_of(self, record, source=None):
+    def _ref_of(self, record: BaseModel, source: str | None = None) -> str:
         """Reference string for ``record``, shortened when same-module.
 
         A referenced record with no xmlid is a hard error rather than a silently
@@ -143,7 +191,13 @@ class StudioSerializer(models.AbstractModel):
         # Record the foreign module: the generated manifest must depend on
         # whatever it references, or installing the package into a fresh
         # database fails on an unresolvable ref.
-        sink = self.env.context.get("studio_dep_sink")
+        #
+        # The real caller (`studio_package.py`'s `_serializer_env`) builds
+        # this as a plain `dep_sink = set()`, so `set[str] | None` is the
+        # honest type for what `Context.get` returns here -- `Context` itself
+        # is a generic Mapping-like object, and there is no way for pyright to
+        # know the value type at this one key from the dict alone.
+        sink: set[str] | None = self.env.context.get("studio_dep_sink")
         if sink is not None and module:
             sink.add(module)
         return xmlid
@@ -151,7 +205,7 @@ class StudioSerializer(models.AbstractModel):
     # -- field emission ---------------------------------------------------
 
     @api.model
-    def _should_skip(self, record, fname):
+    def _should_skip(self, record: BaseModel, fname: str) -> bool:
         """Skip a field whose value already equals its declared default.
 
         Comparing for *equality* rather than dropping every falsy value is what
@@ -161,7 +215,12 @@ class StudioSerializer(models.AbstractModel):
         defaults are never skipped, since we cannot evaluate them
         deterministically.
         """
-        field = record._fields[fname]
+        # `_fields` is OCB's own bare, unparameterized `dict[str, Field]` --
+        # `Unknown` before this annotation applies, the same gap `compat.py`'s
+        # `groups_field`/`manualfield.py`'s `default_currency_field` already
+        # hit and fixed with this exact idiom.
+        fields_: dict[str, Field[Any]] = record._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        field = fields_[fname]
         value = record[fname]
 
         if field.type in ("many2one", "one2many", "many2many"):
@@ -210,7 +269,7 @@ class StudioSerializer(models.AbstractModel):
             return False
 
     @api.model
-    def _value_depends(self):
+    def _value_depends(self) -> dict[str, dict[str, str]]:
         """``{field: {value: module}}`` -- values that need a module installed.
 
         The manifest's ``depends`` is otherwise derived entirely from the
@@ -229,14 +288,15 @@ class StudioSerializer(models.AbstractModel):
         return {}
 
     @api.model
-    def _note_value_dependency(self, fname, value):
+    def _note_value_dependency(self, fname: str, value: Any) -> None:
         module = (self._value_depends().get(fname) or {}).get(value)
-        sink = self.env.context.get("studio_dep_sink")
+        # See `_ref_of`'s own comment on this same read.
+        sink: set[str] | None = self.env.context.get("studio_dep_sink")
         if module and sink is not None:
             sink.add(module)
 
     @api.model
-    def _translatable_fields(self, record):
+    def _translatable_fields(self, record: BaseModel) -> list[str]:
         """Emitted fields whose value carries more than the source term.
 
         A ``translate=True`` column is jsonb and the XML file has room for one
@@ -249,24 +309,28 @@ class StudioSerializer(models.AbstractModel):
         notices. Overridden where the translated value lives somewhere other
         than the field emitted -- see the view serializer and ``arch_db``.
         """
+        # Same `_fields` idiom as `_should_skip` above.
+        fields_: dict[str, Field[Any]] = record._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
         return [
             fname
             for fname in self._studio_fields
-            if getattr(record._fields.get(fname), "translate", False)
+            if getattr(fields_.get(fname), "translate", False)
         ]
 
     @api.model
-    def _field_node(self, record, fname):
+    def _field_node(self, record: BaseModel, fname: str) -> Element | None:
         """Emit one ``<field>`` node, or ``None`` to omit it."""
-        if fname not in record._fields:
+        # Same `_fields` idiom as `_should_skip` above.
+        fields_: dict[str, Field[Any]] = record._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        if fname not in fields_:
             return None
         if self._should_skip(record, fname):
             return None
         self._note_value_dependency(fname, record[fname])
 
-        field = record._fields[fname]
+        field = fields_[fname]
         value = record[fname]
-        node = etree.Element("field")
+        node = _element("field")
         node.set("name", fname)
         ftype = field.type
 
@@ -316,7 +380,9 @@ class StudioSerializer(models.AbstractModel):
         return node
 
     @api.model
-    def _reference_xmlid(self, record, fname, comodel=None):
+    def _reference_xmlid(
+        self, record: BaseModel, fname: str, comodel: str | None = None
+    ) -> str:
         """The xmlid behind a bare-integer reference.
 
         Resolving one needs the model it points at. Usually that is the field's
@@ -331,8 +397,14 @@ class StudioSerializer(models.AbstractModel):
         inside the xmlid.
         """
         if comodel is None:
-            field = record._fields[fname]
-            model_field = getattr(field, "model_field", None)
+            # Same `_fields` idiom as `_should_skip` above.
+            fields_: dict[str, Field[Any]] = record._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+            field = fields_[fname]
+            # `Many2oneReference.model_field` (`odoo/fields.py`) is the only
+            # `Field` subclass that declares this attribute -- `Field` itself
+            # does not, hence `getattr` with a default rather than plain
+            # attribute access, unchanged from the original.
+            model_field: str | None = getattr(field, "model_field", None)
             comodel = record[model_field] if model_field else None
         if not comodel or comodel not in self.env:
             raise UserError(
@@ -363,19 +435,24 @@ class StudioSerializer(models.AbstractModel):
     # -- record emission --------------------------------------------------
 
     @api.model
-    def _record_id(self, record, xmlid):
+    def _record_id(self, record: BaseModel, xmlid: str) -> str:
         """The ``id`` attribute: bare name when the record is ours."""
         package = self._package_name()
         module, _sep, name = xmlid.partition(".")
         return name if package and module == package else xmlid
 
     @api.model
-    def _serialize(self, record, xmlid):
+    def _serialize(self, record: BaseModel, xmlid: str) -> Element:
         """Build the ``<record>`` node for ``record``."""
         self._assert_complete(record)
-        node = etree.Element("record")
+        node = _element("record")
         node.set("id", self._record_id(record, xmlid))
-        node.set("model", self._studio_model)
+        # `_studio_model` is declared `str | None` at the base (never set
+        # standalone) and overridden with a literal string by every real
+        # subclass before `_serialize` is ever reachable -- the same
+        # "invariant the type system cannot see from here" shape as
+        # `studio_security.py`'s own `cast("Users", self.env.user)`.
+        node.set("model", cast("str", self._studio_model))
         for fname in self._emitted_field_names():
             child = self._field_node(record, fname)
             if child is not None:
@@ -404,7 +481,7 @@ class StudioSerializer(models.AbstractModel):
     # it out is a decision somebody has to make and write down.
 
     @api.model
-    def _emitted_field_names(self):
+    def _emitted_field_names(self) -> tuple[str, ...]:
         """Ordered field names this serializer writes out.
 
         A method rather than the tuple directly, for two reasons. A CSV
@@ -417,25 +494,27 @@ class StudioSerializer(models.AbstractModel):
         return tuple(self._studio_fields)
 
     @api.model
-    def _emitted_fields(self):
+    def _emitted_fields(self) -> set[str]:
         return set(self._emitted_field_names())
 
     @api.model
-    def _ignored_fields(self):
+    def _ignored_fields(self) -> set[str]:
         """Stored fields knowingly not emitted. Extended the same way."""
         return set(self._studio_ignored)
 
     @api.model
-    def _accountable_fields(self, record):
+    def _accountable_fields(self, record: BaseModel) -> set[str]:
         """Stored, non-magic fields -- the ones an omission could actually lose."""
+        # Same `_fields` idiom as `_should_skip` above.
+        fields_: dict[str, Field[Any]] = record._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
         return {
             name
-            for name, field in record._fields.items()
+            for name, field in fields_.items()
             if field.store and not field.automatic
         }
 
     @api.model
-    def _classified_fields(self):
+    def _classified_fields(self) -> set[str]:
         """Every field name this serializer has an answer for.
 
         Three answers, and every stored field must have one: emit it, ignore it
@@ -449,12 +528,12 @@ class StudioSerializer(models.AbstractModel):
         )
 
     @api.model
-    def _unclassified_fields(self, record):
+    def _unclassified_fields(self, record: BaseModel) -> set[str]:
         """Stored fields nobody has decided about."""
         return self._accountable_fields(record) - self._classified_fields()
 
     @api.model
-    def _assert_complete(self, record):
+    def _assert_complete(self, record: BaseModel) -> Literal[True]:
         """Refuse to emit a record whose source would be missing something.
 
         Only fires when a value actually differs from its default. An
@@ -470,8 +549,10 @@ class StudioSerializer(models.AbstractModel):
         # itself was not allowed to look would be absurd, and this reads data to
         # count it rather than to show it.
         record = record.sudo()
+        # Same `_fields` idiom as `_should_skip` above.
+        fields_: dict[str, Field[Any]] = record._fields  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
         for fname, why in sorted(self._studio_refused.items()):
-            if fname in record._fields and not self._should_skip(record, fname):
+            if fname in fields_ and not self._should_skip(record, fname):
                 raise UserError(
                     _(
                         "%(model)s record %(name)s sets %(field)s, which OCA "
@@ -508,7 +589,7 @@ class StudioSerializer(models.AbstractModel):
     # -- file placement ---------------------------------------------------
 
     @api.model
-    def _group_model(self, record):
+    def _group_model(self, record: BaseModel) -> str | None:
         """Model name used to group records into files.
 
         Grouping by the *subject* model rather than by the record's own model is
@@ -519,7 +600,7 @@ class StudioSerializer(models.AbstractModel):
         return
 
     @api.model
-    def _target_file(self, record):
+    def _target_file(self, record: BaseModel) -> str:
         group = self._group_model(record)
         stem = (group or "misc").replace(".", "_")
         return "%s/%s%s.xml" % (self._studio_dir, stem, self._studio_suffix)
@@ -527,7 +608,7 @@ class StudioSerializer(models.AbstractModel):
     # -- sorting ----------------------------------------------------------
 
     @api.model
-    def _sort_key(self, record, xmlid):
+    def _sort_key(self, record: BaseModel, xmlid: str) -> tuple[int, str]:
         """Order within a file: by serializer, then xmlid. Never by id."""
         return (self._studio_sequence, xmlid)
 
@@ -539,9 +620,9 @@ class StudioXmlSerializerMixin(models.AbstractModel):
     _description = "Studio Arch Serializer Mixin"
 
     @api.model
-    def _arch_node(self, arch):
+    def _arch_node(self, arch: str | bytes) -> Element:
         """Build ``<field name="arch" type="xml">`` with parsed children."""
-        node = etree.Element("field")
+        node = _element("field")
         node.set("name", "arch")
         node.set("type", "xml")
         parsed = xml_writer.parse_arch(arch)

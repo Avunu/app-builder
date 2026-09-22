@@ -614,7 +614,56 @@ hoot `onRpc` mocks typed against the same map.
   (translation calls being the first confirmed one) rather than guessing
   at shared infrastructure from one data point -- the same "promote only
   once a real pattern is confirmed across readers" discipline
-  `lxml_types.py` was built under.
+  `lxml_types.py` was built under. **Confirmed on the second Phase 1c
+  file (`studio_serializer.py`): under `models/`'s current top-level
+  standard-mode config, `record._fields[fname]`-class reads already
+  resolve with *zero* pyright errors even with no cast/ignore at all**
+  (`reportUnknownVariableType`/`reportUnknownMemberType` are strict-only
+  rules, off by default in standard mode) -- the narrow
+  `# pyright: ignore[...]` idiom `compat.py`/`manualfield.py` established
+  is therefore not load-bearing in `models/` *yet*, unlike in `tools/`
+  where its own `executionEnvironment` already enables those rules. Kept
+  anyway, everywhere this pattern recurs, so the idiom is already in
+  place, byte-identical to `tools/`'s own, the day stage 2 turns those
+  rules on -- confirmed the ignore comment itself causes no
+  `reportUnnecessaryTypeIgnoreComment` complaint or other diagnostic
+  when the named rule isn't actually firing, so carrying it early is
+  free.
+- `Environment.get(...)` (inherited, unparameterized `Mapping.get` --
+  `Environment` itself never overrides `get`, only `__getitem__`/
+  `__contains__`) returns `Unknown | None`, confirmed with `reveal_type`
+  -- a *different* untyped hole from `Environment.__getitem__`'s own
+  (which `typed.py`'s `model()` helper exists for): `.get()`'s real
+  contract is `BaseModel | None` (`None` on a model-name miss, instead
+  of `__getitem__`'s KeyError-on-miss shape). Handled narrowly, by
+  annotating the *call site's* own return type rather than a new shared
+  helper (`studio_serializer.py`'s `_for_model`, its only caller so far)
+  -- the same "promote only once a pattern recurs" discipline as above;
+  revisit once a second `models/` file calls `env.get(...)` the same way.
+- `Field.default`'s pyright-inferred type, for any field carrying a
+  callable default, is the alarming-looking `((model: Unknown) -> Never)
+  | None` rather than the honest `Callable[[BaseModel], object] | None`
+  -- confirmed with `reveal_type` against the real merged tree, traced to
+  a self-referential-narrowing artifact inside OCB's own `Field.__init__`
+  (`odoo/fields.py`; `self.default` is narrowed against itself earlier in
+  the same method, before the `lambda model: value` branch that actually
+  sets it). Not a bug in this codebase, not fixable from this side, and
+  confirmed zero practical effect: `Never` is a bottom type, so code that
+  calls the callable and uses its result (`studio_serializer.py`'s own
+  `_should_skip`) round-trips clean regardless, with no cast needed.
+  Recorded so a future reader does not re-derive this from a
+  frightening-looking `reveal_type` result.
+- A module-level `TypeAlias` built directly from another module's
+  exported type (e.g. `Element: TypeAlias = LxmlElement`, re-exporting
+  `lxml_types.py`'s own `LxmlElement` under a locally-conventional name)
+  needs its source import at real, top-level scope -- `TYPE_CHECKING`-
+  guarding it trips ruff's `TC004` ("move import out of type-checking
+  block: used for more than typing"), since the assignment itself runs
+  at import time, not only inside deferred annotations the way a bare
+  type-only usage would. Only the *alias assignment itself* needs the
+  real import; every place the alias is then *used* (a parameter/return
+  annotation) is still deferred as normal by `from __future__ import
+  annotations`, exactly like any other name.
 
 ## Implemented so far
 
@@ -2493,6 +2542,72 @@ than reasoned about:
   module imports and registers cleanly against the real merged tree.
   Next: the rest of wave 0 (`studio_serializer.py`, `res_users.py`),
   then wave 1.
+
+- **`res_users.py`** (15 lines, wave 0) needed zero changes: no methods
+  (a pure `_inherit` extension adding one `fields.Char`), and the plan's
+  own "relational fields typed with Odoo's own syntax" only covers
+  relational fields -- `Char`/`Boolean`/etc. aren't generic the way
+  `Many2one[M]` is, so a scalar field's class-body declaration has
+  nothing to re-annotate; its real read/write typing already comes from
+  `Field`'s own descriptor `__get__`/`__set__` overloads with no per-field
+  annotation needed. Confirmed clean under stage 1 (standard mode + `ANN`)
+  exactly as committed, with no diff.
+
+- **`studio_serializer.py`** (549 lines, wave 0, 26 `@api.model` methods
+  -- the base class every concrete serializer subclass, in `serializers/
+  *.py` and elsewhere, inherits) -- the third model file, and the first
+  one built as a draft-then-independently-verify two-agent pipeline (the
+  pattern that served Phase 1b well for files this central). Both agents'
+  full verification, plus a third spot-check in the main loop, agree.
+
+  Real, non-studio business models (a `record` of whatever model the
+  serializer is currently emitting, or a `comodel` string it is pointed
+  at) are typed `BaseModel` throughout, `TYPE_CHECKING`-imported from
+  `odoo.models` -- the honest type for a model genuinely known only at
+  runtime, not a gap to fix; `app_builder_base/tools/typed.py`'s
+  `model()` helper deliberately does NOT appear anywhere in this file,
+  since nothing here looks up a *known, literal* `app_builder` model name
+  the way that helper exists for. Reused, not reinvented: the
+  `record._fields`/compat.py-style ignore idiom (6 call sites), the
+  canonical `lxml_types.LxmlElement` (aliased locally as `Element`, see
+  the new "Known traps" note on why that one import can't be
+  `TYPE_CHECKING`-guarded) and the `_element`-constructor cast wrapper
+  `placement.py`/`xml_writer.py` already established, and the
+  `cast("...", ...)`-for-a-real-but-type-system-invisible-invariant
+  idiom `studio_security.py` set (here: `cast("str", self._studio_model)`
+  in `_serialize`, since the base class declares it `str | None` but
+  every concrete subclass overrides it with a literal string before
+  `_serialize` is ever reachable). `Self` was traced and deliberately
+  not used anywhere -- no method here actually returns a recordset of
+  the serializer's own type. Three new "Known traps" surfaced (all
+  above): `Environment.get`'s own separate untyped hole,
+  `Field.default`'s startling-looking-but-harmless inferred type, and
+  the `TypeAlias`-needs-a-real-import nuance.
+
+  Verification (both agents independently, plus a third check in the
+  main loop): `pyright` clean under the unmodified top-level config
+  (confirmed `pyrightconfig.json` untouched -- no stage-2 escalation
+  slipped in) -- and, worth noting, the untyped original already carried
+  one real pyright error (`"etree" is unknown import symbol`) plus 54
+  ruff `ANN`-class findings, both now zero; `ruff check`/`ruff format
+  --diff` clean; a hand-built fake-ORM behavioral-equivalence harness
+  (no live DB needed -- every method here is pure ORM introspection over
+  an already-loaded record) run independently three times in total (once
+  per agent, once by the main loop, each a from-scratch harness, none
+  reusing another's script) comparing the original and typed file's
+  output across every real branch (every `_should_skip` path including
+  the Char/False/'' quirk and the callable-default-raising path, every
+  `_field_node` ftype, `_assert_complete`'s three outcomes,
+  `_reference_xmlid`'s two paths) -- byte-for-byte identical every time.
+  Line-by-line diff review, independently by both agents and the main
+  loop, confirms every changed line is an annotation, a comment, the
+  `_fields` idiom, the `etree.Element` -> `_element` swap, or the one
+  `cast`. **Wave 0 is now complete** (`studio_security.py`,
+  `studio_serializer.py`, `res_users.py`). Next: wave 1 (`studio_package
+  .py`, `studio_domain.py`, and everything that extends `studio
+  .serializer` directly -- `base_automation_serializer.py`,
+  `tier_serializers.py`, all 8 of `app_builder_base/models/serializers/
+  *.py`).
 
 ## CI: the OCA container's real layout
 
