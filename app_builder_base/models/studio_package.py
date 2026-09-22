@@ -7,12 +7,15 @@ the database, the files on disk, and the git history. Its job is to keep them
 in agreement and to be honest when they are not.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import shutil
 import sys
 import tempfile
 import time
+from typing import TYPE_CHECKING, Any, cast
 
 from odoo import _, api, fields, models
 from odoo import models as models_module
@@ -21,10 +24,14 @@ from odoo.tools import config as tools_config
 from odoo.tools import file_path
 
 from odoo.addons.base.models.ir_model import (
+    IrModel,
+    IrModelData,
     field_xmlid,
     model_xmlid,
     selection_xmlid,
 )
+from odoo.addons.base.models.ir_module import Module as IrModuleModule
+from odoo.addons.base.models.res_lang import Lang
 
 from ..tools import (
     checksum,
@@ -34,9 +41,63 @@ from ..tools import (
     pogen,
     pycodegen,
     pyparse,
+    typed,
     xml_writer,
 )
 from ..tools import manifest as manifest_tools
+from .studio_serializer import StudioSerializer
+
+if TYPE_CHECKING:
+    # Only for annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from collections.abc import Iterable, Iterator
+
+    from odoo.fields import _String
+    from odoo.models import BaseModel
+    from odoo.sql_db import Cursor
+
+    from odoo.addons.base.models.ir_model import (
+        IrModelAccess,
+        IrModelFields,
+        IrModelSelection,
+    )
+    from odoo.addons.base.models.ir_ui_view import View
+
+    from ..tools.lxml_types import LxmlElement
+    from ..tools.manifest import Manifest, ManifestValue
+    from ..tools.modelspec import ModelSpec
+    from .serializers.ir_security import IrModelAccessSerializer
+
+    # `studio_package.py` <-> `studio_package_apply.py`/`studio_package_model
+    # .py`: two real circular references (TYPING.md's own dependency map),
+    # aggregate-root/child FK pairs, this file converted first. Both imports
+    # stay `TYPE_CHECKING`-only -- never a real, top-level import -- so that
+    # when those two files are converted next and need `StudioPackage` back
+    # (for their own `package_id` typed-relation field), the cycle does not
+    # become a real one. That also means neither class can be passed as
+    # `typed.model()`'s own `cls` argument here (that helper reads `cls
+    # ._name` at *runtime*, which needs a real binding): every
+    # `self.env["studio.package.apply"]`/`self.env["studio.package.model"]`
+    # below stays exactly as it was, and is `cast()` to the class instead --
+    # a deliberate, reasoned departure from typed.model() for these two
+    # names only, not an oversight (see this file's own PR notes).
+    #
+    # Relative, not the fully-qualified `odoo.addons.app_builder_base....`
+    # form: this repo is reachable under *two* different pyright module
+    # identities at once (`app_builder_base.*`, via pyrightconfig.json's own
+    # `include`; and `odoo.addons.app_builder_base.*`, via `extraPaths`' merged
+    # tree, which mirrors this same repo) -- confirmed the hard way, this
+    # file's own first draft imported these two absolutely and every call
+    # into a `tools/` function taking a `ModelSpec` (`pycodegen.render_block`
+    # et al., all reached from *this* file via a relative `..tools` import)
+    # then failed with two `ModelSpec`s that print identically but come from
+    # different resolved module paths. Relative imports keep this file and
+    # everything it reaches within the same `app_builder_base.*` identity as
+    # the `tools/` modules it calls into.
+    from .studio_package_apply import StudioPackageApply
+    from .studio_package_model import StudioPackageModel
+    from .studio_security import StudioSecurityMixin
 
 _logger = logging.getLogger(__name__)
 
@@ -94,11 +155,12 @@ STATES = [
 # for a few seconds around the write. A developer's own edit under the same
 # directory, outside that window, restarts the server exactly as before.
 
-_WATCHER_MUTED_UNTIL = {}  # realpath of a package root -> monotonic deadline
+# realpath of a package root -> monotonic deadline
+_WATCHER_MUTED_UNTIL: dict[str, float] = {}
 _WATCHER_MUTE_SECONDS = 5.0
 
 
-def _mute_dev_watcher(root, seconds=_WATCHER_MUTE_SECONDS):
+def _mute_dev_watcher(root: str, seconds: float = _WATCHER_MUTE_SECONDS) -> None:
     """Keep the autoreload watcher from restarting on writes under ``root``.
 
     A no-op outside ``--dev=reload``: there is no watcher to mute. Called
@@ -112,7 +174,7 @@ def _mute_dev_watcher(root, seconds=_WATCHER_MUTE_SECONDS):
     _WATCHER_MUTED_UNTIL[os.path.realpath(root)] = time.monotonic() + seconds
 
 
-def _install_watcher_mute():
+def _install_watcher_mute() -> None:
     """Wrap ``FSWatcherBase.handle_file`` once, for the life of the process.
 
     Both of core's watchers -- watchdog and inotify -- funnel every event
@@ -122,12 +184,18 @@ def _install_watcher_mute():
     """
     from odoo.service import server as odoo_server
 
-    base = getattr(odoo_server, "FSWatcherBase", None)
+    # `FSWatcherBase` is only ever present when a dev-mode watcher is
+    # actually running (`getattr` with a default rather than a plain
+    # attribute access), and what it and its own `handle_file` really are is
+    # vendor, dev-only plumbing this module patches rather than depends on
+    # the shape of -- `Any` is the honest type at this boundary, the same
+    # spirit as the codebase's other traced-vendor-gap `Any` uses.
+    base: Any = getattr(odoo_server, "FSWatcherBase", None)
     if base is None or getattr(base, "_studio_muted", False):
         return
     original = base.handle_file
 
-    def handle_file(self, path):
+    def handle_file(self: Any, path: str) -> None:
         real = os.path.realpath(path)
         now = time.monotonic()
         for muted_root, until in list(_WATCHER_MUTED_UNTIL.items()):
@@ -176,8 +244,32 @@ class StudioPackage(models.Model):
         help="Absolute path of the addon directory.",
     )
     writable = fields.Boolean(compute="_compute_writable")
-    state = fields.Selection(STATES, default="draft", readonly=True)
+    # `Selection.__init__`'s own `selection` parameter (`odoo/fields.py`)
+    # carries no annotation of its own, only a `SENTINEL` default -- pyright
+    # infers its type from that default alone (`Sentinel`), rejecting the
+    # real `list[(value, label)]` form the field's own docstring says is the
+    # normal case. A real, traced vendor-stub gap, not fixable from this
+    # side; narrow ignore at each literal-list call, same idiom as every
+    # other traced vendor gap in this migration.
+    state = fields.Selection(STATES, default="draft", readonly=True)  # pyright: ignore[reportArgumentType]
 
+    # `file_ids`/`model_ids`/`apply_ids` below deliberately do NOT use the
+    # plan's own "typed relational field" syntax (`field: Cls = fields
+    # .One2many(...)`) -- traced and confirmed NOT to work under this real
+    # OCB tree, a significant finding of this file's own conversion (see
+    # this file's own PR notes): `_Relational.__get__` (`odoo/fields.py`)
+    # carries no return annotation of its own, and its two-branch body
+    # (`super().__get__(...)` vs `self.mapped(records)`) infers a messy,
+    # partially-`Unknown` union regardless of whether the field's own
+    # declaration carries an explicit comodel type argument (tested both
+    # with and without `fields.One2many[Cls](...)` subscripting) -- and the
+    # *declaration* assignment itself separately fails too
+    # (`One2many[Cls]` is not assignable to the declared attribute type
+    # `Cls`, confirmed even with explicit subscripting). Every real read of
+    # one of these three fields below therefore goes through the same
+    # `cast()`-at-the-read-site idiom `pycodegen.py`'s own
+    # `record.selection_ids`/this file's own `model.field_id` already use,
+    # not a typed declaration.
     file_ids = fields.One2many("studio.package.file", "package_id", readonly=True)
     record_count = fields.Integer(compute="_compute_record_count")
 
@@ -189,7 +281,7 @@ class StudioPackage(models.Model):
     )
     apply_ids = fields.One2many("studio.package.apply", "package_id", readonly=True)
     reload_mode = fields.Selection(
-        [
+        [  # pyright: ignore[reportArgumentType] -- see `state`'s own comment above.
             ("inproc", "In this process"),
             ("manual", "Manual restart required"),
         ],
@@ -212,7 +304,7 @@ class StudioPackage(models.Model):
     is_git = fields.Boolean(compute="_compute_git_info")
     git_branch = fields.Char(compute="_compute_git_info")
     auto_commit = fields.Selection(
-        [("off", "Off"), ("stage", "Stage only"), ("commit", "Commit each change")],
+        [("off", "Off"), ("stage", "Stage only"), ("commit", "Commit each change")],  # pyright: ignore[reportArgumentType] -- see `state`'s own comment above.
         default="stage",
         required=True,
         help="What to do with git after each write.",
@@ -229,7 +321,7 @@ class StudioPackage(models.Model):
     # -- constraints ------------------------------------------------------
 
     @api.constrains("name")
-    def _check_name(self):
+    def _check_name(self) -> None:
         for package in self:
             if package.name in RESERVED_NAMES:
                 raise ValidationError(
@@ -247,8 +339,8 @@ class StudioPackage(models.Model):
     # -- computes ---------------------------------------------------------
 
     @api.depends("name")
-    def _compute_root_path(self):
-        base = self.env["studio.package"]._default_addons_dir()
+    def _compute_root_path(self) -> None:
+        base = typed.model(self.env, StudioPackage)._default_addons_dir()
         for package in self:
             if not package.root_path and package.name:
                 package.root_path = os.path.join(base, package.name)
@@ -256,7 +348,7 @@ class StudioPackage(models.Model):
                 package.root_path = False
 
     @api.depends("root_path")
-    def _compute_writable(self):
+    def _compute_writable(self) -> None:
         for package in self:
             path = package.root_path
             if not path:
@@ -266,7 +358,7 @@ class StudioPackage(models.Model):
             package.writable = bool(probe) and self._can_write_to(probe)
 
     @api.model
-    def _can_write_to(self, directory):
+    def _can_write_to(self, directory: str) -> bool:
         """Try it, rather than asking ``os.access``.
 
         This flag is the whole read-only-production guard, so it has to be
@@ -291,7 +383,7 @@ class StudioPackage(models.Model):
             return False
 
     @api.model
-    def _suggested(self):
+    def _suggested(self) -> StudioPackage:
         """Where something created from the studio should be written.
 
         The one writable package when there is exactly one, and nothing when
@@ -302,7 +394,7 @@ class StudioPackage(models.Model):
         return writable[:1] if len(writable) == 1 else self.browse()
 
     @api.model
-    def _chosen(self, package_id=None):
+    def _chosen(self, package_id: int | None = None) -> StudioPackage:
         """The package a caller has already chosen, else the suggested one.
 
         The console shows one package in its top bar and records every
@@ -319,14 +411,14 @@ class StudioPackage(models.Model):
                 return package
         return self._suggested()
 
-    def _compute_record_count(self):
+    def _compute_record_count(self) -> None:
         for package in self:
-            package.record_count = self.env["ir.model.data"].search_count(
+            package.record_count = typed.model(self.env, IrModelData).search_count(
                 [("module", "=", package.name)]
             )
 
-    def _compute_restart_required(self):
-        Apply = self.env["studio.package.apply"]
+    def _compute_restart_required(self) -> None:
+        Apply = cast("StudioPackageApply", self.env["studio.package.apply"])
         for package in self:
             package.restart_required = bool(
                 Apply.search_count(
@@ -337,18 +429,18 @@ class StudioPackage(models.Model):
                 )
             )
 
-    def _compute_git_info(self):
+    def _compute_git_info(self) -> None:
         for package in self:
             path = package.root_path
-            package.is_git = bool(path) and gitrepo.is_repo(path)
+            package.is_git = bool(path) and gitrepo.is_repo(cast("str", path))
             package.git_branch = (
-                gitrepo.current_branch(path) if package.is_git else False
+                gitrepo.current_branch(cast("str", path)) if package.is_git else False
             )
 
     # -- addons path ------------------------------------------------------
 
     @api.model
-    def _default_addons_dir(self):
+    def _default_addons_dir(self) -> str:
         """Pick a writable addons_path entry to create packages in.
 
         A brand-new addons *directory* cannot be registered at runtime -- Odoo
@@ -369,7 +461,7 @@ class StudioPackage(models.Model):
 
     # -- serialization ----------------------------------------------------
 
-    def _serializer_env(self, dep_sink=None):
+    def _serializer_env(self, dep_sink: set[str] | None = None) -> StudioSerializer:
         """Serializers need the package name to shorten same-module refs.
 
         ``dep_sink`` is a set the serializers add foreign module names to as
@@ -385,18 +477,18 @@ class StudioPackage(models.Model):
         depend on who happened to click save.
         """
         self.ensure_one()
-        return self.env["studio.serializer"].with_context(
+        return typed.model(self.env, StudioSerializer).with_context(
             studio_package=self.name,
             studio_dep_sink=dep_sink,
             lang=None,
         )
 
-    def _source_env(self):
+    def _source_env(self) -> api.Environment:
         """Env for reading records during serialization: source language only."""
         self.ensure_one()
         return self.env(context=dict(self.env.context, lang=None))
 
-    def _owned_records(self):
+    def _owned_records(self) -> dict[str, list[tuple[str, BaseModel]]]:
         """Group the package's records by model, keyed by xmlid.
 
         Ownership is defined by ``ir.model.data.module``, which is exactly what
@@ -408,29 +500,37 @@ class StudioPackage(models.Model):
         # and a translated value read in the user's lang would be emitted as if
         # it were the source term. See _serializer_env.
         env = self._source_env()
-        data = env["ir.model.data"].search([("module", "=", self.name)])
+        data = typed.model(env, IrModelData).search([("module", "=", self.name)])
         serializers = self._serializer_env()
-        grouped = {}
+        grouped: dict[str, list[tuple[str, BaseModel]]] = {}
         for entry in data:
-            if entry.model not in env:
+            # `model` is a required Char (`ir.model.data`, core) -- the same
+            # "declared str | False, never actually False" cast as this
+            # file's other required-field reads. Cast once, reused for the
+            # three dynamic uses below (`env[...]`, `_for_model`, the dict
+            # key), rather than three separate casts.
+            entry_model = cast("str", entry.model)
+            if entry_model not in env:
                 continue
-            record = env[entry.model].browse(entry.res_id)
+            record = env[entry_model].browse(entry.res_id)
             if not record.exists():
                 continue
-            serializer = serializers._for_model(entry.model)
-            if serializer is not None and not serializer._ownable(record):
+            serializer = serializers._for_model(entry_model)
+            if serializer is not None and not cast(
+                "StudioSerializer", serializer
+            )._ownable(record):
                 continue
-            grouped.setdefault(entry.model, []).append(
+            grouped.setdefault(entry_model, []).append(
                 ("%s.%s" % (entry.module, entry.name), record)
             )
         return grouped
 
     @api.depends("model_ids.model", "model_ids.source")
-    def _compute_python_models(self):
+    def _compute_python_models(self) -> None:
         for package in self:
             package.python_models = ", ".join(sorted(package._python_model_set()))
 
-    def _python_model_set(self):
+    def _python_model_set(self) -> set[str]:
         """Models this package *declares* in Python, frozen ones included.
 
         A frozen model is still ours -- we simply must not rewrite its file --
@@ -443,11 +543,11 @@ class StudioPackage(models.Model):
         self.ensure_one()
         return {
             m.model
-            for m in self.model_ids
+            for m in cast("StudioPackageModel", self.model_ids)
             if m.source in ("python", "frozen") and m.model and not m.extends
         }
 
-    def _python_module_set(self):
+    def _python_module_set(self) -> set[str]:
         """Models with a Python *file*, which is a different question.
 
         `models/__init__.py` has to import every file the package renders, and
@@ -458,22 +558,26 @@ class StudioPackage(models.Model):
         self.ensure_one()
         return {
             m.model
-            for m in self.model_ids
+            for m in cast("StudioPackageModel", self.model_ids)
             if m.source in ("python", "frozen") and m.model
         }
 
-    def _owned_model_names(self):
+    def _owned_model_names(self) -> set[str]:
         """Custom models this package owns, graduated or not.
 
         Read straight from ir.model.data rather than from ``_owned_records``,
         because the latter deliberately hides already-graduated metadata.
         """
         self.ensure_one()
-        entries = self.env["ir.model.data"].search(
+        entries = typed.model(self.env, IrModelData).search(
             [("module", "=", self.name), ("model", "=", "ir.model")]
         )
-        records = self.env["ir.model"].browse(entries.mapped("res_id")).exists()
-        return set(records.mapped("model"))
+        records = (
+            typed.model(self.env, IrModel)
+            .browse(cast("list[int]", entries.mapped("res_id")))
+            .exists()
+        )
+        return set(cast("list[str]", records.mapped("model")))
 
     # NB: there is deliberately no "is this model graduated?" filter here.
     # Graduation demotes the metadata to state='base', and `_ownable` already
@@ -483,22 +587,22 @@ class StudioPackage(models.Model):
     # (exactly as Studio adds fields to core models), and was being written to
     # no file at all.
 
-    def _render_files(self):
+    def _render_files(self) -> dict[str, str]:
         """Render every generated file. Returns ``{relative_path: content}``."""
         self.ensure_one()
         # Modules our refs point at; becomes the manifest 'depends'.
-        dep_sink = set()
+        dep_sink: set[str] = set()
         serializers = self._serializer_env(dep_sink)
         # (file, sort_key) -> node, accumulated then ordered in one pass so the
         # result never depends on database iteration order.
-        buckets = {}
-        csv_rows = {}
+        buckets: dict[str, list[tuple[tuple[int, str], LxmlElement, bool]]] = {}
+        csv_rows: dict[str, list[tuple[tuple[int, str], dict[str, str]]]] = {}
 
         for model, entries in self._owned_records().items():
             serializer = serializers._for_model(model)
             if serializer is None:
                 continue
-            serializer = serializer.with_context(
+            serializer = cast("StudioSerializer", serializer).with_context(
                 studio_package=self.name, studio_dep_sink=dep_sink
             )
             for xmlid, record in entries:
@@ -506,7 +610,16 @@ class StudioPackage(models.Model):
                 key = serializer._sort_key(record, xmlid)
                 if serializer._studio_format == "csv":
                     csv_rows.setdefault(target, []).append(
-                        (key, serializer._csv_row(record, xmlid))
+                        # `_csv_row`/`_render_csv` (further below) are not part
+                        # of `StudioSerializer`'s own base-class contract --
+                        # only the `_studio_format == "csv"` subclasses
+                        # (`ir_security.py`, wave 1, not yet typed) declare
+                        # them, by convention rather than an abstract method.
+                        # A real, pre-existing design gap, flagged rather than
+                        # fixed here (this migration's own "type-adding pass
+                        # only" rule); `Any` is the honest type at this one
+                        # dynamically-dispatched call.
+                        (key, cast("Any", serializer)._csv_row(record, xmlid))
                     )
                 else:
                     node = serializer._serialize(record, xmlid)
@@ -514,7 +627,7 @@ class StudioPackage(models.Model):
                         (key, node, serializer._studio_noupdate)
                     )
 
-        files = {}
+        files: dict[str, str] = {}
         for target, items in buckets.items():
             items.sort(key=lambda item: item[0])
             plain = [node for _key, node, nou in items if not nou]
@@ -524,7 +637,12 @@ class StudioPackage(models.Model):
 
         for target, rows in csv_rows.items():
             rows.sort(key=lambda item: item[0])
-            access = serializers._for_model("ir.model.access")
+            # Same "not part of the base contract" gap as `_csv_row` above --
+            # but here the model name is a literal, so the cast can name the
+            # real subclass exactly rather than falling back to `Any`.
+            access = cast(
+                "IrModelAccessSerializer", serializers._for_model("ir.model.access")
+            )
             files[target] = access._render_csv([row for _key, row in rows])
 
         # Python-defined models become source rather than XML metadata.
@@ -539,7 +657,7 @@ class StudioPackage(models.Model):
         files["__init__.py"] = pycodegen.render_package_init(bool(python_files))
         return files
 
-    def _render_translations(self, serializers):
+    def _render_translations(self, serializers: StudioSerializer) -> dict[str, str]:
         """``{i18n/<lang>.po: text}`` for every language but the source one.
 
         Mirrors ``TranslationModuleReader`` (``translate.py:1200-1216``) rather
@@ -553,21 +671,25 @@ class StudioPackage(models.Model):
         self.ensure_one()
         langs = [
             code
-            for code, _name in self.env["res.lang"].get_installed()
+            for code, _name in typed.model(self.env, Lang).get_installed()
             if code != "en_US"
         ]
         if not langs:
             return {}
 
-        rows = {lang: [] for lang in langs}
+        rows: dict[str, list[tuple[str, str, pogen.Occurrence]]] = {
+            lang: [] for lang in langs
+        }
         for model, entries in self._owned_records().items():
             serializer = serializers._for_model(model)
             if serializer is None:
                 continue
             for xmlid, record in entries:
                 # Already `module.name` -- _owned_records qualifies it.
-                for fname in serializer._translatable_fields(record):
-                    field = record._fields.get(fname)
+                for fname in cast("StudioSerializer", serializer)._translatable_fields(
+                    record
+                ):
+                    field = record._fields.get(fname)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
                     if field is None:
                         continue
                     kind = "model_terms" if callable(field.translate) else "model"
@@ -579,8 +701,24 @@ class StudioPackage(models.Model):
                         for lang in langs
                     }
                     try:
-                        dictionary = field.get_translation_dictionary(
-                            source, translated
+                        # `get_translation_dictionary`/`get_trans_terms` live
+                        # on `_String` (`odoo/fields.py`), not on the plain
+                        # `Field` every other read in this file goes through
+                        # -- narrowed here rather than widening the `_fields`
+                        # idiom everywhere, since only a translate=True field
+                        # (confirmed by `_translatable_fields` above) ever
+                        # reaches this line.
+                        # `get_translation_dictionary` is itself unannotated,
+                        # so pyright infers its return from the body alone
+                        # (`defaultdict(lambda: defaultdict(dict))`) rather
+                        # than the method's own documented shape (`:return:
+                        # {from_lang_term: {lang: lang_term}}`) -- cast to
+                        # what the docstring already promises.
+                        dictionary = cast(
+                            "dict[str, dict[str, str]]",
+                            cast("_String", field).get_translation_dictionary(
+                                source, translated
+                            ),
                         )
                     except Exception:  # noqa: BLE001 - see below
                         # Term extraction parses html, and a body a user
@@ -601,12 +739,12 @@ class StudioPackage(models.Model):
                                 (term, per_lang.get(lang) or "", occurrence)
                             )
 
-        files = {}
+        files: dict[str, str] = {}
         for lang in langs:
             relative = "i18n/%s.po" % lang
             content = pogen.merge_po(
                 self._read_source(relative),
-                self.name,
+                cast("str", self.name),
                 lang,
                 pogen.merge_terms(rows[lang]),
             )
@@ -614,7 +752,7 @@ class StudioPackage(models.Model):
                 files[relative] = content
         return files
 
-    def _render_python(self):
+    def _render_python(self) -> dict[str, str]:
         """Render ``models/*.py`` for every model this package defines in Python.
 
         Regenerated on every write, not written once. That inverts the old
@@ -627,14 +765,22 @@ class StudioPackage(models.Model):
         keeps a purely data-driven addon exactly as it was.
         """
         self.ensure_one()
-        owned = self.model_ids.filtered(lambda m: m.source in ("python", "frozen"))
+        owned = cast("StudioPackageModel", self.model_ids).filtered(
+            lambda m: m.source in ("python", "frozen")
+        )
         if not owned:
             return {}
 
-        files = {}
-        emitted = []
+        files: dict[str, str] = {}
+        emitted: list[str] = []
         for entry in owned.sorted(lambda m: m.model):
-            relative = entry.python_path
+            # `python_path` is compute-only (`_compute_python_path`,
+            # studio_package_model.py) and always derived from `model` -- the
+            # field's declared type is `str | Literal[False]` like any Char,
+            # but it is never actually empty for a real row.
+            relative = cast("str", entry.python_path)
+            # Same required-field cast as `python_path` above.
+            entry_model = cast("str", entry.model)
             existing = self._read_source(relative)
             spec = entry._current_spec()  # may freeze the row as a side effect
 
@@ -644,27 +790,29 @@ class StudioPackage(models.Model):
                     existing, pycodegen.render_block(spec), spec
                 )
                 files[relative] = pycodegen.ensure_imports(rewritten, spec)
-                emitted.append(entry.model)
+                emitted.append(entry_model)
                 continue
 
             if existing is not None:
                 # Frozen, or a file whose block we could not read: keep it
                 # exactly as it is rather than guessing.
                 files[relative] = existing
-                emitted.append(entry.model)
+                emitted.append(entry_model)
                 continue
 
             seeded = self._seed_python_from_metadata(entry)
             if seeded is None:
                 continue
             files[relative] = seeded
-            emitted.append(entry.model)
+            emitted.append(entry_model)
 
         if emitted:
             files["models/__init__.py"] = self._render_models_init(emitted)
         return files
 
-    def _assert_no_double_definition(self, data_files, python_files):
+    def _assert_no_double_definition(
+        self, data_files: dict[str, str], python_files: dict[str, str]
+    ) -> None:
         """Refuse to emit a model as both a class and a set of data records.
 
         ``_ownable`` should already prevent this, but the window where a row is
@@ -682,10 +830,13 @@ class StudioPackage(models.Model):
         would otherwise make impossible.
         """
         self.ensure_one()
-        for entry in self.model_ids:
+        for entry in cast("StudioPackageModel", self.model_ids):
             if entry.extends or entry.python_path not in python_files:
                 continue
-            clash = "models/%s.xml" % entry.model.replace(".", "_")
+            # `model` is a required Char (studio_package_model.py), so this is
+            # the same "declared str | False, never actually False" cast as
+            # `python_path` above.
+            clash = "models/%s.xml" % cast("str", entry.model).replace(".", "_")
             if clash in data_files:
                 raise UserError(
                     _(
@@ -698,14 +849,16 @@ class StudioPackage(models.Model):
                     )
                 )
 
-    def _seed_python_from_metadata(self, entry):
+    def _seed_python_from_metadata(self, entry: StudioPackageModel) -> str | None:
         """First render for a model that has no file yet -- i.e. adoption.
 
         The only direction in which ``ir.model`` is an input rather than a
         reflection artefact, and it happens exactly once per model.
         """
         self.ensure_one()
-        model = self.env["ir.model"].search([("model", "=", entry.model)], limit=1)
+        model = typed.model(self.env, IrModel).search(
+            [("model", "=", entry.model)], limit=1
+        )
         if not model:
             _logger.warning(
                 "Package %s claims %s but no such model exists",
@@ -715,10 +868,18 @@ class StudioPackage(models.Model):
             return None
         # Only fields this package owns: Odoo declares the magic columns
         # itself, and a field from another module is not ours to redeclare.
-        owned_fields = model.field_id.filtered(lambda f: f.state == "manual")
+        #
+        # `field_id` (`ir.model.field_id`) is a plain-string-comodel
+        # One2many in core (no typed-relation syntax there), so pyright
+        # cannot resolve its element type from the declaration alone and
+        # falls back to an unusable union -- the same gap `pycodegen.py`'s
+        # own `record.selection_ids` documents and fixes the same way.
+        owned_fields = cast("IrModelFields", model.field_id).filtered(  # pyright: ignore[reportUnknownMemberType]
+            lambda f: f.state == "manual"
+        )
         return pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned_fields))
 
-    def _render_bootstrap_files(self):
+    def _render_bootstrap_files(self) -> dict[str, str]:
         """Write the least a directory needs to be an installable module.
 
         Deliberately empty of content: this is installed before any model
@@ -734,7 +895,7 @@ class StudioPackage(models.Model):
         self._write_files(files)
         return files
 
-    def _seed_source_for(self, model_name, spec):
+    def _seed_source_for(self, model_name: str, spec: ModelSpec) -> str:
         """Put a model's first Python on disk, before it has ever been loaded.
 
         The only moment a spec flows *to* the file without having been parsed
@@ -753,7 +914,7 @@ class StudioPackage(models.Model):
         )
         return relative
 
-    def _seed_app_icon(self):
+    def _seed_app_icon(self) -> str:
         """Put a real icon file in the package and return its ``web_icon``.
 
         A seed in the same sense as ``_seed_source_for``: written only when
@@ -771,13 +932,17 @@ class StudioPackage(models.Model):
         """
         self.ensure_one()
         self._assert_writable()
-        full = os.path.join(self.root_path, APP_ICON_FILE)
+        # `_assert_writable` already raised if `root_path` were falsy -- the
+        # same "invariant the caller already guaranteed, not visible from
+        # here" shape as `studio_serializer.py`'s own `cast("str", self
+        # ._studio_model)`.
+        full = os.path.join(cast("str", self.root_path), APP_ICON_FILE)
         if not os.path.isfile(full):
             os.makedirs(os.path.dirname(full), exist_ok=True)
             shutil.copyfile(file_path(DEFAULT_APP_ICON), full)
         return "%s,%s" % (self.name, APP_ICON_FILE)
 
-    def _read_source(self, relative):
+    def _read_source(self, relative: str) -> str | None:
         """Return the on-disk content of a package file, or ``None``."""
         self.ensure_one()
         full = os.path.join(self.root_path or "", relative)
@@ -786,7 +951,7 @@ class StudioPackage(models.Model):
         with open(full, encoding="utf-8") as handle:
             return handle.read()
 
-    def _render_models_init(self, model_names):
+    def _render_models_init(self, model_names: Iterable[str]) -> str:
         """Regenerate ``models/__init__.py``, keeping hand-added imports.
 
         Same tolerance as the manifest merge: a developer may add their own
@@ -808,17 +973,19 @@ class StudioPackage(models.Model):
             return generated
         return "%s%s\n" % (generated, "\n".join(sorted(extra)))
 
-    def _render_manifest(self, data_files, dep_sink=None):
+    def _render_manifest(
+        self, data_files: list[str], dep_sink: set[str] | None = None
+    ) -> str:
         """Build the manifest, preserving hand-edited keys."""
         self.ensure_one()
-        existing = {}
+        existing: Manifest = {}
         path = os.path.join(self.root_path or "", "__manifest__.py")
         if os.path.isfile(path):
             try:
                 existing = manifest_tools.read_manifest(path)
             except (SyntaxError, ValueError) as err:
                 _logger.warning("Unparseable manifest at %s: %s", path, err)
-        generated = {
+        generated: Manifest = {
             "name": self.display_name_ or self.name,
             "version": self.version,
             "category": self.category or "Customization",
@@ -829,9 +996,14 @@ class StudioPackage(models.Model):
             # Deriving this rather than trusting the user is what makes a
             # generated package installable into a database that does not
             # already happen to contain what it points at.
-            "depends": self._effective_depends(dep_sink),
+            #
+            # `_effective_depends`/`_order_data_files` are genuinely
+            # `list[str]`, a narrower type than `Manifest`'s own
+            # `list[ManifestValue]` -- generics are invariant, so the cast
+            # states plainly what is already true of every element.
+            "depends": cast("list[ManifestValue]", self._effective_depends(dep_sink)),
             # Load order matters: models before views before security.
-            "data": self._order_data_files(data_files),
+            "data": cast("list[ManifestValue]", self._order_data_files(data_files)),
         }
         if self.summary:
             generated["summary"] = self.summary
@@ -839,7 +1011,7 @@ class StudioPackage(models.Model):
             manifest_tools.merge_manifest(existing, generated)
         )
 
-    def _effective_depends(self, dep_sink=None):
+    def _effective_depends(self, dep_sink: set[str] | None = None) -> list[str]:
         """Union of declared depends and every module we actually need."""
         self.ensure_one()
         declared = {d.strip() for d in (self.depends or "").split(",") if d.strip()}
@@ -850,7 +1022,7 @@ class StudioPackage(models.Model):
         }
         return sorted(depends)
 
-    def _python_depends(self):
+    def _python_depends(self) -> set[str]:
         """Modules our generated *classes* need, which no xmlid ref reveals.
 
         ``dep_sink`` is filled while serializing records, so it only ever sees
@@ -860,9 +1032,11 @@ class StudioPackage(models.Model):
         is the same class of bug as the one recorded as design finding 4.
         """
         self.ensure_one()
-        needed = set()
-        IrModel = self.env["ir.model"].sudo()
-        for entry in self.model_ids.filtered(lambda m: m.source == "python"):
+        needed: set[str] = set()
+        IrModelSudo = typed.model(self.env, IrModel).sudo()
+        for entry in cast("StudioPackageModel", self.model_ids).filtered(
+            lambda m: m.source == "python"
+        ):
             spec = entry._current_spec()
             if spec is None:
                 continue
@@ -872,7 +1046,7 @@ class StudioPackage(models.Model):
             # that module, which is design finding 4 all over again.
             inherited_models = spec.inherit + ((spec.name,) if spec.extends else ())
             for inherited in inherited_models:
-                record = IrModel.search([("model", "=", inherited)], limit=1)
+                record = IrModelSudo.search([("model", "=", inherited)], limit=1)
                 if not record:
                     continue
                 needed.update(
@@ -881,7 +1055,7 @@ class StudioPackage(models.Model):
         return {name for name in needed if name and name != self.name}
 
     @api.model
-    def _order_data_files(self, paths):
+    def _order_data_files(self, paths: Iterable[str]) -> list[str]:
         """Order manifest 'data' so every ref resolves when the file loads.
 
         A hand-written addon puts ``security/`` first because its groups are
@@ -902,7 +1076,7 @@ class StudioPackage(models.Model):
         else:
             rank = {"security": 0, "models": 1, "data": 2, "views": 3, "report": 4}
 
-        def key(path):
+        def key(path: str) -> tuple[float, str]:
             head = rank.get(path.split("/")[0], 9)
             if path == MENUS_FILE:
                 # Menus ref their action, so they must follow every view file
@@ -912,7 +1086,7 @@ class StudioPackage(models.Model):
 
         return sorted((p for p in paths if p.endswith((".xml", ".csv"))), key=key)
 
-    def _has_xml_models(self):
+    def _has_xml_models(self) -> bool:
         """Whether any model this package owns is still defined as data.
 
         A mixed package -- some Python models, some manual ones, or a manual
@@ -921,13 +1095,16 @@ class StudioPackage(models.Model):
         self.ensure_one()
         python_owned = self._python_model_set()
         for _xmlid, record in self._owned_records().get("ir.model", []):
-            if record.model not in python_owned:
+            # `_owned_records` groups by model name; every value under the
+            # "ir.model" key is, by construction, really an `ir.model`
+            # record -- the dict's own value type cannot say that per-key.
+            if cast("IrModel", record).model not in python_owned:
                 return True
         return False
 
     # -- disk I/O ---------------------------------------------------------
 
-    def _assert_writable(self):
+    def _assert_writable(self) -> None:
         self.ensure_one()
         if not self.writable:
             raise UserError(
@@ -939,9 +1116,13 @@ class StudioPackage(models.Model):
                 )
             )
 
-    def action_write_files(self):
+    def action_write_files(self) -> bool:
         """Serialize the package to disk and record checksums."""
-        self._assert_studio_manager()
+        # `_assert_studio_manager` lives on `studio.security.mixin`
+        # (`_inherit`, not a Python base class -- Odoo's registry merges
+        # it in at runtime, invisibly to pyright); same cast idiom as
+        # `_demote_manual_metadata`'s own `Environment.cr`.
+        cast("StudioSecurityMixin", self)._assert_studio_manager()
         for package in self:
             package._assert_writable()
             files = package._render_files()
@@ -951,7 +1132,7 @@ class StudioPackage(models.Model):
             package.state = "synced"
         return True
 
-    def _write_files(self, files, prune=False):
+    def _write_files(self, files: dict[str, str], prune: bool = False) -> list[str]:
         """Write rendered content; optionally remove generated files that went.
 
         ``prune`` is off by default and that default is load-bearing. Pruning
@@ -963,10 +1144,14 @@ class StudioPackage(models.Model):
         thing cannot make that mistake by forgetting a flag.
         """
         self.ensure_one()
-        root = self.root_path
+        # Every real caller already calls `_assert_writable()` first, which
+        # raises if `root_path` is falsy -- the same "invariant guaranteed by
+        # the caller's own contract, not provable from here" shape as
+        # `_seed_app_icon`'s own cast above.
+        root = cast("str", self.root_path)
         os.makedirs(root, exist_ok=True)
         _mute_dev_watcher(root)
-        written = []
+        written: list[str] = []
         for relative, content in files.items():
             full = os.path.join(root, relative)
             os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -984,19 +1169,25 @@ class StudioPackage(models.Model):
         if not prune:
             return written
 
-        for stale in self.file_ids.filtered(lambda f: f.path not in files):
-            full = os.path.join(root, stale.path)
+        for stale in cast("StudioPackageFile", self.file_ids).filtered(
+            lambda f: f.path not in files
+        ):
+            # `path` is a required Char (`studio.package.file`, this file
+            # below) -- same "declared str | False, never actually False"
+            # cast as this file's other required-field reads.
+            stale_path = cast("str", stale.path)
+            full = os.path.join(root, stale_path)
             # Only remove files we generated and that nobody has since edited.
             if os.path.isfile(full) and (
                 checksum.hash_file(full) == stale.generated_checksum
             ):
                 os.remove(full)
-                written.append(stale.path)
+                written.append(stale_path)
         return written
 
-    def _sync_file_records(self, files):
+    def _sync_file_records(self, files: dict[str, str]) -> None:
         self.ensure_one()
-        existing = {f.path: f for f in self.file_ids}
+        existing = {f.path: f for f in cast("StudioPackageFile", self.file_ids)}
         for relative, content in files.items():
             digest = checksum.hash_text(content)
             record = existing.pop(relative, None)
@@ -1006,34 +1197,44 @@ class StudioPackage(models.Model):
                 # drifted until someone runs a drift check.
                 record.write({"generated_checksum": digest, "disk_checksum": digest})
             else:
-                self.env["studio.package.file"].create(
-                    {
-                        "package_id": self.id,
-                        "path": relative,
-                        "generated_checksum": digest,
-                        "disk_checksum": digest,
-                    }
-                )
+                # `create()`'s own declared signature (`odoo/models.py`) takes
+                # only `list[ValuesType]` -- `@api.model_create_multi`
+                # (`odoo/api.py`) is a bare passthrough decorator (`def
+                # model_create_multi(method: T) -> T`), so it does not widen
+                # the type to also cover the single-dict form it genuinely
+                # accepts at runtime (unwrapping the list back to one record
+                # on return). The same shape of decorator-stub gap already
+                # documented for `@tools.ormcache`/`assert_log_admin_access`.
+                vals = {
+                    "package_id": self.id,
+                    "path": relative,
+                    "generated_checksum": digest,
+                    "disk_checksum": digest,
+                }
+                typed.model(self.env, StudioPackageFile).create(vals)  # pyright: ignore[reportArgumentType]
         if existing:
-            self.env["studio.package.file"].browse(
+            typed.model(self.env, StudioPackageFile).browse(
                 [r.id for r in existing.values()]
             ).unlink()
 
-    def _run_auto_commit(self, written):
+    def _run_auto_commit(self, written: list[str]) -> None:
         self.ensure_one()
         if not written or self.auto_commit == "off" or not self.is_git:
             return
-        paths = [os.path.join(self.root_path, p) for p in written]
+        root = cast("str", self.root_path)
+        paths = [os.path.join(root, p) for p in written]
         if self.auto_commit == "stage":
-            gitrepo.add(self.root_path, paths)
+            gitrepo.add(root, paths)
         else:
             gitrepo.commit(
-                self.root_path,
+                root,
                 "studio(%s): update %s" % (self.name, ", ".join(sorted(written)[:5])),
                 paths,
             )
 
-    def studio_capture(self, records, write_files=True):
+    def studio_capture(
+        self, records: BaseModel | Iterable[BaseModel] | None, write_files: bool = True
+    ) -> bool:
         """Take ownership of ``records`` and flush the package to disk.
 
         This is the single entry point every builder module calls after it
@@ -1050,7 +1251,11 @@ class StudioPackage(models.Model):
         would leave source on disk for a change the transaction rolled back.
         The caller owes the package an ``action_write_files()``.
         """
-        self._assert_studio_manager()
+        # `_assert_studio_manager` lives on `studio.security.mixin`
+        # (`_inherit`, not a Python base class -- Odoo's registry merges
+        # it in at runtime, invisibly to pyright); same cast idiom as
+        # `_demote_manual_metadata`'s own `Environment.cr`.
+        cast("StudioSecurityMixin", self)._assert_studio_manager()
         self.ensure_one()
         if not any(True for _rec in self._flatten(records)):
             return False
@@ -1063,7 +1268,7 @@ class StudioPackage(models.Model):
 
     # -- graduate to code -------------------------------------------------
 
-    def action_adopt(self, model_names):
+    def action_adopt(self, model_names: Iterable[str]) -> dict[str, Any]:
         """Bring an existing ``x_`` manual model under Python management.
 
         Not a milestone, and not a handoff. New models are Python from the
@@ -1078,7 +1283,11 @@ class StudioPackage(models.Model):
         The new class takes effect once the package reloads, which
         ``--dev=reload`` does for you.
         """
-        self._assert_studio_manager()
+        # `_assert_studio_manager` lives on `studio.security.mixin`
+        # (`_inherit`, not a Python base class -- Odoo's registry merges
+        # it in at runtime, invisibly to pyright); same cast idiom as
+        # `_demote_manual_metadata`'s own `Environment.cr`.
+        cast("StudioSecurityMixin", self)._assert_studio_manager()
         self.ensure_one()
         self._assert_writable()
         requested = {m.strip() for m in model_names if m and m.strip()}
@@ -1101,7 +1310,9 @@ class StudioPackage(models.Model):
         # state='base') naturally stops emitting what the class now defines.
         self._write_adopted_source(requested)
         for model_name in sorted(requested):
-            self.env["studio.package.model"]._adopt(self, model_name, source="python")
+            cast("StudioPackageModel", self.env["studio.package.model"])._adopt(
+                self, model_name, source="python"
+            )
         self._demote_manual_metadata(requested)
         self.action_write_files()
         return {
@@ -1119,7 +1330,7 @@ class StudioPackage(models.Model):
             },
         }
 
-    def _assert_module_installed(self):
+    def _assert_module_installed(self) -> None:
         """Refuse to adopt into a package Odoo has not installed as a module.
 
         Odoo only imports Python for modules in the dependency graph. If the
@@ -1129,7 +1340,7 @@ class StudioPackage(models.Model):
         """
         self.ensure_one()
         module = (
-            self.env["ir.module.module"]
+            typed.model(self.env, IrModuleModule)
             .sudo()
             .search([("name", "=", self.name)], limit=1)
         )
@@ -1144,7 +1355,7 @@ class StudioPackage(models.Model):
                 )
             )
 
-    def _write_adopted_source(self, model_names):
+    def _write_adopted_source(self, model_names: Iterable[str]) -> None:
         """Emit the Python for ``model_names`` from their live metadata.
 
         Written directly rather than through ``action_write_files`` because
@@ -1153,7 +1364,10 @@ class StudioPackage(models.Model):
         """
         self.ensure_one()
         env = self._source_env()
-        root = self.root_path
+        # `_assert_writable` was already called by every real caller
+        # (`action_adopt`) before this -- same invariant as `_write_files`'s
+        # own `root` cast above.
+        root = cast("str", self.root_path)
         os.makedirs(os.path.join(root, "models"), exist_ok=True)
         emitted = sorted(self._python_module_set() | set(model_names))
 
@@ -1166,10 +1380,14 @@ class StudioPackage(models.Model):
                 # its own parsed contents rather than from this metadata, which
                 # by now has been demoted to state='base' anyway.
                 continue
-            model = env["ir.model"].search([("model", "=", model_name)], limit=1)
+            model = typed.model(env, IrModel).search(
+                [("model", "=", model_name)], limit=1
+            )
             if not model:
                 continue
-            owned = model.field_id.filtered(lambda f: f.state == "manual")
+            owned = cast("IrModelFields", model.field_id).filtered(  # pyright: ignore[reportUnknownMemberType]
+                lambda f: f.state == "manual"
+            )
             with open(os.path.join(root, relative), "w", encoding="utf-8") as handle:
                 handle.write(
                     pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned))
@@ -1182,7 +1400,7 @@ class StudioPackage(models.Model):
         with open(os.path.join(root, "__init__.py"), "w", encoding="utf-8") as handle:
             handle.write(pycodegen.render_package_init(True))
 
-    def _demote_manual_metadata(self, model_names):
+    def _demote_manual_metadata(self, model_names: Iterable[str]) -> None:
         """Retire the manual metadata rows, keeping the table and its data.
 
         Without this the graduation does not survive a restart. Two things go
@@ -1219,14 +1437,20 @@ class StudioPackage(models.Model):
             return
 
         self.env.flush_all()
-        self.env.cr.execute(
+        # `Environment.cr` is declared `BaseCursor` (`odoo/api.py`), which
+        # has no `.execute`/`.commit` of its own -- those live on the real
+        # `Cursor` subclass every live request actually gets. The same
+        # "declared type too abstract for what's really there at runtime"
+        # shape as `Environment.user` (studio_security.py's own cast).
+        cr = cast("Cursor", self.env.cr)
+        cr.execute(
             """
             UPDATE ir_model_fields SET state = 'base'
              WHERE model IN %s AND state = 'manual'
             """,
             (tuple(names),),
         )
-        self.env.cr.execute(
+        cr.execute(
             "UPDATE ir_model SET state = 'base' WHERE model IN %s AND state = 'manual'",
             (tuple(names),),
         )
@@ -1241,7 +1465,7 @@ class StudioPackage(models.Model):
 
     # -- teardown ---------------------------------------------------------
 
-    def action_delete_records(self):
+    def action_delete_records(self) -> bool:
         """Remove every record this package owns, leaving the files alone.
 
         Uses the same ``_force_unlink`` flag as Odoo's own
@@ -1255,12 +1479,17 @@ class StudioPackage(models.Model):
         ``unlink`` with ``_force_unlink`` set would run ``_drop_column`` over
         columns this package never created and take their data with it.
         """
-        self._assert_studio_manager()
+        # `_assert_studio_manager` lives on `studio.security.mixin`
+        # (`_inherit`, not a Python base class -- Odoo's registry merges
+        # it in at runtime, invisibly to pyright); same cast idiom as
+        # `_demote_manual_metadata`'s own `Environment.cr`.
+        cast("StudioSecurityMixin", self)._assert_studio_manager()
         self.ensure_one()
         data = self._deletable_data()
-        by_model = {}
+        by_model: dict[str, list[int]] = {}
         for entry in data:
-            by_model.setdefault(entry.model, []).append(entry.res_id)
+            # Same required-Char cast as `_owned_records`'s own `entry_model`.
+            by_model.setdefault(cast("str", entry.model), []).append(entry.res_id)
 
         env = self.env(context=dict(self.env.context, _force_unlink=True))
         for model in UNLINK_ORDER:
@@ -1276,11 +1505,11 @@ class StudioPackage(models.Model):
         # in _write_files deletes any tracked file that no longer has records
         # behind it, so keeping these rows would let the next "Write to disk"
         # silently erase the very files we just promised to preserve.
-        self.file_ids.unlink()
+        cast("StudioPackageFile", self.file_ids).unlink()
         self.state = "draft"
         return True
 
-    def _deletable_data(self):
+    def _deletable_data(self) -> IrModelData:
         """The package's ``ir.model.data`` rows minus reflection artefacts.
 
         A row is ours to delete only if the record behind it is one the
@@ -1290,25 +1519,29 @@ class StudioPackage(models.Model):
         Odoo's job during uninstall, not ours.
         """
         self.ensure_one()
-        data = self.env["ir.model.data"].search([("module", "=", self.name)])
+        data = typed.model(self.env, IrModelData).search([("module", "=", self.name)])
         serializers = self._serializer_env()
-        keep = []
+        keep: list[IrModelData] = []
         for entry in data:
-            if entry.model not in self.env:
+            # Same required-Char cast as `_owned_records`'s own `entry_model`.
+            entry_model = cast("str", entry.model)
+            if entry_model not in self.env:
                 continue
-            record = self.env[entry.model].browse(entry.res_id)
+            record = self.env[entry_model].browse(entry.res_id)
             if not record.exists():
                 keep.append(entry)  # a dangling row: dropping it is harmless
                 continue
-            serializer = serializers._for_model(entry.model)
-            if serializer is not None and not serializer._ownable(record):
+            serializer = serializers._for_model(entry_model)
+            if serializer is not None and not cast(
+                "StudioSerializer", serializer
+            )._ownable(record):
                 continue
             keep.append(entry)
-        return self.env["ir.model.data"].browse([e.id for e in keep])
+        return typed.model(self.env, IrModelData).browse([e.id for e in keep])
 
     # -- apply -------------------------------------------------------------
 
-    def _compute_reload_mode(self):
+    def _compute_reload_mode(self) -> None:
         """How this deployment can pick up new Python.
 
         ``manual`` is the correct answer under multiple workers, not a cop-out.
@@ -1329,7 +1562,7 @@ class StudioPackage(models.Model):
         for package in self:
             package.reload_mode = "inproc" if not workers else "manual"
 
-    def _reimport_module(self):
+    def _reimport_module(self) -> None:
         """Purge this package's Python so it is imported again.
 
         Proven necessary in ``tests/e2e/probe_reimport.py``:
@@ -1349,7 +1582,7 @@ class StudioPackage(models.Model):
         models_module.MetaModel.module_to_models.pop(self.name, None)
         self._invalidate_module_caches()
 
-    def _reload_now(self):
+    def _reload_now(self) -> Any:
         """Make the running process see the source that is on disk.
 
         Order is load-bearing and was measured, not reasoned about: purge
@@ -1376,7 +1609,7 @@ class StudioPackage(models.Model):
             return module.button_immediate_upgrade()
         return module.button_immediate_install()
 
-    def _assert_sources_compile(self, files):
+    def _assert_sources_compile(self, files: dict[str, str]) -> None:
         """Refuse to write Python that will not import.
 
         This is the step that keeps a bad apply recoverable. Once a broken
@@ -1399,7 +1632,7 @@ class StudioPackage(models.Model):
                     )
                 ) from err
 
-    def _assert_specs_reparse(self, files):
+    def _assert_specs_reparse(self, files: dict[str, str]) -> None:
         """Everything we are about to write must read back as what it says.
 
         Cheap here, and the alternative is discovering on the next save that a
@@ -1407,8 +1640,13 @@ class StudioPackage(models.Model):
         freezes and the builder appears to have broken itself.
         """
         self.ensure_one()
-        for entry in self.model_ids.filtered(lambda m: m.source == "python"):
-            content = files.get(entry.python_path)
+        for entry in cast("StudioPackageModel", self.model_ids).filtered(
+            lambda m: m.source == "python"
+        ):
+            # Same compute-derived-never-False cast as `_render_python`'s own
+            # `relative`.
+            entry_path = cast("str", entry.python_path)
+            content = files.get(entry_path)
             if content is None:
                 continue
             try:
@@ -1418,7 +1656,7 @@ class StudioPackage(models.Model):
                     _(
                         "Generated %(path)s is not something the builder can "
                         "read back (%(err)s). Nothing was written.",
-                        path=entry.python_path,
+                        path=entry_path,
                         err=err,
                     )
                 ) from err
@@ -1427,11 +1665,11 @@ class StudioPackage(models.Model):
                     _(
                         "Generated %(path)s does not round-trip. Nothing was "
                         "written; please report this.",
-                        path=entry.python_path,
+                        path=entry_path,
                     )
                 )
 
-    def _destructive_changes(self, files):
+    def _destructive_changes(self, files: dict[str, str]) -> dict[str, tuple[str, ...]]:
         """Columns this apply would drop, per model.
 
         The baseline has to be the *database*, not the file. Since the emitter
@@ -1445,22 +1683,26 @@ class StudioPackage(models.Model):
         on the same model is not ours to drop and Odoo will not drop it.
         """
         self.ensure_one()
-        dropped = {}
+        dropped: dict[str, tuple[str, ...]] = {}
         owned_field_ids = self._owned_field_ids()
         # Extensions excluded: one declares no fields of its own, so its empty
         # field list is not "every column removed" -- it is "this class is not
         # where the columns are declared".
-        for entry in self.model_ids.filtered(
+        for entry in cast("StudioPackageModel", self.model_ids).filtered(
             lambda m: m.source == "python" and not m.extends
         ):
-            source = files.get(entry.python_path)
+            # Same required-Char cast as `_render_python`'s own `entry_model`.
+            entry_model = cast("str", entry.model)
+            source = files.get(cast("str", entry.python_path))
             if source is None:
                 continue
             try:
                 after = pyparse.parse_model(source)
             except pyparse.UnsupportedConstruct:
                 continue  # frozen; we are not rewriting it anyway
-            model = self.env["ir.model"].search([("model", "=", entry.model)], limit=1)
+            model = typed.model(self.env, IrModel).search(
+                [("model", "=", entry_model)], limit=1
+            )
             if not model:
                 continue
             # Everything the class itself did not declare. Reflection attributes
@@ -1471,40 +1713,50 @@ class StudioPackage(models.Model):
             keeping = set(after.field_names) | set(modelspec.MAGIC_COLUMNS)
             for mixin in after.inherit:
                 if mixin in self.env:
-                    keeping |= set(self.env[mixin]._fields)
+                    keeping |= set(self.env[mixin]._fields)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType, reportUnknownMemberType]
+            # Same `field_id` gap as `_seed_python_from_metadata`'s own cast.
+            model_fields = cast("IrModelFields", model.field_id)  # pyright: ignore[reportUnknownMemberType]
             gone = sorted(
-                record.name
-                for record in model.field_id
+                cast("str", record.name)
+                for record in model_fields
                 if record.id in owned_field_ids
                 and record.store
                 and record.name not in keeping
             )
             if gone:
-                dropped[entry.model] = tuple(gone)
+                dropped[entry_model] = tuple(gone)
         return dropped
 
-    def _owned_field_ids(self):
+    def _owned_field_ids(self) -> set[int]:
         """ids of ``ir.model.fields`` records carrying this package's xmlid."""
         self.ensure_one()
-        entries = self.env["ir.model.data"].search(
+        entries = typed.model(self.env, IrModelData).search(
             [("module", "=", self.name), ("model", "=", "ir.model.fields")]
         )
-        return set(entries.mapped("res_id"))
+        return set(cast("list[int]", entries.mapped("res_id")))
 
-    def _write_pre_migrations(self, dropped, stamp):
+    def _write_pre_migrations(
+        self, dropped: dict[str, tuple[str, ...]], stamp: str
+    ) -> dict[str, str]:
         """Rename each doomed column aside before Odoo can drop it."""
         self.ensure_one()
-        files = {}
+        files: dict[str, str] = {}
         for model_name, columns in sorted(dropped.items()):
             table = model_name.replace(".", "_")
             content = migrationgen.render_pre_migration(table, columns, stamp)
             if content:
-                files[migrationgen.migration_path(self.version, stamp)] = content
+                files[migrationgen.migration_path(cast("str", self.version), stamp)] = (
+                    content
+                )
         return files
 
     def action_apply(
-        self, reason="", allow_destructive=False, overlay=None, reload=None
-    ):
+        self,
+        reason: str = "",
+        allow_destructive: bool = False,
+        overlay: dict[str, str] | None = None,
+        reload: bool | None = None,
+    ) -> StudioPackageApply:
         """Write the package and make the running process see it.
 
         The sequence is fixed and none of it is optional -- see the class
@@ -1524,7 +1776,11 @@ class StudioPackage(models.Model):
         restored, because nothing was loaded and nothing could have gone
         wrong yet.
         """
-        self._assert_studio_manager()
+        # `_assert_studio_manager` lives on `studio.security.mixin`
+        # (`_inherit`, not a Python base class -- Odoo's registry merges
+        # it in at runtime, invisibly to pyright); same cast idiom as
+        # `_demote_manual_metadata`'s own `Environment.cr`.
+        cast("StudioSecurityMixin", self)._assert_studio_manager()
         self.ensure_one()
         self._assert_writable()
 
@@ -1554,16 +1810,22 @@ class StudioPackage(models.Model):
             # long before _process_end, so by the time _drop_column looks the
             # column is already gone under its old name and it drops nothing.
             files.update(self._write_pre_migrations(dropped, stamp))
-        apply = self.env["studio.package.apply"]._snapshot(  # 3. keep the old bytes
-            self, files, reason=reason, stamp=stamp
+        apply_model = cast("StudioPackageApply", self.env["studio.package.apply"])
+        apply = cast(
+            "StudioPackageApply",
+            apply_model._snapshot(  # 3. keep the old bytes
+                self, files, reason=reason, stamp=stamp
+            ),
         )
         if self.is_git:
-            gitrepo.commit(self.root_path, "studio: before %s" % (reason or "apply"))
+            root = cast("str", self.root_path)
+            gitrepo.commit(root, "studio: before %s" % (reason or "apply"))
 
         written = self._write_files(files, prune=True)  # 4. write
         self._sync_file_records(files)
         self._run_auto_commit(written)
-        self.env.cr.commit()  # 5. commit BEFORE the reload
+        # Same `Environment.cr` gap as `_demote_manual_metadata`'s own cast.
+        cast("Cursor", self.env.cr).commit()  # 5. commit BEFORE the reload
 
         if reload is False or self.reload_mode == "manual":
             apply.state = "awaiting_restart"
@@ -1575,7 +1837,7 @@ class StudioPackage(models.Model):
         except Exception as err:  # 7. restore and go back to a good registry
             _logger.exception("Apply failed for package %s", self.name)
             apply._restore()
-            self.env.cr.commit()
+            cast("Cursor", self.env.cr).commit()
             try:
                 self._reload_now()
             except Exception:  # pragma: no cover - already in trouble
@@ -1599,21 +1861,23 @@ class StudioPackage(models.Model):
 
     # -- drift ------------------------------------------------------------
 
-    def action_check_drift(self):
+    def action_check_drift(self) -> bool:
         """Compare disk against what we last generated."""
-        self._assert_studio_user()
+        # Same `_inherit`-mixin cast as `_assert_studio_manager` above.
+        cast("StudioSecurityMixin", self)._assert_studio_user()
         for package in self:
-            package.file_ids._refresh_disk_checksum()
+            cast("StudioPackageFile", package.file_ids)._refresh_disk_checksum()
             if not os.path.isdir(package.root_path or ""):
                 package.state = "missing"
-            elif any(f.drifted for f in package.file_ids):
+            elif any(f.drifted for f in cast("StudioPackageFile", package.file_ids)):
                 package.state = "drifted"
             elif package.state != "draft":
                 package.state = "synced"
         return True
 
-    def action_view_diff(self):
-        self._assert_studio_user()
+    def action_view_diff(self) -> dict[str, Any]:
+        # Same `_inherit`-mixin cast as `_assert_studio_manager` above.
+        cast("StudioSecurityMixin", self)._assert_studio_user()
         self.ensure_one()
         return {
             "type": "ir.actions.act_window",
@@ -1621,12 +1885,15 @@ class StudioPackage(models.Model):
             "res_id": self.id,
             "view_mode": "form",
             "target": "current",
-            "context": dict(self.env.context, studio_diff=gitrepo.diff(self.root_path)),
+            "context": dict(
+                self.env.context,
+                studio_diff=gitrepo.diff(cast("str", self.root_path)),
+            ),
         }
 
     # -- module lifecycle -------------------------------------------------
 
-    def action_reload(self):
+    def action_reload(self) -> Any:
         """Re-read the package from disk into the database.
 
         This is the file->DB direction, and the repair path for drift. The two
@@ -1635,7 +1902,11 @@ class StudioPackage(models.Model):
         importlib.invalidate_caches(), so without them a package edited on disk
         stays invisible for the lifetime of the process.
         """
-        self._assert_studio_manager()
+        # `_assert_studio_manager` lives on `studio.security.mixin`
+        # (`_inherit`, not a Python base class -- Odoo's registry merges
+        # it in at runtime, invisibly to pyright); same cast idiom as
+        # `_demote_manual_metadata`'s own `Environment.cr`.
+        cast("StudioSecurityMixin", self)._assert_studio_manager()
         self.ensure_one()
         if self.reload_mode == "manual":
             # The same reason `_reload_now` refuses: the other workers would
@@ -1661,7 +1932,7 @@ class StudioPackage(models.Model):
         return action
 
     @api.model
-    def _invalidate_module_caches(self):
+    def _invalidate_module_caches(self) -> None:
         import importlib
 
         from odoo.modules import module as module_tools
@@ -1676,9 +1947,9 @@ class StudioPackage(models.Model):
             outer.cache_clear()
         importlib.invalidate_caches()
 
-    def _find_or_create_module(self):
+    def _find_or_create_module(self) -> IrModuleModule:
         self.ensure_one()
-        Module = self.env["ir.module.module"]
+        Module = typed.model(self.env, IrModuleModule)
         Module.update_list()
         module = Module.search([("name", "=", self.name)], limit=1)
         if not module:
@@ -1693,7 +1964,7 @@ class StudioPackage(models.Model):
             )
         return module
 
-    def action_open_form(self):
+    def action_open_form(self) -> dict[str, Any]:
         self.ensure_one()
         return {
             "type": "ir.actions.act_window",
@@ -1705,7 +1976,9 @@ class StudioPackage(models.Model):
     # -- xmlid allocation -------------------------------------------------
 
     @api.model
-    def _flatten(self, records):
+    def _flatten(
+        self, records: BaseModel | Iterable[BaseModel] | None
+    ) -> Iterator[BaseModel]:
         """Yield individual records from a recordset or a list of them.
 
         A single studio operation typically touches several models at once (a
@@ -1721,19 +1994,30 @@ class StudioPackage(models.Model):
             elif item:
                 yield item
 
-    def _assign(self, records, suggested_name=None):
+    def _assign(
+        self,
+        records: BaseModel | Iterable[BaseModel] | None,
+        suggested_name: str | None = None,
+    ) -> list[str]:
         """Give ``records`` an xmlid in this package, creating it if needed.
 
         Everything the builder creates must be reachable by xmlid, otherwise it
         cannot be referenced from generated XML and cannot survive a reload.
         """
         self.ensure_one()
-        Data = self.env["ir.model.data"]
+        Data = typed.model(self.env, IrModelData)
         serializers = self._serializer_env()
-        result = []
+        result: list[str] = []
         for record in self._flatten(records):
-            serializer = serializers._for_model(record._name)
-            if serializer is not None and not serializer._ownable(record):
+            # `BaseModel._name` is declared `str | None` (`None` for an
+            # abstract mixin with no table of its own) -- every real,
+            # instantiated record flowing through here always has one, the
+            # same invariant `typed.py`'s own docstring already states.
+            record_name = cast("str", record._name)
+            serializer = serializers._for_model(record_name)
+            if serializer is not None and not cast(
+                "StudioSerializer", serializer
+            )._ownable(record):
                 # e.g. a model's magic columns, which arrive as part of
                 # field_id but belong to Odoo, not to this package.
                 continue
@@ -1756,20 +2040,21 @@ class StudioPackage(models.Model):
                 continue
             name = suggested_name or self._suggest_xmlid(record)
             name = self._unique_xmlid(name)
-            Data.create(
-                {
-                    "module": self.name,
-                    "name": name,
-                    "model": record._name,
-                    "res_id": record.id,
-                    "noupdate": False,
-                }
-            )
+            # Same `@api.model_create_multi` passthrough-decorator gap as
+            # `_sync_file_records`'s own `create()` call.
+            vals = {
+                "module": self.name,
+                "name": name,
+                "model": record_name,
+                "res_id": record.id,
+                "noupdate": False,
+            }
+            Data.create(vals)  # pyright: ignore[reportArgumentType]
             result.append("%s.%s" % (self.name, name))
         return result
 
     @api.model
-    def _suggest_xmlid(self, record):
+    def _suggest_xmlid(self, record: BaseModel) -> str:
         """Derive a readable xmlid stem from the record itself.
 
         Model, field and selection xmlids deliberately reuse Odoo's *own*
@@ -1780,42 +2065,62 @@ class StudioPackage(models.Model):
         ``pool.loaded_xmlids`` and `_process_end` does not treat the records as
         stale and delete them.
         """
-        prefix = record._name.replace(".", "_")
+        # Same `BaseModel._name` cast as `_assign`'s own `record_name`.
+        record_name = cast("str", record._name)
+        prefix = record_name.replace(".", "_")
         # A serializer may name its own records. Consulted first so per-model
         # knowledge lives with the serializer rather than accumulating here;
         # the branches below stay because they reuse Odoo's *own* reflection
         # helpers, which is what makes graduation safe.
-        serializer = self._serializer_env()._for_model(record._name)
+        serializer = self._serializer_env()._for_model(record_name)
         if serializer is not None:
-            suggested = serializer._suggest_xmlid(record)
+            suggested = cast("StudioSerializer", serializer)._suggest_xmlid(record)
             if suggested:
                 return suggested
-        if record._name == "ir.model":
-            return model_xmlid("", record.model).lstrip(".")
-        if record._name == "ir.model.fields":
-            return field_xmlid("", record.model_id.model, record.name).lstrip(".")
-        if record._name == "ir.model.fields.selection":
+        # `model_xmlid`/`field_xmlid`/`selection_xmlid` (core, `ir_model.py`)
+        # take fully unannotated parameters, so nothing below needs a value
+        # cast for *their* sake -- only the attribute reads that get there
+        # need one, `record` being declared the bare `BaseModel` this whole
+        # method receives.
+        if record_name == "ir.model":
+            return model_xmlid("", cast("IrModel", record).model).lstrip(".")
+        if record_name == "ir.model.fields":
+            record_fields = cast("IrModelFields", record)
+            # `model_id` (`ir.model.fields`) is a plain-string-comodel
+            # Many2one in core -- same `_Relational.__get__` gap as this
+            # file's own `model_ids`/`file_ids`/`apply_ids`.
+            field_model = cast("IrModel", record_fields.model_id)  # pyright: ignore[reportUnknownMemberType]
+            return field_xmlid("", field_model.model, record_fields.name).lstrip(".")
+        if record_name == "ir.model.fields.selection":
+            selection = cast("IrModelSelection", record)
+            # Same gap as `model_id` above, one level up: `field_id`
+            # (`ir.model.fields.selection`) is also a plain-string-comodel
+            # Many2one.
+            field = cast("IrModelFields", selection.field_id)  # pyright: ignore[reportUnknownMemberType]
+            field_model = cast("IrModel", field.model_id)  # pyright: ignore[reportUnknownMemberType]
             return selection_xmlid(
                 "",
-                record.field_id.model_id.model,
-                record.field_id.name,
-                record.value,
+                field_model.model,
+                field.name,
+                selection.value,
             ).lstrip(".")
-        if record._name == "ir.ui.view":
-            return "view_%s" % (record.name or "").lower().replace(" ", "_").replace(
+        if record_name == "ir.ui.view":
+            view_name = cast("View", record).name
+            return "view_%s" % (view_name or "").lower().replace(" ", "_").replace(
                 ".", "_"
             )
-        if record._name == "ir.model.access":
-            return "access_%s" % (record.name or "").lower().replace(".", "_").replace(
+        if record_name == "ir.model.access":
+            access_name = cast("IrModelAccess", record).name
+            return "access_%s" % (access_name or "").lower().replace(".", "_").replace(
                 " ", "_"
             )
         label = getattr(record, "name", False) or record.display_name or str(record.id)
         slug = str(label).lower().replace(" ", "_").replace(".", "_")
         return "%s_%s" % (prefix, slug)
 
-    def _unique_xmlid(self, name):
+    def _unique_xmlid(self, name: str) -> str:
         self.ensure_one()
-        Data = self.env["ir.model.data"]
+        Data = typed.model(self.env, IrModelData)
         candidate = name
         suffix = 1
         while Data.search_count([("module", "=", self.name), ("name", "=", candidate)]):
@@ -1829,6 +2134,8 @@ class StudioPackageFile(models.Model):
     _description = "Studio Package File"
     _order = "path"
 
+    # No typed-relation declaration here either -- same traced gap as
+    # `StudioPackage`'s own `file_ids`/`model_ids`/`apply_ids` above.
     package_id = fields.Many2one("studio.package", required=True, ondelete="cascade")
     path = fields.Char(required=True, help="Path relative to the package root.")
     generated_checksum = fields.Char(
@@ -1843,11 +2150,15 @@ class StudioPackageFile(models.Model):
     )
 
     @api.depends("generated_checksum", "disk_checksum")
-    def _compute_drifted(self):
+    def _compute_drifted(self) -> None:
         for record in self:
             record.drifted = record.disk_checksum != record.generated_checksum
 
-    def _refresh_disk_checksum(self):
+    def _refresh_disk_checksum(self) -> None:
         for record in self:
-            full = os.path.join(record.package_id.root_path or "", record.path)
+            # Same `cast()`-at-the-read-site idiom as `StudioPackage`'s own
+            # `model_ids`/`file_ids` -- `package_id` carries the identical
+            # untyped-relation gap.
+            package = cast("StudioPackage", record.package_id)  # pyright: ignore[reportUnknownMemberType]
+            full = os.path.join(package.root_path or "", cast("str", record.path))
             record.disk_checksum = checksum.hash_file(full) or False

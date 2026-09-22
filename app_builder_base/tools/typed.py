@@ -1,17 +1,16 @@
 # Copyright 2026 Avunu LLC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
-"""The one cast every ``self.env["..."]`` in this codebase goes through.
+"""The casts Odoo's own registry-level dynamism otherwise needs at every call
+site, done once here instead.
 
 ``Environment.__getitem__`` returns the bare ``BaseModel`` whatever string it
 is asked for -- there is no way for it to know which real subclass a model
-name names. Every model file's own call to it would otherwise need its own
-cast (or lose every method/field only the real subclass declares), which is
-exactly the kind of small, repeated unsafety Phase 1c exists to remove.
-
-``model(env, cls)`` replaces ``env["model.name"]`` with ``model(env, Cls)``:
-the model name is read off the class itself (its own ``_name``), so the
-string and the class it names can never drift apart at a call site, and the
-cast lives here once instead of at every one of them.
+name names. ``_inherit`` mixin composition has the identical shape one level
+up: a class using ``_inherit = ["some.mixin"]`` gets that mixin's methods at
+the registry level, never as a real Python base class, so nothing in its own
+MRO carries them as far as a type checker can see. Both are exactly the kind
+of small, repeated unsafety Phase 1c exists to remove -- one cast per real
+gap, done here, rather than once per call site across every model file.
 """
 
 from __future__ import annotations
@@ -22,9 +21,16 @@ if TYPE_CHECKING:
     # Only for the annotations below; with `from __future__ import
     # annotations` nothing here needs these at runtime, and this file stays
     # importable with no Odoo on the path -- the same bargain `compat.py`'s
-    # own `TYPE_CHECKING`-guarded imports make.
+    # own `TYPE_CHECKING`-guarded imports make. `StudioSecurityMixin` is this
+    # file's one exception to "tools/ never names a specific models/ class":
+    # a `TYPE_CHECKING`-only reference costs nothing at runtime and creates
+    # no real import cycle (`models/` already imports `tools/` for real,
+    # never the other way around), so `security()` below can name it
+    # directly rather than accepting an unchecked `Any`.
     from odoo import api
     from odoo.models import BaseModel
+
+    from ..models.studio_security import StudioSecurityMixin
 
 M = TypeVar("M", bound="BaseModel")
 
@@ -45,3 +51,17 @@ def model(env: api.Environment, cls: type[M]) -> M:
     whatever `M` is bound to for that call.
     """
     return cast("M", env[cast("str", cls._name)])
+
+
+def security(self: BaseModel) -> StudioSecurityMixin:
+    """``self``, cast to the guard every studio RPC method calls first.
+
+    ``studio_security.py``'s own docstring: "called first in every studio
+    method reachable over RPC." Every real caller composes it the same way
+    (``_inherit = ["studio.security.mixin"]``, registry-level, never a real
+    Python base class), so ``self._assert_studio_manager()``/``self
+    ._assert_studio_user()`` are invisible to pyright on every one of them --
+    confirmed the moment the first real caller (``studio_package.py``, 8 call
+    sites) needed the equivalent inline cast at every single one.
+    """
+    return cast("StudioSecurityMixin", self)

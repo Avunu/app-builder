@@ -118,9 +118,24 @@ class StudioSerializer(models.AbstractModel):
     # -- dispatch ---------------------------------------------------------
 
     @api.model
-    def _for_model(self, model_name: str) -> BaseModel | None:
-        """Return the serializer for ``model_name``, or ``None``."""
-        return self.env.get("studio.serializer.%s" % model_name)
+    def _for_model(self, model_name: str) -> StudioSerializer | None:
+        """Return the serializer for ``model_name``, or ``None``.
+
+        Every real ``"studio.serializer.*"`` registry entry is declared
+        with ``_inherit = "studio.serializer"`` (by construction -- the
+        naming convention this class's own docstring names as the dispatch
+        mechanism), so ``StudioSerializer | None`` is the honest return
+        type here, not the generic ``BaseModel`` a bare ``self.env.get(...)``
+        would otherwise infer. Confirmed as real, not merely convenient, by
+        the first real caller (``studio_package.py``): every one of its own
+        ~7 call sites needed a `StudioSerializer` to call a serializer-only
+        method, and would otherwise have needed the identical cast at every
+        one of them instead of once here.
+        """
+        return cast(
+            "StudioSerializer | None",
+            self.env.get("studio.serializer.%s" % model_name),
+        )
 
     @api.model
     def _suggest_xmlid(self, record: BaseModel) -> str | None:

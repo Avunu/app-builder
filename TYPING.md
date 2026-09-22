@@ -109,6 +109,16 @@ modules.
   `workspace_id: StudioWorkspace = fields.Many2one("studio.workspace")`,
   imports under `TYPE_CHECKING` -- the exact remedy Odoo prints for the
   circular-import case;
+  **Corrected by the first real file that tried it (`studio_package.py`,
+  see "Known traps"): this syntax does not actually type-check under this
+  real OCB/pyright combination for `Many2one`/`One2many`/`Many2many`
+  alike.** The house convention is now the opposite of this bullet: leave
+  the field declaration exactly as originally written (no LHS annotation,
+  no subscript), and `cast()` at each real *read* site instead, the same
+  idiom `pycodegen.py` already established in Phase 1b for a plain-
+  string-comodel relational field. The `TYPE_CHECKING`-guarded import for
+  the comodel class is still exactly right -- only the field declaration
+  itself changes.
 - one helper for the untyped hole: `env["studio.package"]` returns
   `BaseModel`, so `app_builder_base/tools/typed.py` gets
   `def model(env, cls: type[M]) -> M` (one `cast` inside, none outside).
@@ -266,9 +276,110 @@ hoot `onRpc` mocks typed against the same map.
   top-of-file comment has the full account. Don't trust an eslint
   finding without cross-checking it against `npm run typecheck` first;
   don't wire eslint into a hook or CI job until this is actually fixed.
-- Typed relational fields + circular imports: annotation syntax +
-  `from __future__ import annotations`, never `fields.Many2one[Cls]` (that
-  evaluates at import).
+- **Typed relational fields (`field: Cls = fields.Many2one("model")`,
+  TYPING.md's own Phase 1c plan text) do not actually type-check, for any
+  of `Many2one`/`One2many`/`Many2many` -- superseded by the finding
+  below, once a real model file (`studio_package.py`) tried it.** Two
+  independent, compounding failures, both confirmed with isolated
+  probes (with and without `fields.Many2one[Cls](...)`-style explicit
+  subscripting, neither fixes either failure): the *declaration* itself
+  fails (`Many2one[Cls]`/`One2many[Cls]`/`Many2many[Cls]`, the
+  constructed field-descriptor instance's own type, is never assignable
+  to the declared attribute type `Cls` -- not a descriptor-protocol
+  special case pyright applies to a class-body assignment); and
+  `_Relational.__get__` (`odoo/fields.py`) carries no return annotation
+  of its own, so every *read* of the field independently infers a
+  messy, partially-`Unknown` union regardless of the declaration.
+  `odoo/odoo/modules/module.py`'s own `TYPED_FIELD_DEFINITION_RE`
+  (originally cited as proof this syntax works) is Odoo's own
+  source-*scanning* tool for a different purpose entirely, not a
+  type-checker -- citing it as confirmation was an unverified
+  assumption that the first real attempt broke. Fix, the new house
+  convention: leave the field declaration exactly as it was (no LHS
+  annotation, no subscript, `from __future__ import annotations` still
+  present as usual), and `cast("Cls", record.field_name)` at each real
+  *read* site instead -- the same idiom `pycodegen.py` already
+  established in Phase 1b for a plain-string-comodel relational field
+  (`record.selection_ids`). `TYPE_CHECKING`-guarded imports for the
+  comodel class are still exactly right; only the declaration's own
+  annotation is dropped. Confirmed to recur immediately one level
+  deeper too: `IrModelFields.model_id`/`IrModelSelection.field_id`
+  (core Odoo's own plain-string-comodel relational fields) hit the
+  identical gap the moment this file read them.
+- Same-addon cross-file imports (real or `TYPE_CHECKING`) must stay
+  **relative** (`.studio_package_apply`, `..tools.lxml_types`), never
+  the fully-qualified `odoo.addons.app_builder_base....` form -- this
+  repo is reachable under two different pyright module identities at
+  once (`app_builder_base.*` via `pyrightconfig.json`'s own `include`;
+  `odoo.addons.app_builder_base.*` via `extraPaths`' merged odoo-nix
+  tree, which mirrors this same repo). Importing a same-addon name
+  absolutely analyzes it under the *other* identity than this file's
+  own relative `..tools` imports use, so two types that print
+  identically (confirmed with `ModelSpec`, imported both ways at once)
+  are NOT the same type to pyright, and every call passing one where
+  the other is expected fails. The fully-qualified `odoo.addons....`
+  form stays correct, and is the only option, for genuinely external
+  repos reached only through the merged tree (`base`, `web`, ...) --
+  `pycodegen.py`'s own `IrModel`/`IrModelFields` imports, already
+  landed, are exactly that case and need no change.
+- `app_builder_base/tools/typed.py`'s `model(env, cls)` needs a real,
+  runtime-bound `cls` (it reads `cls._name` at runtime) -- it cannot be
+  called with a class imported only under `TYPE_CHECKING` (a real
+  `NameError` at runtime, not just a type error). Two real model
+  classes with a genuine circular reference (`StudioPackage` <->
+  `StudioPackageApply`/`StudioPackageModel`, see the dependency map in
+  "Implemented so far") therefore cannot use `typed.model()` for each
+  other while only one side of the cycle is converted -- `cast("TheOther
+  Class", self.env["the.other.model"])` against the unchanged original
+  call is the right fix for exactly this circular case, leaving
+  `typed.model()` for every reference that is either non-circular or a
+  core-Odoo lookup.
+- `self._assert_studio_manager()`/`self._assert_studio_user()`/
+  `self._assert_studio_group(...)` (`studio_security.py`'s own guard
+  methods, "called first in every studio method reachable over RPC" per
+  its own docstring) are invisible to pyright on every real caller:
+  every `studio.*` model that composes `studio.security.mixin` does so
+  through Odoo's own registry-level `_inherit = ["studio.security
+  .mixin"]`, never a literal Python base class, so nothing in the
+  class's own MRO carries those methods as far as the type checker can
+  see. `studio_package.py` alone needed `cast("StudioSecurityMixin",
+  self)._assert_studio_manager()`/`._assert_studio_user()` at 8 call
+  sites. Given `studio_security.py`'s own docstring, this will recur in
+  nearly every remaining Phase 1c model file -- worth a shared
+  `typed.py` helper (e.g. `def security(self: BaseModel) ->
+  StudioSecurityMixin: return cast("StudioSecurityMixin", self)`) once
+  a second file confirms the same shape, rather than building it from
+  this one file's evidence alone.
+- `fields.Selection([...])`'s own inline-list form hits a real,
+  pre-existing (confirmed against the untyped original too, not
+  introduced by this migration) vendor-stub gap:
+  `Selection.__init__`'s own `selection` parameter (`odoo/fields.py`)
+  carries no annotation at all, only a bare `SENTINEL` default, so
+  pyright infers the parameter's effective type from that default alone
+  and rejects the field's own normal `list[(value, label)]` literal
+  form. Fix: a narrow `# pyright: ignore[reportArgumentType]` on the
+  declaration line, one per inline `Selection([...])` list -- likely to
+  recur in every model file with one.
+- `@api.model_create_multi` (`odoo/api.py`) is a bare passthrough
+  decorator (`def model_create_multi(method: T) -> T`) that does not
+  widen `create()`'s own declared `list[ValuesType]`-only signature to
+  also cover the single-dict calling form it genuinely accepts at
+  runtime (the decorator wraps a lone dict into `[vals]`, calls the real
+  method, and unwraps the result back to one record) -- the same shape
+  of decorator-stub gap already documented for `@tools.ormcache`. Fix: a
+  narrow `# pyright: ignore[reportArgumentType]` at each `create({...})`
+  call site, keeping the exact original single-dict call rather than
+  rewriting it to `create([{...}])` -- changing the argument shape
+  actually passed at runtime is outside a typing-only pass's mandate,
+  however harmless that particular rewrite would likely be.
+- `Environment.cr` is declared `BaseCursor` (`odoo/api.py`), which has
+  no `.execute`/`.commit` of its own -- those live only on the real
+  `Cursor` subclass every live request actually gets. The same shape of
+  "declared type too abstract for what is really there at runtime" gap
+  already documented for `Environment.user`. Fix: `cast("Cursor",
+  self.env.cr)` at each real call site (raw SQL via `.execute()`, an
+  explicit `.commit()`) -- `Cursor` importable `TYPE_CHECKING`-only from
+  `odoo.sql_db`.
 - `Field[T]` gives `str | Literal[False]` for `Char` -- under strict, every
   `record.name` needs narrowing. That is the ORM's real contract; the
   `tools/` boundary should take `str`, not `str | False`, and models
@@ -2608,6 +2719,85 @@ than reasoned about:
   .serializer` directly -- `base_automation_serializer.py`,
   `tier_serializers.py`, all 8 of `app_builder_base/models/serializers/
   *.py`).
+
+- **`studio_package.py`** (1853 lines, wave 1, the single most-depended-
+  upon file in the whole addon suite -- two real circular references,
+  both children of this one aggregate root, orbit it). The most heavily
+  verified file this migration has produced: the usual draft-then-
+  independently-verify two-agent pipeline, PLUS a third, structural
+  check in the main loop -- an AST-level comparison of the original and
+  typed files with every type annotation, `cast()`, and `typed.model()`
+  call mechanically stripped/normalized away, diffing what remains.
+  Every real difference the structural diff found was either an import
+  statement or a provably-safe "read a value once into a local variable,
+  reuse it" extraction (confirmed side-effect-free: a field read on an
+  already-fetched record, cached before several repeated uses, nothing
+  mutating it in between) or a necessary rename to avoid a new import
+  shadowing an existing local name (`IrModel` the class vs. `IrModelSudo`
+  the `.sudo()`-bound local in `_python_depends`) -- zero real logic
+  changed anywhere, independently confirmed three separate ways. This is
+  also the file four of this session's "Known traps" entries above came
+  from (typed relational fields' real failure mode, same-addon imports
+  must stay relative, `typed.model()`'s TYPE_CHECKING-only-class
+  limit, the `_inherit`-mixin-invisible-to-pyright pattern, `fields
+  .Selection([...])`'s stub gap, `@api.model_create_multi`'s stub gap,
+  `Environment.cr`'s too-abstract declared type) -- all confirmed, not
+  merely proposed, by the independent verify agent redoing each one
+  with its own fresh probe rather than trusting the draft's account.
+
+  Two real, pre-existing design gaps surfaced and deliberately left
+  unfixed (this migration's "flag, don't fix" rule, doubly warranted
+  here given the file's operational weight): `_render_files`' CSV path
+  calls `serializers._for_model("ir.model.access")` with no `is not
+  None` guard before using the result -- already true, silently, in the
+  untyped original (nothing there could check it either); typing it
+  preserves the exact same implicit assumption rather than adding or
+  removing a runtime guard. Relatedly, `_csv_row`/`_render_csv` (only
+  ever defined on the one real `"csv"`-format serializer,
+  `serializers/ir_security.py`, not yet converted) are not part of
+  `StudioSerializer`'s own declared contract -- a real, duck-typed-by-
+  convention gap between `_studio_format: Literal["xml", "csv"]` and
+  what a `"csv"` value actually requires the subclass to supply. Both
+  are now visible in the type system as an honest `Any`/a cast to the
+  one concrete class involved, exactly where they already were, not
+  papered over.
+
+  Two follow-up improvements applied immediately, once wave 1's own
+  findings made them concrete rather than speculative:
+  - **`app_builder_base/tools/typed.py` gained a second helper,
+    `security(self)`**, generalizing the `cast("StudioSecurityMixin",
+    self)` idiom `studio_package.py` needed 8 times into one place --
+    matching the same "promote once a real, recurring pattern is
+    confirmed" bar `lxml_types.py` was held to, except here the bar was
+    already cleared within a single file (8 call sites, and `studio
+    _security.py`'s own docstring already says the guard is called from
+    nearly every studio RPC method, so the rest of Phase 1c will hit
+    this constantly). `studio_package.py`'s own already-verified 8
+    inline casts were deliberately left as they are rather than
+    retrofitted to the new helper -- behaviorally identical either way,
+    and rewriting an already-verified 1853-line file for a style-only
+    win was not worth the risk. Every file converted from here on
+    should use `typed.security(self)` from the start.
+  - **`studio_serializer.py`'s own `_for_model` return type tightened**
+    from `BaseModel | None` (wave 0's own choice) to `StudioSerializer |
+    None`, once `studio_package.py` became the first real caller and
+    needed `cast("StudioSerializer", serializer)` at every one of its
+    ~7 call sites to reach any serializer-specific method. `StudioSerializer
+    | None` is the more honest type in the first place -- every real
+    ``"studio.serializer.*"`` registry entry is `_inherit`-composed from
+    `StudioSerializer` by the dispatch convention `_for_model`'s own
+    docstring already describes, the same "true by construction,
+    invisible to the type system" shape as every other cast in this
+    migration -- not a new invariant invented to suit one caller.
+    Re-verified clean after the change: `studio_serializer.py` itself,
+    and `studio_package.py` as its first real consumer (whose own
+    casts against the old, wider signature become redundant but
+    harmless, and were left alone for the same reason as the
+    `security()` retrofit above).
+
+  Next: the rest of wave 1 (`studio_domain.py`, `base_automation
+  _serializer.py`, `tier_serializers.py`, all 8 of `app_builder_base
+  /models/serializers/*.py`).
 
 ## CI: the OCA container's real layout
 
