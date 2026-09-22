@@ -2942,6 +2942,79 @@ than reasoned about:
   (confirmed by grep), so this is latent, not active -- left exactly as
   written.
 
+- **`studio_record_surface.py`** (630 lines, 42 `@api.model` methods --
+  the base class every "surface" subclass across `app_builder_ui`,
+  `app_builder_report` and `app_builder_approval` will inherit; none of
+  those five subclasses are converted yet, so this file's own contract
+  is what they'll all be checked against). Full-tree `pyright`: 2999
+  errors, under 3000 for the first time.
+
+  Real, unprompted cross-validation this migration hasn't had before:
+  the draft agent found and cross-checked every new `TypedDict` against
+  `app_builder_view/static/src/console/wire.ts`'s own hand-kept
+  `Record*JSON` interfaces (written during Phase 2's TypeScript
+  conversion, well before this file's own). All matched except one real,
+  minor discrepancy, noted for a human rather than fixed here (`wire.ts`
+  is a different file, out of this task's scope): `wire.ts`'s own
+  `RecordRowJSON.owner` is typed `string | false`, but tracing `_owner`'s
+  real Python body shows `module` is always a plain, possibly-empty
+  `str`, never `False` -- typed honestly to match the traced Python
+  reality (`RecordOwnerJSON.module`/`RecordRowJSON.owner` both `str`);
+  worth tightening `wire.ts` to match, next time that file is touched.
+
+  Two more real, pre-existing gaps found and left unfixed: `_check_domain
+  ()`'s three real return branches are internally inconsistent -- the
+  early "unknown model" branch sends `{"valid": True, "count": 0}` with
+  no `total` key at all, while the real search-success branch always
+  sends `total` too; typed honestly with `total: NotRequired[int]`
+  rather than inventing a `total=0` the early branch never actually
+  sends. `_selection_choices()` builds its `[value, label]` entries as
+  plain lists, while `catalogue.py`'s own `Row.to_json()` builds the
+  semantically identical shape as tuples everywhere else in the same
+  wire contract -- both serialize to an identical JSON array (not
+  observable to the console), a real but harmless Python-level
+  inconsistency, bridged with a narrow `cast()` rather than silently
+  rewritten into a one-line behavior change outside this pass's mandate.
+
+  `describe()`'s own return type deliberately stays `dict[str, object]`
+  rather than a closed `TypedDict`: `_describe_extra`'s own base
+  contract is `{}`, but real (not-yet-converted) subclasses already
+  widen it with keys this base file has no way to enumerate
+  (`studio_security_surfaces.py`'s `ir.rule` surface returns `{"matches":
+  check}`; `studio_automation_surface.py`'s automation surface returns
+  `{"matches": ..., "children": {...}}`) -- the same genuinely-open-ended
+  shape `wire.ts`'s own `RecordDescription` interface already models
+  with an index signature Python's `TypedDict` has no equivalent for.
+
+  Verification matched every prior file's bar: `pyright`/`ruff check`/
+  `ruff format --diff` clean; `pyrightconfig.json` confirmed unchanged;
+  every one of the file's 12 literal `self.env[...]` lookups confirmed
+  routed through `typed.model()` (none missed, none extra) while every
+  genuinely dynamic one (`self.env[self._surface_model]`,
+  `self.env[model_name]`, `self.env[row.comodel]`) was correctly left
+  alone; all 9 real `typed.security(self)` call sites confirmed; a
+  complete line-by-line review of the full diff. One trivial fix applied
+  before landing: a stray comment referencing "this file's own
+  `newSharedTypes` note" -- an artifact of the drafting agent's own
+  report-writing process leaking into a shipped source comment, caught
+  by the verify agent and corrected in the main loop before commit.
+
+  This closes the `app_builder_base`-only portion of wave 2's own
+  dependency-map file list; wave 2 itself (per the original map) also
+  named `studio_view_edit.py` (`app_builder_view`), `studio_automation.py`
+  /`studio_security_surface.py` (`app_builder_ui`), `studio_report.py`
+  (`app_builder_report`), `tier_formula_serializer.py`
+  (`app_builder_approval_formula`) and `mail_serializers.py`
+  (`app_builder_mail`), none converted yet -- real work sessions have been
+  sub-batching within each wave rather than clearing one in full before
+  starting the next, so "wave N complete" claims here should be read as
+  "the files converted so far," not a strict boundary. Everything
+  actually done, in order, stays the authoritative record; the
+  dependency map itself (this section, `1c kickoff`, above) is what
+  still governs which file can go next.
+
+## CI: the OCA container's real layout
+
 ## CI: the OCA container's real layout
 
 Phase 3 planned a `typecheck` job in `test.yml`'s OCB container. This was
