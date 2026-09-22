@@ -6,9 +6,18 @@ Lives here rather than in app_builder_base because base_automation is an optiona
 dependency: the engine must not require it.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 from odoo import api, models
 
 from odoo.addons.app_builder_base.models.studio_serializer import SEQ_AUTOMATION
+
+if TYPE_CHECKING:
+    from odoo.models import BaseModel
+
+    from odoo.addons.app_builder_base.models.studio_serializer import StudioSerializer
 
 
 class BaseAutomationSerializer(models.AbstractModel):
@@ -52,11 +61,25 @@ class BaseAutomationSerializer(models.AbstractModel):
     )
 
     @api.model
-    def _group_model(self, record):
-        return record.model_id.model
+    def _group_model(self, record: BaseModel) -> str | None:
+        # `record` is genuinely a `base.automation` recordset at runtime, but
+        # the overridden method's own declared parameter type (`BaseModel`,
+        # `studio_serializer.py`) is what has to match here -- same
+        # "`record[fname]`, not `record.fname`" idiom `_should_skip` below and
+        # `StudioSerializer` itself already use for a field pyright cannot
+        # know a generically-typed record carries.
+        return record["model_id"].model
 
     @api.model
-    def _should_skip(self, record, fname):
+    def _should_skip(self, record: BaseModel, fname: str) -> bool:
         if fname == "active":
-            return bool(record.active)
-        return super()._should_skip(record, fname)
+            return bool(record["active"])
+        # `BaseAutomationSerializer`'s only real base is `studio.serializer`,
+        # composed in at the registry level via `_inherit` -- never a real
+        # Python base class -- so `_should_skip` is invisible to pyright on
+        # the plain `super()` call the same way `self._assert_studio_manager()`
+        # is on `self` for the `_inherit`-mixin-invisible-to-pyright pattern
+        # `typed.security()` already fixes; the identical cast, aimed at
+        # `super()` instead of `self`, since there is no shared helper for
+        # this call shape yet.
+        return cast("StudioSerializer", super())._should_skip(record, fname)

@@ -2,13 +2,38 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Serializer for ``ir.ui.view``."""
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+# lxml ships no type stubs in this environment -- same gap, same narrow
+# ignore idiom as `studio_serializer.py`'s own top-of-file comment (the
+# closest precedent, same addon).
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from ...tools import xml_writer
+# Real, runtime-bound imports -- `typed.model()` reads `cls._name` at
+# runtime, so these cannot be `TYPE_CHECKING`-only (TYPING.md's own trap).
+# Cross-addon (`base`), so the fully-qualified form is correct here, not the
+# same-addon relative rule.
+from odoo.addons.base.models.ir_actions import IrActions
+from odoo.addons.base.models.ir_actions_report import IrActionsReport
+
+from ...tools import typed, xml_writer
 from ..studio_serializer import SEQ_VIEW
+
+if TYPE_CHECKING:
+    # Only used inside annotations/casts below (`from __future__ import
+    # annotations` defers all of them to strings), never at runtime.
+    from odoo.models import BaseModel
+
+    from odoo.addons.base.models.ir_ui_view import View
+
+    from ..studio_serializer import Element, StudioSerializer, StudioXmlSerializerMixin
 
 
 class IrUiViewSerializer(models.AbstractModel):
@@ -50,23 +75,37 @@ class IrUiViewSerializer(models.AbstractModel):
     )
 
     @api.model
-    def _translatable_fields(self, record):
+    def _translatable_fields(self, record: BaseModel) -> list[str]:
         # The arch is emitted through `arch`, but its translatable terms are
         # stored on `arch_db` -- which is in _studio_ignored, so the generic
         # derivation cannot see it. Odoo's own PO files reference
         # `model_terms:ir.ui.view,arch_db:...` for exactly this reason: a label
         # a builder typed into a form is a term inside the arch, not a field.
-        return super()._translatable_fields(record) + ["arch_db"]
+        #
+        # `super()` here is composed only through the registry-level
+        # `_inherit = ["studio.serializer", ...]`, never a real Python base
+        # class, so `StudioSerializer`'s own methods are invisible to pyright
+        # on it -- same `_inherit`-mixin gap `studio_security.py`'s own
+        # `typed.security()` exists for, on the sibling mixin. No equivalent
+        # helper is declared for `StudioSerializer` itself (`typed.py` has
+        # exactly two: `model()`/`security()`), so this is the same raw
+        # `cast()` `studio_package.py` already uses at its own call sites
+        # (`cast("StudioSerializer", serializer)._translatable_fields(...)`),
+        # applied to the `super()` proxy instead of a looked-up instance.
+        return cast("StudioSerializer", super())._translatable_fields(record) + [
+            "arch_db"
+        ]
 
     @api.model
-    def _group_model(self, record):
+    def _group_model(self, record: BaseModel) -> str | None:
         # Views inheriting a core view group under the *target* model, so an
         # extension of sale.order lands in views/sale_order_views.xml rather
         # than in a file named after the studio package.
-        return record.model or self._report_model(record) or "misc"
+        view = cast("View", record)
+        return view.model or self._report_model(record) or "misc"
 
     @api.model
-    def _report_model(self, record):
+    def _report_model(self, record: BaseModel) -> str | None:
         """The model a report template prints, for a view that cannot say so.
 
         A qweb report template has to leave `model` empty -- setting it makes
@@ -77,29 +116,32 @@ class IrUiViewSerializer(models.AbstractModel):
         action it belongs to files under the model, and the two halves of one
         feature end up in different files.
         """
-        if record.type != "qweb" or not record.key:
+        view = cast("View", record)
+        if view.type != "qweb" or not view.key:
             return None
-        report = self.env["ir.actions.report"].search(
-            [("report_name", "=", record.key)], limit=1
+        report = typed.model(self.env, IrActionsReport).search(
+            [("report_name", "=", view.key)], limit=1
         )
         return report.model or None
 
     @api.model
-    def _should_skip(self, record, fname):
+    def _should_skip(self, record: BaseModel, fname: str) -> bool:
+        view = cast("View", record)
         if fname == "arch":
             return False
         if fname == "mode":
             # 'primary' is the default and only meaningful alongside inherit_id.
-            return not record.inherit_id or record.mode == "extension"
+            return not view.inherit_id or view.mode == "extension"
         if fname == "type":
             return self._type_is_inferable(record)
         if fname == "active":
             # 'active' defaults True; only emit when the view is archived.
-            return bool(record.active)
-        return super()._should_skip(record, fname)
+            return bool(view.active)
+        # Same `_inherit`-mixin cast as `_translatable_fields` above.
+        return cast("StudioSerializer", super())._should_skip(record, fname)
 
     @api.model
-    def _type_is_inferable(self, record):
+    def _type_is_inferable(self, record: BaseModel) -> bool:
         """Whether ``create`` would land on this exact type without being told.
 
         It infers one only when the value is absent, and only from
@@ -118,25 +160,37 @@ class IrUiViewSerializer(models.AbstractModel):
         see: ``type`` is in ``_studio_fields``, so it counts as accounted for,
         while ``_should_skip`` quietly wrote nothing.
         """
-        if record.inherit_id:
-            return record.type == record.inherit_id.type
+        view = cast("View", record)
+        if view.inherit_id:
+            # `inherit_id` is a plain-string-comodel Many2one -- same
+            # `cast()`-at-the-read-site idiom as `studio_package.py`'s own
+            # `view_name = cast("View", record).name` (TYPING.md's relational
+            # field trap: the field's own read type is too messy to use
+            # un-cast).
+            return view.type == cast("View", view.inherit_id).type
         try:
-            root = xml_writer.parse_arch(record.arch)
+            root = xml_writer.parse_arch(cast("str", view.arch))
         except (etree.XMLSyntaxError, ValueError, TypeError):
             # Unparseable arch: emit the type rather than gamble on inference.
             return False
-        return record.type == root.tag
+        return view.type == root.tag
 
     @api.model
-    def _field_node(self, record, fname):
+    def _field_node(self, record: BaseModel, fname: str) -> Element | None:
         if fname == "arch":
-            node = self._arch_node(record.arch)
+            view = cast("View", record)
+            # `_arch_node` lives on `StudioXmlSerializerMixin`, composed the
+            # same registry-only way as `StudioSerializer` above -- same cast.
+            node = cast("StudioXmlSerializerMixin", self)._arch_node(
+                cast("str", view.arch)
+            )
             self._portable_action_buttons(node)
             return node
-        return super()._field_node(record, fname)
+        # Same `_inherit`-mixin cast as `_translatable_fields` above.
+        return cast("StudioSerializer", super())._field_node(record, fname)
 
     @api.model
-    def _concrete_action(self, action_id):
+    def _concrete_action(self, action_id: int) -> BaseModel:
         """The action as its own model, not as ``ir.actions.actions``.
 
         ``ir.actions.actions`` is the shared table, and an xmlid is registered
@@ -146,13 +200,24 @@ class IrUiViewSerializer(models.AbstractModel):
         which is both wrong and hard to read as a message. ``type`` is Odoo's own
         discriminator and names the model to browse instead.
         """
-        base = self.env["ir.actions.actions"].browse(action_id).exists()
+        base = typed.model(self.env, IrActions).browse(action_id).exists()
         if not base:
             return base
-        return self.env[base.type].browse(base.id) if base.type in self.env else base
+        # `base.type` (a real, required Char, per `IrActions` itself) is
+        # `str | Literal[False]` on read -- the same required-Char cast as
+        # `studio_package.py`'s own `entry_model = cast("str", entry.model)`.
+        # `base.id` needs the same treatment one field over: `BaseModel.id`
+        # is declared `IdType | Literal[False]` (it also covers an unsaved
+        # `NewId`), which `.browse()`'s own `int | Iterable[IdType]` does not
+        # accept un-narrowed.
+        return (
+            self.env[cast("str", base.type)].browse(cast("int", base.id))
+            if cast("str", base.type) in self.env
+            else base
+        )
 
     @api.model
-    def _portable_action_buttons(self, node):
+    def _portable_action_buttons(self, node: Element) -> Element:
         """Turn ``<button type="action" name="42">`` into the action's xmlid.
 
         A raw primary key in an arch is the same mistake the emitter refuses
@@ -186,7 +251,9 @@ class IrUiViewSerializer(models.AbstractModel):
             # same-module form `_ref_of` produces: an arch is read by Odoo's own
             # validator, which has no notion of "the module this file belongs
             # to" and resolves the string exactly as written.
-            xmlid = self._xmlid_of(action)
+            #
+            # Same `_inherit`-mixin cast as `_translatable_fields` above.
+            xmlid = cast("StudioSerializer", self)._xmlid_of(action)
             if not xmlid:
                 raise UserError(
                     _(
@@ -200,7 +267,21 @@ class IrUiViewSerializer(models.AbstractModel):
         return node
 
     @api.model
-    def _sort_key(self, record, xmlid):
+    def _sort_key(self, record: BaseModel, xmlid: str) -> tuple[int, str]:
         # Base views must precede the views that inherit them, otherwise the
         # ref() in inherit_id resolves against a record that does not exist yet.
-        return (self._studio_sequence, bool(record.inherit_id), xmlid)
+        #
+        # Real, pre-existing gap traced while typing this override, flagged
+        # rather than fixed (this migration's "type-adding pass only" rule):
+        # the base class declares `_sort_key -> tuple[int, str]`, and every
+        # real caller (`studio_package.py`'s own `_render_files`) is typed
+        # against exactly that 2-tuple -- but this override has always
+        # returned a 3-tuple, adding `bool(record.inherit_id)` as a secondary
+        # sort key between the sequence and the xmlid. Harmless at runtime
+        # (tuple comparison does not care about arity), but it is a real
+        # Liskov violation of the declared base contract, not a typing
+        # artifact -- worth a maintainer decision (widen the base signature,
+        # or narrow this override's own ordering trick) rather than a silent
+        # rewrite here.
+        view = cast("View", record)
+        return (self._studio_sequence, bool(view.inherit_id), xmlid)  # pyright: ignore[reportReturnType]

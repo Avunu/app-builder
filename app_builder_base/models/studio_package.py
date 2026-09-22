@@ -595,8 +595,17 @@ class StudioPackage(models.Model):
         serializers = self._serializer_env(dep_sink)
         # (file, sort_key) -> node, accumulated then ordered in one pass so the
         # result never depends on database iteration order.
-        buckets: dict[str, list[tuple[tuple[int, str], LxmlElement, bool]]] = {}
-        csv_rows: dict[str, list[tuple[tuple[int, str], dict[str, str]]]] = {}
+        # `serializer._sort_key(...)`'s own return type widened from
+        # `tuple[int, str]` to `tuple[int | str | bool, ...]` once wave 1's
+        # own real overrides showed the narrower shape was wrong (see
+        # `studio_serializer.py`'s own `_sort_key` docstring) -- these two
+        # local element types follow it.
+        buckets: dict[
+            str, list[tuple[tuple[int | str | bool, ...], LxmlElement, bool]]
+        ] = {}
+        csv_rows: dict[
+            str, list[tuple[tuple[int | str | bool, ...], dict[str, str]]]
+        ] = {}
 
         for model, entries in self._owned_records().items():
             serializer = serializers._for_model(model)

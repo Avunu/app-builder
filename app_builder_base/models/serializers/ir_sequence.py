@@ -12,9 +12,29 @@ the data file on a module upgrade would reset the counter and start handing out
 references that already exist.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 from odoo import api, models
 
 from ..studio_serializer import SEQ_SEQUENCE
+
+if TYPE_CHECKING:
+    # Only used inside annotations/casts below (`from __future__ import
+    # annotations` defers all of them to strings), never at runtime -- same
+    # bargain every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from odoo.models import BaseModel
+
+    # `ir.sequence` is core Odoo, reached only through the merged odoo-nix
+    # tree -- the fully-qualified `odoo.addons....` form is correct here,
+    # not same-addon (TYPING.md's "Known traps"/house conventions), the same
+    # as `studio_package.py`'s own `IrModel`/`IrModelData` imports.
+    from odoo.addons.base.models.ir_sequence import IrSequence
+
+    # Same-addon cross-file import, so relative (house convention). Only
+    # needed for the `super()` cast below -- see its own comment.
+    from ..studio_serializer import StudioSerializer
 
 
 class IrSequenceSerializer(models.AbstractModel):
@@ -54,16 +74,26 @@ class IrSequenceSerializer(models.AbstractModel):
     )
 
     @api.model
-    def _group_model(self, record):
+    def _group_model(self, record: BaseModel) -> str | None:
         # The code is the model name for a scaffolded sequence, which keeps
         # data/<model>_data.xml next to the model it numbers.
-        return record.code or "sequences"
+        return cast("IrSequence", record).code or "sequences"
 
     @api.model
-    def _should_skip(self, record, fname):
-        if fname == "company_id" and not record.company_id:
+    def _should_skip(self, record: BaseModel, fname: str) -> bool:
+        if fname == "company_id" and not cast("IrSequence", record).company_id:
             # Reflection leaves this empty for a global sequence; emitting a
             # false company ref would tie the package to whichever company
             # happened to exist when it was built.
             return True
-        return super()._should_skip(record, fname)
+        # `IrSequenceSerializer`'s only real Python base is `models
+        # .AbstractModel` -- `StudioSerializer` is composed in only via
+        # Odoo's registry-level `_inherit`, never a literal Python base
+        # class, so it is absent from the MRO pyright can see and
+        # `super()._should_skip` resolves against `object` alone. Same
+        # underlying "_inherit-mixin-invisible-to-pyright" gap
+        # `typed.security()` exists for, applied to `super()` instead of
+        # `self` -- at runtime, Odoo's registry builds the real merged
+        # class with `StudioSerializer` genuinely in the MRO, so `super()`
+        # resolves this exactly as it always did.
+        return cast("StudioSerializer", super())._should_skip(record, fname)

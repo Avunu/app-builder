@@ -380,6 +380,74 @@ hoot `onRpc` mocks typed against the same map.
   self.env.cr)` at each real call site (raw SQL via `.execute()`, an
   explicit `.commit()`) -- `Cursor` importable `TYPE_CHECKING`-only from
   `odoo.sql_db`.
+- The `_inherit`-mixin-invisible-to-pyright pattern (above) recurs
+  identically for `super()`, not only `self`: a subclass overriding a
+  `studio.serializer` method and calling `super()._should_skip(...)` (to
+  extend rather than fully replace the base behavior) fails with
+  `Cannot access attribute "..." for class "object"` the moment the
+  class's own real Python base is *only* `models.AbstractModel` --
+  confirmed as a genuine, pre-existing pyright error against the
+  untyped original in `base_automation_serializer.py`, not introduced by
+  typing it. `app_builder_base/tools/typed.py` now carries the matching
+  pair for `studio.serializer` specifically: `serializer(self)` (the
+  `self`-side fix, mirroring `security()`) and `serializer_super(sup)`
+  (the `super()`-side fix, `cast()` on the proxy object itself -- a
+  documented runtime no-op, so the real MRO dispatch `super()` performs
+  is unchanged). Confirmed recurring across at least three of wave 1's
+  own files before the helpers existed to use.
+- A field reached only through Odoo's `_inherits`/`delegate=True`
+  mechanism (e.g. `ir.cron.model_id`/`.name`, delegated from
+  `ir_actions_server_id`) is not resolvable by casting `record` to the
+  real, concrete delegating class either -- the attribute is never
+  declared in that class's own Python body, so pyright cannot see it
+  there any more than it can see it on the generic `BaseModel`.
+  Different from the `_inherit`-mixin trap above (there, a real
+  composing class exists to cast to; here, none does). Fix: `cast("Any",
+  record)` at the one read site, honest about there being no real class
+  in this codebase's own tree that actually carries the attribute.
+  Likely to recur for any other `_inherits`/`delegate=True` chain (most
+  of `ir.actions.*`'s own delegation hierarchy uses the same mechanism).
+- `fields.Reference(...)` (and, by the same construction, any other
+  `Field` subclass with no `__get__` override of its own) inherits its
+  read type from its base descriptor class rather than what it actually
+  returns at runtime -- `ir.ui.menu.action`, a core `Reference` field,
+  reads back as `str | Literal[False]` (`Reference` extends `Selection`,
+  `Selection(Field[str | Literal[False]])`) instead of the real
+  recordset `Reference.convert_to_record` produces. The same shape as
+  the already-documented `Environment.cr`/`Environment.user`
+  "declared type too abstract for what's really there" gap, just not
+  previously called out for `Reference` specifically. Fix: `cast` at the
+  read site to the honest type (`BaseModel` here, since the target model
+  varies per record) -- no behavior change.
+- `app_builder_base/tools/lxml_types.py`'s `LxmlElement.iter()` was
+  declared zero-argument (every prior reader only ever walked the whole
+  subtree) -- extended to `iter(self, tag: str | None = None)` the
+  moment a real reader (`ir_ui_view.py`'s `node.iter("button")`) needed
+  lxml's real tag-filtered form. Real lxml also accepts `*tags`
+  (multiple tag names/wildcards); narrowed to the one-tag form actually
+  called anywhere in this codebase rather than the fuller variadic
+  signature nothing yet needs -- extend further only once a second real
+  reader needs it, the same "narrow, extend on real need" discipline
+  this Protocol has followed since Phase 1b.
+- `StudioSerializer._sort_key`'s own base declaration (`-> tuple[int,
+  str]`) was too narrow the moment real subclass overrides existed --
+  every one of wave 1's own five overrides returns a wider, differently
+  -shaped tuple (`(int, int, str)`, `(int, int, int, str)`, `(int, bool,
+  str)`, `(int, int, str, str)`), each a real, deliberate tie-break, and
+  none of them trip `reportIncompatibleMethodOverride` (that check only
+  fires across a real Python base-class relationship, confirmed
+  empirically -- `_inherit`-only composition is invisible to it the same
+  way it's invisible to everything else in this trap list). Widened the
+  base to `tuple[int | str | bool, ...]`, the honest common shape every
+  real override already satisfies without its own divergent annotation
+  -- the same "downstream evidence corrects an earlier, too-narrow base
+  signature" move already made once for `StudioSerializer._for_model`
+  (wave 0's own `BaseModel | None` narrowed to `StudioSerializer |
+  None`). `studio_package.py`'s own two local dict types (`buckets`/
+  `csv_rows` in `_render_files`) needed the identical widening, since
+  they store `_sort_key`'s return value directly -- the only real
+  caller, and it never indexes into the tuple, only compares/sorts by
+  it whole, so the widening cost it nothing.
 - `Field[T]` gives `str | Literal[False]` for `Char` -- under strict, every
   `record.name` needs narrowing. That is the ORM's real contract; the
   `tools/` boundary should take `str`, not `str | False`, and models
@@ -2798,6 +2866,52 @@ than reasoned about:
   Next: the rest of wave 1 (`studio_domain.py`, `base_automation
   _serializer.py`, `tier_serializers.py`, all 8 of `app_builder_base
   /models/serializers/*.py`).
+
+- **Wave 1 is now complete**: `studio_domain.py` plus the 9 remaining
+  `studio.serializer` subclasses (`base_automation_serializer.py`,
+  `tier_serializers.py`, all 8 of `app_builder_base/models/serializers/
+  *.py`) -- 10 files, confirmed mutually independent, converted as one
+  pipeline (draft -> independent-verify per file, the same two-agent
+  shape as every file since `pycodegen.py`). Full-tree `pyright` across
+  every addon: 3090 errors, down from wave 0's baseline.
+
+  `studio_domain.py` (159 lines, the one non-serializer file in this
+  wave) needed `typed.security(self)` at all four of its `@api.model`
+  RPC entry points (the file most call sites of it yet in one place).
+  Its own JSON-shaped payloads got real `TypedDict`s traced from what
+  each method actually builds/consumes (`FieldSpecJSON`,
+  `ReadDomainJSON`, `CheckDomainJSON`, `DomainRowJSON`, etc.) -- the
+  first Phase 1c file to need this, following the exact `to_json()`-
+  wire-type discipline Phase 1b established.
+
+  The 9 serializer subclasses surfaced four of the six new "Known
+  traps" above (the `super()`-composition-invisible pattern and its
+  `typed.serializer()`/`typed.serializer_super()` fix; the
+  `_inherits`/`delegate=True`-field gap; the `fields.Reference`
+  too-abstract-type gap; `LxmlElement.iter()`'s real tag-filtered form)
+  plus the `_sort_key` base-widening fix, applied immediately once
+  confirmed (the same "fix the base once downstream evidence is real,
+  not before" discipline as `_for_model`'s own fix in wave 0).
+  `_csv_row`/`_render_csv` (`ir_security.py`'s `IrModelAccessSerializer`,
+  the one real `"csv"`-format serializer) reconfirmed the same
+  not-part-of-the-base-contract design gap `studio_package.py`'s own
+  conversion already flagged -- still not fixed, a real product
+  decision for a human, not a typing one.
+
+  Both agents on every one of the 10 files did real, adversarial
+  verification -- several verify-stage reports correctly caught draft
+  agents overclaiming novelty ("first occurrence" claims that weren't,
+  once the whole wave's findings were compared side by side in the main
+  loop) or leaving an inert `# pyright: ignore` (a rule that is not
+  actually enabled under the current standard-mode config, carried
+  anyway per the established "front-load stage 2" precedent from
+  `studio_serializer.py`'s own wave-0 conversion) -- none of which
+  affected whether any file's own code was correct, only the accuracy
+  of its self-reported narrative. **Phase 1c's wave 1 is complete.**
+  Next: wave 2 (`studio_package_model.py`, `studio_package_apply.py` --
+  closing the two circular references `studio_package.py` opened with
+  `TYPE_CHECKING`-only forward imports -- plus `studio_owned_mixin.py`
+  and `studio_record_surface.py`).
 
 ## CI: the OCA container's real layout
 

@@ -14,9 +14,32 @@ Emitted after the field, because ``field_id`` refs it. Not under
 setting, and a module upgrade should bring the current one.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 from odoo import api, models
 
 from ..studio_serializer import SEQ_DEFAULT
+
+if TYPE_CHECKING:
+    # Only used inside annotations/casts below (`from __future__ import
+    # annotations` defers all of them to strings), never at runtime -- same
+    # bargain every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from odoo.models import BaseModel
+
+    # ``ir.default``/``ir.model``/``ir.model.fields`` are core Odoo, reached
+    # only through the merged odoo-nix tree -- the fully-qualified
+    # ``odoo.addons....`` form is correct here, not same-addon (TYPING.md's
+    # "Known traps"/house conventions), the same as ``pycodegen.py``'s own
+    # ``IrModel``/``IrModelFields`` imports and ``ir_sequence.py``'s own
+    # ``IrSequence`` import.
+    from odoo.addons.base.models.ir_default import IrDefault
+    from odoo.addons.base.models.ir_model import IrModel, IrModelFields
+
+    # Same-addon cross-file import, so relative (house convention). Only
+    # needed for the `super()` cast in `_ownable` -- see its own comment.
+    from ..studio_serializer import StudioSerializer
 
 
 class IrDefaultSerializer(models.AbstractModel):
@@ -37,20 +60,46 @@ class IrDefaultSerializer(models.AbstractModel):
     )
 
     @api.model
-    def _group_model(self, record):
+    def _group_model(self, record: BaseModel) -> str | None:
         # Beside the field it defaults, not in a file named after the package.
-        return record.field_id.model_id.model or "misc"
+        #
+        # `record.field_id`/`.model_id` are both plain, untyped
+        # `fields.Many2one(...)` declarations in core (no typed-relation
+        # syntax there) -- `_Relational.__get__` carries no return
+        # annotation of its own, so each read independently infers a messy,
+        # partially-Unknown union regardless of the declaration (Known
+        # traps). Cast at each hop, the same `cast()`-at-the-read-site idiom
+        # `pycodegen.py`/`studio_package.py` already established for a
+        # plain-string-comodel relational field.
+        field = cast("IrModelFields", cast("IrDefault", record).field_id)
+        model = cast("IrModel", field.model_id)
+        return cast("str", model.model) or "misc"
 
     @api.model
-    def _ownable(self, record):
+    def _ownable(self, record: BaseModel) -> bool:
         # A default scoped to one user is that user's preference, not a
         # customisation of the database -- writing it into an addon would apply
         # somebody's personal setting to everyone who installs it.
-        return not record.user_id and super()._ownable(record)
+        #
+        # `IrDefaultSerializer`'s only real Python base is `models
+        # .AbstractModel` -- `StudioSerializer` is composed in only via
+        # Odoo's registry-level `_inherit`, never a literal Python base
+        # class, so it is absent from the MRO pyright can see and
+        # `super()._ownable` resolves against `object` alone. Same
+        # underlying "_inherit-mixin-invisible-to-pyright" gap
+        # `typed.security()` exists for, applied to `super()` instead of
+        # `self` -- at runtime, Odoo's registry builds the real merged
+        # class with `StudioSerializer` genuinely in the MRO, so `super()`
+        # resolves this exactly as it always did (`ir_sequence.py`'s own
+        # `_should_skip` establishes the identical pattern).
+        return not cast("IrDefault", record).user_id and cast(
+            "StudioSerializer", super()
+        )._ownable(record)
 
     @api.model
-    def _suggest_xmlid(self, record):
+    def _suggest_xmlid(self, record: BaseModel) -> str | None:
+        field = cast("IrModelFields", cast("IrDefault", record).field_id)
         return "default_%s_%s" % (
-            (record.field_id.model or "").replace(".", "_"),
-            record.field_id.name or record.id,
+            (field.model or "").replace(".", "_"),
+            field.name or record.id,
         )

@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from odoo.models import BaseModel
 
     from ..models.studio_security import StudioSecurityMixin
+    from ..models.studio_serializer import StudioSerializer
 
 M = TypeVar("M", bound="BaseModel")
 
@@ -65,3 +66,30 @@ def security(self: BaseModel) -> StudioSecurityMixin:
     sites) needed the equivalent inline cast at every single one.
     """
     return cast("StudioSecurityMixin", self)
+
+
+def serializer(self: BaseModel) -> StudioSerializer:
+    """``self``, cast to ``studio.serializer``'s own real methods.
+
+    Every concrete serializer composes ``studio.serializer`` only via
+    ``_inherit = "studio.serializer"`` (registry-level, never a real Python
+    base class), so a subclass calling one of the base's own methods on
+    itself (``self._ref_of(...)``, ``self._target_file(...)``, ...) is
+    invisible to pyright the same way ``self._assert_studio_manager()`` is
+    on ``studio.security.mixin`` -- the same fix, aimed at a different
+    mixin.
+    """
+    return cast("StudioSerializer", self)
+
+
+def serializer_super(sup: super) -> StudioSerializer:
+    """``super()`` inside a ``studio.serializer`` subclass, cast the same
+    way as :func:`serializer` -- calling the *base* implementation of an
+    overridden method (``super()._should_skip(record, fname)``, extending
+    rather than replacing it) is invisible to pyright's own ``super()``
+    resolution for the identical ``_inherit``-vs-real-base-class reason.
+    ``cast()`` is a documented runtime no-op, so the real, registry-composed
+    MRO dispatch ``super()`` performs is completely unchanged -- only what
+    pyright believes the proxy's type is changes.
+    """
+    return cast("StudioSerializer", sup)

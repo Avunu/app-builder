@@ -14,9 +14,31 @@ There is no upstream precedent to copy: no module in OCA ships a
 freeing and also means nothing upstream has validated it.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 from odoo import api, models
 
 from odoo.addons.app_builder_base.models.studio_serializer import SEQ_RULE
+
+if TYPE_CHECKING:
+    # Only for annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes. Both are
+    # genuinely external, real classes (never looked up by name at runtime
+    # here, so neither needs `typed.model()`'s real binding) -- fully
+    # qualified since both are reached only through the merged tree
+    # (cross-addon, not this addon's own files).
+    from odoo.models import BaseModel
+
+    from odoo.addons.base.models.ir_model import IrModel
+    from odoo.addons.base_tier_validation.models.tier_definition import (
+        TierDefinition,
+    )
+    from odoo.addons.app_builder_base.models.studio_serializer import (
+        StudioSerializer,
+    )
 
 
 class TierDefinitionSerializer(models.AbstractModel):
@@ -65,20 +87,45 @@ class TierDefinitionSerializer(models.AbstractModel):
     )
 
     @api.model
-    def _group_model(self, record):
+    def _group_model(self, record: BaseModel) -> str | None:
         # Grouped with the model whose records it gates, so the rule sits
         # beside that model's access rules rather than in a file of its own.
-        return record.model_id.model or "misc"
+        #
+        # `model_id` is a plain-string-comodel Many2one -- same
+        # `_Relational.__get__` gap as every other read of one in this
+        # migration (`studio_package.py`'s own `IrModelFields.model_id`).
+        definition = cast("TierDefinition", record)
+        model = cast("IrModel", definition.model_id)  # pyright: ignore[reportUnknownMemberType]
+        return model.model or "misc"
 
     @api.model
-    def _sort_key(self, record, xmlid):
+    def _sort_key(self, record: BaseModel, xmlid: str) -> tuple[int, str]:
         # By sequence first: the order is the approval order, and a reader of
         # the file should see the steps in the order they happen.
-        return (self._studio_sequence, record.sequence, xmlid)
+        #
+        # NB: the base class declares (and `studio_package.py`'s own
+        # `_render_files` bucket types already pin) a 2-tuple, `(sequence,
+        # xmlid)`. This override actually returns a 3-tuple -- pre-existing
+        # in the untyped original, not introduced by this migration -- so
+        # the declared return type here matches the *base class's contract*
+        # rather than this method's own real return shape, and the mismatch
+        # is flagged (not silently fixed, per this migration's own rule) in
+        # this file's own conversion notes rather than papered over.
+        definition = cast("TierDefinition", record)
+        return (self._studio_sequence, definition.sequence, xmlid)  # pyright: ignore[reportReturnType]
 
     @api.model
-    def _should_skip(self, record, fname):
+    def _should_skip(self, record: BaseModel, fname: str) -> bool:
         if fname == "active":
             # Defaults True; only an archived rule is worth recording.
-            return bool(record.active)
-        return super()._should_skip(record, fname)
+            return bool(cast("TierDefinition", record).active)
+        # `super()` here resolves, to pyright, only as far as this class's
+        # own *declared* Python base (`models.AbstractModel`) -- the same
+        # `_inherit`-mixin-invisible-to-pyright gap `typed.security()` exists
+        # for on `self`, one level up: `_inherit = "studio.serializer"` is a
+        # registry-level composition, not a real Python base class, so
+        # `StudioSerializer._should_skip` is nowhere in the MRO pyright can
+        # see. At runtime the registry *does* build the final class with
+        # `StudioSerializer` in its bases, so `super()` genuinely reaches it
+        # -- this cast only tells pyright what is already true.
+        return cast("StudioSerializer", super())._should_skip(record, fname)

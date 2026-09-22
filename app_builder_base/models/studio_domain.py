@@ -11,21 +11,29 @@ like a form nobody proof-read. ``ilike`` on a boolean and ``>`` on a many2one
 are both accepted by Odoo and neither is a thing anybody means.
 """
 
+from __future__ import annotations
+
 import ast
+from typing import TYPE_CHECKING, Literal, TypeAlias, TypedDict, cast
 
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from ..tools import domainspec
+from ..tools import domainspec, typed
+
+if TYPE_CHECKING:
+    # `write_domain`'s own parameter type only; with `from __future__ import
+    # annotations` nothing here needs `Sequence` at runtime.
+    from collections.abc import Sequence
 
 # Operators worth offering, per family of field. Order is the order they are
 # shown, so the common one comes first.
-TEXTUAL = ("=", "!=", "ilike", "not ilike", "set", "not set")
-NUMERIC = ("=", "!=", ">", ">=", "<", "<=", "set", "not set")
-EXACT = ("=", "!=", "set", "not set")
-RELATIONAL = ("=", "!=", "in", "not in", "set", "not set")
+TEXTUAL: tuple[str, ...] = ("=", "!=", "ilike", "not ilike", "set", "not set")
+NUMERIC: tuple[str, ...] = ("=", "!=", ">", ">=", "<", "<=", "set", "not set")
+EXACT: tuple[str, ...] = ("=", "!=", "set", "not set")
+RELATIONAL: tuple[str, ...] = ("=", "!=", "in", "not in", "set", "not set")
 
-OPERATORS_BY_TYPE = {
+OPERATORS_BY_TYPE: dict[str, tuple[str, ...]] = {
     "char": TEXTUAL,
     "text": TEXTUAL,
     "html": TEXTUAL,
@@ -41,7 +49,7 @@ OPERATORS_BY_TYPE = {
     "one2many": RELATIONAL,
 }
 
-LABELS = {
+LABELS: dict[str, str] = {
     "=": "is",
     "!=": "is not",
     ">": "is after / more than",
@@ -57,27 +65,104 @@ LABELS = {
 }
 
 
+class OperatorJSON(TypedDict):
+    """One operator a condition on a field can use, label included."""
+
+    value: str
+    label: str
+
+
+class SelectionValueJSON(TypedDict):
+    """One choice of a selection field, as ``fields_for`` reports it."""
+
+    value: str
+    label: str
+
+
+class _FieldSpecRequiredJSON(TypedDict):
+    name: str
+    string: str
+    type: str
+    operators: list[OperatorJSON]
+
+
+class FieldSpecJSON(_FieldSpecRequiredJSON, total=False):
+    """A field a condition can test, as ``fields_for`` returns it -- one
+    entry per stored field whose type offers at least one sane operator.
+    ``values`` is present only for a selection field, ``comodel`` only for
+    a relational one; ``OPERATORS_BY_TYPE``'s own keys make the two
+    mutually exclusive by construction.
+    """
+
+    values: list[SelectionValueJSON]
+    comodel: str
+
+
+class _DomainNotEditableJSON(TypedDict):
+    editable: Literal[False]
+    domain: str | None
+    reason: str
+
+
+class _DomainEditableJSON(TypedDict):
+    editable: Literal[True]
+    joiner: str
+    rows: list[domainspec.ConditionJSON]
+
+
+#: ``read_domain``'s own answer shape: either a refusal (the domain groups or
+#: negates its terms, so it cannot be shown flat) or the flattened rows.
+ReadDomainJSON: TypeAlias = _DomainNotEditableJSON | _DomainEditableJSON
+
+
+class DomainRowJSON(TypedDict, total=False):
+    """One row of a condition builder's grid, as the console sends it back
+    to ``write_domain``. Every key is optional: a row can be mid-edit (no
+    field chosen yet, filtered out below) or use a valueless operator
+    (``set``/``not set``, which the body never reads ``value`` for).
+    """
+
+    field: str
+    operator: str
+    value: object
+
+
+class _DomainInvalidJSON(TypedDict):
+    valid: Literal[False]
+    reason: str
+
+
+class _DomainValidJSON(TypedDict):
+    valid: Literal[True]
+    count: int
+
+
+#: ``check_domain``'s own answer shape: whether the domain actually searches,
+#: and either the complaint or the count.
+CheckDomainJSON: TypeAlias = _DomainInvalidJSON | _DomainValidJSON
+
+
 class StudioDomain(models.AbstractModel):
     _name = "studio.domain"
     _inherit = ["studio.security.mixin"]
     _description = "Studio: Condition Builder"
 
     @api.model
-    def fields_for(self, model_name):
+    def fields_for(self, model_name: str) -> list[FieldSpecJSON]:
         """Fields a condition can test, with the operators that suit each.
 
         Stored fields only: a non-stored computed field cannot be searched
         unless it declares a `search` method, and offering one that raises at
         query time would be worse than leaving it out.
         """
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
-        out = []
+        out: list[FieldSpecJSON] = []
         for name, field in sorted(self.env[model_name]._fields.items()):
             if not field.store or field.type not in OPERATORS_BY_TYPE:
                 continue
-            entry = {
+            entry: FieldSpecJSON = {
                 "name": name,
                 "string": field.string or name,
                 "type": field.type,
@@ -87,26 +172,44 @@ class StudioDomain(models.AbstractModel):
                 ],
             }
             if field.type == "selection":
+                # `get_description` (`odoo/fields.py`) carries no annotation
+                # of its own, on either its parameters or its return, so
+                # pyright infers `dict[Unknown, Unknown]` for it and
+                # `Unknown | None` for `.get("selection")` (confirmed with
+                # `reveal_type`) -- a genuine untyped hole, not a gap this
+                # migration introduces. `_description_selection`'s own
+                # docstring ("return the selection list (pairs (value,
+                # label))") is the real, honest shape; cast to it here
+                # rather than leaving the read `Unknown`.
                 entry["values"] = [
                     {"value": value, "label": label}
                     for value, label in (
-                        field.get_description(self.env).get("selection") or []
+                        cast(
+                            "list[tuple[str, str]] | None",
+                            field.get_description(self.env).get("selection"),
+                        )
+                        or []
                     )
                 ]
             if field.type in ("many2one", "one2many", "many2many"):
-                entry["comodel"] = field.comodel_name
+                # `Field.comodel_name` is declared `str | None` on the base
+                # descriptor (`None` for a non-relational field), but every
+                # field reaching this branch is one of the three relational
+                # types, which always carry a real comodel -- true by
+                # construction, invisible to the type checker.
+                entry["comodel"] = cast("str", field.comodel_name)
             out.append(entry)
         return out
 
     @api.model
-    def read_domain(self, domain):
+    def read_domain(self, domain: str | None) -> ReadDomainJSON:
         """A stored domain as rows, or a refusal the caller can show.
 
         The refusal is the point. A nested domain has no faithful flat
         rendering, and a builder that showed one anyway would rewrite it the
         moment somebody touched an unrelated row.
         """
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         parsed = domainspec.parse(domain or "[]")
         if parsed is None:
             return {
@@ -126,17 +229,28 @@ class StudioDomain(models.AbstractModel):
         }
 
     @api.model
-    def write_domain(self, rows, joiner=domainspec.ALL):
+    def write_domain(
+        self,
+        rows: Sequence[DomainRowJSON] | None,
+        joiner: str = domainspec.ALL,
+    ) -> str:
         """Rows back to a domain string, validated against Odoo's own parser.
 
         Checked here rather than trusted: a domain that renders and does not
         *search* would be written to source and fail on somebody else's
         database, which is the failure this project is least willing to ship.
         """
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         conditions = [
             domainspec.Condition(
-                row.get("field"), row.get("operator", "="), row.get("value", False)
+                # `row.get("field")` is re-evaluated here rather than reused
+                # from the `if` clause below -- true by construction (that
+                # clause already filtered out any row without one), but two
+                # separate calls to `.get()` on the same key are two separate
+                # reads as far as the type checker can see.
+                cast("str", row.get("field")),
+                row.get("operator", "="),
+                row.get("value", False),
             )
             for row in rows or []
             if row.get("field")
@@ -145,9 +259,9 @@ class StudioDomain(models.AbstractModel):
         return rendered
 
     @api.model
-    def check_domain(self, model_name, domain):
+    def check_domain(self, model_name: str, domain: str | None) -> CheckDomainJSON:
         """Does this actually search? Returns the count, or the complaint."""
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
         # Not "is it flat" -- a source-edited domain is usually not, and is

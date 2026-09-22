@@ -623,8 +623,23 @@ class StudioSerializer(models.AbstractModel):
     # -- sorting ----------------------------------------------------------
 
     @api.model
-    def _sort_key(self, record: BaseModel, xmlid: str) -> tuple[int, str]:
-        """Order within a file: by serializer, then xmlid. Never by id."""
+    def _sort_key(self, record: BaseModel, xmlid: str) -> tuple[int | str | bool, ...]:
+        """Order within a file: by serializer, then xmlid. Never by id.
+
+        Widened from the narrower ``tuple[int, str]`` this base declaration
+        first shipped with, once wave 1's own real overrides (a subclass
+        composes ``StudioSerializer`` only via Odoo's registry-level
+        ``_inherit``, never a real Python base class, so pyright's own
+        override-compatibility check never catches a mismatch here) turned
+        out to each return a different, wider shape for a real tie-break --
+        ``(int, int, str)``, ``(int, int, int, str)``, ``(int, bool, str)``,
+        ``(int, int, str, str)``, confirmed across five real overrides
+        before this base signature was touched. Every real caller
+        (``studio_package.py``'s own ``_render_files``) only ever compares
+        or sorts by the whole tuple, never indexes into it, so this is the
+        honest common type rather than a guess at what future overrides
+        might need.
+        """
         return (self._studio_sequence, xmlid)
 
 
