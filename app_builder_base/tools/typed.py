@@ -80,16 +80,3 @@ def serializer(self: BaseModel) -> StudioSerializer:
     mixin.
     """
     return cast("StudioSerializer", self)
-
-
-def serializer_super(sup: super) -> StudioSerializer:
-    """``super()`` inside a ``studio.serializer`` subclass, cast the same
-    way as :func:`serializer` -- calling the *base* implementation of an
-    overridden method (``super()._should_skip(record, fname)``, extending
-    rather than replacing it) is invisible to pyright's own ``super()``
-    resolution for the identical ``_inherit``-vs-real-base-class reason.
-    ``cast()`` is a documented runtime no-op, so the real, registry-composed
-    MRO dispatch ``super()`` performs is completely unchanged -- only what
-    pyright believes the proxy's type is changes.
-    """
-    return cast("StudioSerializer", sup)

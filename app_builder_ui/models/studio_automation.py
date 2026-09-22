@@ -23,8 +23,29 @@ So this opens Odoo's form, filtered and with a package in context. That is a
 smaller thing to maintain and a better form than we would have written.
 """
 
+from __future__ import annotations
+
+from typing import TypedDict
+
 from odoo import _, api, models
 from odoo.exceptions import UserError
+
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.tools import typed
+
+
+class AutomationActionJSON(TypedDict):
+    """``action_open()``'s return: Odoo's own automation list, scoped."""
+
+    type: str
+    name: str
+    res_model: str
+    view_mode: str
+    views: list[tuple[bool, str]]
+    domain: list[tuple[str, str, object]]
+    context: dict[str, object]
+    help: str
 
 
 class StudioAutomation(models.AbstractModel):
@@ -33,20 +54,25 @@ class StudioAutomation(models.AbstractModel):
     _description = "Studio Automations"
 
     @api.model
-    def action_open(self, model_name=None, webhooks=False, package_id=None):
+    def action_open(
+        self,
+        model_name: str | None = None,
+        webhooks: bool = False,
+        package_id: int | None = None,
+    ) -> AutomationActionJSON:
         """Odoo's automation list, scoped and with a package to record into.
 
         The console's when it names one, the suggested one for a caller
         with no console -- the Studio menu -- to have chosen already.
         """
-        self._assert_studio_user()
-        package = self.env["studio.package"]._chosen(package_id)
-        domain = []
-        context = {"studio_package_id": package.id or False}
+        typed.security(self)._assert_studio_user()
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
+        domain: list[tuple[str, str, object]] = []
+        context: dict[str, object] = {"studio_package_id": package.id or False}
         if model_name:
             if model_name not in self.env:
                 raise UserError(_("Unknown model '%s'.", model_name))
-            model = self.env["ir.model"]._get(model_name)
+            model = typed.model(self.env, IrModel)._get(model_name)
             domain.append(("model_id", "=", model.id))
             context["default_model_id"] = model.id
         if webhooks:
@@ -66,7 +92,7 @@ class StudioAutomation(models.AbstractModel):
         }
 
     @api.model
-    def _empty_state(self, model_name, webhooks):
+    def _empty_state(self, model_name: str | None, webhooks: bool) -> str:
         if webhooks:
             return "<p class='o_view_nocontent_smiling_face'>%s</p><p>%s</p>" % (
                 _("Let another system drive this database"),

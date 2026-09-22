@@ -24,10 +24,90 @@ therefore sets the view's key, the view's xmlid and ``report_name`` to the same
 template exists, and printing renders nothing.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
+
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.app_builder_base.tools import scaffold
+from odoo.addons.base.models.ir_actions_report import IrActionsReport
+from odoo.addons.base.models.ir_model import IrModel, IrModelData
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.tools import scaffold, typed
+
+if TYPE_CHECKING:
+    # `studio_package_id` is added to `ir.actions.report` by `studio.owned
+    # .mixin` (`app_builder_ui/models/studio_owned.py`'s own `_inherit`,
+    # registry-level, never a real Python base class of the imported
+    # `IrActionsReport`) -- invisible to pyright on a `report` variable the
+    # same way `studio_owned_mixin.py`'s own `_inverse_studio_package_id`
+    # needed a cast to read the identical field off `model_id`.
+    # `TYPE_CHECKING`-only: no runtime binding needed for a plain `cast()`.
+    # `name` (Action Name) lives on `ir.actions.actions` (`ir_actions.py`),
+    # which `IrActionsReport` composes only through the string `_inherit =
+    # 'ir.actions.actions'` core itself writes -- registry-level, never a
+    # real Python base class -- so it is exactly the shape of gap `typed
+    # .py`'s own module docstring describes for `_inherit` mixins
+    # generally, applied here to a core base model instead of one of ours.
+    from odoo.addons.base.models.ir_actions import IrActions
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import (
+        StudioOwnedMixin,
+    )
+
+
+class ReportSummaryJSON(TypedDict):
+    """One entry of ``reports_for()``'s return -- a report that prints the
+    model, ours or somebody else's."""
+
+    id: int
+    name: str
+    report_name: str
+    view_id: int | Literal[False]
+    owned: bool
+    editable: bool
+
+
+class ReportActionJSON(TypedDict):
+    """``action_open()``'s return: Odoo's own report list, scoped."""
+
+    type: str
+    name: str
+    res_model: str
+    view_mode: str
+    views: list[tuple[bool, str]]
+    domain: list[tuple[str, str, object]]
+    context: dict[str, object]
+    help: str
+
+
+class CreateReportJSON(TypedDict):
+    """``create_report()``'s return: ids and reference of the new report."""
+
+    report_id: int
+    view_id: int
+    report_name: str
+
+
+class OpenConsoleParamsJSON(TypedDict):
+    """``edit_action()``'s ``params``: which pane and view the console opens on."""
+
+    pane: str
+    res_model: str
+    view_id: int
+    view_type: str
+
+
+class OpenConsoleActionJSON(TypedDict):
+    """``edit_action()``'s return: opens the studio console on this report's
+    template."""
+
+    type: str
+    tag: str
+    name: str
+    target: str
+    params: OpenConsoleParamsJSON
 
 
 class StudioReport(models.AbstractModel):
@@ -36,31 +116,33 @@ class StudioReport(models.AbstractModel):
     _description = "Studio: PDF Reports"
 
     @api.model
-    def layouts(self):
+    def layouts(self) -> list[scaffold.ReportLayoutJSON]:
         """External / Internal / Blank, as Odoo Studio names them."""
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         return scaffold.report_layouts_json()
 
     @api.model
-    def reports_for(self, model_name):
+    def reports_for(self, model_name: str) -> list[ReportSummaryJSON]:
         """Every report that prints this model, ours and everybody else's.
 
         Both, deliberately: the point of the feature is that somebody else's is
         editable too, so a list showing only ours would hide the thing worth
         showing.
         """
-        self._assert_studio_user()
-        reports = self.env["ir.actions.report"].search([("model", "=", model_name)])
-        out = []
+        typed.security(self)._assert_studio_user()
+        reports = typed.model(self.env, IrActionsReport).search(
+            [("model", "=", model_name)]
+        )
+        out: list[ReportSummaryJSON] = []
         for report in reports:
             view = self._template_of(report)
             out.append(
                 {
-                    "id": report.id,
-                    "name": report.name,
-                    "report_name": report.report_name,
-                    "view_id": view.id or False,
-                    "owned": bool(report.studio_package_id),
+                    "id": cast("int", report.id),
+                    "name": cast("str", cast("IrActions", report).name),
+                    "report_name": cast("str", report.report_name),
+                    "view_id": cast("int", view.id) or False,
+                    "owned": bool(cast("StudioOwnedMixin", report).studio_package_id),
                     # No template means nothing to edit, and it is worth saying
                     # rather than offering an editor that opens on nothing.
                     "editable": bool(view),
@@ -69,14 +151,18 @@ class StudioReport(models.AbstractModel):
         return out
 
     @api.model
-    def action_open(self, model_name=None, package_id=None):
+    def action_open(
+        self, model_name: str | None = None, package_id: int | None = None
+    ) -> ReportActionJSON:
         """Odoo's report list, scoped and with a package to record into."""
-        self._assert_studio_user()
-        package = self.env["studio.package"]._chosen(package_id)
+        typed.security(self)._assert_studio_user()
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
         # qweb-text and the non-qweb types have no template to click into, so
         # showing them here would be offering an editor that cannot open.
-        domain = [("report_type", "in", ["qweb-pdf", "qweb-html"])]
-        context = {"studio_package_id": package.id or False}
+        domain: list[tuple[str, str, object]] = [
+            ("report_type", "in", ["qweb-pdf", "qweb-html"])
+        ]
+        context: dict[str, object] = {"studio_package_id": package.id or False}
         if model_name:
             if model_name not in self.env:
                 raise UserError(_("Unknown model '%s'.", model_name))
@@ -96,7 +182,7 @@ class StudioReport(models.AbstractModel):
         }
 
     @api.model
-    def _empty_state(self):
+    def _empty_state(self) -> str:
         return "<p class='o_view_nocontent_smiling_face'>%s</p><p>%s</p>" % (
             _("Put this on paper"),
             _(
@@ -108,7 +194,7 @@ class StudioReport(models.AbstractModel):
         )
 
     @api.model
-    def _template_of(self, report):
+    def _template_of(self, report: IrActionsReport) -> View:
         """The qweb view ``report_name`` resolves to, or an empty recordset.
 
         The same two-step lookup qweb itself does -- key first, then xmlid --
@@ -119,29 +205,37 @@ class StudioReport(models.AbstractModel):
         A report rendered from a template built in Python is an ordinary thing
         to come across, and the answer to it is "nothing to edit here".
         """
-        View = self.env["ir.ui.view"]
+        Views = typed.model(self.env, View)
         name = report.report_name or ""
         if "." not in name:
-            return View.browse()
+            return Views.browse()
         # sudo to look up, browse to hand back: a view found past the current
         # user's rights must not leave here still elevated.
-        found = View.sudo().search([("key", "=", name)], limit=1)
+        found = Views.sudo().search([("key", "=", name)], limit=1)
         if found:
-            return View.browse(found.id)
-        model, res_id = self.env["ir.model.data"]._xmlid_to_res_model_res_id(
+            # `.browse()`'s own `int | Iterable[IdType]` does not accept
+            # `found.id`'s declared `IdType | Literal[False]` un-narrowed --
+            # same cast as `ir_ui_view.py`'s own `_concrete_action()`.
+            return Views.browse(cast("int", found.id))
+        model, res_id = typed.model(self.env, IrModelData)._xmlid_to_res_model_res_id(
             name, raise_if_not_found=False
         )
         if model != "ir.ui.view" or not res_id:
-            return View.browse()
-        return View.browse(res_id).exists()
+            return Views.browse()
+        return Views.browse(res_id).exists()
 
     @api.model
     def create_report(
-        self, package_id, model_name, name, layout="external", paperformat_id=None
-    ):
+        self,
+        package_id: int,
+        model_name: str,
+        name: str,
+        layout: str = "external",
+        paperformat_id: int | None = None,
+    ) -> CreateReportJSON:
         """A new report on ``model_name``, as source."""
-        self._assert_studio_manager()
-        package = self.env["studio.package"].browse(package_id).exists()
+        typed.security(self)._assert_studio_manager()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a studio package to record this report in."))
         package._assert_writable()
@@ -153,7 +247,7 @@ class StudioReport(models.AbstractModel):
         # The technical name can be deduplicated; the one on the Print menu
         # cannot. Two reports both called "Job Sheet" would work perfectly and
         # be indistinguishable to whoever has to pick one.
-        if self.env["ir.actions.report"].search_count(
+        if typed.model(self.env, IrActionsReport).search_count(
             [("model", "=", model_name), ("name", "=", name)], limit=1
         ):
             raise UserError(
@@ -165,8 +259,12 @@ class StudioReport(models.AbstractModel):
             )
 
         arch = scaffold.arch_to_string(scaffold.scaffold_report_arch(name, layout))
-        view = self.env["ir.ui.view"].create(
-            {
+        view = typed.model(self.env, View).create(
+            {  # pyright: ignore[reportArgumentType] -- `@api.model_create_multi`
+                # (`odoo/api.py`) is a bare passthrough decorator that does not
+                # widen `create()`'s own declared `list[ValuesType]`-only
+                # signature to also cover the single-dict form it genuinely
+                # accepts at runtime (TYPING.md's own "Known traps").
                 "name": name,
                 # REQUIRED. Without it create() infers the type from the arch
                 # root tag and raises "Invalid view type: 't'"
@@ -197,8 +295,9 @@ class StudioReport(models.AbstractModel):
         # (`ir_ui_view.py:519`), and a random key is not something `report_name`
         # can name.
         view.key = reference
-        report = self.env["ir.actions.report"].create(
-            {
+        report = typed.model(self.env, IrActionsReport).create(
+            {  # pyright: ignore[reportArgumentType] -- same passthrough-decorator
+                # gap as the view `create()` call above.
                 "name": name,
                 "model": model_name,
                 "report_type": "qweb-pdf",
@@ -209,31 +308,38 @@ class StudioReport(models.AbstractModel):
                 "paperformat_id": paperformat_id or False,
                 # Without a binding the report exists and appears in no menu,
                 # which reads as the builder having done nothing.
-                "binding_model_id": self.env["ir.model"]._get(model_name).id,
+                "binding_model_id": typed.model(self.env, IrModel)._get(model_name).id,
                 "binding_type": "report",
             }
         )
         package.studio_capture([view, report])
-        return {"report_id": report.id, "view_id": view.id, "report_name": reference}
+        return {
+            "report_id": cast("int", report.id),
+            "view_id": cast("int", view.id),
+            "report_name": reference,
+        }
 
     @api.model
-    def _slug(self, name):
+    def _slug(self, name: str | None) -> str:
         cleaned = "".join(c if c.isalnum() else "_" for c in (name or "").lower())
         cleaned = "_".join(part for part in cleaned.split("_") if part)
         return "report_%s" % (cleaned or "document")
 
     @api.model
-    def edit_action(self, report_id):
+    def edit_action(self, report_id: int) -> OpenConsoleActionJSON:
         """Open the studio's view editor on a report's template.
 
         The same editor, on purpose. A report template is a qweb view, the
         editor already emits inheriting views for anything it does not own, and
         that is precisely the behaviour this feature exists to provide.
         """
-        self._assert_studio_user()
-        report = self.env["ir.actions.report"].browse(report_id).exists()
+        typed.security(self)._assert_studio_user()
+        report = typed.model(self.env, IrActionsReport).browse(report_id).exists()
         if not report:
             raise UserError(_("That report no longer exists."))
+        # Same `_inherit = 'ir.actions.actions'`-composed-not-subclassed gap
+        # as `reports_for`'s own `cast("IrActions", report).name` above.
+        action = cast("IrActions", report)
         view = self._template_of(report)
         if not view:
             raise UserError(
@@ -242,19 +348,19 @@ class StudioReport(models.AbstractModel):
                     "in this database — so there is nothing to edit. A report "
                     "whose template is built in Python has to be changed in "
                     "Python.",
-                    name=report.name,
+                    name=action.name,
                     template=report.report_name,
                 )
             )
         return {
             "type": "ir.actions.client",
             "tag": "app_builder_console",
-            "name": _("Edit %s", report.name),
+            "name": _("Edit %s", action.name),
             "target": "fullscreen",
             "params": {
                 "pane": "views",
-                "res_model": report.model,
-                "view_id": view.id,
+                "res_model": cast("str", report.model),
+                "view_id": cast("int", view.id),
                 "view_type": "qweb",
             },
         }

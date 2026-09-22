@@ -2999,19 +2999,102 @@ than reasoned about:
   report-writing process leaking into a shipped source comment, caught
   by the verify agent and corrected in the main loop before commit.
 
-  This closes the `app_builder_base`-only portion of wave 2's own
-  dependency-map file list; wave 2 itself (per the original map) also
-  named `studio_view_edit.py` (`app_builder_view`), `studio_automation.py`
-  /`studio_security_surface.py` (`app_builder_ui`), `studio_report.py`
-  (`app_builder_report`), `tier_formula_serializer.py`
-  (`app_builder_approval_formula`) and `mail_serializers.py`
-  (`app_builder_mail`), none converted yet -- real work sessions have been
-  sub-batching within each wave rather than clearing one in full before
-  starting the next, so "wave N complete" claims here should be read as
-  "the files converted so far," not a strict boundary. Everything
-  actually done, in order, stays the authoritative record; the
-  dependency map itself (this section, `1c kickoff`, above) is what
-  still governs which file can go next.
+  This closed the `app_builder_base`-only portion of wave 2's own
+  dependency-map file list. The rest of wave 2 -- `studio_view_edit.py`
+  (`app_builder_view`), `studio_automation.py`/`studio_security_surface
+  .py` (`app_builder_ui`), `studio_report.py` (`app_builder_report`),
+  `tier_formula_serializer.py` (`app_builder_approval_formula`) and
+  `mail_serializers.py` (`app_builder_mail`) -- was converted next, as a
+  6-file parallel batch (one draft agent per file, independent -- none
+  of the 6 import each other -- plus one adversarial verify agent over
+  the whole batch). Full-tree `pyright` dropped from 2990 to 2923 errors
+  (a drop of 67, not just 6 -- converting these files' own type surface
+  also resolved downstream errors in files that import from them).
+  `pyrightconfig.json`/`pyrightconfig.ci.json`/`pyproject.toml` confirmed
+  unchanged. This closes wave 2 in full.
+
+  **`studio_view_edit.py`** (262 lines) resolves this migration's third
+  and last mapped circular reference (`studio_view_editor.py` <->
+  `studio_view_edit.py`) the same way `studio_package.py`'s own two
+  pairs were resolved: the shallower side converts first, importing the
+  other side's class (`StudioViewEditor`) `TYPE_CHECKING`-only and
+  relative (same-addon), `cast()` at each of the 4 real
+  `self.env["studio.view.editor"]` lookups, never `typed.model()`.
+  `studio_view_editor.py` itself (2960 lines, 74 `@api.model` methods --
+  the largest, most RPC-heavy file in the whole suite) stays unconverted
+  and out of scope; its own inferred (unannotated) return types are
+  accepted as-is on the calls this file makes into it. Three new
+  file-local `TypedDict`s (`HistoryEntryJSON`, `UndoRedoEntryJSON`,
+  `StackForJSON`) for its three distinct RPC wire shapes.
+
+  **`studio_automation.py`/`studio_security_surface.py`** (85/105 lines,
+  `app_builder_ui`) and **`studio_report.py`** (260 lines,
+  `app_builder_report`) all wrap Odoo's own `ir.actions.act_window` list
+  view in a scoped, package-aware action dict -- three near-identical but
+  independently-defined, file-local `TypedDict`s
+  (`AutomationActionJSON`/`SecuritySurfaceActionJSON`/`ReportActionJSON`),
+  deliberately not unified into one shared cross-addon type for this
+  batch (no such shared helper existed before, confirmed by grep, and
+  three addons each owning their own action shape is the existing
+  pattern, not a gap this pass should close unprompted).
+  `studio_report.py` additionally found and fixed a new instance of the
+  `_inherit`-mixin-invisible-to-pyright gap on a *core* Odoo class rather
+  than one of this project's own: `IrActionsReport.name` is declared on
+  `ir.actions.actions`, which core itself composes only via
+  `_inherit = 'ir.actions.actions'` -- fixed with
+  `cast("IrActions", report).name`, same shape as every other `_inherit`
+  gap this migration has already fixed, just the first one found on a
+  core model rather than a `studio.*` one.
+
+  **`tier_formula_serializer.py`** (`app_builder_approval_formula`) and
+  **`mail_serializers.py`** (`app_builder_mail`) both independently
+  discovered, while converting, that `typed.serializer_super()`
+  (added earlier this phase, see above) **never actually type-checks at
+  any real call site** -- pyright only infers a bare `super()` call's
+  static type as the builtin `super` type when it is chained directly
+  into attribute access (`super().attr`); passed as a plain argument to
+  another function, as `serializer_super(super())` necessarily does,
+  pyright instead infers the synthesized concrete base class
+  (`AbstractModel`), which does not satisfy `serializer_super`'s own
+  declared `sup: super` parameter. Confirmed independently by both
+  drafting agents and a third time by the verify agent with an isolated
+  `reveal_type(super())` repro -- not a fluke of one file. There is no
+  fix: no annotation says "whatever pyright infers for a bare `super()`
+  passed as an argument," so the helper's whole premise cannot work,
+  unlike every other gap `typed.py` fixes. Both files worked around it
+  differently in the draft pass (one dropped the helper for a direct
+  `cast("StudioSerializer", super())`, matching the 8 other already-
+  converted serializer files that never used the helper in the first
+  place; the other kept the helper but wrapped its argument in an extra
+  `cast("super", super())`, a pattern used nowhere else) -- the verify
+  agent flagged the inconsistency without picking a winner. Resolved in
+  the main loop, not by an agent: converged `mail_serializers.py` onto
+  the same direct-cast idiom, and **removed `serializer_super()` from
+  `typed.py` entirely** -- a dead helper with zero working callers
+  anywhere in the tree is worse than no helper, and the established,
+  actually-working convention (`cast("StudioSerializer", super())`
+  inline, no wrapper) already covers the same gap in every one of the 10
+  files that needed it. `typed.py` now has three helpers
+  (`model()`/`security()`/`serializer()`), not four.
+
+  Note for a future pass, not acted on now: `typed.serializer()` (the
+  plain `self`-cast helper, as opposed to the `super()` one just
+  removed) is *not* broken the same way -- `self` really is a `BaseModel`
+  at every call site, so pyright has no trouble with it -- but it also
+  has zero real callers today; every one of the 5 real `self`-cast sites
+  across the serializer files uses `cast("StudioSerializer", self)`
+  inline instead of the helper. Worth a deliberate decision later
+  (adopt the helper everywhere, or remove it too for the same reason
+  `serializer_super()` was removed) rather than a default either way.
+
+  This closes Phase 1c wave 2 in full. Next: wave 3 per the dependency
+  map above (`studio_model_draft.py`/`studio_security_surfaces.py` in
+  `app_builder_base`, `studio_package_model.py` in `app_builder_view` --
+  a different, not-yet-converted file of the same name as the
+  already-converted `app_builder_base` one, a pure `_inherit` extension --
+  `studio_graduate_code.py`/`studio_menu_surface.py`/`studio_owned.py`
+  in `app_builder_ui`, `ir_actions_report.py`/`studio_report_surface.py`
+  in `app_builder_report`, `studio_approval.py` in `app_builder_approval`).
 
 ## CI: the OCA container's real layout
 

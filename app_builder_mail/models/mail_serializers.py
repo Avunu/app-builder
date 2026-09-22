@@ -20,20 +20,43 @@ cannot be installed without ``mail``. A separate addon would buy nothing but a
 second manifest.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 from odoo import api, models
+
+if TYPE_CHECKING:
+    # Only for the casts below; with `from __future__ import annotations`
+    # nothing here needs this at runtime. Cross-addon (this addon is not
+    # app_builder_base itself), so fully qualified -- same house convention
+    # `tier_serializers.py`'s own imports follow.
+    from odoo.addons.app_builder_base.models.studio_serializer import (
+        StudioSerializer,
+    )
 
 
 class IrModelSerializer(models.AbstractModel):
     _inherit = "studio.serializer.ir.model"
 
     @api.model
-    def _emitted_field_names(self):
+    def _emitted_field_names(self) -> tuple[str, ...]:
         # Not cosmetic flags: writing one of these makes _add_manual_models
         # give the model the corresponding mixin (ir_model.py:95-97), so a
         # model that loses is_mail_thread on reload comes back with no chatter,
         # no followers and no message history -- and every view that referenced
         # them fails to load.
-        return super()._emitted_field_names() + (
+        #
+        # `_inherit`-only composition (never a real Python base class), so
+        # `super()` here is invisible to pyright the same way `self
+        # ._assert_studio_user()` is on `studio.security.mixin`.
+        # `typed.serializer_super()` targets that same gap but does not
+        # type-check at any real call site (pyright infers a bare `super()`
+        # call's own type as the synthesized concrete base class, not the
+        # builtin `super` type that helper declares) -- so this uses the same
+        # direct cast `tier_serializers.py`, `ir_model.py` and
+        # `base_automation_serializer.py` already use instead.
+        return cast("StudioSerializer", super())._emitted_field_names() + (
             "is_mail_thread",
             "is_mail_activity",
             "is_mail_blacklist",
@@ -44,17 +67,18 @@ class IrModelFieldsSerializer(models.AbstractModel):
     _inherit = "studio.serializer.ir.model.fields"
 
     @api.model
-    def _emitted_field_names(self):
+    def _emitted_field_names(self) -> tuple[str, ...]:
         # Whether a change to this field is logged in the chatter, and at what
         # level. Set per field, by hand, and invisible once lost.
-        return super()._emitted_field_names() + ("tracking",)
+        # Same `cast()` as `IrModelSerializer` above, same reason.
+        return cast("StudioSerializer", super())._emitted_field_names() + ("tracking",)
 
 
 class IrActionsServerSerializer(models.AbstractModel):
     _inherit = "studio.serializer.ir.actions.server"
 
     @api.model
-    def _emitted_field_names(self):
+    def _emitted_field_names(self) -> tuple[str, ...]:
         """The configuration for every action type mail and sms contribute.
 
         These are the states Odoo Studio's documentation calls Send Email, Send
@@ -63,7 +87,8 @@ class IrActionsServerSerializer(models.AbstractModel):
         one with ``state='next_activity'`` came back with nothing but its name
         -- a rule that still fired, and did the wrong thing quietly.
         """
-        return super()._emitted_field_names() + (
+        # Same `cast()` as `IrModelSerializer` above, same reason.
+        return cast("StudioSerializer", super())._emitted_field_names() + (
             # Send Email
             "template_id",
             "mail_post_method",

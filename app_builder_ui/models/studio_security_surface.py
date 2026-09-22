@@ -21,8 +21,30 @@ and its drops go into -- and the suggested one for the Studio menu, which has
 no console to ask.
 """
 
+from __future__ import annotations
+
+from typing import TypedDict
+
 from odoo import _, api, models
 from odoo.exceptions import UserError
+
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.tools import typed
+
+
+class SecuritySurfaceActionJSON(TypedDict):
+    """``action_access()``/``action_rules()``'s shared return: Odoo's own
+    access or rules list, scoped."""
+
+    type: str
+    name: str
+    res_model: str
+    view_mode: str
+    views: list[tuple[bool, str]]
+    domain: list[tuple[str, str, object]]
+    context: dict[str, object]
+    help: str
 
 
 class StudioSecuritySurface(models.AbstractModel):
@@ -31,7 +53,9 @@ class StudioSecuritySurface(models.AbstractModel):
     _description = "Studio Access Control"
 
     @api.model
-    def _scoped(self, model_name, package_id=None):
+    def _scoped(
+        self, model_name: str | None, package_id: int | None = None
+    ) -> tuple[list[tuple[str, str, object]], dict[str, object]]:
         """The domain and context that pin a list to one model.
 
         ``model_id.model`` rather than the id: it reads as the model name in
@@ -39,20 +63,22 @@ class StudioSecuritySurface(models.AbstractModel):
         and ``ir.rule`` search on. The default is the id, because that is what
         the form's picker stores.
         """
-        self._assert_studio_user()
-        package = self.env["studio.package"]._chosen(package_id)
-        domain = []
-        context = {"studio_package_id": package.id or False}
+        typed.security(self)._assert_studio_user()
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
+        domain: list[tuple[str, str, object]] = []
+        context: dict[str, object] = {"studio_package_id": package.id or False}
         if model_name:
             if model_name not in self.env:
                 raise UserError(_("Unknown model '%s'.", model_name))
-            model = self.env["ir.model"]._get(model_name)
+            model = typed.model(self.env, IrModel)._get(model_name)
             domain.append(("model_id.model", "=", model_name))
             context["default_model_id"] = model.id
         return domain, context
 
     @api.model
-    def action_access(self, model_name=None, package_id=None):
+    def action_access(
+        self, model_name: str | None = None, package_id: int | None = None
+    ) -> SecuritySurfaceActionJSON:
         """Odoo's access-rights list, scoped and with a package to record into."""
         domain, context = self._scoped(model_name, package_id)
         return {
@@ -69,7 +95,9 @@ class StudioSecuritySurface(models.AbstractModel):
         }
 
     @api.model
-    def action_rules(self, model_name=None, package_id=None):
+    def action_rules(
+        self, model_name: str | None = None, package_id: int | None = None
+    ) -> SecuritySurfaceActionJSON:
         """Odoo's record-rules list, scoped and with a package to record into."""
         domain, context = self._scoped(model_name, package_id)
         return {
@@ -84,7 +112,7 @@ class StudioSecuritySurface(models.AbstractModel):
         }
 
     @api.model
-    def _empty_state(self, rules):
+    def _empty_state(self, rules: bool) -> str:
         if rules:
             return "<p class='o_view_nocontent_smiling_face'>%s</p><p>%s</p>" % (
                 _("Decide which records each group sees"),
