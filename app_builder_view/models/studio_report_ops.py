@@ -15,10 +15,29 @@ points at whatever that user's language, company layout and access rights
 happened to produce.
 """
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo import _, api, models
 from odoo.exceptions import UserError
+
+if TYPE_CHECKING:
+    from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
+
+    # `studio_view_editor.py`'s own module also declares a class named
+    # `StudioViewEditor` (the SAME "studio.view.editor" `_name`, merged into
+    # one real model by the registry, but two separate classes as far as
+    # pyright is concerned) -- aliased on import so this file's own `class
+    # StudioViewEditor` below does not collide with it. `_new_xpath` is
+    # declared only on that real base, invisible on a bare `self` here
+    # (TYPING.md's own `_inherit`-invisibility gap); a plain `cast()` target
+    # needs no runtime binding, so this stays `TYPE_CHECKING`-only rather
+    # than a real top-level import, the same fix shape as
+    # `studio_report_surface.py`'s own `StudioReport`/`StudioReportBase`.
+    from .studio_view_editor import StudioViewEditor as StudioViewEditorBase
 
 # Fields that cannot be printed as a bare span: a binary is not text, and a
 # relation needs a sub-expression naming which of its fields to show.
@@ -33,7 +52,9 @@ class StudioViewEditor(models.AbstractModel):
     _inherit = "studio.view.editor"
 
     @api.model
-    def _report_field_expression(self, model_name, name, loop_var="doc"):
+    def _report_field_expression(
+        self, model_name: str, name: str, loop_var: str = "doc"
+    ) -> str:
         """``doc.partner_id.name`` for a many2one, ``doc.x`` otherwise.
 
         A many2one rendered bare prints the record's display name via
@@ -58,7 +79,7 @@ class StudioViewEditor(models.AbstractModel):
         return "%s.%s" % (loop_var, name)
 
     @api.model
-    def _already_prints(self, arch, expression):
+    def _already_prints(self, arch: str | None, expression: str) -> bool:
         """Whether ``arch`` already has a span for this expression.
 
         Only consulted for a view the package owns outright, where each edit is
@@ -68,31 +89,35 @@ class StudioViewEditor(models.AbstractModel):
         if not arch:
             return False
         try:
-            root = etree.fromstring(arch.encode())
+            root = cast("LxmlElement", etree.fromstring(arch.encode()))
         except etree.XMLSyntaxError:  # pragma: no cover - _check_xml guards this
             return False
         return any(node.get("t-field") == expression for node in root.iter())
 
-    def _op_add_report_field(self, root, operation):
+    def _op_add_report_field(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement | None:
         """A `t-field` span, optionally with a label beside it.
 
         Idempotent on (anchor, field) for the same reason `_op_add_field` is: a
         double-click must not print the value twice.
         """
-        name = operation.get("name")
-        model_name = operation.get("model")
+        name = cast("str | None", operation.get("name"))
+        model_name = cast("str | None", operation.get("model"))
         if not name or not model_name:
             raise UserError(_("Placing a field requires a model and a field name."))
         expression = self._report_field_expression(
-            model_name, name, operation.get("loop_var") or "doc"
+            model_name, name, cast("str", operation.get("loop_var") or "doc")
         )
-        position = operation.get("position", "inside")
-        expr = operation["xpath"]
+        position = cast("str", operation.get("position", "inside"))
+        expr = cast("str", operation["xpath"])
 
         # On a view the package owns, each edit is merged into the arch itself
         # and the spec below starts empty every time, so it cannot see what the
         # previous click did. apply_operation hands us the arch for this.
-        if self._already_prints(operation.get("_current_arch"), expression):
+        if self._already_prints(
+            cast("str | None", operation.get("_current_arch")), expression
+        ):
             return None
 
         node = None
@@ -105,22 +130,24 @@ class StudioViewEditor(models.AbstractModel):
                 node = candidate
                 break
         if node is None:
-            node = self._new_xpath(root, expr, position)
+            node = cast("StudioViewEditorBase", self)._new_xpath(root, expr, position)
 
-        label = operation.get("label")
+        label = cast("str | None", operation.get("label"))
         host = node
         if label:
             # A labelled value is one unit: wrapping them means a later edit
             # moves or hides both, which is what somebody means by "the
             # customer reference line".
-            host = etree.SubElement(node, "div", {"class": "mb-2"})
-            strong = etree.SubElement(host, "strong")
+            host = cast("LxmlElement", etree.SubElement(node, "div", {"class": "mb-2"}))
+            strong = cast("LxmlElement", etree.SubElement(host, "strong"))
             strong.text = label
             strong.tail = " "
         etree.SubElement(host, "span", {"t-field": expression})
         return node
 
-    def _op_add_report_table(self, root, operation):
+    def _op_add_report_table(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
         """A `t-foreach` table over a one2many, with chosen columns.
 
         The second most common report edit after placing a field, and the one
@@ -128,9 +155,9 @@ class StudioViewEditor(models.AbstractModel):
         the header and the body have to agree on column order, and the totals
         row is a different expression from the cells.
         """
-        name = operation.get("name")
-        model_name = operation.get("model")
-        columns = operation.get("columns") or []
+        name = cast("str | None", operation.get("name"))
+        model_name = cast("str | None", operation.get("model"))
+        columns = cast("list[str] | None", operation.get("columns")) or []
         if not name or not model_name:
             raise UserError(_("A table needs a model and a one2many field."))
         field = self.env[model_name]._fields.get(name)
@@ -141,7 +168,7 @@ class StudioViewEditor(models.AbstractModel):
         if not columns:
             raise UserError(_("Choose at least one column for the table."))
 
-        child = self.env[field.comodel_name]
+        child = self.env[cast("str", field.comodel_name)]
         unknown = [c for c in columns if c not in child._fields]
         if unknown:
             raise UserError(
@@ -152,26 +179,33 @@ class StudioViewEditor(models.AbstractModel):
                 )
             )
 
-        expr = operation["xpath"]
-        position = operation.get("position", "inside")
-        node = self._new_xpath(root, expr, position)
-        loop_var = operation.get("loop_var") or "line"
+        expr = cast("str", operation["xpath"])
+        position = cast("str", operation.get("position", "inside"))
+        node = cast("StudioViewEditorBase", self)._new_xpath(root, expr, position)
+        loop_var = cast("str", operation.get("loop_var") or "line")
 
-        table = etree.SubElement(node, "table", {"class": "table table-sm"})
-        head = etree.SubElement(etree.SubElement(table, "thead"), "tr")
+        table = cast(
+            "LxmlElement", etree.SubElement(node, "table", {"class": "table table-sm"})
+        )
+        thead = cast("LxmlElement", etree.SubElement(table, "thead"))
+        head = cast("LxmlElement", etree.SubElement(thead, "tr"))
         for column in columns:
-            cell = etree.SubElement(head, "th")
+            cell = cast("LxmlElement", etree.SubElement(head, "th"))
             cell.text = child._fields[column].string or column
-        body = etree.SubElement(table, "tbody")
-        row = etree.SubElement(
-            body,
-            "tr",
-            {
-                "t-foreach": "%s.%s" % (operation.get("parent_var") or "doc", name),
-                "t-as": loop_var,
-            },
+        body = cast("LxmlElement", etree.SubElement(table, "tbody"))
+        row = cast(
+            "LxmlElement",
+            etree.SubElement(
+                body,
+                "tr",
+                {
+                    "t-foreach": "%s.%s"
+                    % (cast("str", operation.get("parent_var") or "doc"), name),
+                    "t-as": loop_var,
+                },
+            ),
         )
         for column in columns:
-            cell = etree.SubElement(row, "td")
+            cell = cast("LxmlElement", etree.SubElement(row, "td"))
             etree.SubElement(cell, "span", {"t-field": "%s.%s" % (loop_var, column)})
         return node

@@ -24,19 +24,116 @@ The template is rendered directly through ``ir.qweb`` instead, with the same
 ``docs`` the report would have passed.
 """
 
-import time
+from __future__ import annotations
 
-from lxml import etree
+import time
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
+
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+from typing_extensions import NotRequired
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+
+from odoo.addons.base.models.ir_actions_report import IrActionsReport
+from odoo.addons.base.models.ir_config_parameter import IrConfigParameter
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.base.models.ir_qweb import IrQWeb
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.base.models.res_users import Users
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from odoo.models import BaseModel
+
+    from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
+
+
+class PreviewHtmlJSON(TypedDict):
+    """``preview_html()``'s return: the report's rendered HTML, or nothing
+    to render it on yet (``res_id`` present only on the render branch)."""
+
+    html: str
+    reason: str | Literal[False]
+    model: str | Literal[False]
+    res_id: NotRequired[int]
+
+
+class PrintableFieldJSON(TypedDict):
+    """One entry of ``printable_fields()``'s ``values`` -- a plain
+    ``t-field``."""
+
+    name: str
+    string: str
+    type: str
+
+
+class PrintableColumnJSON(TypedDict):
+    """One entry of a ``PrintableListJSON``'s ``columns``."""
+
+    name: str
+    string: str
+
+
+class PrintableListJSON(PrintableFieldJSON):
+    """One entry of ``printable_fields()``'s ``lists`` -- a table, printing
+    through its own sub-model's columns."""
+
+    columns: list[PrintableColumnJSON]
+
+
+class PrintableFieldsJSON(TypedDict):
+    """``printable_fields()``'s return: what a report can print, split by
+    how it prints it."""
+
+    values: list[PrintableFieldJSON]
+    lists: list[PrintableListJSON]
+
+
+class _LocateExpressionFoundJSON(TypedDict):
+    found: Literal[True]
+    xpath: str
+    expression: str
+    tag: str
+
+
+class _LocateExpressionNotFoundJSON(TypedDict):
+    found: Literal[False]
+    reason: str
+
+
+#: ``locate_expression()``'s own answer shape: the locator, or why nothing
+#: was found.
+LocateExpressionJSON: TypeAlias = (
+    _LocateExpressionFoundJSON | _LocateExpressionNotFoundJSON
+)
+
+
+class _BodyAnchorFoundJSON(TypedDict):
+    found: Literal[True]
+    xpath: str
+    position: Literal["inside"]
+
+
+class _BodyAnchorNotFoundJSON(TypedDict):
+    found: Literal[False]
+    reason: str
+
+
+#: ``body_anchor()``'s own answer shape: always ``"inside"``, the one
+#: position every one of its three tried expressions answers with.
+BodyAnchorJSON: TypeAlias = _BodyAnchorFoundJSON | _BodyAnchorNotFoundJSON
 
 
 class StudioReportPreview(models.AbstractModel):
     _inherit = "studio.report"
 
     @api.model
-    def _preview_record(self, model_name):
+    def _preview_record(self, model_name: str) -> BaseModel | None:
         """Something real to render, because a report of nothing shows nothing.
 
         The most recently created record: a report is about the shape of the
@@ -49,13 +146,13 @@ class StudioReportPreview(models.AbstractModel):
         return model.search([], order="id desc", limit=1) or None
 
     @api.model
-    def preview_html(self, view_id):
+    def preview_html(self, view_id: int) -> PreviewHtmlJSON:
         """The report's own output, branded so its fields can be clicked."""
-        self._assert_studio_user()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_user()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view or view.type != "qweb":
             raise UserError(_("That is not a report template."))
-        report = self.env["ir.actions.report"].search(
+        report = typed.model(self.env, IrActionsReport).search(
             [("report_name", "=", view.key)], limit=1
         )
         model_name = report.model or view.model
@@ -67,16 +164,16 @@ class StudioReportPreview(models.AbstractModel):
                 "reason": _(
                     "There is no %s to preview this on yet. Create one and the "
                     "report will draw it.",
-                    self.env["ir.model"]._get(model_name).name
+                    typed.model(self.env, IrModel)._get(model_name).name
                     if model_name
                     else _("record"),
                 ),
             }
-        qweb = self.env["ir.qweb"].with_context(inherit_branding=True)
+        qweb = typed.model(self.env, IrQWeb).with_context(inherit_branding=True)
         # The same names a printed report gets (`ir.actions.report
         # ._render_template`): the internal layout stamps the time with
         # `context_timestamp`, the external one reads `res_company`.
-        user = self.env["res.users"].browse(self.env.uid)
+        user = typed.model(self.env, Users).browse(self.env.uid)
         html = qweb._render(
             view.id,
             {
@@ -86,19 +183,33 @@ class StudioReportPreview(models.AbstractModel):
                 "env": self.env,
                 "time": time,
                 "context_timestamp": lambda t: fields.Datetime.context_timestamp(
-                    self.with_context(tz=user.tz), t
+                    # `tz` reaches `res.users` only through its own
+                    # `_inherits = {'res.partner': 'partner_id'}` (delegation,
+                    # not `_inherit` composition) -- never a real attribute of
+                    # `Users`'s own class body, so no cast to that concrete
+                    # class resolves it either. `Any` is the honest type for a
+                    # value only reachable through Odoo's registry-level
+                    # delegation (`TYPING.md`'s own `ir.cron.model_id` note).
+                    self.with_context(tz=cast("Any", user).tz),
+                    t,
                 ),
                 "user": user,
                 "res_company": self.env.company,
-                "web_base_url": self.env["ir.config_parameter"]
+                "web_base_url": typed.model(self.env, IrConfigParameter)
                 .sudo()
-                .get_param("web.base.url", default=""),
+                .get_param("web.base.url", default=""),  # pyright: ignore[reportArgumentType]
+                # `get_param`'s own `default` parameter carries no annotation,
+                # only a bare `False` default, so pyright infers `bool` and
+                # rejects the real `str` default every other caller passes --
+                # the same inferred-from-literal-default vendor-stub gap
+                # TYPING.md's own "Known traps" documents for
+                # `Selection.__init__`.
             },
         )
         return {
             "html": str(html),
             "reason": False,
-            "res_id": record.id,
+            "res_id": cast("int", record.id),
             # The client needs this and cannot read it off the view: a report
             # template leaves `model` empty on purpose, or every
             # `<template inherit_id=...>` written against it is silently dropped.
@@ -106,34 +217,47 @@ class StudioReportPreview(models.AbstractModel):
         }
 
     @api.model
-    def printable_fields(self, model_name):
+    def printable_fields(self, model_name: str) -> PrintableFieldsJSON:
         """What a report can print, split by how it prints it.
 
         `values` are placed as a `t-field` span; `lists` become a table. The
         split is the same one `add_report_field` refuses on, said before the
         refusal rather than after it.
         """
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         if model_name not in self.env:
             return {"values": [], "lists": []}
-        values, lists = [], []
+        values: list[PrintableFieldJSON] = []
+        lists: list[PrintableListJSON] = []
         for name, field in sorted(self.env[model_name]._fields.items()):
             if not field.store and not field.related:
                 continue
-            entry = {"name": name, "string": field.string or name, "type": field.type}
+            entry: dict[str, object] = {
+                "name": name,
+                "string": field.string or name,
+                "type": field.type,
+            }
             if field.type in ("one2many", "many2many"):
                 entry["columns"] = [
                     {"name": sub, "string": sf.string or sub}
-                    for sub, sf in sorted(self.env[field.comodel_name]._fields.items())
+                    for sub, sf in sorted(
+                        # `comodel_name` is `str | None` on the base
+                        # descriptor, but every field reaching this branch is
+                        # one2many/many2many, which always carries a real
+                        # comodel -- true by construction, the same idiom
+                        # `studio_domain.py`'s own `fields_for` already casts
+                        # for the identical field.
+                        self.env[cast("str", field.comodel_name)]._fields.items()
+                    )
                     if sf.store and sf.type not in ("one2many", "many2many", "binary")
                 ]
-                lists.append(entry)
+                lists.append(cast("PrintableListJSON", entry))
             elif field.type != "binary":
-                values.append(entry)
+                values.append(cast("PrintableFieldJSON", entry))
         return {"values": values, "lists": lists}
 
     @api.model
-    def locate_expression(self, view_id, expression):
+    def locate_expression(self, view_id: int, expression: str) -> LocateExpressionJSON:
         """The arch node printing ``expression``, as a locator.
 
         The click carries `data-oe-expression` -- `doc.x_budget` -- and the arch
@@ -142,11 +266,11 @@ class StudioReportPreview(models.AbstractModel):
         reader sees is theirs, shaped by their language, their company's layout
         and what they are allowed to read.
         """
-        self._assert_studio_user()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_user()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The report template no longer exists."))
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         matches = [n for n in root.iter() if n.get("t-field") == expression]
         if not matches:
             return {
@@ -157,7 +281,7 @@ class StudioReportPreview(models.AbstractModel):
                     expression,
                 ),
             }
-        editor = self.env["studio.view.editor"]
+        editor = typed.model(self.env, StudioViewEditor)
         return {
             "found": True,
             "xpath": editor._locator_for(matches[0], editor._occurrences(root)),
@@ -166,7 +290,7 @@ class StudioReportPreview(models.AbstractModel):
         }
 
     @api.model
-    def body_anchor(self, view_id):
+    def body_anchor(self, view_id: int) -> BodyAnchorJSON:
         """Where a new element goes when nothing was clicked.
 
         Every layout this builder scaffolds puts the document body in
@@ -174,11 +298,11 @@ class StudioReportPreview(models.AbstractModel):
         `l10n_*` modules anchor on. Falling back to the loop keeps a
         hand-written template addressable.
         """
-        self._assert_studio_user()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_user()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The report template no longer exists."))
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         for expr in (
             "//div[hasclass('page')]",
             "//t[@t-foreach='docs']",

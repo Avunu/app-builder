@@ -22,12 +22,136 @@ which would shift every ordinal against the tree the editor edits. What the
 canvas cannot show is stated as a known limit rather than worked around.
 """
 
-from lxml import etree
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
+
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+from typing_extensions import NotRequired
 
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
+from odoo.addons.base.models.ir_model import IrModelFields
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.tools import typed
+
 from ..tools import canvas_stamp, manualfield
+from .studio_view_edit import StudioViewEdit
+from .studio_view_editor import FieldInfoJSON
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from odoo.models import BaseModel
+
+    from odoo.addons.base.models.ir_model import IrModelSelection
+    from odoo.addons.base.models.ir_ui_view import Model as IrUiViewModelMixin
+    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
+
+    # `app_builder_view`'s own pure `_inherit` extension of `studio.model
+    # .draft` (`studio_model_draft.py`, this same addon), aliased against
+    # the real base already imported above (`StudioModelDraft`, from
+    # `app_builder_base`) -- same rule-7 collision. `_pending_anchored` is
+    # declared only there, now real (this replaces a forward-declared
+    # `_DraftWithPendingAnchored` Protocol this file used before that
+    # sibling was converted, the same reconciliation `studio_view_editor
+    # .py`'s own `_DraftHandle` Protocol got once its real target existed).
+    from .studio_model_draft import StudioModelDraft as StudioModelDraftView
+
+    # This file is a pure `_inherit = "studio.view.editor"` extension, the
+    # same `_name` `studio_view_editor.py`'s own `StudioViewEditor` declares
+    # -- a real, *different* Python class the registry merges with this
+    # file's own at runtime, so it is aliased on import rather than
+    # colliding with this file's own class of the identical name (rule 7,
+    # precedent: `studio_package_model.py`'s own `StudioPackageModelBase`).
+    # Cast to it wherever this file calls a method the real base declares
+    # (`arch_version`, `_resolve_xpath`, `_find_descriptor`, ...) and this
+    # file does not -- invisible to pyright on a bare `self` otherwise.
+    from .studio_view_editor import CanvasJSON, NodeExpectationJSON
+    from .studio_view_editor import StudioViewEditor as StudioViewEditorBase
+
+
+# -- wire types -----------------------------------------------------------
+#
+# Cross-checked against `app_builder_view/static/src/console/wire.ts` and
+# `.../console/types.ts`, the same read-only references
+# `studio_view_editor.py`'s own wire types are checked against.
+
+
+class CanvasFieldInfoJSON(FieldInfoJSON):
+    """``_field_info``'s own answer (``studio_view_editor.py``) plus where
+    the field came from -- ``_canvas_field_info``'s own return, consumed by
+    ``canvas``/``describe_node``. A real, non-``TYPE_CHECKING`` import of
+    the parent TypedDict (rule 9): ``class X(Y):`` executes at import time."""
+
+    origin: Literal["manual", "core"]
+
+
+class CanvasSourceJSON(TypedDict):
+    """``_canvas_source()``'s own return: the arch the console shows as
+    "what the studio wrote", for the View tab."""
+
+    view_id: int
+    name: str
+    owned: bool
+    arch: str
+
+
+class FieldSelectionOptionJSON(TypedDict):
+    """One row of ``_field_definition()``'s own ``values["selection"]``."""
+
+    value: str
+    label: str
+    sequence: int
+
+
+class FieldDefinitionValuesJSON(TypedDict):
+    """``_field_definition()``'s own ``values`` key: the model-level facts
+    of a field the properties panel can show or edit."""
+
+    field_description: str
+    help: str
+    required: bool
+    readonly: bool
+    index: bool
+    translate: bool
+    ttype: str
+    relation: str | Literal[False]
+    selection: NotRequired[list[FieldSelectionOptionJSON]]
+
+
+class FieldDefinitionJSON(TypedDict):
+    """``_field_definition()``'s whole return, consumed by
+    ``describe_node``'s own ``definition`` key."""
+
+    origin: Literal["manual", "core"]
+    editable: list[str]
+    values: FieldDefinitionValuesJSON
+
+
+class _DescribeNodeNotFoundJSON(TypedDict):
+    found: Literal[False]
+
+
+class _DescribeNodeFoundJSON(TypedDict):
+    found: Literal[True]
+    tag: str
+    attrs: dict[str, str]
+    field: CanvasFieldInfoJSON | None
+    definition: FieldDefinitionJSON | None
+
+
+#: ``describe_node()``'s own answer shape. `wire.ts`'s closest cousin,
+#: `types.ts:DescribeNodeAnswer`, differs from `locate_target()`'s own
+#: `LocateTargetJSON` (`studio_view_editor.py`) exactly the way that file's
+#: own docstring anticipates: ``definition`` here where that one has
+#: ``xpath``.
+DescribeNodeJSON: TypeAlias = _DescribeNodeNotFoundJSON | _DescribeNodeFoundJSON
 
 
 class StudioViewEditor(models.AbstractModel):
@@ -39,7 +163,9 @@ class StudioViewEditor(models.AbstractModel):
     EDITABLE_AS = {"qweb": "report", "search": "search_lists"}
 
     @api.model
-    def canvas(self, view_id, options=None):
+    def canvas(
+        self, view_id: int, options: dict[str, object] | None = None
+    ) -> CanvasJSON:
         """Everything the console needs to render one view and address it.
 
         ``options`` may carry ``show_invisible`` (render nodes the view
@@ -54,35 +180,39 @@ class StudioViewEditor(models.AbstractModel):
         was stamped from, the node table, and what the console shows around
         the canvas -- history, package, source, record count.
         """
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         options = dict(options or {})
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
         package = self._canvas_package(view, options.get("package_id"))
-        payload = {
+        payload: CanvasJSON = {
             "view": {
-                "id": view.id,
-                "name": view.name,
-                "type": view.type,
+                "id": cast("int", view.id),
+                "name": cast("str", view.name),
+                "type": cast("str", view.type),
                 "model": view.model,
-                "mode": view.mode,
+                "mode": cast("str", view.mode),
                 "js_class": None,
             },
             "arch": None,
             "models": {},
-            "arch_version": self.arch_version(view.id),
+            "arch_version": cast("StudioViewEditorBase", self).arch_version(
+                cast("int", view.id)
+            ),
             "res_id": False,
             "root": None,
             "nodes": {},
             "pending": [],
             "draft_id": False,
-            "editable_as": self.EDITABLE_AS.get(view.type, "canvas"),
+            "editable_as": self.EDITABLE_AS.get(cast("str", view.type), "canvas"),
             "source": self._canvas_source(view, package),
-            "history": self.env["studio.view.edit"].stack_for(view.id),
+            "history": typed.model(self.env, StudioViewEdit).stack_for(
+                cast("int", view.id)
+            ),
             "package": {
-                "id": package.id,
-                "name": package.name,
+                "id": cast("int", package.id),
+                "name": cast("str", package.name),
                 "writable": package.writable,
             }
             if package
@@ -93,32 +223,37 @@ class StudioViewEditor(models.AbstractModel):
             # A report template: previewed as a document, not as a view.
             return payload
 
-        Model = self.env[view.model]
+        Model = self.env[cast("str", view.model)]
         # What get_view checks first (`ir_ui_view.py:2824`): a view of a
         # model the user may not read is not theirs to look at either.
         Model.browse().check_access("read")
-        root = etree.fromstring(view.get_combined_arch().encode())
-        stamped = canvas_stamp.stamp(root, view.type)
-        record_count = self._record_count(view.model)
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        stamped = canvas_stamp.stamp(root, cast("str", view.type))
+        record_count = cast("StudioViewEditorBase", self)._record_count(view.model)
         meta = canvas_stamp.prepare_for_canvas(
             stamped.arch,
-            view.type,
+            cast("str", view.type),
             show_invisible=bool(options.get("show_invisible")),
             # An empty list or kanban renders nothing to drop onto; sample
             # rows give it columns and cards.
             sample=view.type in ("list", "kanban") and record_count == 0,
         )
         draft = self._canvas_draft(view, options.get("draft_id"))
-        payload["draft_id"] = draft.id if draft else False
+        payload["draft_id"] = cast("int", draft.id) if draft else False
         payload["pending"] = self._splice_pending(
             stamped, root, view, draft, payload["arch_version"]
         )
-        arch, models = self._postprocess_canvas(view, Model, stamped.arch)
+        arch, models_used = self._postprocess_canvas(view, Model, stamped.arch)
         self._fill_hidden(stamped.nodes, arch)
         for token, node in stamped.nodes.items():
             if node["kind"] in ("field", "column"):
-                node["field"] = self._canvas_field_info(
-                    view.model, stamped.elements[token]
+                # `StudioNode.field` stays `dict[str, Any] | None` in
+                # `canvas_stamp.py` (out of this file's own scope to edit;
+                # that file's own docstring already anticipates narrowing it
+                # once this producer converts) -- cast rather than widen it.
+                node["field"] = cast(
+                    "dict[str, Any] | None",
+                    self._canvas_field_info(view.model, stamped.elements[token]),
                 )
 
         payload.update(
@@ -128,10 +263,12 @@ class StudioViewEditor(models.AbstractModel):
                     model: {
                         "fields": self.env[model].fields_get(
                             allfields=names,
-                            attributes=Model._get_view_field_attributes(),
+                            attributes=cast(
+                                "IrUiViewModelMixin", Model
+                            )._get_view_field_attributes(),
                         )
                     }
-                    for model, names in models.items()
+                    for model, names in models_used.items()
                 },
                 "res_id": self._canvas_res_id(Model, options.get("res_id")),
                 "root": stamped.root,
@@ -143,7 +280,9 @@ class StudioViewEditor(models.AbstractModel):
         return payload
 
     @api.model
-    def _postprocess_canvas(self, view, Model, arch):
+    def _postprocess_canvas(
+        self, view: View, Model: BaseModel, arch: LxmlElement
+    ) -> tuple[str, dict[str, set[str]]]:
         """``get_view``'s pipeline on our copy: the arch string and the
         fields each model in it uses.
 
@@ -154,16 +293,53 @@ class StudioViewEditor(models.AbstractModel):
         exists from 19 on and is called when it does, so the arch string
         matches what ``get_view`` would hand the same user.
         """
-        arch, models = view.sudo().postprocess_and_fields(arch, model=Model._name)
-        models = Model._get_view_fields(view.type, models)
-        View = self.env["ir.ui.view"]
-        node = View._postprocess_access_rights(etree.fromstring(arch))
-        if hasattr(View, "_postprocess_debug"):
-            node = View._postprocess_debug(node)
-        return etree.tostring(node, encoding="unicode").replace("\t", ""), models
+        # `postprocess_and_fields`/`_get_view_fields` are core Odoo methods
+        # with no annotations of their own -- the same accepted,
+        # pre-existing vendor gap `studio_view_editor.py`'s own
+        # `_neutral_combined_arch`/`apply_operation` document -- cast to the
+        # real shape each always returns. `_get_view_fields` itself is
+        # declared on `ir_ui_view.py`'s own `class Model(models.AbstractModel):
+        # _inherit = "base"` -- a mixin composed onto *every* model, not
+        # `Model`'s own real Python base, aliased `IrUiViewModelMixin`
+        # rather than imported as `Model` to avoid shadowing this file's own
+        # use of that name.
+        arch_str, models_used = cast(
+            "tuple[str, dict[str, set[str]]]",
+            view.sudo().postprocess_and_fields(arch, model=Model._name),
+        )
+        models_used = cast(
+            "dict[str, set[str]]",
+            cast("IrUiViewModelMixin", Model)._get_view_fields(
+                cast("str", view.type), models_used
+            ),
+        )
+        # Named `view_model`, not `View`: a local `View = self.env[...]`
+        # would shadow this file's own top-level `View` import for the rest
+        # of this function -- the same trap `studio_view_editor.py`'s own
+        # `_get_or_create_extension` documents.
+        view_model = typed.model(self.env, View)
+        node = cast(
+            "LxmlElement",
+            view_model._postprocess_access_rights(
+                cast("LxmlElement", etree.fromstring(arch_str))
+            ),
+        )
+        if hasattr(view_model, "_postprocess_debug"):
+            # Not on `View` in every core version this repo targets (this
+            # file's own docstring); `hasattr()` guards it at runtime, and
+            # the same `cast("Any", ...)` sidesteps the attribute check
+            # `ir_ui_menu.py`'s own serializer uses for another
+            # version-conditional core method.
+            node = cast("LxmlElement", cast("Any", view_model)._postprocess_debug(node))
+        return (
+            cast("str", etree.tostring(node, encoding="unicode").replace("\t", "")),
+            models_used,
+        )
 
     @api.model
-    def _fill_hidden(self, nodes, arch):
+    def _fill_hidden(
+        self, nodes: dict[canvas_stamp.Token, canvas_stamp.StudioNode], arch: str
+    ) -> None:
         """Say why a node the table lists is not on the canvas.
 
         ``groups``: the node -- or an ancestor -- carries ``groups`` the
@@ -180,8 +356,8 @@ class StudioViewEditor(models.AbstractModel):
         ran before it. So a literal the final arch carries and the view's
         own attributes do not is read as ``groups`` too.
         """
-        present = {}
-        for element in etree.fromstring(arch.encode()).iter():
+        present: dict[canvas_stamp.Token, LxmlElement] = {}
+        for element in cast("LxmlElement", etree.fromstring(arch.encode())).iter():
             if isinstance(element.tag, str):
                 token = canvas_stamp.token_of(element)
                 if token:
@@ -206,7 +382,7 @@ class StudioViewEditor(models.AbstractModel):
                 node["hidden"] = "groups"
 
     @api.model
-    def _canvas_draft(self, view, draft_id=None):
+    def _canvas_draft(self, view: View, draft_id: object = None) -> BaseModel:
         """The draft whose pending fields this canvas shows, or an empty one.
 
         The one the client names when it names one, it is this model's and
@@ -218,16 +394,24 @@ class StudioViewEditor(models.AbstractModel):
         not editing, and a draft that exists only because somebody opened
         the console would have to be explained away in the tray.
         """
-        Draft = self.env["studio.model.draft"]
+        Draft = typed.model(self.env, StudioModelDraft)
         if draft_id:
-            draft = Draft.browse(draft_id).exists()
+            draft = Draft.browse(cast("int", draft_id)).exists()
             if (
                 draft
                 and draft.model == view.model
-                and draft.create_uid.id == self.env.uid
+                # `create_uid` is a magic field added to every model at
+                # registry setup (`models.py:_add_magic_fields`), never a
+                # real class attribute -- invisible to pyright on
+                # `draft.create_uid`, the same gap `studio_view_edit.py`'s
+                # own `_entry` documents; subscripted instead, which
+                # sidesteps the missing-attribute error entirely.
+                and draft["create_uid"].id == self.env.uid
             ):
                 return draft
-        return Draft.browse(self._open_draft_id(view.model))
+        return Draft.browse(
+            cast("StudioViewEditorBase", self)._open_draft_id(view.model)
+        )
 
     # The tag a ghost is: the one tag that renders in a form group, as a
     # list column and in a kanban card alike. A `<div>` would not.
@@ -236,7 +420,14 @@ class StudioViewEditor(models.AbstractModel):
     PENDING_TOKEN_PREFIX = "p_"
 
     @api.model
-    def _splice_pending(self, stamped, root, view, draft, arch_version):
+    def _splice_pending(
+        self,
+        stamped: canvas_stamp.StampResult,
+        root: LxmlElement,
+        view: View,
+        draft: BaseModel,
+        arch_version: str,
+    ) -> object:
         """Fields staged on a draft, drawn where they will land.
 
         For each field the draft is adding with an anchor on this view, a
@@ -266,33 +457,34 @@ class StudioViewEditor(models.AbstractModel):
         """
         if not draft:
             return []
-        by_token = {}
+        by_token: dict[canvas_stamp.Token, LxmlElement] = {}
         for element in stamped.arch.iter():
             if isinstance(element.tag, str):
                 token = canvas_stamp.token_of(element)
                 if token:
                     by_token[token] = element
         token_of_element = {id(el): token for token, el in stamped.elements.items()}
-        entries = draft._pending_anchored()
+        entries = cast("StudioModelDraftView", draft)._pending_anchored()
         # Real neighbours first, on the untouched tree.
-        neighbours = {}
+        neighbours: dict[str, canvas_stamp.Token | None] = {}
         for entry in entries:
-            anchor = entry["anchor"]
+            anchor = cast("dict[str, object] | None", entry["anchor"])
             if (
                 anchor
                 and anchor.get("view_id") == view.id
                 and not anchor.get("pending")
             ):
                 found = self._resolve_anchor(root, anchor, arch_version)
-                neighbours[entry["name"]] = (
+                neighbours[cast("str", entry["name"])] = (
                     token_of_element.get(id(found)) if found is not None else None
                 )
-        pending = []
-        ghosts = {}
+        pending: list[dict[str, object]] = []
+        ghosts: dict[str, canvas_stamp.Token] = {}
         for entry in entries:
-            anchor = entry.pop("anchor")
-            token = self.PENDING_TOKEN_PREFIX + entry["name"]
-            listed = {
+            anchor = cast("dict[str, object] | None", entry.pop("anchor"))
+            name = cast("str", entry["name"])
+            token = self.PENDING_TOKEN_PREFIX + name
+            listed: dict[str, object] = {
                 **entry,
                 "token": token,
                 "placed": False,
@@ -302,15 +494,16 @@ class StudioViewEditor(models.AbstractModel):
             pending.append(listed)
             if not anchor or anchor.get("view_id") != view.id:
                 continue
-            position = anchor.get("position") or "after"
+            position: str | None = cast("str", anchor.get("position") or "after")
             if anchor.get("pending"):
-                neighbour_token = ghosts.get(anchor["pending"])
+                neighbour_token = ghosts.get(cast("str", anchor["pending"]))
             else:
-                neighbour_token = neighbours.get(entry["name"])
+                neighbour_token = neighbours.get(name)
             resolved = neighbour_token is not None and neighbour_token in by_token
             if resolved and (
                 position != "inside"
-                and stamped.nodes[neighbour_token]["parent"] is None
+                and stamped.nodes[cast("canvas_stamp.Token", neighbour_token)]["parent"]
+                is None
             ):
                 # Nothing goes beside the view itself; an anchor that says
                 # so is not one a drop could have minted.
@@ -321,19 +514,31 @@ class StudioViewEditor(models.AbstractModel):
                     continue
             by_token[token] = self._splice_ghost(
                 stamped,
-                by_token[neighbour_token],
-                neighbour_token,
-                position,
+                by_token[cast("canvas_stamp.Token", neighbour_token)],
+                cast("canvas_stamp.Token", neighbour_token),
+                # Only `_fallback_spot`'s own `(None, None)`/`(token, None)`
+                # shapes leave `position` `None`, and both are already
+                # excluded by the `neighbour_token is None: continue` above
+                # -- a correlation between the two halves of that tuple
+                # return a flat `str | None` cannot state to pyright, the
+                # same gap `studio_view_editor.py`'s own `_find_node_entry`
+                # callers document.
+                cast("str", position),
                 token,
                 {**entry, "draft_id": draft.id, "resolved": resolved},
             )
-            ghosts[entry["name"]] = token
+            ghosts[name] = token
             listed["placed"] = True
             listed["resolved"] = resolved
         return pending
 
     @api.model
-    def _fallback_spot(self, stamped, by_token, view):
+    def _fallback_spot(
+        self,
+        stamped: canvas_stamp.StampResult,
+        by_token: dict[canvas_stamp.Token, LxmlElement],
+        view: View,
+    ) -> tuple[canvas_stamp.Token | None, str | None]:
         """Where the balanced fallback would put a field of this view, as a
         ``(token, position)`` on the stamped copy, or ``(None, None)``.
 
@@ -352,9 +557,16 @@ class StudioViewEditor(models.AbstractModel):
         columns = [
             grandchild
             for child in nodes[host]["children"]
-            if nodes.get(child, {}).get("kind") == "group"
+            # `nodes.get(x, {})` is defensive: every token in a `children`
+            # list is already a key of `nodes` by `stamp()`'s own
+            # invariant, so the empty-dict default here is never real at
+            # runtime -- cast so the always-present `"kind"` key still
+            # type-checks against that invariant.
+            if nodes.get(child, cast("canvas_stamp.StudioNode", {})).get("kind")
+            == "group"
             for grandchild in nodes[child]["children"]
-            if nodes.get(grandchild, {}).get("kind") == "group"
+            if nodes.get(grandchild, cast("canvas_stamp.StudioNode", {})).get("kind")
+            == "group"
         ]
         if columns:
             target = min(
@@ -367,9 +579,17 @@ class StudioViewEditor(models.AbstractModel):
         return (host, "inside") if host in by_token else (None, None)
 
     @api.model
-    def _splice_ghost(self, stamped, neighbour, neighbour_token, position, token, info):
+    def _splice_ghost(
+        self,
+        stamped: canvas_stamp.StampResult,
+        neighbour: LxmlElement,
+        neighbour_token: canvas_stamp.Token,
+        position: str,
+        token: canvas_stamp.Token,
+        info: dict[str, object],
+    ) -> LxmlElement:
         """Put one ghost into the stamped copy and the node table."""
-        ghost = etree.Element(self.PENDING_TAG)
+        ghost = cast("LxmlElement", etree.Element(self.PENDING_TAG))
         ghost.set("name", self.PENDING_WIDGET)
         ghost.set(
             "class",
@@ -389,13 +609,21 @@ class StudioViewEditor(models.AbstractModel):
         )
         if position == "inside":
             neighbour.append(ghost)
-            parent_token = neighbour_token
+            parent_token: canvas_stamp.Token | None = neighbour_token
         else:
-            parent = neighbour.getparent()
-            index = parent.index(neighbour) + (1 if position == "after" else 0)
+            # A neighbour spliced beside (not inside) another node is never
+            # the tree root -- `_splice_pending`'s own guard above refuses
+            # a `resolved` anchor there, and `_fallback_spot` only ever
+            # hands back `"inside"` for the root -- so `getparent()` is
+            # never `None` here in practice; `list(...)` rather than
+            # lxml's own `.index()`, which `LxmlElement` (no stub for the
+            # real thing) does not declare, the same workaround
+            # `placement.py`'s own `_place_in_group`/`place_in_list` use.
+            parent = cast("LxmlElement", neighbour.getparent())
+            index = list(parent).index(neighbour) + (1 if position == "after" else 0)
             parent.insert(index, ghost)
             parent_token = stamped.nodes[neighbour_token]["parent"]
-        parent_node = stamped.nodes[parent_token]
+        parent_node = stamped.nodes[cast("canvas_stamp.Token", parent_token)]
         siblings = parent_node["children"]
         if position == "inside":
             place = len(siblings)
@@ -407,12 +635,12 @@ class StudioViewEditor(models.AbstractModel):
                 stamped.nodes[sibling]["index"] = index
         stamped.nodes[token] = {
             "tag": self.PENDING_TAG,
-            "name": info["name"],
+            "name": cast("str", info["name"]),
             "kind": "pending",
             "parent": parent_token,
             "children": [],
             "index": place,
-            "string": info["label"],
+            "string": cast("str", info["label"]),
             "container": False,
             "orientation": "column",
             "accepts": [],
@@ -426,17 +654,19 @@ class StudioViewEditor(models.AbstractModel):
             "view_id": None,
             "label": None,
             "pending": {
-                "draft_id": info["draft_id"],
-                "name": info["name"],
-                "ttype": info["ttype"],
-                "string": info["label"],
+                "draft_id": cast("int", info["draft_id"]),
+                "name": cast("str", info["name"]),
+                "ttype": cast("str", info["ttype"]),
+                "string": cast("str", info["label"]),
                 "resolved": bool(info.get("resolved", True)),
             },
         }
         return ghost
 
     @api.model
-    def _resolve_anchor(self, root, anchor, arch_version):
+    def _resolve_anchor(
+        self, root: LxmlElement, anchor: dict[str, object], arch_version: str
+    ) -> LxmlElement | None:
         """The node of ``root`` an anchor is beside, or ``None``.
 
         The xpath as minted while the arch is the one it was minted on --
@@ -449,16 +679,22 @@ class StudioViewEditor(models.AbstractModel):
             # Beside another staged field: nothing in this tree to find.
             return None
         if anchor.get("arch_version") == arch_version and anchor.get("xpath"):
-            found = self._resolve_xpath(root, anchor["xpath"])
+            found = cast("StudioViewEditorBase", self)._resolve_xpath(
+                root, cast("str", anchor["xpath"])
+            )
             if found and len(found) == 1:
                 return found[0]
         descriptor = anchor.get("descriptor")
         if not descriptor:
             return None
-        return self._find_descriptor(root, descriptor)
+        return cast("StudioViewEditorBase", self)._find_descriptor(
+            root, cast("dict[str, object]", descriptor)
+        )
 
     @api.model
-    def _anchor_locator(self, view, root, anchor):
+    def _anchor_locator(
+        self, view: View, root: LxmlElement, anchor: dict[str, object]
+    ) -> tuple[str, NodeExpectationJSON] | None:
         """The locator an anchored placement applies, with what it expects
         to find there: ``(xpath, expectation)``, or ``None`` when the
         neighbour is gone.
@@ -472,17 +708,22 @@ class StudioViewEditor(models.AbstractModel):
         through, and ``_assert_owned_locators`` can only refuse that when
         told what the node should be.
         """
-        version = self._version_of(view.id, self._neutral_combined_arch(view))
+        base = cast("StudioViewEditorBase", self)
+        version = base._version_of(
+            cast("int", view.id), base._neutral_combined_arch(view)
+        )
         node = self._resolve_anchor(root, anchor, version)
         if node is None:
             return None
         return (
-            self._locator_for(node, self._occurrences(root)),
-            self._expectation_for(node),
+            base._locator_for(node, base._occurrences(root)),
+            base._expectation_for(node),
         )
 
     @api.model
-    def _pending_locator(self, root, name):
+    def _pending_locator(
+        self, root: LxmlElement, name: str
+    ) -> tuple[str, NodeExpectationJSON] | None:
         """The locator of the real ``<field name>`` a staged neighbour has
         become, with its expectation, or ``None`` when the view does not
         show it -- or shows it only inside a subview, which is another
@@ -495,13 +736,19 @@ class StudioViewEditor(models.AbstractModel):
         ]
         if len(found) != 1:
             return None
+        base = cast("StudioViewEditorBase", self)
         return (
-            self._locator_for(found[0], self._occurrences(root)),
-            self._expectation_for(found[0]),
+            base._locator_for(found[0], base._occurrences(root)),
+            base._expectation_for(found[0]),
         )
 
     @api.model
-    def _canvas_field_info(self, model_name, element, comodel_fields=False):
+    def _canvas_field_info(
+        self,
+        model_name: str | Literal[False],
+        element: LxmlElement,
+        comodel_fields: bool = False,
+    ) -> CanvasFieldInfoJSON | None:
         """``_field_info`` plus where the field came from.
 
         The definition section of the properties panel edits a manual
@@ -515,7 +762,16 @@ class StudioViewEditor(models.AbstractModel):
         field list of ``res.users`` once per each of them, on every drop,
         is tens of kilobytes that ``describe_node`` supplies on demand.
         """
-        info = self._field_info(model_name, element)
+        # `_field_info` (the real base) returns `FieldInfoJSON | None`; the
+        # extra `"origin"` key this method adds is only true once it is set
+        # below, so the value is cast to this file's own subclass (rule 9)
+        # rather than declared that shape from the start.
+        info = cast(
+            "CanvasFieldInfoJSON | None",
+            cast("StudioViewEditorBase", self)._field_info(
+                cast("str", model_name), element
+            ),
+        )
         if info is not None:
             info["origin"] = self._field_origin(model_name, info["name"])
             if not comodel_fields:
@@ -523,13 +779,15 @@ class StudioViewEditor(models.AbstractModel):
         return info
 
     @api.model
-    def _field_origin(self, model_name, field_name):
+    def _field_origin(
+        self, model_name: str | Literal[False], field_name: str
+    ) -> Literal["manual", "core"]:
         """``manual`` for a field that lives only in ``ir.model.fields``."""
-        record = self.env["ir.model.fields"]._get(model_name, field_name)
+        record = typed.model(self.env, IrModelFields)._get(model_name, field_name)
         return "manual" if record and record.state == "manual" else "core"
 
     @api.model
-    def _canvas_res_id(self, Model, wanted):
+    def _canvas_res_id(self, Model: BaseModel, wanted: object) -> int | Literal[False]:
         """The record to render: the one asked for if it exists, else any.
 
         A form of no record is a form of placeholders, and a canvas that
@@ -540,25 +798,43 @@ class StudioViewEditor(models.AbstractModel):
         """
         if Model._abstract:
             return False
-        if wanted and Model.browse(wanted).exists():
-            return wanted
-        return Model.with_context(active_test=False).search([], limit=1).id or False
+        if wanted and Model.browse(cast("int", wanted)).exists():
+            return cast("int", wanted)
+        return (
+            cast("int", Model.with_context(active_test=False).search([], limit=1).id)
+            or False
+        )
 
     @api.model
-    def _canvas_package(self, view, package_id=None):
+    def _canvas_package(
+        self, view: View, package_id: object | None = None
+    ) -> StudioPackage:
         """The package a drop on this canvas would record into."""
-        Package = self.env["studio.package"]
+        Package = typed.model(self.env, StudioPackage)
         if package_id:
-            chosen = Package.browse(package_id).exists()
+            chosen = Package.browse(cast("int", package_id)).exists()
             if chosen:
                 return chosen
         # Ownership is an xmlid lookup, which only an administrator may
         # make; a builder without that right still gets the right package.
-        owner = view.sudo().studio_package_id
-        return Package.browse(owner.id) if owner else Package.search([])._suggested()
+        # `studio_package_id` is a field from `studio.owned.mixin`, composed
+        # onto `ir.ui.view` (`_inherit`, never a real Python base class) --
+        # invisible to pyright on `view` itself without the first cast, the
+        # same idiom `studio_view_editor.py`'s own `_find_extension`
+        # documents; the second is the plain-string-comodel cast (rule 5).
+        owner = cast(
+            "StudioPackage", cast("StudioOwnedMixin", view.sudo()).studio_package_id
+        )
+        return (
+            Package.browse(cast("int", owner.id))
+            if owner
+            else Package.search([])._suggested()
+        )
 
     @api.model
-    def _canvas_source(self, view, package):
+    def _canvas_source(
+        self, view: View, package: StudioPackage
+    ) -> CanvasSourceJSON | None:
         """The arch the console shows as "what the studio wrote", or ``None``.
 
         The view itself when the package owns it outright, else the
@@ -567,23 +843,28 @@ class StudioViewEditor(models.AbstractModel):
         """
         if not package:
             return None
+        base = cast("StudioViewEditorBase", self)
         # Ownership is an xmlid lookup, which only an administrator may
         # make; the fact itself is not a secret.
-        if self._owns_outright(view.sudo(), package):
+        if base._owns_outright(view.sudo(), package):
             source = view
         else:
-            source = self.sudo()._find_extension(view, package)
+            source = cast("StudioViewEditorBase", self.sudo())._find_extension(
+                view, package
+            )
             if not source:
                 return None
         return {
-            "view_id": source.id,
-            "name": source.name,
+            "view_id": cast("int", source.id),
+            "name": cast("str", source.name),
             "owned": source == view,
-            "arch": source.arch,
+            "arch": cast("str", source.arch),
         }
 
     @api.model
-    def describe_node(self, view_id, descriptor):
+    def describe_node(
+        self, view_id: int, descriptor: dict[str, object]
+    ) -> DescribeNodeJSON:
         """What the properties panel shows for one node.
 
         ``locate_target``'s answer for a token descriptor, without the xpath
@@ -593,13 +874,16 @@ class StudioViewEditor(models.AbstractModel):
         ``ir.model.fields`` and can be written; a core field's are facts
         from Python and are shown read-only.
         """
-        self._assert_studio_user()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_user()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
-        self._assert_arch_version(view, descriptor.get("arch_version"))
-        root = etree.fromstring(view.get_combined_arch().encode())
-        node = self._find_descriptor(root, descriptor)
+        base = cast("StudioViewEditorBase", self)
+        base._assert_arch_version(
+            view, cast("str | None", descriptor.get("arch_version"))
+        )
+        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        node = base._find_descriptor(root, descriptor)
         if node is None:
             return {"found": False}
         info = (
@@ -609,7 +893,7 @@ class StudioViewEditor(models.AbstractModel):
         )
         return {
             "found": True,
-            "tag": node.tag,
+            "tag": cast("str", node.tag),
             "attrs": dict(node.attrib),
             "field": info,
             "definition": self._field_definition(view.model, info) if info else None,
@@ -625,31 +909,41 @@ class StudioViewEditor(models.AbstractModel):
     )
 
     @api.model
-    def _field_definition(self, model_name, info):
+    def _field_definition(
+        self, model_name: str | Literal[False], info: CanvasFieldInfoJSON
+    ) -> FieldDefinitionJSON | None:
         """The model-level facts of a field, and which of them are editable."""
-        record = self.env["ir.model.fields"]._get(model_name, info["name"])
+        record = typed.model(self.env, IrModelFields)._get(model_name, info["name"])
         if not record:
             return None
-        editable = []
+        editable: list[str] = []
         if info["origin"] == "manual":
             editable = list(self.MANUAL_FIELD_EDITABLE)
             if record.ttype in manualfield.TRANSLATABLE:
                 editable.append("translate")
             if record.ttype == "selection":
                 editable.append("selection")
-        values = {
-            "field_description": record.field_description,
+        values: FieldDefinitionValuesJSON = {
+            "field_description": cast("str", record.field_description),
             "help": record.help or "",
             "required": bool(record.required),
             "readonly": bool(record.readonly),
             "index": bool(record.index),
             "translate": bool(record.translate),
-            "ttype": record.ttype,
-            "relation": record.relation or False,
+            "ttype": cast("str", record.ttype),
+            # `X or False` widens the bare `False` to plain `bool` outside
+            # of a directly-annotated context (confirmed directly against
+            # pyright); cast to the declared, honest shape rather than
+            # left for pyright to over-widen.
+            "relation": cast("str | Literal[False]", record.relation or False),
         }
         if record.ttype == "selection":
             values["selection"] = [
-                {"value": s.value, "label": s.name, "sequence": s.sequence}
-                for s in record.selection_ids
+                {
+                    "value": cast("str", s.value),
+                    "label": cast("str", s.name),
+                    "sequence": s.sequence,
+                }
+                for s in cast("IrModelSelection", record.selection_ids)
             ]
         return {"origin": info["origin"], "editable": editable, "values": values}

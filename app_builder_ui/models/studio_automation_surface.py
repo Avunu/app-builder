@@ -17,12 +17,51 @@ the bargain ``app_builder_mail`` makes for the serializer, so that this
 addon depends on neither.
 """
 
+from __future__ import annotations
+
 import uuid
+from typing import TYPE_CHECKING, Any, cast
 
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.app_builder_base.tools.catalogue import Row, Section
+from odoo.addons.base.models.ir_actions import IrActionsServer
+from odoo.addons.base_automation.models.base_automation import BaseAutomation
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.models.studio_record_surface import RecordRowJSON
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_base.tools.catalogue import Row, RowJSON, Section
+
+from .studio_graduate_code import StudioGraduateCode
+
+if TYPE_CHECKING:
+    # Only used inside annotations/casts below (`from __future__ import
+    # annotations` defers all of them to strings), never at runtime -- the
+    # same bargain every other Phase 1c file's `TYPE_CHECKING` block makes.
+    # `IrActionsServer`/`BaseAutomation`/`StudioPackage`/`RecordRowJSON`/
+    # `StudioGraduateCode` are real, top-level imports instead (above):
+    # `typed.model()` reads `cls._name` at *runtime*, and `RecordRowJSON`/
+    # `RowJSON` are real base classes of `AutomationRowJSON`/`TriggerRowJSON`
+    # below (rule 8's TypedDict subclassing), both needing a real binding.
+    #
+    # This file's own `class StudioAutomation` shares its `_name` with
+    # `studio_automation.py`'s wave-2 class (rule 7's same-name collision),
+    # but that file's only real methods (`action_open`/`_empty_state`) are
+    # never called from here, so no alias-import/cast of it is needed --
+    # unlike `studio_workspace.py`'s own `StudioWorkspaceBase`, there is no
+    # real read site that would use it.
+    from odoo.models import BaseModel
+
+    from odoo.addons.base.models.ir_model import IrModel
+    from odoo.addons.base_automation.models.ir_actions_server import ServerAction
+    from odoo.addons.app_builder_base.models.studio_record_surface import (
+        RecordActionJSON,
+        RecordBadgeJSON,
+        RecordOwnerJSON,
+        RecordTemplateJSON,
+        StudioRecordSurface,
+    )
+    from odoo.addons.app_builder_base.tools.catalogue import SectionJSON
 
 # The triggers whose value picker is a `Many2oneReference` the catalogue
 # has no honest row for: offered, and their value set through Advanced.
@@ -61,6 +100,21 @@ TRIGGER_GROUPS = {
     "on_message_sent": "external",
     "on_webhook": "external",
 }
+
+
+class AutomationRowJSON(RecordRowJSON):
+    """``_row()``'s own return: the base card plus which trigger the rule
+    fires on (`_row()`)."""
+
+    trigger: str
+
+
+class TriggerRowJSON(RowJSON):
+    """``_section_json()``'s own ``trigger`` row: the base row plus which
+    group each choice belongs to, and which are Advanced-only."""
+
+    groups: dict[str, str]
+    advanced_only: list[str]
 
 
 class StudioAutomation(models.AbstractModel):
@@ -178,7 +232,15 @@ class StudioAutomation(models.AbstractModel):
             visible_when=(("trigger", ("on_webhook",)),),
         ),
     )
-    _surface_templates = (
+    # Explicitly typed to the base's own declared shape (`studio_record_
+    # surface.py`): left inferred, pyright narrows the tuple literal's own
+    # `values` dicts to a per-entry union (some are `dict[str, str]`-only,
+    # `"blank"`'s has no `steps` at all) rather than the base's
+    # `dict[str, object]`, which then fails `_template_raw`'s own
+    # `dict[str, object]` return below.
+    _surface_templates: tuple[
+        tuple[str, str, str, dict[str, object], tuple[str, ...]], ...
+    ] = (
         (
             "run_code",
             "When a record is created or saved",
@@ -227,8 +289,12 @@ class StudioAutomation(models.AbstractModel):
     # -- rows -----------------------------------------------------------------
 
     @api.model
-    def _surface_domain(self, model_name, kwargs):
-        domain = super()._surface_domain(model_name, kwargs)
+    def _surface_domain(
+        self, model_name: str, kwargs: dict[str, object]
+    ) -> api.DomainType:
+        domain = cast("StudioRecordSurface", super())._surface_domain(
+            model_name, kwargs
+        )
         if kwargs.get("webhooks"):
             domain.append(("trigger", "=", "on_webhook"))
         else:
@@ -236,96 +302,147 @@ class StudioAutomation(models.AbstractModel):
         return domain
 
     @api.model
-    def templates(self, model_name=None):
-        out = super().templates(model_name)
+    def templates(self, model_name: str | None = None) -> list[RecordTemplateJSON]:
+        out = cast("StudioRecordSurface", super()).templates(model_name)
         # A webhook pane offers webhooks, an automation pane the rest; and
         # a step whose state this database lacks is not on offer.
         states = dict(
-            self.env["ir.actions.server"]
-            ._fields["state"]
-            .get_description(self.env)["selection"]
+            cast(
+                "list[tuple[str, str]]",
+                typed.model(self.env, IrActionsServer)
+                ._fields["state"]
+                .get_description(self.env)["selection"],
+            )
         )
         return [
             t
             for t in out
-            if all(step["state"] in states for step in t["values"].get("steps", []))
+            if all(
+                step["state"] in states
+                for step in cast(
+                    "list[dict[str, object]]", t["values"].get("steps", [])
+                )
+            )
         ]
 
     @api.model
-    def _section_json(self, section, model_name):
-        data = super()._section_json(section, model_name)
+    def _section_json(self, section: Section, model_name: str | None) -> SectionJSON:
+        data = cast("StudioRecordSurface", super())._section_json(section, model_name)
         if section.id == "trigger":
             for spec in data["rows"]:
                 if spec["name"] == "trigger":
-                    spec["groups"] = TRIGGER_GROUPS
-                    spec["advanced_only"] = list(ADVANCED_TRIGGERS)
+                    trigger_spec = cast("TriggerRowJSON", spec)
+                    trigger_spec["groups"] = TRIGGER_GROUPS
+                    trigger_spec["advanced_only"] = list(ADVANCED_TRIGGERS)
         return data
 
     @api.model
-    def _sentence(self, record):
+    def _sentence(self, record: BaseModel) -> str:
         parts = [self._trigger_sentence(record)]
-        if record.filter_domain and record.filter_domain.strip() not in ("[]", ""):
-            parts.append(_("only when %s", record.filter_domain))
-        steps = [self._step_label(step) for step in record.action_server_ids]
+        rule = cast("BaseAutomation", record)
+        if rule.filter_domain and rule.filter_domain.strip() not in ("[]", ""):
+            parts.append(_("only when %s", rule.filter_domain))
+        # `action_server_ids` is a `compute`d, `readonly=False` One2many
+        # whose only declaration is `base_automation.py`'s own untyped
+        # source (real Odoo core, not a stub this migration controls) --
+        # `Field.mapped()`'s single shared, unannotated body (used by every
+        # field type alike) is what `_Relational.__get__` falls back to for
+        # a multi-record access, so pyright infers the read as a mess of
+        # `list[Unknown] | list[Unknown | bool]` rather than the recordset
+        # it actually is. Cast at each read site, the same "declared type
+        # too abstract for what's really there" idiom as `Environment.cr`/
+        # `fields.Reference`.
+        steps = [
+            self._step_label(step) for step in cast("BaseModel", rule.action_server_ids)
+        ]
         if steps:
             parts.append("→ " + " · ".join(steps))
         return " · ".join(parts)
 
     @api.model
-    def _trigger_sentence(self, record):
+    def _trigger_sentence(self, record: BaseModel) -> str:
+        rule = cast("BaseAutomation", record)
         label = dict(
-            record._fields["trigger"].get_description(self.env)["selection"]
-        ).get(record.trigger, record.trigger)
-        if record.trigger in TIME_TRIGGERS and record.trg_date_range:
+            cast(
+                "list[tuple[str, str]]",
+                rule._fields["trigger"].get_description(self.env)["selection"],
+            )
+        ).get(cast("str", rule.trigger), cast("str", rule.trigger))
+        if rule.trigger in TIME_TRIGGERS and rule.trg_date_range:
             unit = dict(
-                record._fields["trg_date_range_type"].get_description(self.env)[
-                    "selection"
-                ]
-            ).get(record.trg_date_range_type, "")
+                cast(
+                    "list[tuple[str, str]]",
+                    rule._fields["trg_date_range_type"].get_description(self.env)[
+                        "selection"
+                    ],
+                )
+            ).get(cast("str", rule.trg_date_range_type), "")
             return _(
                 "%(n)s %(unit)s %(when)s",
-                n=record.trg_date_range,
+                n=rule.trg_date_range,
                 unit=unit,
                 when=label.lower(),
             )
-        if record.trigger == "on_webhook":
-            return _("POST to %s", record.url or "…")
+        if rule.trigger == "on_webhook":
+            return _("POST to %s", rule.url or "…")
         return label
 
     @api.model
-    def _step_label(self, step):
-        states = dict(step._fields["state"].get_description(self.env)["selection"])
-        label = states.get(step.state, step.state)
-        if step.state == "object_write" and step.update_path:
-            return _("%(what)s: %(field)s", what=label, field=step.update_path)
+    def _step_label(self, step: BaseModel) -> str:
+        action = cast("IrActionsServer", step)
+        states = dict(
+            cast(
+                "list[tuple[str, str]]",
+                action._fields["state"].get_description(self.env)["selection"],
+            )
+        )
+        label = states.get(cast("str", action.state), cast("str", action.state))
+        if action.state == "object_write" and action.update_path:
+            return _("%(what)s: %(field)s", what=label, field=action.update_path)
         if (
-            step.state == "mail_post"
-            and "template_id" in step._fields
-            and step.template_id
+            action.state == "mail_post"
+            and "template_id" in action._fields
+            # `template_id` is added by the `mail` addon's own extension of
+            # `ir.actions.server`, not by the base `IrActionsServer`
+            # (`odoo.addons.base.models.ir_actions`) this file otherwise
+            # casts to -- no real class in this codebase's own tree carries
+            # it, the same `cast("Any", ...)` fix TYPING.md's own
+            # `_inherits`/delegate trap documents for the identical shape.
+            and cast("Any", action).template_id
         ):
             return _(
-                "%(what)s %(template)s", what=label, template=step.template_id.name
+                "%(what)s %(template)s",
+                what=label,
+                template=cast("Any", action).template_id.name,
             )
         return label
 
     @api.model
-    def _badges(self, record, owner):
-        badges = super()._badges(record, owner)
-        if record.trigger == "on_webhook":
+    def _badges(
+        self, record: BaseModel, owner: RecordOwnerJSON
+    ) -> list[RecordBadgeJSON]:
+        badges = cast("StudioRecordSurface", super())._badges(record, owner)
+        if cast("BaseAutomation", record).trigger == "on_webhook":
             badges.append({"key": "webhook", "label": _("Webhook")})
         return badges
 
     @api.model
-    def _row(self, record, package):
-        row = super()._row(record, package)
-        row["trigger"] = record.trigger
+    def _row(self, record: BaseModel, package: StudioPackage) -> AutomationRowJSON:
+        row = cast(
+            "AutomationRowJSON",
+            cast("StudioRecordSurface", super())._row(record, package),
+        )
+        row["trigger"] = cast("str", cast("BaseAutomation", record).trigger)
         return row
 
     # -- describe ------------------------------------------------------------
 
     @api.model
-    def _describe_extra(self, record, package):
-        Step = self.env["studio.automation.step"]
+    def _describe_extra(
+        self, record: BaseModel, package: StudioPackage
+    ) -> dict[str, object]:
+        rule = cast("BaseAutomation", record)
+        Step = typed.model(self.env, StudioAutomationStep)
         return {
             # The steps as the sidebar's child list: described one by one
             # by their own surface, added and reordered through it.
@@ -334,8 +451,13 @@ class StudioAutomation(models.AbstractModel):
                 "label": _("Then"),
                 "one": _("step"),
                 "items": [
-                    Step.describe(step.id, package.id if package else None)
-                    for step in record.action_server_ids.sorted("sequence")
+                    cast("StudioRecordSurface", Step).describe(
+                        cast("int", step.id),
+                        cast("int | None", package.id) if package else None,
+                    )
+                    for step in cast("BaseModel", rule.action_server_ids).sorted(
+                        "sequence"
+                    )
                 ],
                 "kinds": Step._states(),
                 "kind_field": "state",
@@ -343,17 +465,19 @@ class StudioAutomation(models.AbstractModel):
                 "move": "move_step",
                 "empty": _("The automation needs something to do."),
             },
-            "matches": self._check_domain(
-                record.model_id.model, record.filter_domain or "[]"
+            "matches": cast("StudioRecordSurface", self)._check_domain(
+                cast("IrModel", rule.model_id).model, rule.filter_domain or "[]"
             ),
         }
 
     @api.model
-    def _actions(self, record, package):
-        actions = super()._actions(record, package)
-        owner = self._owner(record)
+    def _actions(
+        self, record: BaseModel, package: StudioPackage
+    ) -> list[RecordActionJSON]:
+        actions = cast("StudioRecordSurface", super())._actions(record, package)
+        owner = cast("StudioRecordSurface", self)._owner(record)
         if (
-            record.trigger == "on_webhook"
+            cast("BaseAutomation", record).trigger == "on_webhook"
             and owner["package"]
             and package
             and owner["package"] == package
@@ -371,16 +495,17 @@ class StudioAutomation(models.AbstractModel):
         return actions
 
     @api.model
-    def _notes(self, record, package):
-        notes = []
-        if record.trigger in ADVANCED_TRIGGERS:
+    def _notes(self, record: BaseModel, package: StudioPackage) -> list[object]:
+        notes: list[object] = []
+        rule = cast("BaseAutomation", record)
+        if rule.trigger in ADVANCED_TRIGGERS:
             notes.append(
                 _(
                     "The value this trigger waits for is set from Advanced: "
                     "it points at a record of another model."
                 )
             )
-        if record.trigger == "on_webhook":
+        if rule.trigger == "on_webhook":
             notes.append(
                 _(
                     "The old URL stops working the moment the secret is rotated. "
@@ -390,24 +515,25 @@ class StudioAutomation(models.AbstractModel):
         return notes
 
     @api.model
-    def _run_rotate_secret(self, record, package):
-        self._assert_editable(record, package)
+    def _run_rotate_secret(self, record: BaseModel, package: StudioPackage) -> None:
+        cast("StudioRecordSurface", self)._assert_editable(record, package)
         # Never captured: the serializer ignores webhook_uuid, so the file
         # is unchanged and no other database learns the new URL.
         record.write({"webhook_uuid": str(uuid.uuid4())})
 
     @api.model
-    def _check_rule(self, record):
+    def _check_rule(self, record: BaseModel) -> None:
         """What a rule cannot run without, said before the file is written."""
-        if record.trigger == "on_time" and not record.trg_date_id:
+        rule = cast("BaseAutomation", record)
+        if rule.trigger == "on_time" and not rule.trg_date_id:
             raise UserError(_("Say which date the delay counts from (Counting from)."))
 
     @api.model
-    def _after_write(self, record, package):
+    def _after_write(self, record: BaseModel, package: StudioPackage) -> None:
         self._check_rule(record)
 
     @api.model
-    def _foreign_reason(self, record, module):
+    def _foreign_reason(self, record: BaseModel, module: str) -> str:
         return _(
             "Defined by %s. Shown here so you can see what runs; a copy in "
             "your package starts switched off, and the original keeps running "
@@ -418,29 +544,43 @@ class StudioAutomation(models.AbstractModel):
     # -- create ----------------------------------------------------------------
 
     @api.model
-    def _coerce(self, model_name, values, creating=False):
+    def _coerce(
+        self, model_name: str, values: dict[str, object], creating: bool = False
+    ) -> dict[str, object]:
         values = dict(values)
         # Step values ride along on create and are handled after the rule.
         values.pop("steps", None)
-        return super()._coerce(model_name, values, creating=creating)
+        return cast("StudioRecordSurface", super())._coerce(
+            model_name, values, creating=creating
+        )
 
     @api.model
-    def create_record(self, model_name, package_id, values, template=None):
+    def create_record(
+        self,
+        model_name: str,
+        package_id: int | None,
+        values: dict[str, object] | None,
+        template: str | None = None,
+    ) -> AutomationRowJSON:
         values = dict(values or {})
-        step_values = [
-            dict(v) if isinstance(v, dict) else {} for v in values.pop("steps", [])
+        step_values: list[dict[str, object]] = [
+            dict(v) if isinstance(v, dict) else {}
+            for v in cast("list[object]", values.pop("steps", []))
         ]
         # `steps.0.webhook_url` from the inline New form: a value on the
         # template's first step, which keeps the state the template gave it.
         for key in list(values):
             if key.startswith("steps."):
-                _prefix, index, field = key.split(".", 2)
-                index = int(index)
+                _prefix, index_str, field = key.split(".", 2)
+                index = int(index_str)
                 while len(step_values) <= index:
                     step_values.append({})
                 step_values[index][field] = values.pop(key)
         if template:
-            tsteps = dict(self._template_raw(template)).get("steps", [])
+            tsteps = cast(
+                "list[dict[str, object]]",
+                dict(self._template_raw(template)).get("steps", []),
+            )
             for index, step in enumerate(tsteps):
                 if index < len(step_values):
                     step_values[index] = {**step, **step_values[index]}
@@ -448,19 +588,28 @@ class StudioAutomation(models.AbstractModel):
                     step_values.append(dict(step))
         for step in step_values:
             step.setdefault("state", "code")
-        return super(
-            StudioAutomation, self.with_context(studio_surface_steps=step_values)
-        ).create_record(model_name, package_id, values, template=template)
+        return cast(
+            "AutomationRowJSON",
+            cast(
+                "StudioRecordSurface",
+                super(
+                    StudioAutomation,
+                    self.with_context(studio_surface_steps=step_values),
+                ),
+            ).create_record(model_name, package_id, values, template=template),
+        )
 
     @api.model
-    def _template_raw(self, template):
+    def _template_raw(self, template: str) -> dict[str, object]:
         for key, _label, _help, tvalues, _needs in self._surface_templates:
             if key == template:
                 return tvalues
         return {}
 
     @api.model
-    def _template_values(self, template, model_name, values):
+    def _template_values(
+        self, template: str, model_name: str, values: dict[str, object] | None
+    ) -> dict[str, object]:
         tvalues = dict(self._template_raw(template))
         if not tvalues and template:
             raise UserError(_("There is no template called '%s'.", template))
@@ -468,27 +617,37 @@ class StudioAutomation(models.AbstractModel):
         return tvalues
 
     @api.model
-    def _create_defaults(self, model_name, package, template, vals):
+    def _create_defaults(
+        self,
+        model_name: str,
+        package: StudioPackage,
+        template: str | None,
+        vals: dict[str, object],
+    ) -> dict[str, object]:
         return {"active": True}
 
     @api.model
-    def _after_create(self, record, package, template):
+    def _after_create(
+        self, record: BaseModel, package: StudioPackage, template: str | None
+    ) -> None:
         """The steps a template or the caller asked for, in order."""
         self._check_rule(record)
-        Step = self.env["studio.automation.step"]
+        Step = typed.model(self.env, StudioAutomationStep)
         for sequence, step in enumerate(
             self.env.context.get("studio_surface_steps") or [], 1
         ):
             Step._make(record, package, {**step, "sequence": sequence * 10})
 
     @api.model
-    def _copy_defaults(self, record):
-        defaults = super()._copy_defaults(record)
-        defaults["name"] = _("%s (copy)", record.name)
+    def _copy_defaults(self, record: BaseModel) -> dict[str, object]:
+        defaults = cast("StudioRecordSurface", super())._copy_defaults(record)
+        defaults["name"] = _("%s (copy)", cast("BaseAutomation", record).name)
         return defaults
 
     @api.model
-    def _before_remove(self, record, package, force=False):
+    def _before_remove(
+        self, record: BaseModel, package: StudioPackage, force: bool = False
+    ) -> None:
         # The steps go with the rule: Odoo cascades them, and the file
         # regenerates without both.
         return
@@ -697,17 +856,19 @@ class StudioAutomationStep(models.AbstractModel):
     )
 
     @api.model
-    def _states(self):
-        field = self.env["ir.actions.server"]._fields["state"]
+    def _states(self) -> list[list[str]]:
+        field = typed.model(self.env, IrActionsServer)._fields["state"]
         return [
             [value, label]
-            for value, label in field.get_description(self.env)["selection"]
+            for value, label in cast(
+                "list[tuple[str, str]]", field.get_description(self.env)["selection"]
+            )
             if value != "multi"
         ]
 
     @api.model
-    def _section_json(self, section, model_name):
-        data = super()._section_json(section, model_name)
+    def _section_json(self, section: Section, model_name: str | None) -> SectionJSON:
+        data = cast("StudioRecordSurface", super())._section_json(section, model_name)
         if section.id == "step":
             for spec in data["rows"]:
                 if spec["name"] == "state":
@@ -716,34 +877,46 @@ class StudioAutomationStep(models.AbstractModel):
         return data
 
     @api.model
-    def _surface_domain(self, model_name, kwargs):
+    def _surface_domain(
+        self, model_name: str, kwargs: dict[str, object]
+    ) -> api.DomainType:
         automation_id = kwargs.get("automation_id")
         if not automation_id:
             raise UserError(_("Steps belong to an automation; say which."))
-        return [("base_automation_id", "=", int(automation_id))]
+        return [("base_automation_id", "=", int(cast("Any", automation_id)))]
 
     @api.model
-    def rows(self, model_name, package_id=None, **kwargs):
-        rows = super().rows(model_name, package_id, **kwargs)
+    def rows(
+        self, model_name: str, package_id: int | None = None, **kwargs: object
+    ) -> list[RecordRowJSON]:
+        rows = cast("StudioRecordSurface", super()).rows(
+            model_name, package_id, **kwargs
+        )
         # Steps keep the order the rule runs them in, not the alphabet's.
         order = {
-            step.id: index
+            cast("int", step.id): index
             for index, step in enumerate(
-                self._model().search(self._surface_domain(model_name, kwargs))
+                cast("StudioRecordSurface", self)
+                ._model()
+                .search(self._surface_domain(model_name, kwargs))
             )
         }
         rows.sort(key=lambda r: order.get(r["id"], 0))
         return rows
 
     @api.model
-    def _sentence(self, record):
-        return self.env["studio.automation"]._step_label(record)
+    def _sentence(self, record: BaseModel) -> str:
+        return typed.model(self.env, StudioAutomation)._step_label(record)
 
     @api.model
-    def _actions(self, record, package):
-        actions = super()._actions(record, package)
-        if record.state == "code":
-            reason = self.env["studio.graduate.code"].can_graduate(record)
+    def _actions(
+        self, record: BaseModel, package: StudioPackage
+    ) -> list[RecordActionJSON]:
+        actions = cast("StudioRecordSurface", super())._actions(record, package)
+        if cast("IrActionsServer", record).state == "code":
+            reason = typed.model(self.env, StudioGraduateCode).can_graduate(
+                cast("IrActionsServer", record)
+            )
             actions.append(
                 {
                     "key": "graduate",
@@ -757,16 +930,25 @@ class StudioAutomationStep(models.AbstractModel):
         return actions
 
     @api.model
-    def _run_graduate(self, record, package):
-        self.env["studio.graduate.code"].graduate(record.id, apply=True)
+    def _run_graduate(self, record: BaseModel, package: StudioPackage) -> None:
+        typed.model(self.env, StudioGraduateCode).graduate(
+            cast("int", record.id), apply=True
+        )
 
     @api.model
-    def _make(self, automation, package, values):
+    def _make(
+        self, automation: BaseModel, package: StudioPackage, values: dict[str, object]
+    ) -> BaseModel:
         """One step on ``automation``, captured into ``package``."""
+        rule = cast("BaseAutomation", automation)
         state = values.get("state") or "code"
-        vals = {
-            "name": values.get("name") or automation.name,
-            "model_id": automation.model_id.id,
+        vals: dict[str, object] = {
+            "name": values.get("name") or rule.name,
+            # `rule.model_id` alone is `Many2one`, sharing the same
+            # `_Relational.__get__`-via-`Field.mapped()` messy-union
+            # inference as `action_server_ids` above; cast to the honest
+            # `IrModel` first, the same fix used for its `.model` read below.
+            "model_id": cast("IrModel", rule.model_id).id,
             "state": state,
             "sequence": values.get("sequence", 10),
             "base_automation_id": automation.id,
@@ -774,7 +956,8 @@ class StudioAutomationStep(models.AbstractModel):
         }
         if state == "code":
             vals["code"] = (
-                values.get("code") or self.env["studio.automation"].DEFAULT_CODE
+                values.get("code")
+                or typed.model(self.env, StudioAutomation).DEFAULT_CODE
             )
         extra = {
             key: value
@@ -784,34 +967,62 @@ class StudioAutomationStep(models.AbstractModel):
         # Through the catalogue, so a value is checked the way the sidebar's
         # would be: a row this database lacks is refused, a reference the
         # file could not carry is refused before the write.
-        vals.update(self._coerce(automation.model_id.model, extra))
-        step = self._model().with_context(studio_package_id=package.id).create(vals)
+        vals.update(
+            cast("StudioRecordSurface", self)._coerce(
+                cast("str", cast("IrModel", rule.model_id).model), extra
+            )
+        )
+        step = (
+            cast("StudioRecordSurface", self)
+            ._model()
+            .with_context(studio_package_id=package.id)
+            .create(vals)  # pyright: ignore[reportArgumentType] -- see `create_record`'s own comment (`studio_record_surface.py`).
+        )
         package.studio_capture(step)
         return step
 
     @api.model
-    def add_step(self, automation_id, package_id, values):
+    def add_step(
+        self, automation_id: int, package_id: int | None, values: dict[str, object]
+    ) -> dict[str, object]:
         """A step appended to an automation this package owns."""
-        self._assert_studio_manager()
-        automation = self.env["base.automation"].browse(automation_id).exists()
+        typed.security(self)._assert_studio_manager()
+        automation = (
+            typed.model(self.env, BaseAutomation).browse(automation_id).exists()
+        )
         if not automation:
             raise UserError(_("That automation no longer exists."))
-        package = self.env["studio.package"]._chosen(package_id)
-        self.env["studio.automation"]._assert_editable(automation, package)
-        last = max(automation.action_server_ids.mapped("sequence") or [0])
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
+        cast(
+            "StudioRecordSurface", typed.model(self.env, StudioAutomation)
+        )._assert_editable(automation, package)
+        last = max(
+            cast("BaseModel", automation.action_server_ids).mapped("sequence") or [0]
+        )
         step = self._make(automation, package, {**values, "sequence": last + 10})
-        return self.describe(step.id, package.id)
+        return cast("StudioRecordSurface", self).describe(
+            cast("int", step.id), cast("int | None", package.id)
+        )
 
     @api.model
-    def move_step(self, step_id, before_id=None, package_id=None):
+    def move_step(
+        self,
+        step_id: int,
+        before_id: int | None = None,
+        package_id: int | None = None,
+    ) -> list[int]:
         """Reorder: ``step_id`` before ``before_id``, or last."""
-        self._assert_studio_manager()
-        step = self._record(step_id)
-        package = self.env["studio.package"]._chosen(package_id)
-        automation = step.base_automation_id
-        self.env["studio.automation"]._assert_editable(automation, package)
+        typed.security(self)._assert_studio_manager()
+        step = cast("StudioRecordSurface", self)._record(step_id)
+        package = typed.model(self.env, StudioPackage)._chosen(package_id)
+        rule = cast("BaseAutomation", cast("ServerAction", step).base_automation_id)
+        cast(
+            "StudioRecordSurface", typed.model(self.env, StudioAutomation)
+        )._assert_editable(rule, package)
         steps = [
-            s for s in automation.action_server_ids.sorted("sequence") if s != step
+            s
+            for s in cast("BaseModel", rule.action_server_ids).sorted("sequence")
+            if s != step
         ]
         if before_id:
             index = next(
@@ -822,5 +1033,5 @@ class StudioAutomationStep(models.AbstractModel):
             steps.append(step)
         for sequence, entry in enumerate(steps, 1):
             entry.write({"sequence": sequence * 10})
-        package.studio_capture(automation.action_server_ids)
-        return [s.id for s in steps]
+        package.studio_capture(cast("BaseModel", rule.action_server_ids))
+        return [cast("int", s.id) for s in steps]

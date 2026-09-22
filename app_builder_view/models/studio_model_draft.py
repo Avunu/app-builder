@@ -31,16 +31,70 @@ ever point in a circle. And an anchor only ever names a field with a lower
 sequence, so resolving them in drop order resolves every neighbour first.
 """
 
+from __future__ import annotations
+
 import json
 import logging
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
-from lxml import etree
+# lxml ships no type stubs in this environment, the same gap `xml_writer.py`/
+# `placement.py`/`studio_serializer.py`/`studio_view_editor.py` already
+# document -- `reportMissingTypeStubs` only escalates to `error` under
+# `tools/`'s own `executionEnvironments` override (`pyrightconfig.json`), not
+# at this (model) level, so the one real hit here (`etree` itself, an
+# unresolvable import symbol with no stub) is the only one that needs
+# silencing.
+from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import sql
 
-from odoo.addons.app_builder_base.tools import modelspec, scaffold
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.models.studio_model_draft import (
+    AnchorJSON as _BaseAnchorJSON,
+)
+from odoo.addons.app_builder_base.tools import modelspec, scaffold, typed
+
+from .studio_view_editor import StudioViewEditor
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from odoo.sql_db import Cursor
+
+    from odoo.addons.app_builder_base.models.studio_model_draft import (
+        DraftPayloadJSON,
+    )
+    from odoo.addons.app_builder_base.models.studio_model_draft import (
+        StudioModelDraft as StudioModelDraftBase,
+    )
+    from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+    from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
+    from odoo.addons.app_builder_base.tools.modelspec import (
+        FieldSpec,
+        ModelSpec,
+        SpecDiff,
+    )
+
+    # This file is a pure `_inherit = "studio.model.draft"` extension, the
+    # same `_name` `app_builder_base`'s own file declares -- a real,
+    # *different* Python class the registry merges with this file's own at
+    # runtime, so it is aliased on import rather than colliding with this
+    # file's own class of the identical name (precedent: `studio_view_edito
+    # r.py`'s own `_DraftHandle` Protocol casts to this same alias for
+    # `set_anchor` below). Cast to it wherever this file calls a
+    # field/method the real base declares (`_spec`, `_placement`,
+    # `package_id`, ...) and this file does not -- invisible to pyright on
+    # a bare `self` otherwise.
+    #
+    # `_anchor_locator`/`_pending_locator` are declared on `studio_view_canv
+    # as.py`'s own `_inherit = "studio.view.editor"` extension, not on
+    # `studio_view_editor.py`'s real `StudioViewEditor` this file's own
+    # `typed.model()` call below targets -- the identical composed-
+    # elsewhere gap, for a different sibling file, aliased the same way.
+    from .studio_view_canvas import StudioViewEditor as StudioViewEditorCanvas
 
 _logger = logging.getLogger(__name__)
 
@@ -60,6 +114,30 @@ ANCHOR_KEYS = (
 )
 
 
+class AnchorJSON(_BaseAnchorJSON):
+    """Every key ``ANCHOR_KEYS`` stores, past the base's own ``view_id``
+    (``app_builder_base``'s own ``_anchors()`` docstring: "app_builder_view's
+    override supplies the rest of the shape"). ``set_anchor`` always fills
+    every one of ``ANCHOR_KEYS``, ``None`` where the anchor has nothing to
+    say there, so nothing here is ``NotRequired``. A real, non-
+    ``TYPE_CHECKING`` import of the parent TypedDict, since ``class X(Y):``
+    executes at import time."""
+
+    xpath: str | None
+    position: str | None
+    arch_version: str | None
+    descriptor: dict[str, object] | None
+    pending: str | None
+    seq: int
+
+
+class PlacePendingJSON(TypedDict):
+    """``place_pending()``'s own return."""
+
+    placed: bool
+    reason: str
+
+
 class StudioModelDraft(models.TransientModel):
     _inherit = "studio.model.draft"
 
@@ -73,7 +151,7 @@ class StudioModelDraft(models.TransientModel):
 
     # -- the store ----------------------------------------------------------
 
-    def _anchors(self):
+    def _anchors(self) -> dict[str, AnchorJSON]:
         """``{name: anchor}`` for every staged field that was dropped somewhere."""
         self.ensure_one()
         try:
@@ -82,12 +160,17 @@ class StudioModelDraft(models.TransientModel):
             data = {}
         return data if isinstance(data, dict) else {}
 
-    def _store_anchors(self, data):
+    def _store_anchors(self, data: dict[str, AnchorJSON]) -> Literal[True]:
         self.ensure_one()
         self.anchors_json = json.dumps(data, sort_keys=True)
         return True
 
-    def set_anchor(self, name, anchor, release_dependents=True):
+    def set_anchor(
+        self,
+        name: str,
+        anchor: dict[str, object],
+        release_dependents: bool = True,
+    ) -> object:
         """Remember where ``name`` was dropped.
 
         Only a field the draft is adding can be anchored: an existing field
@@ -110,7 +193,7 @@ class StudioModelDraft(models.TransientModel):
         an anchor still only ever names a field dropped -- or re-anchored
         -- before it.
         """
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
         anchor = dict(anchor or {})
         if not anchor.get("view_id") or anchor.get("position") not in (
@@ -136,17 +219,17 @@ class StudioModelDraft(models.TransientModel):
         if release_dependents:
             self._release_dependents(data, name)
         stored = {key: anchor.get(key) for key in ANCHOR_KEYS}
-        stored["view_id"] = int(anchor["view_id"])
+        stored["view_id"] = int(cast("int | str", anchor["view_id"]))
         stored["pending"] = other
         stored["seq"] = 1 + max([a.get("seq") or 0 for a in data.values()] or [0])
-        data[name] = stored
+        data[name] = cast("AnchorJSON", stored)
         return self._store_anchors(data)
 
-    def clear_anchor(self, name):
+    def clear_anchor(self, name: str) -> bool:
         """Forget where ``name`` was dropped; it is then placed by the
         balanced fallback like a field staged in the composer. What was
         anchored beside it inherits its place."""
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
         data = self._anchors()
         if name not in data:
@@ -156,7 +239,7 @@ class StudioModelDraft(models.TransientModel):
         return self._store_anchors(data)
 
     @staticmethod
-    def _release_dependents(data, name):
+    def _release_dependents(data: dict[str, AnchorJSON], name: str) -> None:
         """Hand the anchor of ``name`` to every field anchored beside it.
 
         In place, on ``data``. The dependents keep their own sequence: it
@@ -173,24 +256,37 @@ class StudioModelDraft(models.TransientModel):
             if old is None:
                 anchor["pending"] = None
                 continue
-            anchor.update({key: old.get(key) for key in ANCHOR_KEYS if key != "seq"})
+            # `.update()` through a plain-`dict` cast: the source mapping
+            # is built from a dynamic (non-literal) `ANCHOR_KEYS` key each
+            # iteration, so `AnchorJSON`'s own per-key value types cannot
+            # line up with it structurally -- the same widening this
+            # file's other dynamic-dict-into-`AnchorJSON` sites use.
+            cast("dict[str, object]", anchor).update(
+                {
+                    key: cast("dict[str, object]", old).get(key)
+                    for key in ANCHOR_KEYS
+                    if key != "seq"
+                }
+            )
 
-    def _added_names(self):
+    def _added_names(self) -> tuple[str, ...]:
         """The fields this draft is adding, in class order."""
         self.ensure_one()
-        return modelspec.diff_specs(self._base_spec(), self._spec()).added
+        base = cast("StudioModelDraftBase", self)
+        return modelspec.diff_specs(base._base_spec(), base._spec()).added
 
-    def _pending_anchored(self):
+    def _pending_anchored(self) -> list[dict[str, object]]:
         """Every field the draft is adding, with its anchor when it has one.
 
         In the order they were dropped, then class order for the rest, so a
         canvas lists them the way the user made them.
         """
         self.ensure_one()
-        spec = self._spec()
+        base = cast("StudioModelDraftBase", self)
+        spec = base._spec()
         anchors = self._anchors()
-        placement = self._placement()
-        out = []
+        placement = base._placement()
+        out: list[dict[str, object]] = []
         for name in self._added_names():
             spec_field = spec.field(name)
             if spec_field is None:
@@ -205,33 +301,49 @@ class StudioModelDraft(models.TransientModel):
                     "anchor": anchors.get(name),
                 }
             )
-        out.sort(key=lambda entry: (entry["anchor"] or {}).get("seq") or 0)
+        out.sort(
+            key=lambda entry: (
+                (
+                    cast("AnchorJSON | None", entry.get("anchor"))
+                    or cast("AnchorJSON", {})
+                ).get("seq")
+                or 0
+            )
+        )
         return out
 
     # -- lifecycle: anchors follow the fields they belong to ----------------
 
-    def remove_field(self, name):
+    def remove_field(self, name: str) -> Literal[True]:
         self.clear_anchor(name)
-        return super().remove_field(name)
+        return cast("StudioModelDraftBase", super()).remove_field(name)
 
-    def action_discard(self):
+    def action_discard(self) -> Literal[True]:
         self._store_anchors({})
-        return super().action_discard()
+        return cast("StudioModelDraftBase", super()).action_discard()
 
     @api.model
-    def open_for_model(self, model_name):
+    def open_for_model(self, model_name: str) -> DraftPayloadJSON:
         """A clean draft re-read from disk has no pending field for an
         anchor to belong to, so its anchors go the way its placements do."""
-        loaded = super().open_for_model(model_name)
+        loaded = cast("StudioModelDraftBase", super()).open_for_model(model_name)
         draft = self.browse(loaded["id"])
-        if not draft.dirty and draft._anchors():
+        base_draft = cast("StudioModelDraftBase", draft)
+        if not base_draft.dirty and draft._anchors():
             draft._store_anchors({})
-            loaded = draft.load()
+            loaded = base_draft.load()
         return loaded
 
     # -- placement after Apply ------------------------------------------------
 
-    def _place_anchored(self, view, name, anchor, widget, _placing=()):
+    def _place_anchored(
+        self,
+        view: View,
+        name: str,
+        anchor: AnchorJSON,
+        widget: str,
+        _placing: tuple[str, ...] = (),
+    ) -> bool:
         """Put ``name`` exactly where it was dropped, through the view editor.
 
         The same ``add_field`` operation a live drop runs, so the result is
@@ -256,22 +368,30 @@ class StudioModelDraft(models.TransientModel):
         reload it was made of.
         """
         self.ensure_one()
-        editor = self.env["studio.view.editor"]
+        base = cast("StudioModelDraftBase", self)
+        editor = typed.model(self.env, StudioViewEditor)
         other = anchor.get("pending")
         chain = _placing + (name,)
         if other and (other in _placing or not self._ensure_placed(view, other, chain)):
             return False
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast(
+            "LxmlElement",
+            etree.fromstring(cast("str", view.get_combined_arch()).encode()),
+        )
         if other:
-            located = editor._pending_locator(root, other)
+            located = cast("StudioViewEditorCanvas", editor)._pending_locator(
+                root, other
+            )
         else:
-            located = editor._anchor_locator(view, root, anchor)
+            located = cast("StudioViewEditorCanvas", editor)._anchor_locator(
+                view, root, cast("dict[str, object]", anchor)
+            )
         if not located:
             return False
         xpath, expectation = located
         position = anchor.get("position") or "after"
         found = editor._resolve_xpath(root, xpath) or []
-        operation = {
+        operation: dict[str, object] = {
             "type": "add_field",
             "name": name,
             "attrs": {"widget": widget} if widget else {},
@@ -282,15 +402,18 @@ class StudioModelDraft(models.TransientModel):
             "label": len(found) == 1 and editor._label_wanted(view, found[0], position),
         }
         try:
-            with self.env.cr.savepoint():
+            with cast("Cursor", self.env.cr).savepoint():
                 editor.apply_operation(
-                    view.id, self.package_id.id, operation, write_files=False
+                    cast("int", view.id),
+                    cast("int", cast("StudioPackage", base.package_id).id),
+                    operation,
+                    write_files=False,
                 )
         except UserError as err:
             _logger.warning(
                 "Anchored placement of %s.%s in view %s declined (%s); "
                 "falling back to balanced placement.",
-                self.model,
+                base.model,
                 name,
                 view.id,
                 err,
@@ -298,14 +421,14 @@ class StudioModelDraft(models.TransientModel):
             return False
         return True
 
-    def _ensure_placed(self, view, name, _placing):
+    def _ensure_placed(self, view: View, name: str, _placing: tuple[str, ...]) -> bool:
         """Whether ``name`` is in ``view``, placing it by its own anchor
         when it is not there yet. What a field anchored beside it needs
         before it can be placed itself."""
         if self._combined_names(view, name):
             return True
         anchor = self._anchors().get(name)
-        spec_field = self._spec().field(name)
+        spec_field = cast("StudioModelDraftBase", self)._spec().field(name)
         if not anchor or anchor.get("view_id") != view.id or spec_field is None:
             return False
         return bool(
@@ -314,15 +437,17 @@ class StudioModelDraft(models.TransientModel):
             )
         )
 
-    def _widget_for(self, spec_field):
+    def _widget_for(self, spec_field: FieldSpec) -> str:
         """The widget a field is placed with: the placement's, which is
         what the entry implied and what a re-edit since has changed."""
-        where = self._placement().get(
-            spec_field.name, modelspec.default_placement(spec_field.ttype)
+        where = (
+            cast("StudioModelDraftBase", self)
+            ._placement()
+            .get(spec_field.name, modelspec.default_placement(spec_field.ttype))
         )
         return where.get("widget") or ""
 
-    def _place_in_views(self, spec, diff):
+    def _place_in_views(self, spec: ModelSpec, diff: SpecDiff) -> bool:
         """Owned views as before, plus the views the anchors name.
 
         The base draft places only into views the package owns, since
@@ -340,37 +465,47 @@ class StudioModelDraft(models.TransientModel):
         """
         if not diff.added:
             return False
-        owned = {view.id for view in self._owned_views().values()}
+        base = cast("StudioModelDraftBase", self)
+        owned = {view.id for view in base._owned_views().values()}
         anchors = self._anchors()
-        View = self.env["ir.ui.view"]
+        # Named `view_model`, not `View` (the real class this method's own
+        # signature is typed against): a local `View = self.env[...]`
+        # would shadow that import for the rest of this function -- and,
+        # worse, `View = typed.model(self.env, View)` would try to read
+        # the not-yet-assigned local `View` on its own right-hand side
+        # (Python's own scoping), an `UnboundLocalError` this conversion
+        # must not introduce. Same trap `studio_view_editor.py`'s own
+        # `_get_or_create_extension` already documents.
+        view_model = typed.model(self.env, View)
         foreign = False
         by_drop_order = sorted(
-            diff.added, key=lambda n: (anchors.get(n) or {}).get("seq") or 0
+            diff.added,
+            key=lambda n: (anchors.get(n) or cast("AnchorJSON", {})).get("seq") or 0,
         )
         for name in by_drop_order:
             anchor = anchors.get(name)
             spec_field = spec.field(name)
             if not anchor or anchor.get("view_id") in owned or spec_field is None:
                 continue
-            view = View.browse(anchor["view_id"]).exists()
-            if not view or view.model != self.model:
+            view = view_model.browse(anchor["view_id"]).exists()
+            if not view or view.model != base.model:
                 continue
             if self._combined_names(view, name):
                 continue
             foreign |= bool(
                 self._place_anchored(view, name, anchor, self._widget_for(spec_field))
             )
-        placed = super()._place_in_views(spec, diff)
+        placed = cast("StudioModelDraftBase", super())._place_in_views(spec, diff)
         if foreign and not placed:
             # The base wrote the files when it placed something; when it
             # did not, the patches made above are still only in the database.
-            self.package_id.action_write_files()
+            cast("StudioPackage", base.package_id).action_write_files()
         added = set(diff.added)
         if added & set(anchors):
             self._store_anchors({k: v for k, v in anchors.items() if k not in added})
         return bool(placed or foreign)
 
-    def _apply_features(self):
+    def _apply_features(self) -> bool:
         """What a staged feature owes the views, now that its columns exist.
 
         Stages wants a kanban and Date & calendar a calendar -- the same
@@ -379,12 +514,13 @@ class StudioModelDraft(models.TransientModel):
         model already has it, so a second run is harmless, like placement.
         """
         self.ensure_one()
-        keys = self._features()
+        base = cast("StudioModelDraftBase", self)
+        keys = base._features()
         if not keys:
             return False
-        editor = self.env["studio.view.editor"]
-        package = self.package_id
-        model_name = self.model
+        editor = typed.model(self.env, StudioViewEditor)
+        package = cast("StudioPackage", base.package_id)
+        model_name = cast("str", base.model)
         existing = {
             view["type"] for view in editor._views_of(model_name) if view.get("view_id")
         }
@@ -396,7 +532,7 @@ class StudioModelDraft(models.TransientModel):
             for view_type in feature.views:
                 if view_type in existing:
                     continue
-                arguments = {}
+                arguments: dict[str, str] = {}
                 if view_type in ("calendar", "timeline"):
                     date_field = scaffold.first_field_of(
                         self.env[model_name],
@@ -406,7 +542,9 @@ class StudioModelDraft(models.TransientModel):
                     if not date_field:
                         continue
                     arguments["date_field"] = date_field
-                editor.add_view(model_name, view_type, package.id, **arguments)
+                editor.add_view(
+                    model_name, view_type, cast("int", package.id), **arguments
+                )
                 existing.add(view_type)
                 done = True
             if key == "chatter":
@@ -416,21 +554,28 @@ class StudioModelDraft(models.TransientModel):
                     None,
                 )
                 if form_view:
-                    done |= bool(editor.add_chatter(form_view["view_id"], package.id))
-        self.features_json = "[]"
+                    done |= bool(
+                        editor.add_chatter(
+                            form_view["view_id"], cast("int", package.id)
+                        )
+                    )
+        base.features_json = "[]"
         return done
 
     @api.model
-    def _combined_names(self, view, name):
+    def _combined_names(self, view: View, name: str) -> bool:
         """Whether ``name`` is already in the view as it renders, its
         extensions included -- the check a patched view needs, since the
         field lands in the extension and not in ``view.arch``."""
-        root = etree.fromstring(view.get_combined_arch().encode())
+        root = cast(
+            "LxmlElement",
+            etree.fromstring(cast("str", view.get_combined_arch()).encode()),
+        )
         return bool(root.xpath(".//field[@name='%s']" % name))
 
     # -- after a reload that outran the request -------------------------------
 
-    def place_pending(self):
+    def place_pending(self) -> PlacePendingJSON:
         """Finish an Apply the server restarted in the middle of.
 
         Under a ``restart`` reload the request that pressed Apply dies with
@@ -447,13 +592,14 @@ class StudioModelDraft(models.TransientModel):
         the restart has not picked the package up -- is still pending in
         fact, and says so rather than placing fields that do not exist.
         """
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         self.ensure_one()
-        drafts = self | self.companion_ids
-        planned = []
+        drafts = self | cast("StudioModelDraftBase", self).companion_ids
+        planned: list[tuple[StudioModelDraft, ModelSpec, SpecDiff]] = []
         for draft in drafts:
-            spec = draft._spec()
-            diff = modelspec.diff_specs(draft._base_spec(), spec)
+            base_draft = cast("StudioModelDraftBase", draft)
+            spec = base_draft._spec()
+            diff = modelspec.diff_specs(base_draft._base_spec(), spec)
             missing = draft._missing_from_registry(diff)
             if missing:
                 return {
@@ -461,7 +607,7 @@ class StudioModelDraft(models.TransientModel):
                     "reason": _(
                         "%(model)s does not have %(fields)s yet; the apply "
                         "did not go through.",
-                        model=draft.model,
+                        model=base_draft.model,
                         fields=", ".join(missing),
                     ),
                 }
@@ -470,10 +616,11 @@ class StudioModelDraft(models.TransientModel):
             draft._place_in_views(spec, diff)
             draft._apply_features()
         for draft in drafts:
-            draft.base_spec_json = draft.spec_json
+            base_draft = cast("StudioModelDraftBase", draft)
+            base_draft.base_spec_json = base_draft.spec_json
         return {"placed": True, "reason": ""}
 
-    def _missing_from_registry(self, diff):
+    def _missing_from_registry(self, diff: SpecDiff) -> list[str]:
         """The added fields the running registry does not have as columns,
         and the removed ones it still has: either says the reload has not
         happened. A field the class declares but the table lacks counts as
@@ -481,7 +628,7 @@ class StudioModelDraft(models.TransientModel):
         upgrade that creates the column is exactly the half-way state a
         restart-mode apply can leave."""
         self.ensure_one()
-        Model = self.env.get(self.model)
+        Model = self.env.get(cast("str", cast("StudioModelDraftBase", self).model))
         if Model is None:
             return list(diff.added)
         missing = []

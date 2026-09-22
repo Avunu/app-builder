@@ -9,11 +9,66 @@ selection fields could carry the transition -- and the pane's header
 offers to turn approvals on before it offers a rule.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, TypedDict, cast
+
 from odoo import _, api, models
 
+from odoo.addons.app_builder_base.models.studio_record_surface import (
+    RecordCatalogueJSON,
+)
 from odoo.addons.app_builder_base.tools.catalogue import Row, Section
 
 from .studio_approval import MIXIN
+
+if TYPE_CHECKING:
+    # Only for annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime -- the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes. `MIXIN` and
+    # `RecordCatalogueJSON` are real, top-level imports instead (above):
+    # `MIXIN` is a plain constant read at runtime (`_gated`), and
+    # `RecordCatalogueJSON` is a real base class of `ApprovalCatalogueJSON`
+    # below (rule 9's TypedDict subclassing), both needing a real binding.
+    from odoo.models import BaseModel
+
+    from odoo.addons.base.models.ir_model import IrModel, IrModelFields
+    from odoo.addons.base.models.res_users import Groups, Users
+    from odoo.addons.base_tier_validation.models.tier_definition import TierDefinition
+    from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+    from odoo.addons.app_builder_base.models.studio_record_surface import (
+        StudioRecordSurface,
+    )
+
+    # `.studio_approval`'s own module also declares a class named
+    # `StudioApproval` (the SAME "studio.approval" `_name`, merged into one
+    # real model by the registry, but two separate classes as far as
+    # pyright is concerned) -- aliased on import so this file's own `class
+    # StudioApproval` below does not collide with it. A plain `cast()`
+    # target needs no runtime binding (rule 4/7), so this stays
+    # `TYPE_CHECKING`-only rather than a real top-level import.
+    from .studio_approval import EnableApprovalJSON, StateFieldJSON
+    from .studio_approval import StudioApproval as StudioApprovalBase
+
+
+class ApprovalGateJSON(TypedDict):
+    """``catalogue()``'s own ``gate`` key: whether the model is gated yet,
+    and what turning it on would take (``catalogue()``)."""
+
+    on: bool
+    title: str
+    help: str
+    consequence: str
+    state_fields: list[StateFieldJSON]
+    call: str
+
+
+class ApprovalCatalogueJSON(RecordCatalogueJSON):
+    """``catalogue()``'s own return: the base surface catalogue plus the
+    gate (rule 9's TypedDict subclassing -- the base's own closed shape
+    plus one more key)."""
+
+    gate: ApprovalGateJSON
 
 
 class StudioApproval(models.AbstractModel):
@@ -143,16 +198,21 @@ class StudioApproval(models.AbstractModel):
     # -- the gate ------------------------------------------------------------
 
     @api.model
-    def _gated(self, model_name):
+    def _gated(self, model_name: str | None) -> bool:
+        # `_inherit_module`'s own stub gap is the identical one
+        # `studio_approval.py`'s own `_empty_state` already documents.
         return bool(
             model_name
             and model_name in self.env
-            and MIXIN in self.env[model_name]._inherit_module
+            and MIXIN in self.env[model_name]._inherit_module  # pyright: ignore[reportAttributeAccessIssue]
         )
 
     @api.model
-    def catalogue(self, model_name=None):
-        out = super().catalogue(model_name)
+    def catalogue(self, model_name: str | None = None) -> ApprovalCatalogueJSON:
+        out = cast(
+            "ApprovalCatalogueJSON",
+            cast("StudioRecordSurface", super()).catalogue(model_name),
+        )
         gated = self._gated(model_name)
         out["gate"] = {
             "on": gated,
@@ -171,7 +231,7 @@ class StudioApproval(models.AbstractModel):
                 "class."
             ),
             "state_fields": (
-                self.candidate_state_fields(model_name)
+                cast("StudioApprovalBase", self).candidate_state_fields(model_name)
                 if model_name and model_name in self.env and not gated
                 else []
             ),
@@ -182,15 +242,15 @@ class StudioApproval(models.AbstractModel):
     @api.model
     def enable_gate(
         self,
-        package_id,
-        model_name,
-        state_field="state",
-        state_from=None,
-        state_to=None,
-        cancel_state=None,
-    ):
+        package_id: int,
+        model_name: str,
+        state_field: str = "state",
+        state_from: list[str] | None = None,
+        state_to: list[str] | None = None,
+        cancel_state: str | None = None,
+    ) -> EnableApprovalJSON:
         """Turn approvals on and reload: the pane's gate header."""
-        return self.enable(
+        return cast("StudioApprovalBase", self).enable(
             package_id,
             model_name,
             state_field=state_field,
@@ -203,45 +263,71 @@ class StudioApproval(models.AbstractModel):
     # -- rows ------------------------------------------------------------------
 
     @api.model
-    def _surface_domain(self, model_name, kwargs):
+    def _surface_domain(
+        self, model_name: str, kwargs: dict[str, object]
+    ) -> api.DomainType:
         # `model` is the stored related the engine matches on.
         return [("model", "=", model_name)]
 
     @api.model
-    def _sentence(self, record):
+    def _sentence(self, record: BaseModel) -> str:
+        # `tier.definition` is `base_tier_validation`'s own model, never
+        # given field annotations of its own -- `TierDefinition` (imported
+        # under `TYPE_CHECKING` above) is that real, untyped class, cast in
+        # the same way `tier_serializers.py`'s own `_group_model`/
+        # `_sort_key` already cast the identical model.
+        definition = cast("TierDefinition", record)
         who = {
-            "individual": record.reviewer_id.name,
-            "group": record.reviewer_group_id.full_name,
-            "field": record.reviewer_field_id.field_description,
-        }.get(record.review_type) or _("nobody yet")
+            "individual": cast("Users", definition.reviewer_id).name,
+            "group": cast("Groups", definition.reviewer_group_id).full_name,
+            "field": cast(
+                "IrModelFields", definition.reviewer_field_id
+            ).field_description,
+            # `.get()`'s key parameter wants a plain `str`; `review_type`'s
+            # own declared type is `str | Literal[False]` like every
+            # Selection field -- true by construction that a rule read back
+            # here always has one of the three keys above, the same
+            # "trust the runtime, cast for the type" idiom `_coerce_one`'s
+            # own `int(cast("Any", value) or 0)` already uses.
+        }.get(cast("str", definition.review_type)) or _("nobody yet")
         parts = [_("%s approves", who)]
-        if record.definition_domain and record.definition_domain.strip() not in (
-            "",
-            "[]",
-        ):
-            parts.append(_("only for %s", record.definition_domain))
-        if record.approve_sequence:
+        domain = definition.definition_domain
+        if domain and domain.strip() not in ("", "[]"):
+            parts.append(_("only for %s", domain))
+        if definition.approve_sequence:
             parts.append(_("in order"))
         return " · ".join(parts)
 
     @api.model
-    def _describe_extra(self, record, package):
+    def _describe_extra(
+        self, record: BaseModel, package: StudioPackage
+    ) -> dict[str, object]:
+        definition = cast("TierDefinition", record)
+        model = cast("IrModel", definition.model_id)
         return {
-            "matches": self._check_domain(
-                record.model_id.model, record.definition_domain or "[]"
+            "matches": cast("StudioRecordSurface", self)._check_domain(
+                model.model, definition.definition_domain or "[]"
             )
         }
 
     @api.model
-    def _notes(self, record, package):
+    def _notes(self, record: BaseModel, package: StudioPackage) -> list[object]:
+        definition = cast("TierDefinition", record)
+        model = cast("IrModel", definition.model_id)
         return [
             _(
                 "Removing a rule takes it out of security/%s_approval.xml; "
                 "approvals already in flight are untouched.",
-                (record.model_id.model or "").replace(".", "_"),
+                (model.model or "").replace(".", "_"),
             )
         ]
 
     @api.model
-    def _create_defaults(self, model_name, package, template, vals):
+    def _create_defaults(
+        self,
+        model_name: str,
+        package: StudioPackage,
+        template: str | None,
+        vals: dict[str, object],
+    ) -> dict[str, object]:
         return {"active": True, "definition_type": "domain"}

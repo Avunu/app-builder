@@ -18,14 +18,160 @@ the round-trip invariant, which has exactly one path from record to XML. One
 extra reload is a cheap price for keeping it that way.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.app_builder_base.tools import compat, modelspec, pycodegen, scaffold
+from odoo.addons.base.models.ir_actions import IrActionsActWindow
+from odoo.addons.base.models.ir_model import IrModel, IrModelAccess, IrModelFields
+from odoo.addons.base.models.ir_sequence import IrSequence
+from odoo.addons.base.models.ir_ui_menu import IrUiMenu
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.base.models.res_users import Groups, Users
+from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.models.studio_package_model import StudioPackageModel
+from odoo.addons.app_builder_base.tools import (
+    compat,
+    modelspec,
+    pycodegen,
+    scaffold,
+    typed,
+)
+from odoo.addons.app_builder_base.tools.scaffold import FeatureJSON
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes. Every real
+    # class this file touches is a real, top-level import instead (above):
+    # `typed.model()` reads `cls._name` at runtime, and this file's own
+    # heavy `self.env["..."]` use means almost every real class it names
+    # needs that real binding somewhere else in the same file.
+    from collections.abc import Mapping
+
+    from odoo.models import BaseModel
+
+    from odoo.addons.base.models.ir_module import Module as IrModuleModule
+    from odoo.addons.app_builder_base.tools.modelspec import ModelSpec
+    from odoo.addons.app_builder_base.tools.scaffold import ScaffoldOptions
 
 _logger = logging.getLogger(__name__)
+
+
+# -- wire types -------------------------------------------------------------
+#
+# The console-facing methods below (over RPC, per rule 8) each get a real
+# TypedDict. The record-bearing helpers (`_build_ui`, `_build_access`,
+# `_build_menu`, `create_app` itself) stay `dict[str, Any]`/plain recordset
+# return types instead: their return values are consumed inside this file,
+# never serialized over the wire, so there is no wire shape to name.
+
+
+class VisibilityResultJSON(TypedDict):
+    """One entry of ``check_visibility()``'s own return list."""
+
+    group: str
+    ok: bool | None
+    detail: str
+
+
+class SuggestNameJSON(TypedDict):
+    """``suggest_name()``'s own return."""
+
+    model: str
+    taken: bool
+
+
+class CreateAppCompanionJSON(TypedDict):
+    """One entry of ``create_app_rpc()``'s own ``companions`` list."""
+
+    model: str
+    access_ids: list[int]
+
+
+class CreateAppRpcJSON(TypedDict):
+    """``create_app_rpc()``'s own return: ``create_app()``'s pieces, as ids."""
+
+    model: str
+    model_id: int
+    action_id: int
+    menu_id: int
+    root_menu_id: int | Literal[False]
+    views: dict[str, int]
+    access_ids: list[int]
+    sequence_id: int | Literal[False]
+    companions: list[CreateAppCompanionJSON]
+    visibility: list[VisibilityResultJSON]
+
+
+class FeatureEntryJSON(FeatureJSON):
+    """One entry of ``features()``'s own ``features`` list: ``FeatureJSON``
+    (``scaffold.py``, already typed -- Phase 1b) plus what the wizard needs
+    to offer and pre-select it. A real, non-``TYPE_CHECKING`` import of the
+    parent TypedDict (rule 9): ``class X(Y):`` executes at import time."""
+
+    implies: list[str]
+    companion: str
+    offered: bool
+
+
+class FeaturesJSON(TypedDict):
+    """``features()``'s own return."""
+
+    features: list[FeatureEntryJSON]
+    defaults: list[str]
+
+
+class AddFeatureJSON(TypedDict):
+    """``add_feature()``'s own return."""
+
+    draft_id: int
+    added: list[str]
+    already: list[str]
+    options: dict[str, Any]
+    views: list[str]
+    chatter: bool
+
+
+class OwnerPackageRefJSON(TypedDict):
+    """``adoptable_models()``'s own ``owner_package`` key."""
+
+    id: int
+    name: str
+
+
+class AdoptableModelJSON(TypedDict):
+    """One entry of ``adoptable_models()``'s own return list."""
+
+    id: int
+    model: str
+    name: str
+    origin: Literal["studio", "manual"]
+    owner_package: OwnerPackageRefJSON | None
+    field_count: int
+    record_count: int
+    preview: str
+
+
+class AdoptJSON(TypedDict):
+    """``adopt()``'s own return."""
+
+    adopted: list[str]
+    captured: list[str]
+    applied: bool
+    restart_required: bool
+
+
+class CreateFieldJSON(TypedDict):
+    """``create_field()``'s own return."""
+
+    field_id: int
+    name: str
 
 
 class StudioAppBuilder(models.AbstractModel):
@@ -36,7 +182,7 @@ class StudioAppBuilder(models.AbstractModel):
     # -- naming -----------------------------------------------------------
 
     @api.model
-    def technical_name(self, label, package):
+    def technical_name(self, label: str, package: StudioPackage) -> str:
         """``Workshop Project`` -> ``x_workshop.project``-free, real dotted name.
 
         A Python-defined model has no ``x_`` requirement -- that CHECK
@@ -52,8 +198,14 @@ class StudioAppBuilder(models.AbstractModel):
 
     @api.model
     def create_app(
-        self, package, label, model_name=None, options=None, groups=None, menu=None
-    ):
+        self,
+        package: StudioPackage,
+        label: str,
+        model_name: str | None = None,
+        options: ScaffoldOptions | None = None,
+        groups: Groups | None = None,
+        menu: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Build a usable app and return the pieces it is made of.
 
         ``menu`` says where the app goes in the apps menu: ``None`` or
@@ -61,7 +213,7 @@ class StudioAppBuilder(models.AbstractModel):
         ``{"parent_id": id}`` for an item under an existing app. The parent
         has to carry an xmlid, since the menu file refers to it by one.
         """
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         package._assert_writable()
         options = options or scaffold.ScaffoldOptions()
         model_name = model_name or self.technical_name(label, package)
@@ -75,7 +227,12 @@ class StudioAppBuilder(models.AbstractModel):
         companions = scaffold.companion_specs(model_name, label, options)
         spec = scaffold.scaffold_spec(model_name, label, options)
 
-        taken = set(self.env["ir.model"].sudo().search([]).mapped("model"))
+        taken: set[str] = set(
+            cast(
+                "list[str]",
+                typed.model(self.env, IrModel).sudo().search([]).mapped("model"),
+            )
+        )
         for candidate in [*companions, spec]:
             errors = modelspec.validate_spec(candidate, taken_model_names=taken)
             if errors:
@@ -86,7 +243,7 @@ class StudioAppBuilder(models.AbstractModel):
 
         self._ensure_module_installed(package)
         for candidate in [*companions, spec]:
-            self.env["studio.package.model"]._adopt(
+            typed.model(self.env, StudioPackageModel)._adopt(
                 package, candidate.name, source="python"
             )
             package._seed_source_for(candidate.name, candidate)
@@ -109,8 +266,10 @@ class StudioAppBuilder(models.AbstractModel):
         # what makes them companions rather than apps.
         built["companions"] = [
             self._build_access(
-                self.env["ir.model"].search([("model", "=", candidate.name)], limit=1),
-                groups or self.env.ref("base.group_user"),
+                typed.model(self.env, IrModel).search(
+                    [("model", "=", candidate.name)], limit=1
+                ),
+                groups or cast("Groups", self.env.ref("base.group_user")),
                 unlink=True,
             )
             for candidate in companions
@@ -121,7 +280,7 @@ class StudioAppBuilder(models.AbstractModel):
         return built
 
     @api.model
-    def _ensure_module_installed(self, package):
+    def _ensure_module_installed(self, package: StudioPackage) -> IrModuleModule:
         """A package must be an installed module before its Python is imported.
 
         Odoo only imports code for modules in the dependency graph, so writing
@@ -142,11 +301,11 @@ class StudioAppBuilder(models.AbstractModel):
     # -- the UI half ------------------------------------------------------
 
     @api.model
-    def _menu_parent(self, menu):
+    def _menu_parent(self, menu: Mapping[str, Any] | None) -> IrUiMenu | None:
         """The menu a new app goes under, checked, or ``None`` for a root."""
         if not menu or not menu.get("parent_id"):
             return None
-        parent = self.env["ir.ui.menu"].browse(int(menu["parent_id"])).exists()
+        parent = typed.model(self.env, IrUiMenu).browse(int(menu["parent_id"])).exists()
         if not parent:
             raise UserError(_("The menu to put the app under no longer exists."))
         if not parent.get_external_id().get(parent.id):
@@ -160,10 +319,22 @@ class StudioAppBuilder(models.AbstractModel):
         return parent
 
     @api.model
-    def _build_ui(self, package, spec, options, groups=None, parent=None):
+    def _build_ui(
+        self,
+        package: StudioPackage,
+        spec: ModelSpec,
+        options: ScaffoldOptions,
+        groups: Groups | None = None,
+        parent: IrUiMenu | None = None,
+    ) -> dict[str, Any]:
+        # `spec.name` is a variable, not a literal -- stays a plain lookup
+        # (rule 2), unlike every `self.env["<literal>"]` elsewhere in this
+        # file.
         model = self.env[spec.name]
-        ir_model = self.env["ir.model"].search([("model", "=", spec.name)], limit=1)
-        groups = groups or self.env.ref("base.group_user")
+        ir_model = typed.model(self.env, IrModel).search(
+            [("model", "=", spec.name)], limit=1
+        )
+        groups = groups or cast("Groups", self.env.ref("base.group_user"))
 
         access = self._build_access(ir_model, groups)
         views = self._build_views(model, spec, options)
@@ -171,7 +342,7 @@ class StudioAppBuilder(models.AbstractModel):
         menus = self._build_menu(spec, action, package, parent=parent)
         sequence = self._build_sequence(spec, options)
 
-        captured = [access, action, menus["item"]]
+        captured: list[BaseModel] = [access, action, menus["item"]]
         if menus["root"]:
             captured.append(menus["root"])
         captured.extend(views.values())
@@ -189,7 +360,9 @@ class StudioAppBuilder(models.AbstractModel):
         }
 
     @api.model
-    def _build_access(self, ir_model, groups, unlink=False):
+    def _build_access(
+        self, ir_model: IrModel, groups: Groups, unlink: bool = False
+    ) -> IrModelAccess:
         """Real ACL rows for real groups, in the same transaction.
 
         A model with no ACL is invisible to every non-superuser and takes its
@@ -204,23 +377,32 @@ class StudioAppBuilder(models.AbstractModel):
         Without it, taking a row out of the table and saving raises AccessError
         for exactly the group the app was built for.
         """
-        rows = self.env["ir.model.access"]
+        rows = typed.model(self.env, IrModelAccess)
         for group in groups:
-            rows |= self.env["ir.model.access"].create(
-                {
-                    "name": "%s %s" % (ir_model.model, group.name),
-                    "model_id": ir_model.id,
-                    "group_id": group.id,
-                    "perm_read": True,
-                    "perm_write": True,
-                    "perm_create": True,
-                    "perm_unlink": unlink,
-                }
-            )
+            # `create()`'s own declared signature (`odoo/models.py`) takes
+            # only `list[ValuesType]` -- `@api.model_create_multi`
+            # (`odoo/api.py`) is a bare passthrough decorator that does not
+            # widen it to also cover the single-dict form it genuinely
+            # accepts at runtime. Same shape of decorator-stub gap
+            # TYPING.md's own "Known traps" documents, already applied this
+            # way throughout this migration; every other single-dict
+            # `.create(...)` below in this file carries the same ignore.
+            vals = {
+                "name": "%s %s" % (ir_model.model, group.name),
+                "model_id": ir_model.id,
+                "group_id": group.id,
+                "perm_read": True,
+                "perm_write": True,
+                "perm_create": True,
+                "perm_unlink": unlink,
+            }
+            rows |= typed.model(self.env, IrModelAccess).create(vals)  # pyright: ignore[reportArgumentType]
         return rows
 
     @api.model
-    def _build_views(self, model, spec, options):
+    def _build_views(
+        self, model: BaseModel, spec: ModelSpec, options: ScaffoldOptions
+    ) -> dict[str, View]:
         """The three every model gets, plus the ones its features asked for.
 
         `Feature.views` records that Date & Calendar wants a calendar and
@@ -229,7 +411,16 @@ class StudioAppBuilder(models.AbstractModel):
         help text promised "a kanban to move records across" and delivered a
         `state` field. Both scaffolds existed the whole time.
         """
-        View = self.env["ir.ui.view"]
+        # Named `view_model`, not `View` (the real class this file's own
+        # `typed.model()` call is typed against): a local `View = self.env
+        # [...]` would shadow that import for the rest of this function --
+        # and, worse, `View = typed.model(self.env, View)` would try to read
+        # the not-yet-assigned local `View` on its own right-hand side
+        # (Python's own scoping: a name assigned anywhere in a function is
+        # local for the whole function), an `UnboundLocalError` this
+        # conversion must not introduce. Same shape as `studio_workspace.py`'s
+        # own `View`/`view_model` rename.
+        view_model = typed.model(self.env, View)
         arches = {
             "list": scaffold.scaffold_list_arch(model, spec, options),
             "form": scaffold.scaffold_form_arch(model, spec, options),
@@ -252,23 +443,26 @@ class StudioAppBuilder(models.AbstractModel):
                 )
                 continue
             arches[view_type] = builder(model, spec, options, **extra)
-        views = {}
+        views: dict[str, View] = {}
         for view_type, arch in arches.items():
-            views[view_type] = View.create(
-                {
-                    "name": "%s.%s" % (spec.name, view_type),
-                    "model": spec.name,
-                    "type": view_type,
-                    "arch": scaffold.arch_to_string(arch),
-                }
-            )
+            # Same single-dict `create()` vendor gap as `_build_access`'s own
+            # `.create(...)` above.
+            vals = {
+                "name": "%s.%s" % (spec.name, view_type),
+                "model": spec.name,
+                "type": view_type,
+                "arch": scaffold.arch_to_string(arch),
+            }
+            views[view_type] = view_model.create(vals)  # pyright: ignore[reportArgumentType]
         return views
 
     @api.model
-    def _scaffold_arguments(self, model, view_type):
+    def _scaffold_arguments(
+        self, model: BaseModel, view_type: str
+    ) -> dict[str, str] | None:
         """What a view type needs beyond the model, or None if it cannot be had."""
         needed = scaffold.SCAFFOLD_REQUIRES.get(view_type, ())
-        out = {}
+        out: dict[str, str] = {}
         for requirement in needed:
             if requirement == "date_field":
                 # `date` is what the Date & Calendar feature creates, and
@@ -286,7 +480,9 @@ class StudioAppBuilder(models.AbstractModel):
         return out
 
     @api.model
-    def _build_action(self, spec, views):
+    def _build_action(
+        self, spec: ModelSpec, views: dict[str, View]
+    ) -> IrActionsActWindow:
         # A view no action offers is a view nobody can open, so the extra types
         # go into view_mode -- kanban first, because a model with one is
         # usually meant to be seen that way. `search` is not a mode: it is
@@ -294,21 +490,28 @@ class StudioAppBuilder(models.AbstractModel):
         order = ("kanban", "list", "form", "calendar", "activity", "pivot", "graph")
         modes = [t for t in order if t in views]
         modes += sorted(set(views) - set(order) - {"search"})
-        return self.env["ir.actions.act_window"].create(
-            {
-                "name": spec.description,
-                "res_model": spec.name,
-                "view_mode": ",".join(modes),
-                "search_view_id": views["search"].id,
-                "help": (
-                    "<p class='o_view_nocontent_smiling_face'>%s</p>"
-                    % _("Create the first one")
-                ),
-            }
-        )
+        # Same single-dict `create()` vendor gap as `_build_access`'s own
+        # `.create(...)` above.
+        vals = {
+            "name": spec.description,
+            "res_model": spec.name,
+            "view_mode": ",".join(modes),
+            "search_view_id": views["search"].id,
+            "help": (
+                "<p class='o_view_nocontent_smiling_face'>%s</p>"
+                % _("Create the first one")
+            ),
+        }
+        return typed.model(self.env, IrActionsActWindow).create(vals)  # pyright: ignore[reportArgumentType]
 
     @api.model
-    def _build_menu(self, spec, action, package, parent=None):
+    def _build_menu(
+        self,
+        spec: ModelSpec,
+        action: IrActionsActWindow,
+        package: StudioPackage,
+        parent: IrUiMenu | None = None,
+    ) -> dict[str, IrUiMenu]:
         """A real app menu, not a child of the Studio menu.
 
         The generated menu must be a *root* -- parent_id unset, no groups -- or
@@ -323,54 +526,58 @@ class StudioAppBuilder(models.AbstractModel):
         takes the whole web client down instead (``studio.package``
         ``_seed_app_icon`` has the detail).
         """
-        Menu = self.env["ir.ui.menu"]
+        Menu = typed.model(self.env, IrUiMenu)
         if parent is not None:
-            # Under an existing app: one item, no root and no icon.
-            item = Menu.create(
-                {
-                    "name": spec.description,
-                    "parent_id": parent.id,
-                    "action": "ir.actions.act_window,%d" % action.id,
-                    "sequence": 10,
-                }
-            )
-            return {"root": Menu.browse(), "item": item}
-        root = Menu.create(
-            {
+            # Under an existing app: one item, no root and no icon. Same
+            # single-dict `create()` vendor gap as `_build_access`'s own
+            # `.create(...)` above.
+            item_vals = {
                 "name": spec.description,
-                "parent_id": False,
-                "web_icon": package._seed_app_icon(),
-                "sequence": 90,
-            }
-        )
-        item = Menu.create(
-            {
-                "name": spec.description,
-                "parent_id": root.id,
+                "parent_id": parent.id,
                 "action": "ir.actions.act_window,%d" % action.id,
                 "sequence": 10,
             }
-        )
+            item = Menu.create(item_vals)  # pyright: ignore[reportArgumentType]
+            return {"root": Menu.browse(), "item": item}
+        root_vals = {
+            "name": spec.description,
+            "parent_id": False,
+            "web_icon": package._seed_app_icon(),
+            "sequence": 90,
+        }
+        root = Menu.create(root_vals)  # pyright: ignore[reportArgumentType]
+        item_vals = {
+            "name": spec.description,
+            "parent_id": root.id,
+            "action": "ir.actions.act_window,%d" % action.id,
+            "sequence": 10,
+        }
+        item = Menu.create(item_vals)  # pyright: ignore[reportArgumentType]
         return {"root": root, "item": item}
 
     @api.model
-    def _build_sequence(self, spec, options):
+    def _build_sequence(
+        self, spec: ModelSpec, options: ScaffoldOptions
+    ) -> IrSequence | None:
         if not options.reference:
             return None
-        return self.env["ir.sequence"].create(
-            {
-                "name": "%s Reference" % spec.description,
-                "code": spec.sequence_code,
-                "prefix": "%s" % spec.description[:3].upper(),
-                "padding": 4,
-                "implementation": "standard",
-            }
-        )
+        # Same single-dict `create()` vendor gap as `_build_access`'s own
+        # `.create(...)` above.
+        vals = {
+            "name": "%s Reference" % spec.description,
+            "code": spec.sequence_code,
+            "prefix": "%s" % spec.description[:3].upper(),
+            "padding": 4,
+            "implementation": "standard",
+        }
+        return typed.model(self.env, IrSequence).create(vals)  # pyright: ignore[reportArgumentType]
 
     # -- honesty check ----------------------------------------------------
 
     @api.model
-    def check_visibility(self, model_name, groups):
+    def check_visibility(
+        self, model_name: str, groups: Groups
+    ) -> list[VisibilityResultJSON]:
         """Can the people this was built for actually see it?
 
         ``IrModelAccess.check`` returns True immediately for ``env.su``, so an
@@ -378,10 +585,10 @@ class StudioAppBuilder(models.AbstractModel):
         built it and is invisible to everybody else. Asking the question as a
         real user is the only way to find out before they do.
         """
-        results = []
+        results: list[VisibilityResultJSON] = []
         for group in groups:
             user = (
-                self.env["res.users"]
+                typed.model(self.env, Users)
                 .sudo()
                 .search(
                     [
@@ -393,7 +600,11 @@ class StudioAppBuilder(models.AbstractModel):
             )
             if not user:
                 results.append(
-                    {"group": group.display_name, "ok": None, "detail": _("no users")}
+                    {
+                        "group": cast("str", group.display_name),
+                        "ok": None,
+                        "detail": _("no users"),
+                    }
                 )
                 continue
             try:
@@ -405,7 +616,9 @@ class StudioAppBuilder(models.AbstractModel):
                 # reporting -- narrowing to AccessError would let a different
                 # error through as an apparent success.
                 ok, detail = False, str(err).splitlines()[0]
-            results.append({"group": group.display_name, "ok": ok, "detail": detail})
+            results.append(
+                {"group": cast("str", group.display_name), "ok": ok, "detail": detail}
+            )
         return results
 
     # -- over the wire ----------------------------------------------------
@@ -414,10 +627,10 @@ class StudioAppBuilder(models.AbstractModel):
     # above take and return records, which the probes and the tests use.
 
     @api.model
-    def features(self):
+    def features(self) -> FeaturesJSON:
         """The scaffold features, with what each implies and builds."""
-        self._assert_studio_user()
-        out = []
+        typed.security(self)._assert_studio_user()
+        out: list[FeatureEntryJSON] = []
         for entry in scaffold.features_json():
             feature = scaffold.FEATURES_BY_KEY[entry["key"]]
             out.append(
@@ -431,23 +644,23 @@ class StudioAppBuilder(models.AbstractModel):
         return {"features": out, "defaults": sorted(scaffold.DEFAULT_FEATURES)}
 
     @api.model
-    def suggest_name(self, label, package_id):
+    def suggest_name(self, label: str, package_id: int) -> SuggestNameJSON:
         """The technical name a label gets, and whether it is free."""
-        self._assert_studio_user()
-        package = self.env["studio.package"].browse(package_id).exists()
+        typed.security(self)._assert_studio_user()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("That package no longer exists."))
         name = self.technical_name(label, package)
         taken = name in self.env or bool(
-            self.env["ir.model"].sudo().search_count([("model", "=", name)])
+            typed.model(self.env, IrModel).sudo().search_count([("model", "=", name)])
         )
         return {"model": name, "taken": taken}
 
     @api.model
-    def create_app_rpc(self, package_id, spec):
+    def create_app_rpc(self, package_id: int, spec: dict[str, Any]) -> CreateAppRpcJSON:
         """``create_app`` for the console: ids in, ids out."""
-        self._assert_studio_manager()
-        package = self.env["studio.package"].browse(package_id).exists()
+        typed.security(self)._assert_studio_manager()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("That package no longer exists."))
         label = (spec.get("label") or "").strip()
@@ -458,7 +671,7 @@ class StudioAppBuilder(models.AbstractModel):
         except ValueError as err:
             raise UserError(str(err)) from err
         group_ids = [int(g) for g in (spec.get("groups") or []) if g]
-        groups = self.env["res.groups"].browse(group_ids) if group_ids else None
+        groups = typed.model(self.env, Groups).browse(group_ids) if group_ids else None
         built = self.create_app(
             package,
             label,
@@ -483,7 +696,8 @@ class StudioAppBuilder(models.AbstractModel):
                 if rows
             ],
             "visibility": self.check_visibility(
-                ir_model.model, groups or self.env.ref("base.group_user")
+                ir_model.model,
+                groups or cast("Groups", self.env.ref("base.group_user")),
             ),
         }
 
@@ -492,7 +706,7 @@ class StudioAppBuilder(models.AbstractModel):
     NEEDS_SECOND_MODEL = ("tags", "lines")
 
     @api.model
-    def add_feature(self, package_id, model_name, key):
+    def add_feature(self, package_id: int, model_name: str, key: str) -> AddFeatureJSON:
         """Stage a scaffold feature on a model the package defines in Python.
 
         The same fields and model options the feature would have given a
@@ -501,7 +715,7 @@ class StudioAppBuilder(models.AbstractModel):
         kanban, a chatter -- are added after the apply, when the columns
         exist (``studio.model.draft._apply_features``).
         """
-        self._assert_studio_manager()
+        typed.security(self)._assert_studio_manager()
         if key not in scaffold.FEATURES_BY_KEY:
             raise UserError(_("There is no feature called '%s'.", key))
         if key in self.NEEDS_SECOND_MODEL:
@@ -511,15 +725,18 @@ class StudioAppBuilder(models.AbstractModel):
                     "New Model, then drop a Tags or Lines field that points at it."
                 )
             )
-        Draft = self.env["studio.model.draft"]
+        Draft = typed.model(self.env, StudioModelDraft)
         draft = Draft.browse(Draft.open_for_model(model_name)["id"])
-        if draft.package_id.id != package_id:
+        # `package_id` is a plain-string-comodel Many2one
+        # (`studio_model_draft.py`, `app_builder_base`) -- cast at each real
+        # read site (rule 5), not on the declaration.
+        if cast("StudioPackage", draft.package_id).id != package_id:
             raise UserError(
                 _(
                     "%(model)s is defined by %(owner)s; switch to that package "
                     "to change it.",
                     model=model_name,
-                    owner=draft.package_id.name,
+                    owner=cast("StudioPackage", draft.package_id).name,
                 )
             )
         spec = draft._spec()
@@ -532,7 +749,8 @@ class StudioAppBuilder(models.AbstractModel):
         )
         bare_names = {f.name for f in bare.fields}
         wanted_json = modelspec.spec_to_json(wanted)["fields"]
-        added, already = [], []
+        added: list[str] = []
+        already: list[str] = []
         for index, field in enumerate(wanted.fields):
             if field.name in bare_names:
                 continue
@@ -542,7 +760,7 @@ class StudioAppBuilder(models.AbstractModel):
             placement = modelspec.default_placement(field.ttype)
             draft.add_field({**wanted_json[index], "placement": dict(placement)})
             added.append(field.name)
-        options = {}
+        options: dict[str, Any] = {}
         missing_mixins = [m for m in wanted.inherit if m not in spec.inherit]
         if missing_mixins:
             options["inherit"] = list(spec.inherit) + missing_mixins
@@ -566,7 +784,7 @@ class StudioAppBuilder(models.AbstractModel):
         draft.stage_feature(key)
         feature = scaffold.FEATURES_BY_KEY[key]
         return {
-            "draft_id": draft.id,
+            "draft_id": cast("int", draft.id),
             "added": added,
             "already": already,
             "options": options,
@@ -577,26 +795,42 @@ class StudioAppBuilder(models.AbstractModel):
     # -- adopt --------------------------------------------------------------
 
     @api.model
-    def adoptable_models(self):
+    def adoptable_models(self) -> list[AdoptableModelJSON]:
         """Manual models no package defines in Python, with a preview each."""
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         owned_python = set(
-            self.env["studio.package.model"]
-            .sudo()
-            .search([("source", "in", ("python", "frozen"))])
-            .mapped("model")
+            cast(
+                "list[str]",
+                typed.model(self.env, StudioPackageModel)
+                .sudo()
+                .search([("source", "in", ("python", "frozen"))])
+                .mapped("model"),
+            )
         )
-        Package = self.env["studio.package"].sudo()
-        out = []
-        for model in self.env["ir.model"].sudo().search([("state", "=", "manual")]):
+        Package = typed.model(self.env, StudioPackage).sudo()
+        out: list[AdoptableModelJSON] = []
+        manual_models = (
+            typed.model(self.env, IrModel).sudo().search([("state", "=", "manual")])
+        )
+        for model in manual_models:
             if model.model in owned_python:
                 continue
-            xmlid = model.get_external_id().get(model.id) or ""
+            xmlid = (
+                cast("dict[int, str]", model.get_external_id()).get(
+                    cast("int", model.id)
+                )
+                or ""
+            )
             module = xmlid.partition(".")[0]
             owner = (
                 Package.search([("name", "=", module)], limit=1) if module else Package
             )
-            manual_fields = model.field_id.filtered(lambda f: f.state == "manual")
+            # `field_id` is a plain-string-comodel One2many (`ir.model`,
+            # core) -- cast at the real read site (rule 5), same idiom
+            # `studio_package.py`'s own `owned_fields` already uses.
+            manual_fields = cast("IrModelFields", model.field_id).filtered(  # pyright: ignore[reportUnknownMemberType]
+                lambda f: f.state == "manual"
+            )
             try:
                 preview = pycodegen.render_model(
                     pycodegen.spec_from_ir_model(model, manual_fields)
@@ -605,15 +839,17 @@ class StudioAppBuilder(models.AbstractModel):
                 preview = "# %s" % err
             count = 0
             if model.model in self.env:
-                count = self.env[model.model].sudo().search_count([])
+                count = self.env[cast("str", model.model)].sudo().search_count([])
             out.append(
                 {
-                    "id": model.id,
-                    "model": model.model,
-                    "name": model.name,
+                    "id": cast("int", model.id),
+                    "model": cast("str", model.model),
+                    "name": cast("str", model.name),
                     "origin": "studio" if module else "manual",
                     "owner_package": (
-                        {"id": owner.id, "name": owner.name} if owner else None
+                        {"id": cast("int", owner.id), "name": cast("str", owner.name)}
+                        if owner
+                        else None
                     ),
                     "field_count": len(manual_fields),
                     "record_count": count,
@@ -623,10 +859,12 @@ class StudioAppBuilder(models.AbstractModel):
         return out
 
     @api.model
-    def adopt(self, package_id, model_names, apply=True):
+    def adopt(
+        self, package_id: int, model_names: list[str] | None, apply: bool = True
+    ) -> AdoptJSON:
         """Bring manual models under Python management, in the package."""
-        self._assert_studio_manager()
-        package = self.env["studio.package"].browse(package_id).exists()
+        typed.security(self)._assert_studio_manager()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("That package no longer exists."))
         names = [n for n in (model_names or []) if n]
@@ -634,14 +872,21 @@ class StudioAppBuilder(models.AbstractModel):
             raise UserError(_("Choose at least one model."))
         # A hand-made model belongs to no package; the user just said which.
         already = package._owned_model_names()
-        captured = []
-        for model in self.env["ir.model"].search([("model", "in", names)]):
+        captured: list[str] = []
+        for model in typed.model(self.env, IrModel).search([("model", "in", names)]):
             if model.model in already:
                 continue
             package.studio_capture(
-                [model, model.field_id.filtered(lambda f: f.state == "manual")]
+                [
+                    model,
+                    # Same plain-string-comodel `field_id` cast as
+                    # `adoptable_models()` above.
+                    cast("IrModelFields", model.field_id).filtered(  # pyright: ignore[reportUnknownMemberType]
+                        lambda f: f.state == "manual"
+                    ),
+                ]
             )
-            captured.append(model.model)
+            captured.append(cast("str", model.model))
         package.action_adopt(names)
         # The class is on disk; one reload makes it the model. `apply`
         # is separable for the tests, which cannot sit through a commit.
@@ -657,27 +902,31 @@ class StudioAppBuilder(models.AbstractModel):
         }
 
     @api.model
-    def create_field(self, package_id, model_name, values):
+    def create_field(
+        self, package_id: int, model_name: str, values: dict[str, Any]
+    ) -> CreateFieldJSON:
         """A manual ``x_`` field on any model, written to the package.
 
         The console's drop creates a field where it lands; this is the
         field with no place yet -- a computed one, say -- made from the
         model's own list.
         """
-        self._assert_studio_manager()
-        package = self.env["studio.package"].browse(package_id).exists()
+        typed.security(self)._assert_studio_manager()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("That package no longer exists."))
         name = (values.get("name") or "").strip()
         if not name.startswith("x_"):
             raise UserError(_("A custom field name must start with 'x_'."))
         ir_model = (
-            self.env["ir.model"].sudo().search([("model", "=", model_name)], limit=1)
+            typed.model(self.env, IrModel)
+            .sudo()
+            .search([("model", "=", model_name)], limit=1)
         )
         if not ir_model:
             raise UserError(_("Unknown model '%s'.", model_name))
         ttype = values.get("ttype") or "char"
-        vals = {
+        vals: dict[str, Any] = {
             "name": name,
             "field_description": values.get("field_description") or name,
             "ttype": ttype,
@@ -700,10 +949,12 @@ class StudioAppBuilder(models.AbstractModel):
                     "depends": values.get("depends") or False,
                 }
             )
+        # Same single-dict `create()` vendor gap as `_build_access`'s own
+        # `.create(...)` above.
         field = (
-            self.env["ir.model.fields"]
+            typed.model(self.env, IrModelFields)
             .with_context(studio_skip_autocapture=True)
-            .create(vals)
+            .create(vals)  # pyright: ignore[reportArgumentType]
         )
         package.studio_capture(field)
-        return {"field_id": field.id, "name": field.name}
+        return {"field_id": cast("int", field.id), "name": cast("str", field.name)}

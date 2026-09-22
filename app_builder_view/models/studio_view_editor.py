@@ -70,6 +70,16 @@ if TYPE_CHECKING:
     from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
     from odoo.addons.web.models.ir_ui_view import View as WebView
 
+    # `app_builder_view`'s own pure `_inherit` extension of `studio.model
+    # .draft` (`studio_model_draft.py`, this same addon) -- aliased against
+    # the real base already imported above (`StudioModelDraft`, from
+    # `app_builder_base`) to avoid the same-name collision every pure
+    # `_inherit` extension in this migration hits. Its own `set_anchor` is
+    # what `_reanchor_gap` below calls; declared for real now that that
+    # file is converted, replacing the `_DraftHandle` forward-declared
+    # Protocol this file used before it existed.
+    from .studio_model_draft import StudioModelDraft as StudioModelDraftView
+
 _logger = logging.getLogger(__name__)
 
 # Core loads views ordered by priority; 99 keeps studio edits last so they win
@@ -523,25 +533,6 @@ if TYPE_CHECKING:
             position: str,
         ) -> dict[str, object]: ...
         def _python_owner(self, model_name: str) -> StudioPackage: ...
-
-    class _DraftHandle(Protocol):
-        """The one extension method ``_reanchor_gap`` calls on a draft
-        recordset: ``set_anchor``, declared only on
-        ``app_builder_view/models/studio_model_draft.py``'s own pure
-        ``_inherit`` extension of ``studio.model.draft`` (not
-        ``app_builder_base``'s own base class, ``typed.model()``'s real
-        target for ``_open_draft_id`` elsewhere in this file) -- not yet
-        converted, so this is the same narrow composed-elsewhere
-        workaround as ``_ComposedViewEditor`` above, for a different,
-        sibling model.
-        """
-
-        def set_anchor(
-            self,
-            name: str,
-            anchor: dict[str, object],
-            release_dependents: bool = True,
-        ) -> object: ...
 
 
 class StudioViewEditor(models.AbstractModel):
@@ -2523,7 +2514,7 @@ class StudioViewEditor(models.AbstractModel):
                     anchor = dict(landing, position=side)
                 else:
                     anchor = {"view_id": view.id, "position": side, "pending": previous}
-                cast("_DraftHandle", draft).set_anchor(
+                cast("StudioModelDraftView", draft).set_anchor(
                     ghost_name, anchor, release_dependents=False
                 )
                 previous = ghost_name

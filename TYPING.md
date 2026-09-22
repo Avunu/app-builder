@@ -3258,26 +3258,96 @@ than reasoned about:
   file at 5 errors would have broken this migration's own standing
   invariant ("every file already converted stays at zero").
 
-  This closes Phase 1c wave 4 in full. Next: wave 5 -- the three
-  `_inherit`-only extensions of `studio.view.editor` just discussed
-  above (`studio_report_ops.py`, `studio_view_canvas.py`,
-  `studio_view_new_field.py`, all `app_builder_view`), plus the
-  remaining files the dependency map has not yet reached:
-  `studio_workspace.py` (real base in `app_builder_base`, pure
-  extensions in `app_builder_approval`/`app_builder_ui`),
-  `studio_app_builder.py` (`app_builder_model`), `studio_report_preview
-  .py` (`app_builder_report`), `studio_approval_surface.py`
-  (`app_builder_approval` -- another same-`_name`-as-`studio_approval.py`
-  collision, same fix shape as `studio_report_surface.py`),
-  `studio_automation_surface.py` (`app_builder_ui` -- same collision
-  shape against `studio_automation.py`, plus a second, uncomplicated new
-  model `studio.automation.step`), and `app_builder_view/models
-  /studio_model_draft.py` (a pure `_inherit` extension of the
-  already-converted `app_builder_base` file of the same name -- yet
-  another instance of the same collision shape). Not yet enumerated
-  further than this; the addons' own `models/` directories and this
-  document's running "Implemented so far" list are the authoritative
-  record of what remains.
+  This closes Phase 1c wave 4 in full.
+
+- **Wave 5** (11 files, the last of the dependency map): the three
+  `_inherit`-only extensions of `studio.view.editor`
+  (`studio_report_ops.py`, `studio_view_canvas.py`,
+  `studio_view_new_field.py`, all `app_builder_view`, converted in
+  dependency order -- the first two independently, the third reading
+  the second's real final signatures); `studio_workspace.py` (real base
+  in `app_builder_base`, then its two tiny pure extensions in
+  `app_builder_approval`/`app_builder_ui`, same base-then-extension
+  order); and five independent files -- `studio_app_builder.py`
+  (`app_builder_model`), `studio_report_preview.py` (`app_builder_report`),
+  `studio_approval_surface.py` (`app_builder_approval`),
+  `studio_automation_surface.py` (`app_builder_ui`), and
+  `app_builder_view/models/studio_model_draft.py` (a pure `_inherit`
+  extension of the already-converted `app_builder_base` file of the
+  identical name). Full-tree `pyright` dropped from 2626 to 2283 (343
+  errors -- the largest single-wave drop of this whole phase).
+  `pyrightconfig.json`/`pyrightconfig.ci.json`/every addon's own
+  `pyproject.toml` confirmed unchanged. **This closes Phase 1c's
+  model-file conversion in full: all 46 files under `models/` across
+  the 8 addons now carry `from __future__ import annotations`, except
+  the two (`res_users.py`, `studio_owned.py`) confirmed to need zero
+  changes.**
+
+  Four more same-`_name`-collision fixes this wave (rule 7 in the
+  workflow's own shared conventions, by now a fully routine pattern):
+  `studio_approval_surface.py` against `studio_approval.py`'s own
+  `StudioApproval`; `studio_automation_surface.py` against
+  `studio_automation.py`'s own (small, wave-2) `StudioAutomation`;
+  `app_builder_view/models/studio_model_draft.py` against
+  `app_builder_base`'s own `StudioModelDraft`; and, doubled up in the
+  view-editor trio, each of `studio_report_ops.py`/`studio_view_canvas
+  .py`/`studio_view_new_field.py` against the real
+  `studio_view_editor.py` base, with `studio_view_new_field.py`
+  additionally aliasing `studio_view_canvas.py`'s own class for its
+  calls into `canvas()`/`_field_definition()`.
+
+  **One real, severe behavior regression found by the verify agent and
+  fixed in the main loop, not by the drafting agent**: the converted
+  `studio_view_new_field.py`'s `update_manual_field` silently dropped
+  `package.studio_capture([record, record.selection_ids],
+  write_files=True)` -- the original's very last statement before its
+  return, and per `studio_package.py`'s own docstring "the single entry
+  point every builder module calls after it changes something." Without
+  it, editing a manual field's label/required/readonly/selection
+  through the console's properties panel would still write the live
+  database row but never touch the package's on-disk source -- a
+  change that looks like it worked and silently vanishes on the next
+  fresh install from that package. The verify agent traced this to a
+  real, existing test (`test_a_manual_field_definition_can_be_changed`,
+  `app_builder_view/tests/test_new_field.py:454`) that asserts exactly
+  the dropped call's own effect, so this was not a hypothetical risk.
+  Restored verbatim in the main loop (one line, `cast("IrModelSelection",
+  ...)` added for the same relational-field-cast reason every other
+  `.selection_ids` read in this file already needed) -- the one time
+  this whole migration's "flag, don't fix, across a file-scope
+  boundary" rule for a DRAFT agent finding something in ITS OWN file
+  turned out to matter for real: a severe logic bug, not a style
+  nitpick, is exactly the case that discipline exists to catch before
+  it ships.
+
+  **Two Protocol-workaround reconciliations**, done in the main loop
+  right after the workflow returned, the same "fix the forward
+  reference once the real target exists" move wave 4's own
+  `lxml_types.py` extension made: `studio_view_editor.py`'s own local
+  `_DraftHandle` Protocol (forward-declaring `set_anchor`) and
+  `studio_view_canvas.py`'s own local `_DraftWithPendingAnchored`
+  Protocol (forward-declaring `_pending_anchored`) both existed only
+  because `app_builder_view/models/studio_model_draft.py` was not yet
+  converted when wave 4 needed to call into it. Now that it is (this
+  same wave), both Protocols were deleted and replaced with a real,
+  aliased `TYPE_CHECKING`-only import of that file's own real
+  `StudioModelDraft` class (`StudioModelDraftView`, avoiding the
+  already-imported `app_builder_base` base class's identical name) --
+  confirmed each real method's signature matches what the Protocol had
+  declared before deleting it. `studio_view_editor.py`'s OTHER local
+  Protocol, `_ComposedViewEditor` (covering `canvas`/`_canvas_draft`/
+  `_splice_pending`/`_drop_field_definition`/`_mint_anchor`/
+  `_python_owner`), was deliberately left as-is: it is not a stand-in
+  for one not-yet-converted file, but a genuine architectural
+  convenience for a `self` that legitimately needs methods from TWO
+  different sibling files (`studio_view_canvas.py` and
+  `studio_view_new_field.py`) in one cast -- both siblings are now
+  real and converted, but collapsing one Protocol into two separate
+  aliased casts would be a pure style change with no correctness
+  benefit, out of this pass's own "annotate, don't refactor" mandate.
+
+  Phase 1c's next step is Phase 1d (tests) per TYPING.md's own original
+  plan -- not started yet -- or whatever the user directs next.
 
 ## CI: the OCA container's real layout
 

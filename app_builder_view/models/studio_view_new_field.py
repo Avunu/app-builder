@@ -22,12 +22,68 @@ presets -- so one tile drops on either kind of model and means the same
 thing: Priority is four values and a star on both paths.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias, TypedDict, cast
+
+from typing_extensions import NotRequired
+
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.app_builder_base.tools import modelspec
+from odoo.addons.base.models.ir_model import IrModelFields, IrModelSelection
+from odoo.addons.base.models.ir_ui_view import View
+from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
+from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+from odoo.addons.app_builder_base.tools import modelspec, typed
 
 from ..tools import manualfield
+
+if TYPE_CHECKING:
+    # Only for the annotations/casts below; with `from __future__ import
+    # annotations` nothing here needs these at runtime, the same bargain
+    # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from collections.abc import Iterable, Mapping
+
+    from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
+
+    from ..tools import canvas_stamp
+
+    # This file is a pure `_inherit = "studio.view.editor"` extension, the
+    # same `_name` TWO other real, different Python classes declare -- the
+    # registry composes all three into one model at runtime, but neither is
+    # a real Python base of this file's own class, so each is aliased on
+    # import rather than colliding with this file's own class of the
+    # identical name (rule 7, precedent: `studio_package_model.py`'s own
+    # `StudioPackageModelBase`). Cast to each wherever this file calls a
+    # method, or reads a class attribute, the other file declares and this
+    # one does not -- invisible to pyright on a bare `self` otherwise.
+    from .studio_view_canvas import CanvasFieldInfoJSON, FieldDefinitionJSON
+    from .studio_view_canvas import StudioViewEditor as StudioViewEditorCanvas
+    from .studio_view_editor import DropCreatedFieldJSON, DropSuccessJSON
+    from .studio_view_editor import StudioViewEditor as StudioViewEditorBase
+
+    class _DraftHandle(Protocol):
+        """``draft.set_anchor()``/``draft._added_names()`` are declared on
+        ``app_builder_view/models/studio_model_draft.py``'s own pure
+        ``_inherit`` extension of ``studio.model.draft`` -- not
+        ``app_builder_base``'s own base class (``typed.model()``'s real
+        target elsewhere in this file for ``StudioModelDraft`` itself), and
+        not yet converted -- so invisible to pyright on a plain
+        ``StudioModelDraft``-typed ``draft``. The same narrow
+        composed-elsewhere workaround ``studio_view_editor.py``'s own
+        ``_DraftHandle`` Protocol is, for the same sibling file, here for
+        the two methods this file's own ``_drop_field_definition`` calls.
+        """
+
+        def set_anchor(
+            self,
+            name: str,
+            anchor: dict[str, object],
+            release_dependents: bool = True,
+        ) -> object: ...
+        def _added_names(self) -> list[str]: ...
+
 
 # What the panel offered before the picker did. Kept because the answer to
 # ``quick_field_types`` is an RPC older clients still make; every entry of it
@@ -61,40 +117,85 @@ MANUAL_FIELD_WRITABLE = (
 )
 
 
+# -- wire types -----------------------------------------------------------
+#
+# Cross-checked against `app_builder_view/static/src/console/wire.ts` and
+# `.../console/types.ts`, the same read-only references
+# `studio_view_editor.py`'s own wire types are checked against.
+
+
+class QuickFieldTypeJSON(TypedDict):
+    """One entry of ``quick_field_types()``'s own answer -- the pre-picker
+    vocabulary an older client still asks for over RPC."""
+
+    value: str
+    label: str
+
+
+class PickerFieldTypeJSON(modelspec.FieldTypeJSON):
+    """``field_types_for()``'s own entry: ``available_field_types``'s
+    (``modelspec.py``) ``FieldTypeJSON`` plus whether a drop here is live
+    or needs a dialog first. A real, non-``TYPE_CHECKING`` import of the
+    parent TypedDict (rule 9, the same shape `studio_view_canvas.py`'s own
+    ``CanvasFieldInfoJSON`` already established): ``class X(Y):`` executes
+    at import time."""
+
+    live: bool
+    needs_dialog: bool
+
+
+class _NewFieldPlanRefusedJSON(TypedDict):
+    can_create: Literal[False]
+    reason: str
+    handoff: NotRequired[int]
+    model: NotRequired[str]
+
+
+class _NewFieldPlanAllowedJSON(TypedDict):
+    can_create: Literal[True]
+    model: str
+    prefix: str
+
+
+#: ``new_field_plan()``'s whole return: which of the two answers -- live or
+#: staged -- applies here, and what to say about it.
+NewFieldPlanJSON: TypeAlias = _NewFieldPlanRefusedJSON | _NewFieldPlanAllowedJSON
+
+
 class StudioViewEditor(models.AbstractModel):
     _inherit = "studio.view.editor"
 
     @api.model
-    def quick_field_types(self):
-        self._assert_studio_user()
+    def quick_field_types(self) -> list[QuickFieldTypeJSON]:
+        typed.security(self)._assert_studio_user()
         return [{"value": key, "label": label} for key, label in QUICK_TYPES]
 
     @api.model
-    def _python_owner(self, model_name):
+    def _python_owner(self, model_name: str) -> StudioPackage:
         """The package that defines ``model_name`` as a Python class, if any."""
-        for package in self.env["studio.package"].search([]):
+        for package in typed.model(self.env, StudioPackage).search([]):
             if model_name in package._python_model_set():
                 return package
-        return self.env["studio.package"].browse()
+        return typed.model(self.env, StudioPackage).browse()
 
     @api.model
-    def new_field_plan(self, view_id):
+    def new_field_plan(self, view_id: int) -> NewFieldPlanJSON:
         """Which of the two answers applies here, and what to say about it.
 
         Asked before the form is shown rather than after it is submitted: a
         panel that takes a name and a type and then explains it cannot use them
         is worse than one that says so first.
         """
-        self._assert_studio_user()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_user()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view or not view.model:
             return {"can_create": False, "reason": _("This view has no model.")}
-        owner = self._python_owner(view.model)
+        owner = self._python_owner(cast("str", view.model))
         if owner:
             return {
                 "can_create": False,
-                "handoff": owner.id,
-                "model": view.model,
+                "handoff": cast("int", owner.id),
+                "model": cast("str", view.model),
                 "reason": _(
                     "%(model)s is defined in Python by %(package)s, so a new "
                     "field is a class attribute and the model has to be "
@@ -104,10 +205,10 @@ class StudioViewEditor(models.AbstractModel):
                     package=owner.name,
                 ),
             }
-        return {"can_create": True, "model": view.model, "prefix": "x_"}
+        return {"can_create": True, "model": cast("str", view.model), "prefix": "x_"}
 
     @api.model
-    def field_types_for(self, model_name):
+    def field_types_for(self, model_name: str) -> list[PickerFieldTypeJSON]:
         """The picker's tiles for one model, with what each tile will do.
 
         ``modelspec.available_field_types`` says what the type is and
@@ -124,12 +225,22 @@ class StudioViewEditor(models.AbstractModel):
         currency field, and both are asked for in the dialog and refused in
         a sentence when they are missing.
         """
-        self._assert_studio_user()
+        typed.security(self)._assert_studio_user()
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
         owner = self._python_owner(model_name)
-        entries = modelspec.available_field_types(
-            self._python_spec(owner, model_name), self.env._
+        # `available_field_types` returns plain `FieldTypeJSON` entries; the
+        # two extra keys this method adds below are only true once they are
+        # set, so the list is cast to this file's own subclass (rule 9,
+        # the same idiom `studio_view_canvas.py`'s own `_canvas_field_info`
+        # uses for its own `CanvasFieldInfoJSON`) rather than declared that
+        # shape from the start.
+        entries = cast(
+            "list[PickerFieldTypeJSON]",
+            modelspec.available_field_types(
+                cast("StudioViewEditorBase", self)._python_spec(owner, model_name),
+                self.env._,
+            ),
         )
         has_currency = bool(manualfield.default_currency_field(model_name, self.env))
         for entry in entries:
@@ -145,14 +256,14 @@ class StudioViewEditor(models.AbstractModel):
     @api.model
     def create_field_at(
         self,
-        view_id,
-        package_id,
-        anchor,
-        values,
-        position=None,
-        expected_arch_version=None,
-        write_files=True,
-    ):
+        view_id: int,
+        package_id: int,
+        anchor: dict[str, object],
+        values: Mapping[str, Any] | None,
+        position: object = None,
+        expected_arch_version: str | None = None,
+        write_files: bool = True,
+    ) -> DropCreatedFieldJSON:
         """Create a manual field and place it, in one gesture.
 
         Only on a model no package defines in Python: everywhere else this
@@ -167,48 +278,60 @@ class StudioViewEditor(models.AbstractModel):
         the end, so a view operation that fails leaves no field on disk for
         a row the transaction then rolls back.
         """
-        self._assert_studio_manager()
-        view = self.env["ir.ui.view"].browse(view_id).exists()
+        typed.security(self)._assert_studio_manager()
+        view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view being edited no longer exists."))
         plan = self.new_field_plan(view_id)
         if not plan.get("can_create"):
             raise UserError(plan.get("reason") or _("A field cannot be created here."))
 
-        package = self.env["studio.package"].browse(package_id).exists()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a studio package to record this field in."))
 
         values = dict(values or {})
-        label = (values.get("field_description") or values.get("string") or "").strip()
+        label: str = (
+            values.get("field_description") or values.get("string") or ""
+        ).strip()
         if not label:
             raise UserError(_("The field needs a label."))
         values, widget = modelspec.apply_preset(values)
         values["field_description"] = label
         if not values.get("name"):
             values["name"] = self._quick_field_name(label, view.model)
-        payload = manualfield.ir_model_fields_vals(values, view.model, self.env)
-        name = payload["name"]
+        payload = manualfield.ir_model_fields_vals(
+            values, cast("str", view.model), self.env
+        )
+        name = cast("str", payload["name"])
 
         field = (
-            self.env["ir.model.fields"]
+            typed.model(self.env, IrModelFields)
             .with_context(studio_skip_autocapture=True)
-            .create(payload)
+            .create(payload)  # pyright: ignore[reportArgumentType]
         )
+        # `create()` only declares `list[ValuesType]`; the single-dict form
+        # is accepted at runtime (`@api.model_create_multi`), the same
+        # decorator-stub gap `studio_view_editor.py`'s own
+        # `_get_or_create_extension` already documents.
+        #
         # Ownership now, files later. The selection rows are captured by
         # hand: nothing autocaptures `ir.model.fields.selection`, and a
         # Priority whose values stayed out of the package XML would come
         # back from the next database as a selection with no values.
-        package._assign([field, field.selection_ids])
+        # `field.selection_ids` reads as a wider union than `BaseModel` here
+        # -- a plain-string-comodel `One2many`'s own read type, per rule 5 --
+        # cast at this real read site.
+        package._assign([field, cast("IrModelSelection", field.selection_ids)])
         # And onto the screen it was created from. Creating a field and leaving
         # the user to find it in a palette is two gestures for one intention.
-        operation = {"type": "add_field", "name": name}
+        operation: dict[str, object] = {"type": "add_field", "name": name}
         if widget:
             operation["attrs"] = {"widget": widget}
-        position = self._explicit_position(position)
+        position = cast("StudioViewEditorBase", self)._explicit_position(position)
         if position:
             operation["position"] = position
-        self.apply_at(
+        cast("StudioViewEditorBase", self).apply_at(
             view_id,
             package_id,
             anchor,
@@ -221,16 +344,26 @@ class StudioViewEditor(models.AbstractModel):
         return {"name": name, "label": label, "live": True}
 
     @api.model
-    def _quick_field_name(self, label, model_name=None):
+    def _quick_field_name(
+        self, label: str, model_name: str | Literal[False] | None = None
+    ) -> str:
         """The ``x_`` name a label implies, kept clear of what the model
         has: a second Text tile dropped before the first was renamed is
         ``x_new_text_2``, not a refusal."""
         name = manualfield.field_name_for(label, prefix="x_")
-        taken = self.env[model_name]._fields if model_name in self.env else ()
+        taken = (
+            self.env[cast("str", model_name)]._fields if model_name in self.env else ()
+        )
         return manualfield.unique_name(name, taken)
 
     @api.model
-    def update_manual_field(self, model_name, name, values, package_id):
+    def update_manual_field(
+        self,
+        model_name: str,
+        name: str,
+        values: Mapping[str, Any] | None,
+        package_id: int,
+    ) -> FieldDefinitionJSON | None:
         """Change the definition of a manual field, and write it to source.
 
         Only a manual field: a core field's label is Python, and writing
@@ -243,8 +376,8 @@ class StudioViewEditor(models.AbstractModel):
 
         Captured once, field and rows together, and written once.
         """
-        self._assert_studio_manager()
-        record = self.env["ir.model.fields"]._get(model_name, name)
+        typed.security(self)._assert_studio_manager()
+        record = typed.model(self.env, IrModelFields)._get(model_name, name)
         if not record:
             raise UserError(
                 _(
@@ -261,7 +394,7 @@ class StudioViewEditor(models.AbstractModel):
                     field=name,
                 )
             )
-        package = self.env["studio.package"].browse(package_id).exists()
+        package = typed.model(self.env, StudioPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a studio package to record this change in."))
         values = dict(values or {})
@@ -273,9 +406,9 @@ class StudioViewEditor(models.AbstractModel):
                     ", ".join(sorted(unknown)),
                 )
             )
-        writes = {}
+        writes: dict[str, Any] = {}
         if "field_description" in values:
-            label = (values["field_description"] or "").strip()
+            label: str = (values["field_description"] or "").strip()
             if not label:
                 raise UserError(_("The field needs a label."))
             writes["field_description"] = label
@@ -294,23 +427,33 @@ class StudioViewEditor(models.AbstractModel):
             if record.ttype not in ("selection", "reference"):
                 raise UserError(_("%s is not a selection.", name))
             self._sync_selection(record, values["selection"])
-        package.studio_capture([record, record.selection_ids], write_files=True)
-        return self._field_definition(model_name, {"name": name, "origin": "manual"})
+        package.studio_capture(
+            [record, cast("IrModelSelection", record.selection_ids)], write_files=True
+        )
+        return cast("StudioViewEditorCanvas", self)._field_definition(
+            model_name, cast("CanvasFieldInfoJSON", {"name": name, "origin": "manual"})
+        )
 
     @api.model
-    def _sync_selection(self, record, entries):
+    def _sync_selection(
+        self, record: IrModelFields, entries: Iterable[Mapping[str, Any]] | None
+    ) -> Literal[True]:
         """Make the rows match ``entries`` by value."""
         rows = manualfield.selection_rows(entries, self.env)
         wanted = {row["value"]: row for row in rows}
-        existing = {line.value: line for line in record.selection_ids}
+        existing = {
+            line.value: line for line in cast("IrModelSelection", record.selection_ids)
+        }
         for value, line in existing.items():
             if value not in wanted:
                 line.unlink()
-        Selection = self.env["ir.model.fields.selection"]
+        Selection = typed.model(self.env, IrModelSelection)
         for row in rows:
             line = existing.get(row["value"])
             if line is None:
-                Selection.create({"field_id": record.id, **row})
+                # Same `create()`-stub gap as `create_field_at`'s own
+                # `.create(payload)` above.
+                Selection.create({"field_id": record.id, **row})  # pyright: ignore[reportArgumentType]
                 continue
             changes = {
                 key: row[key]
@@ -325,8 +468,17 @@ class StudioViewEditor(models.AbstractModel):
 
     @api.model
     def _drop_field_definition(
-        self, view, package, stamped, root, token, position, container, payload, options
-    ):
+        self,
+        view: View,
+        package: StudioPackage,
+        stamped: canvas_stamp.StampResult,
+        root: LxmlElement,
+        token: canvas_stamp.Token,
+        position: str,
+        container: canvas_stamp.StudioNode,
+        payload: dict[str, object],
+        options: dict[str, object],
+    ) -> DropSuccessJSON:
         """A ``new_field`` or ``move_pending`` drop, on whichever path applies.
 
         Called by ``drop_at`` once the target has passed the same checks
@@ -339,7 +491,7 @@ class StudioViewEditor(models.AbstractModel):
         when there is a draft, so the tray and the canvas move together.
         """
         kind = payload.get("kind")
-        plan = self.new_field_plan(view.id)
+        plan = self.new_field_plan(cast("int", view.id))
         if kind == "new_field" and plan.get("can_create"):
             return self._drop_live_field(
                 view, package, token, position, container, payload, options
@@ -353,12 +505,20 @@ class StudioViewEditor(models.AbstractModel):
                     )
                 )
             raise UserError(plan.get("reason") or _("A field cannot be created here."))
-        Draft = self.env["studio.model.draft"]
-        draft = Draft.browse(Draft.open_for_model(view.model)["id"])
+        Draft = typed.model(self.env, StudioModelDraft)
+        draft = Draft.browse(Draft.open_for_model(cast("str", view.model))["id"])
         anchor = self._mint_anchor(view, stamped, root, token, position)
         if kind == "new_field":
-            values = dict(payload.get("values") or {})
-            label = (
+            values = dict(
+                # `payload["values"]` is a genuinely `Any`-shaped RPC dict
+                # here (not yet through `modelspec.apply_preset`); cast
+                # rather than left as the declared `dict[str, object]`, so
+                # `.strip()` below and `draft.add_field`'s own `dict[str,
+                # Any]` parameter type-check the same way `create_field_at`'s
+                # identical line does.
+                cast("dict[str, Any]", payload.get("values") or {})
+            )
+            label: str = (
                 values.get("field_description") or values.get("string") or ""
             ).strip()
             if not label:
@@ -366,8 +526,10 @@ class StudioViewEditor(models.AbstractModel):
             values["string"] = label
             values.pop("field_description", None)
             if not values.get("name"):
-                values["name"] = self._staged_field_name(label, view.model, draft)
-            name = values["name"]
+                values["name"] = self._staged_field_name(
+                    label, cast("str", view.model), draft
+                )
+            name = cast("str", values["name"])
             if not name.isidentifier():
                 raise UserError(_("'%s' is not a usable field name.", name))
             # The placement slots keep saying which views the field goes
@@ -376,23 +538,29 @@ class StudioViewEditor(models.AbstractModel):
             # its list column.
             draft.add_field(values)
         else:
-            name = payload.get("name")
-            if name not in draft._added_names():
+            name = cast("str", payload.get("name"))
+            if name not in cast("_DraftHandle", draft)._added_names():
                 raise UserError(
                     _("There is no pending field called '%s' to place.", name)
                 )
             if anchor.get("pending") == name:
                 raise UserError(_("A field cannot be placed beside itself."))
-        draft.set_anchor(name, anchor)
+        cast("_DraftHandle", draft).set_anchor(name, anchor)
         loaded = draft.load()
         label = next((f["string"] for f in loaded["fields"] if f["name"] == name), name)
         options = dict(options, draft_id=draft.id)
-        canvas = self.canvas(view.id, options)
+        canvas = cast("StudioViewEditorCanvas", self).canvas(
+            cast("int", view.id), options
+        )
         return {
             "stale": False,
-            "select": self.PENDING_TOKEN_PREFIX + name,
+            "select": cast("StudioViewEditorCanvas", self).PENDING_TOKEN_PREFIX + name,
             "created": None,
-            "staged": {"name": name, "label": label or name, "draft_id": draft.id},
+            "staged": {
+                "name": name,
+                "label": label or name,
+                "draft_id": cast("int", draft.id),
+            },
             "canvas": canvas,
             "history": canvas["history"],
             "draft": loaded,
@@ -400,23 +568,32 @@ class StudioViewEditor(models.AbstractModel):
 
     @api.model
     def _drop_live_field(
-        self, view, package, token, position, container, payload, options
-    ):
+        self,
+        view: View,
+        package: StudioPackage,
+        token: canvas_stamp.Token,
+        position: str,
+        container: canvas_stamp.StudioNode,
+        payload: dict[str, object],
+        options: dict[str, object],
+    ) -> DropSuccessJSON:
         """The live half of a ``new_field`` drop."""
         created = self.create_field_at(
-            view.id,
-            package.id,
+            cast("int", view.id),
+            cast("int", package.id),
             {"kind": "node", "token": token},
-            payload.get("values") or {},
+            cast("dict[str, Any]", payload.get("values") or {}),
             position=position,
             write_files=False,
         )
         if package.writable:
             package.action_write_files()
-        canvas = self.canvas(view.id, options)
+        canvas = cast("StudioViewEditorCanvas", self).canvas(
+            cast("int", view.id), options
+        )
         return {
             "stale": False,
-            "select": self._token_named(
+            "select": cast("StudioViewEditorBase", self)._token_named(
                 canvas["nodes"],
                 created["name"],
                 "field",
@@ -430,7 +607,9 @@ class StudioViewEditor(models.AbstractModel):
         }
 
     @api.model
-    def _staged_field_name(self, label, model_name, draft):
+    def _staged_field_name(
+        self, label: str, model_name: str, draft: StudioModelDraft
+    ) -> str:
         """The clean name a label implies for a class attribute, kept clear
         of what the model has and what the draft is already adding."""
         name = manualfield.field_name_for(label, prefix="")
@@ -440,7 +619,14 @@ class StudioViewEditor(models.AbstractModel):
         return manualfield.unique_name(name, taken)
 
     @api.model
-    def _mint_anchor(self, view, stamped, root, token, position):
+    def _mint_anchor(
+        self,
+        view: View,
+        stamped: canvas_stamp.StampResult,
+        root: LxmlElement,
+        token: canvas_stamp.Token,
+        position: str,
+    ) -> dict[str, object]:
         """Everything a drop location is, minted now for a field that is not.
 
         The xpath and the arch version it holds on, so Apply can use it as
@@ -454,26 +640,38 @@ class StudioViewEditor(models.AbstractModel):
         anchor names the staged field instead, and is resolved wherever
         that field turns out to be.
         """
+        base = cast("StudioViewEditorBase", self)
         entry = stamped.nodes[token]
         if entry["kind"] == "pending":
             return {
                 "view_id": view.id,
                 "position": position,
-                "pending": entry["pending"]["name"],
+                # `"pending"` is `NotRequired` on `StudioNode` in general
+                # (real for every node this branch selects, a `kind:
+                # "pending"` ghost) -- `.get()` plus a cast, the same
+                # `_reanchor_gap`'s own workaround in `studio_view_editor.py`.
+                "pending": cast("canvas_stamp.PendingFieldInfo", entry.get("pending"))[
+                    "name"
+                ],
             }
         node = stamped.elements[token]
         return {
             "view_id": view.id,
-            "xpath": self._locator_for(node, self._occurrences(root)),
+            "xpath": base._locator_for(node, base._occurrences(root)),
             "position": position,
-            "arch_version": self._version_of(
-                view.id, self._neutral_combined_arch(view)
+            "arch_version": base._version_of(
+                cast("int", view.id), base._neutral_combined_arch(view)
             ),
             "descriptor": self._legacy_descriptor(stamped, root, token),
         }
 
     @api.model
-    def _legacy_descriptor(self, stamped, root, token):
+    def _legacy_descriptor(
+        self,
+        stamped: canvas_stamp.StampResult,
+        root: LxmlElement,
+        token: canvas_stamp.Token,
+    ) -> dict[str, object] | None:
         """The ``{kind, name}`` descriptor for a node, or ``None``.
 
         The vocabulary ``_find_descriptor`` resolves without a token: the
@@ -493,9 +691,10 @@ class StudioViewEditor(models.AbstractModel):
         kind = entry["kind"]
         if kind == "root":
             return {"kind": "root"}
-        if kind not in self.DESCRIPTOR_TAGS:
+        base = cast("StudioViewEditorBase", self)
+        if kind not in base.DESCRIPTOR_TAGS:
             return None
-        tag = self.DESCRIPTOR_TAGS[kind]
+        tag = base.DESCRIPTOR_TAGS[kind]
         candidates = [
             candidate
             for candidate in root.iter(tag)
