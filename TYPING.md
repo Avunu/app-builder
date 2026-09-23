@@ -3524,11 +3524,46 @@ top-level files the bonus cleanup caught -- type-checks and lints
 clean under this migration's own "stage 1" standard-mode ratchet.
 Remaining, per TYPING.md's own original plan: Phase 1e (optional
 runtime enforcement via `typeguard`, explicitly deferred "decide after
-1c" in the plan's own text -- now decidable, not yet decided), Phase 2
-(TypeScript, unstarted), Phase 3 (CI/enforcement/docs, partially done --
-see "CI: the OCA container's real layout" below).
+1c" in the plan's own text -- now decidable, not yet decided) and the
+rest of Phase 3 (enforcement, docs, the final ratchet). Phase 2
+(TypeScript) was already complete before Phase 1c's model sweep began
+-- see "Phase 2b is now complete" above; an earlier draft of this
+paragraph wrongly called it unstarted.
 
-## CI: the OCA container's real layout
+## Phase 3 -- enforcement
+
+**CI's pyright config had silently drifted from local's.** With the
+Python tree at zero errors, the first real question was whether CI's
+`typecheck` job would actually go green -- it runs `npx pyright -p
+pyrightconfig.ci.json` and fails on any error, so it cannot have passed
+at any point while this migration's error count was in the thousands.
+Diffing the two configs found `pyrightconfig.ci.json` (a standalone
+copy) missing both the `tools/` strict `executionEnvironments` and the
+explicit `reportPrivateUsage: "none"`. Measured rather than assumed:
+
+- `reportPrivateUsage` is already `"none"` in `standard` mode, so its
+  absence changed nothing -- CI's rule set, pointed at local paths,
+  reports the same `0 errors, 9 warnings` local does.
+- The missing environments were a real enforcement hole: a scratch
+  `tools/` file with one unannotated function got **4 errors** under the
+  local config and **0** under CI's. CI was checking `tools/` less
+  strictly than every developer's own editor.
+
+Fixed by making `pyrightconfig.ci.json` `extends` the local config,
+overriding only `extraPaths`/`venvPath`/`venv`. Two things verified
+before relying on that: `extends` carries `executionEnvironments` over
+intact (the same scratch file gets the same 4 errors), and the inherited
+environments resolve imports through the *child's* `extraPaths`, not the
+parent's (pointing the child at a nonexistent path breaks resolution
+inside `tools/` too). The earlier "CI configs are standalone, not
+`extends`" rule below was decided for `tsconfig.ci.json`, where
+`extends` would *replace* `compilerOptions.paths` and drop every
+`@app_builder_*` alias -- for pyright, the replaced key is `extraPaths`,
+which is exactly the key CI needs replaced. `tsconfig.ci.json` stays
+standalone. Also ran `scripts/ci_addons_mirror.py` for real and pointed
+a scratch config (CI rules, the real mirror, local Odoo tree standing in
+for `/opt/odoo-venv`) at it: `0 errors`. Still not a run inside the
+actual container.
 
 ## CI: the OCA container's real layout
 
