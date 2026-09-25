@@ -1,4 +1,4 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { beforeAnchor } from "./outline_tree";
 import { MIN_BAR, captionFor, labelOf, subtree, takesTag } from "./zones";
 const END_EXT = 12;

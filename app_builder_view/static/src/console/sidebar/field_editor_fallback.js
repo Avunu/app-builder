@@ -1,5 +1,5 @@
 import { Component, onMounted, useRef, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { ModelFieldSelector } from "@web/core/model_field_selector/model_field_selector";
 import { ModelSelector } from "@web/core/model_selector/model_selector";
 import { usePopover } from "@web/core/popover/popover_hook";

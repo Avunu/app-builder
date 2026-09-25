@@ -23,7 +23,7 @@
  * wandered over next.
  */
 
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { elementsFor } from "./identity";
 import { outlineRect, toContent } from "./geometry";
 import type { NodeTable, PlainRect, Point, StudioNode, Token, Zone, ZoneContainer } from "./types";

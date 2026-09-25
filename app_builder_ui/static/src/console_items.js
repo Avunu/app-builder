@@ -1,9 +1,10 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t as _tUntyped } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
+const _t = _tUntyped;
 const panes = registry.category("app_builder.panes");
 function pane(key, label, icon, sequence, surface, extra = {}) {
   const value = {
-    label: String(label),
+    label,
     icon,
     scope: "model",
     surface,

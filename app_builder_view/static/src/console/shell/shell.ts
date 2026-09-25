@@ -17,7 +17,7 @@
  */
 
 import { Component, onWillStart, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { ResizablePanel } from "@web/core/resizable_panel/resizable_panel";
 import * as compat from "../compat";
 import { TopBar } from "../top_bar";

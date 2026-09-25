@@ -22,7 +22,7 @@
  * string: it restores Odoo's own default rather than pinning a blank value.
  */
 
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { registry } from "@web/core/registry";
 import type { DescribedTarget, StudioModelFieldEntry } from "./types";
 import type { CatalogueJSON, OptionGroupJSON, RowJSON, WidgetJSON } from "./wire";
@@ -78,7 +78,7 @@ function widgetChoices(target: DescribedTarget, context: OptionsContext): [strin
             : entry.types.includes(type ?? "");
     });
     return [
-        ["", _t("Default")],
+        ["", String(_t("Default"))],
         ...usable.map((entry): [string, string] => [entry.value, entry.label]),
     ];
 }
@@ -92,7 +92,7 @@ function fieldChoices(
     const matching: [string, string][] = fields
         .filter((f) => !types.length || types.includes(f.type))
         .map((f) => [f.name, `${f.string} (${f.name})`]);
-    return row.allow_empty ? [["", row.empty_label || _t("None")], ...matching] : matching;
+    return row.allow_empty ? [["", row.empty_label || String(_t("None"))], ...matching] : matching;
 }
 
 function choicesFor(
@@ -107,7 +107,7 @@ function choicesFor(
             return fieldChoices(row, context);
         case "image_size":
             return [
-                ["", _t("Default")],
+                ["", String(_t("Default"))],
                 ...((context.catalogue && context.catalogue.image_sizes) || []),
             ];
         case "comodel_fields":

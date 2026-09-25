@@ -27,7 +27,7 @@ import { Component, useState } from "@odoo/owl";
 import { Dropdown } from "@web/core/dropdown/dropdown";
 import { DropdownItem } from "@web/core/dropdown/dropdown_item";
 import { useHotkey } from "@web/core/hotkeys/hotkey_hook";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { ConfirmationDialog, useService } from "./odoo";
 import type { DialogService } from "./odoo";
 import { ApplyDialog } from "./apply_dialog";

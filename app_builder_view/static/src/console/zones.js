@@ -1,4 +1,4 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 const BAR = 14;
 const INSET = 8;
 const MIN_LENGTH = 16;

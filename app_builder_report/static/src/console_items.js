@@ -1,4 +1,4 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "@app_builder_view/console/l10n";
 import { registry } from "@web/core/registry";
 registry.category("app_builder.panes").add(
   "reports",

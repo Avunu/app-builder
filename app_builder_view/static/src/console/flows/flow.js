@@ -1,5 +1,5 @@
 import { Component, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { messageOf } from "../shell/draft_model";
 import { setPaneResolver } from "../shell/pane_registry";
 class FlowModel {

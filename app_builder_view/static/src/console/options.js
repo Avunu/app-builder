@@ -1,4 +1,4 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { registry } from "@web/core/registry";
 const fieldRegistry = registry.category("fields");
 function widgetChoices(target, context) {
@@ -13,7 +13,7 @@ function widgetChoices(target, context) {
     return supported ? supported.includes(type ?? "") : entry.types.includes(type ?? "");
   });
   return [
-    ["", _t("Default")],
+    ["", String(_t("Default"))],
     ...usable.map((entry) => [entry.value, entry.label])
   ];
 }
@@ -21,7 +21,7 @@ function fieldChoices(row, context) {
   const types = row.field_types || [];
   const fields = context && context.fields || [];
   const matching = fields.filter((f) => !types.length || types.includes(f.type)).map((f) => [f.name, `${f.string} (${f.name})`]);
-  return row.allow_empty ? [["", row.empty_label || _t("None")], ...matching] : matching;
+  return row.allow_empty ? [["", row.empty_label || String(_t("None"))], ...matching] : matching;
 }
 function choicesFor(row, target, context) {
   switch (row.source) {
@@ -31,7 +31,7 @@ function choicesFor(row, target, context) {
       return fieldChoices(row, context);
     case "image_size":
       return [
-        ["", _t("Default")],
+        ["", String(_t("Default"))],
         ...context.catalogue && context.catalogue.image_sizes || []
       ];
     case "comodel_fields":

@@ -152,6 +152,10 @@ function makeModel() {
   model._replaceCanvas(canvas("v1", ["name", "email", "phone"]));
   return { model, calls, notices, shell };
 }
+function swapOrm(model, orm) {
+  model.orm = orm;
+  model.draftModel.orm = orm;
+}
 test("a dropped Button tile is held with the version its token was minted on", async () => {
   const { model, calls } = makeModel();
   const result = await model.drop("o_studio_n_3", "after", BUTTON);
@@ -326,7 +330,7 @@ test("a staged answer carries the draft, and the ghost is removed through it", a
     change_count: 1,
     pending: [pendingChange({ kind: "added", name: "weight" })]
   });
-  model.orm = {
+  swapOrm(model, {
     async call(_model, method, args) {
       calls.push({ method, args });
       if (method === "drop_at") {
@@ -348,7 +352,7 @@ test("a staged answer carries the draft, and the ghost is removed through it", a
     async searchRead() {
       return [];
     }
-  };
+  });
   const result = await model.drop("o_studio_n_3", "after", {
     kind: "new_field",
     values: { ttype: "float", field_description: "New Decimal" }
@@ -391,7 +395,7 @@ function makeStagedModel({
     errors: [],
     package: draftPackage
   });
-  model.orm = {
+  swapOrm(model, {
     async call(_model, method, args, kwargs) {
       calls.push({ method, args, kwargs });
       switch (method) {
@@ -415,7 +419,7 @@ function makeStagedModel({
     async searchRead() {
       return [];
     }
-  };
+  });
   return { model, calls, notices };
 }
 test("Apply reloads everything the console knows and says so", async () => {
@@ -469,7 +473,7 @@ test("where the server cannot reload, Apply writes and says a restart is owed", 
   expect(model.reloadMode).toBe("manual");
   const orm = model.orm;
   const original = (m, method, args, kwargs) => orm.call(m, method, args, kwargs);
-  model.orm = {
+  swapOrm(model, {
     ...model.orm,
     async call(m, method, args, kwargs) {
       if (method === "load") {
@@ -478,7 +482,7 @@ test("where the server cannot reload, Apply writes and says a restart is owed", 
       }
       return original(m, method, args, kwargs);
     }
-  };
+  });
   const result = await model.applyDraft(false);
   expect(result).toEqual({ ok: true, restartRequired: true });
   expect(model.pendingCount).toBe(1);
@@ -489,7 +493,7 @@ test("the rest of a written apply is placed once the server is back", async () =
   const { model, calls } = makeStagedModel({ apply: () => true });
   const orm = model.orm;
   const original = (m, method, args, kwargs) => orm.call(m, method, args, kwargs);
-  model.orm = {
+  swapOrm(model, {
     ...model.orm,
     async call(m, method, args, kwargs) {
       if (method === "place_pending") {
@@ -498,7 +502,7 @@ test("the rest of a written apply is placed once the server is back", async () =
       }
       return original(m, method, args, kwargs);
     }
-  };
+  });
   const result = await model.draftModel.placePending();
   expect(result).toEqual({ placed: true, reason: "" });
   expect(calls.find((c) => c.method === "place_pending")?.args).toEqual([[9]]);

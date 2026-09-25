@@ -11,7 +11,7 @@
  */
 
 import { Component, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { useService } from "../odoo";
 import { messageOf } from "../shell/draft_model";
 import { paneFlows, paneRegistry } from "../shell/pane_registry";
@@ -762,13 +762,9 @@ export class HomePane extends Component<Props> {
 paneRegistry.add(
     "home",
     {
-        // `PaneRegistration.label` is a plain, required `string`
-        // (`shell_model.ts:setTitle` pushes it straight into a
-        // `string[]`), never the `string | Markup | LazyTranslatedString`
-        // union `_t()` itself returns -- the same `String(_t(...))`
-        // pattern every other converted pane registration already uses
-        // (`changes_pane.ts`, `create_package_flow.ts`).
-        label: String(_t("Home")),
+        // Lazy `_t` values, not `String(...)`: this runs at module load, before
+        // translations exist (`PaneRegistration.label`).
+        label: _t("Home"),
         icon: "fa fa-home",
         scope: "package",
         Component: HomePane,
@@ -867,22 +863,20 @@ interface OpenViewShell {
 }
 
 paneRegistry.add("open_view", {
-    // Wrapped with `String(...)` throughout this registration, the same
-    // "worth doing consistently, not only where the type forces it" choice
-    // `create_package_flow.ts`'s own registration already made for the
-    // identical `label`/`title`/`doneLabel`/step-`label` shapes.
-    label: String(_t("Open a view")),
+    // Lazy `_t` values, not `String(...)`: this runs at module load, before
+    // translations exist (`PaneRegistration.label`).
+    label: _t("Open a view"),
     icon: "fa fa-pencil-square-o",
     scope: "package",
     tab: false,
     flow: {
         key: "open_view",
-        title: String(_t("Open a view")),
-        doneLabel: String(_t("Open")),
+        title: _t("Open a view"),
+        doneLabel: _t("Open"),
         steps: [
             {
                 key: "model",
-                label: String(_t("Model")),
+                label: _t("Model"),
                 Component: OpenViewStep,
                 validate: (values: OpenViewValues): string =>
                     values.model ? "" : String(_t("Pick a model.")),

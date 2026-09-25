@@ -8,7 +8,7 @@
  * `force`.
  */
 
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { ConfirmationDialog } from "../odoo";
 import type { DialogService } from "../odoo";
 import type { Token } from "../types";

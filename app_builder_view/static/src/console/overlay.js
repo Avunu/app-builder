@@ -1,4 +1,4 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { elementsFor } from "./identity";
 import { outlineRect, toContent } from "./geometry";
 class Overlay {

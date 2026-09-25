@@ -14,6 +14,7 @@ ground truth for "does this load", so this test asks it directly rather
 than re-implementing its regexes.
 """
 
+import ast
 import pathlib
 import re
 
@@ -40,6 +41,54 @@ def _shipped_js_files():
         yield from sorted(static.rglob("*.js"))
 
 
+# A runtime import of another addon of this repo, in esbuild's output: a
+# static `import ... from "@addon/..."` / `export ... from "@addon/..."`
+# (possibly spanning lines), a bare `import "@addon/..."`, or a dynamic
+# `import("@addon/...")`. `import type` never reaches the emitted .js, which
+# is exactly why a type-only import from an addon not depended on is fine.
+_RUNTIME_IMPORT = re.compile(
+    r"""\b(?:import|export)\b[^;'"]*?\bfrom\s*["'](@app_builder_\w+)/"""
+    r"""|\bimport\s*\(?\s*["'](@app_builder_\w+)/""",
+    re.DOTALL,
+)
+
+
+def _studio_depends():
+    """Each addon of this repo -> every addon of this repo it depends on,
+    transitively."""
+    direct = {}
+    for addon_dir in _REPO_ROOT.glob("app_builder*"):
+        manifest = addon_dir / "__manifest__.py"
+        if manifest.is_file():
+            data = ast.literal_eval(manifest.read_text(encoding="utf-8"))
+            direct[addon_dir.name] = set(data.get("depends", []))
+    closure = {}
+    for addon in direct:
+        seen, todo = set(), [addon]
+        while todo:
+            for dep in direct.get(todo.pop(), ()):
+                if dep not in seen:
+                    seen.add(dep)
+                    todo.append(dep)
+        closure[addon] = seen
+    return closure
+
+
+def undeclared_runtime_imports():
+    """`(file, imported addon)` for every shipped .js that imports, at
+    runtime, an addon of this repo its own addon does not depend on."""
+    closure = _studio_depends()
+    found = []
+    for path in _shipped_js_files():
+        addon = path.relative_to(_REPO_ROOT).parts[0]
+        content = path.read_text(encoding="utf-8")
+        for match in _RUNTIME_IMPORT.finditer(content):
+            target = (match.group(1) or match.group(2))[1:]
+            if target != addon and target not in closure.get(addon, set()):
+                found.append((path.relative_to(_REPO_ROOT).as_posix(), target))
+    return found
+
+
 @tagged("post_install", "-at_install")
 class TestTranspiledAssets(BaseCase):
     def test_every_shipped_js_file_transpiles_cleanly(self):
@@ -63,3 +112,20 @@ class TestTranspiledAssets(BaseCase):
                 "module) produces exactly this from esbuild -- see "
                 "TYPING.md, Known traps.",
             )
+
+    def test_no_runtime_import_from_an_addon_not_depended_on(self):
+        """A shipped .js may only import, at runtime, addons of this repo
+        its own addon depends on. An import of one it does not is missing
+        from the bundle whenever that addon is not installed, and the
+        importing module silently never starts -- the TypeScript migration
+        once routed `app_builder_ui`'s Automations menu item through
+        `@app_builder_view/console/odoo` this way. Types are free to cross:
+        `import type` never reaches the emitted .js."""
+        self.assertEqual(
+            undeclared_runtime_imports(),
+            [],
+            "each (file, addon) above imports that addon at runtime without "
+            "its own manifest depending on it -- take only the type "
+            "(`import type`) and call Odoo's own function, as "
+            "app_builder_ui/static/src/automations_menu_item.ts does",
+        )

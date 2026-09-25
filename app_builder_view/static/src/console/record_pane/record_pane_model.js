@@ -1,5 +1,5 @@
 import { markRaw } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import * as compat from "../compat";
 import { messageOf } from "../shell/draft_model";
 class RecordPaneModel {

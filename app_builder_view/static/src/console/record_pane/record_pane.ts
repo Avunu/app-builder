@@ -17,7 +17,7 @@
  */
 
 import { Component, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { FormViewDialog as FormViewDialogImpl } from "@web/views/view_dialogs/form_view_dialog";
 import * as compat from "../compat";
 import { ConfirmationDialog, useService } from "../odoo";

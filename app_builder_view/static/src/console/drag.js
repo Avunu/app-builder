@@ -1,5 +1,5 @@
 import { useDragAndDrop } from "@html_editor/utils/drag_and_drop";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import * as compat from "./compat";
 import {
   childEntries,

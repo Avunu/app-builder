@@ -27,7 +27,7 @@
  */
 
 import { Component, useState, useRef, onMounted } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "@app_builder_view/console/l10n";
 import { CheckBox } from "@web/core/checkbox/checkbox";
 import { ModelSelector } from "@web/core/model_selector/model_selector";
 import { ModelFieldSelector } from "@web/core/model_field_selector/model_field_selector";

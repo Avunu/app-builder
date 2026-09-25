@@ -1,5 +1,5 @@
 import { markRaw } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 function messageOf(err) {
   const rpcErr = err;
   if (rpcErr?.data?.message) {

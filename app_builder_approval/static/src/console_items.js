@@ -1,5 +1,6 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t as _tUntyped } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
+const _t = _tUntyped;
 registry.category("app_builder.panes").add(
   "approvals",
   {

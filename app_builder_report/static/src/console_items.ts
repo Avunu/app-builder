@@ -5,7 +5,7 @@
  * console, on the same pane.
  */
 
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "@app_builder_view/console/l10n";
 import { registry } from "@web/core/registry";
 import type { RecordRowJSON } from "@app_builder_view/console/wire";
 import type { StudioShell } from "@app_builder_view/console/shell/shell_model";

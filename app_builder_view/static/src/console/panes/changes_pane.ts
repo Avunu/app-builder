@@ -13,7 +13,7 @@
  */
 
 import { Component, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { ApplyDialog } from "../apply_dialog";
 import { ConfirmationDialog, useService } from "../odoo";
 import type { DialogService } from "../odoo";
@@ -529,7 +529,7 @@ export class ChangesSidebar extends Component<Props> {
 paneRegistry.add(
     "changes",
     {
-        label: String(_t("Changes")),
+        label: _t("Changes"),
         icon: "fa fa-code-fork",
         scope: "package",
         Component: ChangesPane,

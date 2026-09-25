@@ -1,5 +1,5 @@
 import { Component, onWillDestroy, useEffect, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { ConfirmationDialog, useService } from "../odoo";
 import { optionsFor, visibleRows, writeValue } from "../options";
 import { iconForType } from "../pending_widget";

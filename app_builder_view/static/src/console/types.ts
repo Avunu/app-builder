@@ -23,6 +23,7 @@
  */
 
 import type { Component } from "@odoo/owl";
+import type { Translated } from "./l10n";
 import type {
     DraftFieldJSON,
     DraftPayload,
@@ -570,7 +571,13 @@ export interface PaneContext {
  * this tree names that category yet.
  */
 export interface PaneRegistration {
-    label: string;
+    /** Built at module load by every real registration, so a lazy `_t`
+     * value (`Translated`, `l10n.ts`) and never a primitive `string`:
+     * translations are not loaded yet when a module body runs, and
+     * `String()` on a lazy value at that moment throws `translation error`
+     * out of `odoo.define`, aborting the rest of the asset bundle -- the
+     * whole backend, not just this pane. Stringify where it is read. */
+    label: Translated;
     icon?: string;
     scope?: "package" | "model" | "view";
     isAvailable?: (ctx: PaneContext) => boolean;
@@ -650,13 +657,9 @@ export type FlowValues = Record<string, unknown>;
 /** One step of a flow, as `flow.ts:FlowModel` reads it off `spec.steps`. */
 export interface FlowStep {
     key: string;
-    /** `_t(...)`'s own return type (`string | Markup | LazyTranslatedString`)
-     * is what every real registration actually builds this from -- `unknown`
-     * rather than `string`, the same correction `console_model.ts`'s
-     * `KIND_LABELS` already made for the identical situation, since this
-     * module has no ambient declaration for `Markup`/`LazyTranslatedString`
-     * to name more precisely. */
-    label: unknown;
+    /** A lazy `_t` value, built at module load -- see
+     * `PaneRegistration.label`. */
+    label: Translated;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     Component: typeof Component<any, any>;
     validate?(values: FlowValues, shell: unknown): string;
@@ -675,8 +678,9 @@ export interface FlowSpec {
      * read only by the template (`flow.xml`'s `t-att-data-flow`), never
      * by `FlowModel` itself. */
     key?: string;
-    title: unknown;
-    doneLabel?: unknown;
+    /** Lazy `_t` values, like every flow's step labels. */
+    title: Translated;
+    doneLabel?: Translated;
     initial?: FlowValues;
     steps: FlowStep[];
     onOpen?(shell: unknown, flow: unknown): void | Promise<void>;

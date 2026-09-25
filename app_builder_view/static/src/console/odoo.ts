@@ -29,19 +29,12 @@
  *    not a call site. Typing a facade nothing calls would be typing
  *    ahead of a reader this migration has consistently avoided elsewhere;
  *    add it here the day a real file needs it.
- *  - A stringifying wrapper around `_t`. Every already-converted file
- *    that needs a plain `string` already writes `String(_t(...))` at the
- *    point it is needed (`console_model.ts`, `draft_model.ts`,
- *    `shell_model.ts`, `outline_tree.ts`, `zones.ts`, `pane_registry.ts`,
- *    and more) -- a real, working, established pattern. A facade that
- *    eagerly stringified by default would be the wrong default for a
- *    file that instead wants to hand a *lazy* translated value to a
- *    component prop, so Owl's own reactivity can re-render it on a
- *    language change; nothing in this tree does that yet, but inventing
- *    an eager-only wrapper now would quietly foreclose it. Import `_t`
- *    from `@web/core/l10n/translation` directly, same as every file so
- *    far, and reach for `String(...)` at the point a plain string is
- *    actually needed.
+ *  - `_t`. It has its own module, `l10n.ts` (typed, not stringifying),
+ *    so the Owl-free modules can import it without pulling in this
+ *    file's Owl hooks and dialog component. `String(_t(...))` where a
+ *    primitive is needed -- but never while a module body is running:
+ *    translations are not loaded yet, and `String()` of a lazy value
+ *    then throws out of `odoo.define`, aborting the whole asset bundle.
  */
 
 import type { Component } from "@odoo/owl";

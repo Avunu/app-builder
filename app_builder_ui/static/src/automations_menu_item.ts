@@ -15,12 +15,27 @@
 
 import { Component } from "@odoo/owl";
 import { DropdownItem } from "@web/core/dropdown/dropdown_item";
-import { _t } from "@web/core/l10n/translation";
+import { _t as _tUntyped } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { user } from "@web/core/user";
-import { useService } from "@app_builder_view/console/odoo";
-import type { ActionService, CogMenuItem, ViewEnv } from "@app_builder_view/console/odoo";
+import { useService as useServiceUntyped } from "@web/core/utils/hooks";
+import type { TranslateFn } from "@app_builder_view/console/l10n";
+import type {
+    ActionService,
+    CogMenuItem,
+    useService as UseService,
+    ViewEnv,
+} from "@app_builder_view/console/odoo";
 import type { OrmService } from "@app_builder_view/console/types";
+
+// `app_builder_ui` does not depend on `app_builder_view` (its manifest), so
+// nothing from that addon may be imported here at runtime -- it would be
+// missing from this addon's bundle whenever it is installed without it.
+// The typed facades are taken as *types* only (`import type`, erased from
+// the emitted `.js`) and applied to Odoo's own functions, which is all
+// `console/l10n.ts` and `console/odoo.ts` do at runtime anyway.
+const _t = _tUntyped as TranslateFn;
+const useService = useServiceUntyped as typeof UseService;
 
 // No props: `static props = {}` below is a strict empty schema, the same
 // "genuinely takes nothing" situation `cog_menu_item.ts`'s own `Props`

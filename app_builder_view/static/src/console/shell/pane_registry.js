@@ -1,4 +1,4 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { registry } from "@web/core/registry";
 const paneRegistry = registry.category("app_builder.panes");
 const legacyTabs = registry.category("app_builder.console_tabs");

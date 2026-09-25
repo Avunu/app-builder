@@ -10,7 +10,7 @@
  */
 
 import { Component, onWillStart, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { useService } from "../odoo";
 import { paneRegistry } from "../shell/pane_registry";
 import type { OrmService } from "../types";
@@ -218,29 +218,20 @@ interface FlowShell {
 }
 
 paneRegistry.add("create_package", {
-    // `PaneRegistration.label` is a plain `string` (`shell_model.ts:setTitle`
-    // pushes it straight into a `string[]`), never the `string | Markup |
-    // LazyTranslatedString` union `_t()` itself returns -- the same
-    // `String(_t(...))` pattern every other converted file already uses at
-    // the point a real `string` is needed, applied here throughout for
-    // every piece of text this flow builds, not only where the outer
-    // `PaneRegistration` type forces it: `flow` itself is typed `unknown`
-    // on that interface (nothing reads `flow.title`/`doneLabel`/a step's
-    // own `label` back out through a `string`-typed reader), but stringing
-    // together some `String(...)`-wrapped text and some raw lazy values
-    // for no functional reason is worth avoiding for its own sake.
-    label: String(_t("Create a package")),
+    // Lazy `_t` values, not `String(...)`: this runs at module load, before
+    // translations exist (`PaneRegistration.label`).
+    label: _t("Create a package"),
     icon: "fa fa-cube",
     scope: "package",
     tab: false,
     flow: {
         key: "create_package",
-        title: String(_t("Create a package")),
-        doneLabel: String(_t("Create package")),
+        title: _t("Create a package"),
+        doneLabel: _t("Create package"),
         steps: [
             {
                 key: "name",
-                label: String(_t("Name")),
+                label: _t("Name"),
                 Component: NameStep,
                 validate: (values: CreatePackageValues): string => {
                     if (!values.name) {
@@ -259,15 +250,15 @@ paneRegistry.add("create_package", {
             },
             {
                 key: "where",
-                label: String(_t("Where")),
+                label: _t("Where"),
                 Component: WhereStep,
                 validate: (values: CreatePackageValues): string =>
                     values.root_dir
                         ? ""
                         : String(_t("No entry on the addons path can be written to.")),
             },
-            { key: "git", label: String(_t("Git")), Component: GitStep },
-            { key: "review", label: String(_t("Review")), Component: ReviewStep },
+            { key: "git", label: _t("Git"), Component: GitStep },
+            { key: "review", label: _t("Review"), Component: ReviewStep },
         ],
         onDone: async (
             shell: FlowShell,

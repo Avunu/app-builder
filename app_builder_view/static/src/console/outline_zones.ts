@@ -29,7 +29,7 @@
  * here touches the DOM. No Owl, no services.
  */
 
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { beforeAnchor } from "./outline_tree";
 import { MIN_BAR, captionFor, labelOf, subtree, takesTag } from "./zones";
 import type {

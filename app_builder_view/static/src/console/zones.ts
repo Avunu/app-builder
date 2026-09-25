@@ -38,7 +38,7 @@
  * so the layout can be tested on plain rectangles. No Owl, no services.
  */
 
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import type {
     DragPayload,
     NodeKind,

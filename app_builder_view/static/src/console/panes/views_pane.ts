@@ -17,7 +17,7 @@
  */
 
 import { Component, useEffect, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { registry } from "@web/core/registry";
 import { StudioCanvas } from "../canvas";
 import type { Props as StudioCanvasProps } from "../canvas";
@@ -191,7 +191,7 @@ export class ViewsSidebar extends Component<Props> {
 paneRegistry.add(
     "views",
     {
-        label: String(_t("Views")),
+        label: _t("Views"),
         icon: "fa fa-th-large",
         scope: "model",
         // A view id names its model: the cog and the systray send one

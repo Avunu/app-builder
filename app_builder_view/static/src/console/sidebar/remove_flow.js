@@ -1,4 +1,4 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { ConfirmationDialog } from "../odoo";
 async function removeWithConfirm({
   model,

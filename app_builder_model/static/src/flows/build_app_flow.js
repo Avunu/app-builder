@@ -1,5 +1,5 @@
 import { Component, onWillStart, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "@app_builder_view/console/l10n";
 import { useService } from "@app_builder_view/console/odoo";
 import { MultiRecordSelector } from "@web/core/record_selectors/multi_record_selector";
 import { RecordSelector } from "@web/core/record_selectors/record_selector";
@@ -215,22 +215,20 @@ class ReviewStep extends Component {
   }
 }
 paneRegistry.add("build_app", {
-  // `PaneRegistration.label` is a plain `string`, never the
-  // `string | Markup | LazyTranslatedString` union `_t()` itself
-  // returns -- the same `String(_t(...))` pattern
-  // `create_package_flow.ts` already uses throughout, applied here too.
-  label: String(_t("Build an app")),
+  // Lazy `_t` values, not `String(...)`: this runs at module load, before
+  // translations exist (`PaneRegistration.label`).
+  label: _t("Build an app"),
   icon: "fa fa-cubes",
   scope: "package",
   tab: false,
   flow: {
     key: "build_app",
-    title: String(_t("Build an app")),
-    doneLabel: String(_t("Build it")),
+    title: _t("Build an app"),
+    doneLabel: _t("Build it"),
     steps: [
       {
         key: "name",
-        label: String(_t("Name")),
+        label: _t("Name"),
         Component: NameStep,
         validate: (values) => {
           if (!(values.label || "").trim()) {
@@ -248,20 +246,20 @@ paneRegistry.add("build_app", {
           return "";
         }
       },
-      { key: "features", label: String(_t("Features")), Component: FeaturesStep },
+      { key: "features", label: _t("Features"), Component: FeaturesStep },
       {
         key: "who",
-        label: String(_t("Who can use it")),
+        label: _t("Who can use it"),
         Component: WhoStep,
         validate: (values) => (values.groups || []).length ? "" : String(_t("Pick at least one group, or nobody can open it."))
       },
       {
         key: "menu",
-        label: String(_t("Menu")),
+        label: _t("Menu"),
         Component: MenuStep,
         validate: (values) => values.menu_kind === "under" && !values.parent_menu_id ? String(_t("Say which app the menu goes under.")) : ""
       },
-      { key: "review", label: String(_t("Review")), Component: ReviewStep }
+      { key: "review", label: _t("Review"), Component: ReviewStep }
     ],
     onDone: async (shell, flow) => {
       const values = flow.values;

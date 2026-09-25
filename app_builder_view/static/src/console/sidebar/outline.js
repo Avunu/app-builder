@@ -10,7 +10,7 @@ import {
   useState
 } from "@odoo/owl";
 import { browser } from "@web/core/browser/browser";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { usePopover } from "@web/core/popover/popover_hook";
 import { focusLabelRow } from "../drag";
 import { useService } from "../odoo";

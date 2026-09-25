@@ -256,26 +256,36 @@ hoot `onRpc` mocks typed against the same map.
   hint that the ambient file is the cause. Confirmed by removing it and
   watching the error disappear -- if it ever needs to come back for a
   different reason, re-test that resolution first.
-- eslint's `no-unsafe-*` rules (Phase 2c) are configured
-  (`eslint.config.mjs`) but **not enforced** -- not in the pre-commit
-  hooks, not in CI. typescript-eslint's own program construction
-  (tried `project` as both a relative and an absolute path, and
-  `projectService: true` -- all three, same result) fails to resolve
-  `tsconfig.json`'s ambient `registries`/other literal, non-glob
-  `include` entries that reach outside this directory via `../../odoo/...`,
-  and reports spurious `no-unsafe-*` findings on any file that touches a
-  type from one of them. `npm run typecheck` (the real, enforced
-  checker) and the TypeScript compiler API's own
-  `getParsedCommandLineOfConfigFile` (what `tsc -p` itself calls) both
-  pass the same code cleanly; narrowed as far as confirming
-  `ts.parseJsonConfigFileContent` called directly with a *relative* base
-  path silently drops those same entries, while an absolute one or
-  `getParsedCommandLineOfConfigFile` does not -- typescript-eslint
-  evidently still hits the relative-basePath path somewhere internal
-  that no public `parserOptions` changes. `eslint.config.mjs`'s own
-  top-of-file comment has the full account. Don't trust an eslint
-  finding without cross-checking it against `npm run typecheck` first;
-  don't wire eslint into a hook or CI job until this is actually fixed.
+- **Never coerce a `_t(...)` value while a module body is running**
+  (`String(_t(...))`, a template literal, `+`, `.trim()` -- anything that
+  calls its `toString`). Odoo's module loader starts every non-lazy module
+  the moment it is defined, while the asset bundle is still being
+  evaluated; translations only arrive later, when the web client's
+  `localization` service starts. Until then `_t` returns a
+  `LazyTranslatedString`, whose `toString` *throws* `translation error`.
+  The throw escapes `odoo.define`, which the bundle calls at its top level,
+  so it aborts **the rest of the bundle**: on the live dev server this took
+  126 modules with it, `@web/main`/`@web/start` included -- every backend
+  page rendered blank. Keep module-load values lazy (the `Translated` type,
+  `console/l10n.ts`) and stringify where they are read. `tsc` cannot see
+  this; the tours and the hoot suite do (Phase 3, below).
+- eslint's `no-unsafe-*` findings were real, not a tooling bug. The
+  earlier entry here (and `eslint.config.mjs`'s own comment) blamed
+  typescript-eslint's program construction for "spurious" findings; a
+  program built exactly the way `tsc -p` builds it, handed to eslint
+  through `parserOptions.programs`, reported the identical 245. The actual
+  cause: untyped vendor JS (`allowJs`, `checkJs: false`) can carry
+  TypeScript's `error` type -- `translation.js`'s own JSDoc names
+  `Markup`/`LazyTranslatedString`, types that file never declares, so
+  `_t`'s whole return type collapses to `error` -- and `checkJs: false`
+  suppresses the diagnostic that would have said so. `tsc` then reports
+  nothing, because an `any` flowing into typed code is legal; the
+  `no-unsafe-*` rules exist precisely to flag it. `_t` alone accounted for
+  154 of ~200. Typed at the boundary now (`console/l10n.ts`); the rest are
+  the event bus, `user.hasGroup`, `JSON.parse` and test mock-server casts.
+  When eslint and `tsc` disagree, check the type the checker actually
+  resolves (`checker.getTypeAtLocation`, `type.intrinsicName ===
+  "error"`) before calling either one wrong.
 - **Typed relational fields (`field: Cls = fields.Many2one("model")`,
   TYPING.md's own Phase 1c plan text) do not actually type-check, for any
   of `Many2one`/`One2many`/`Many2many` -- superseded by the finding
@@ -595,18 +605,11 @@ hoot `onRpc` mocks typed against the same map.
   `@odoo/hoot-dom`'s own `queryOne` stays the plain, non-generic
   `Element` it has always been (see cluster-3's own `drag.test.ts`
   finding on this).
-- `ReturnType<typeof _t>`, unioned with anything else (`string |
-  ReturnType<typeof _t>`, `ReturnType<typeof _t> | null | false`), trips
-  eslint's `no-redundant-type-constituents` ("'any' overrides all other
-  types in this union type") -- the same vendor-`any`-bleed-under-
-  `checkJs:false` root cause already documented for the five `no-unsafe-*`
-  rules, just surfacing through a different rule once `ReturnType<typeof
-  _t>` is unioned with something rather than used bare (as `KIND_LABELS`/
-  `FlowStep.label`/etc. already do without tripping it). Treated as the
-  same accepted noise category -- eslint is not enforced tree-wide
-  (`eslint.config.mjs`'s own docstring), and there is no ambient
-  `Markup`/`LazyTranslatedString` declaration to name the union
-  precisely instead (the same reason `FlowStep.label` stays `unknown`).
+- `ReturnType<typeof _t>` used to be `any` (the vendor `error` type, see
+  above), which is why unioning it with anything tripped
+  `no-redundant-type-constituents`. `_t` is imported from
+  `console/l10n.ts` now and returns `Translated` (`string | String`), so
+  `ReturnType<typeof _t>` is that union too.
 - `usePopover`'s own `open(target, props)` (`@web/core/popover/
   popover_hook.js`) forwards `props` to the popover service unchanged --
   neither it nor `Popover` itself injects a `close` into the *rendered*
@@ -3564,6 +3567,86 @@ standalone. Also ran `scripts/ci_addons_mirror.py` for real and pointed
 a scratch config (CI rules, the real mirror, local Odoo tree standing in
 for `/opt/odoo-venv`) at it: `0 errors`. Still not a run inside the
 actual container.
+
+**The TypeScript migration had broken the whole backend, and nothing in
+its verification could see it.** Found while working out why eslint could
+not be enforced (Known traps has that half): typing `_t` honestly
+(`console/l10n.ts`, returning `Translated` = `string | String`) made `tsc`
+flag the pane registrations whose `label: string` it now contradicted --
+and every one of them turned out to have been *made* to satisfy that type
+during Phase 2b by wrapping the label in `String(...)`, at module top
+level. The original `.js` stored the lazy value (`label: _t("Changes")`).
+`String()` of a lazy translation before translations load throws
+(`translation error`), the throw escapes `odoo.define`, and the rest of
+the asset bundle never runs. Measured, not inferred, by driving headless
+Chrome over the DevTools protocol against the running dev server and
+asking `odoo.loader` directly:
+
+- at `HEAD`: `create_package_flow` failed to load, 1061 of the bundle's
+  1186 modules registered, the other 125 -- `@web/main` and `@web/start`
+  among them, plus modules of 20 other addons -- never defined; the page
+  mounted no navbar and no action manager, `document.body.innerText` was
+  empty. **Every backend page was blank.**
+- after the fix: all 1188 modules defined and started, no loader errors,
+  no console errors, the web client lands on Discuss.
+
+Phase 2b's own verification was `tsc`/`eslint`/`prettier`, build
+idempotence and a transpile-equivalence check comparing each module's
+name and dependency list -- all static, none of them evaluates a module in
+the order the browser does, and the tours and hoot suite were not run.
+The hoot suite could not even have told anyone: at `HEAD` its whole run
+aborts on the same error (through `app_builder_ui`'s `pane()` helper, which
+did the `String()` one call deeper).
+
+The fix restores the original runtime behavior and makes the types say
+so. `PaneRegistration.label`, `FlowSpec.title`/`doneLabel` and
+`FlowStep.label` are `Translated`; the 28 module-level `String(_t(...))`
+calls across six files (the Changes/Home/Views panes, the create-package,
+build-app, adopt-model and open-view flows) are plain `_t(...)` again, as
+is `pane()`'s `String(label)`; the few readers that need a primitive
+(`shell_model.ts:setTitle`, `options.ts`'s choices) stringify at read
+time. Found with a TypeScript-API scan for coercions whose enclosing
+chain has no function boundary, plus the same for local helpers called at
+module load -- but the scan only follows one call deep, so the browser is
+the actual check: the live probe above, all 17 tour tests across the 8
+tour classes (`tour succeeded` from the browser for each, none skipped),
+and the hoot suite, 106 tests.
+
+Two more regressions from the same migration surfaced along the way:
+
+- **`app_builder_ui` imported `app_builder_view` at runtime without
+  depending on it.** Converting `automations_menu_item` routed its
+  `useService` through `@app_builder_view/console/odoo`; installed
+  without `app_builder_view`, the module is missing from the bundle and
+  the Automations menu item never starts. It calls `@web`'s own
+  `useService` again and takes the facade's overloads as a type (`import
+  type` is erased from the emitted `.js`); `app_builder_ui` and
+  `app_builder_approval` take `TranslateFn` the same way rather than
+  importing `l10n.ts`. `test_assets.py` gains
+  `test_no_runtime_import_from_an_addon_not_depended_on`, which reads
+  every shipped `.js` against its addon's transitive manifest `depends`
+  -- run against the committed `automations_menu_item.js`, it names
+  exactly this import.
+- **Three `console_model` hoot tests had been failing, hidden behind the
+  crash.** The JS original mutated the shared mock in place
+  (`model.orm.call = ...`), which the console and its draft both hold;
+  the TypeScript version replaced the reference (`model.orm = {...}`), so
+  the draft kept the default stub, which answers `{}` to `action_apply`
+  -- a mocked refusal came back `ok: true`. Test-only; a `swapOrm`
+  helper replaces both references at the four sites the original
+  mutated.
+
+**The whole Python suite, run for the first time since Phases 1c and 1d**
+-- every model and test file had been retyped under static checks only:
+all 9 addons on a fresh database (`-u` all nine, `--test-tags` one per
+addon), 892 tests, `0 failed, 0 error(s)`, tours and hoot suite included.
+Running it needed one environment fact worth keeping: with `--test-tags`
+and *no* `-u`, Odoo 18 builds `at_install` suites for every module in the
+graph (`loading.py`: `test_enable and (needs_update or not updating)`),
+which imports `base_tier_validation`'s tests and fails on
+`odoo_test_helper`, absent from this environment. `-u <our addons>` limits
+collection to the addons being updated -- the same thing odoo-nix's own
+`odoo test` command does.
 
 ## CI: the OCA container's real layout
 

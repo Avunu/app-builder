@@ -1,4 +1,4 @@
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { TYPE_ICONS } from "./pending_widget";
 import { labelOf, subtree, takesTag } from "./zones";
 const KIND_ICONS = {

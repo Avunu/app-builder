@@ -23,14 +23,23 @@
  * before this conversion.
  */
 
-import { _t } from "@web/core/l10n/translation";
+import { _t as _tUntyped } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
+import type { TranslateFn } from "@app_builder_view/console/l10n";
 import type {
     RecordPaneModel,
     RowActionSpec,
 } from "@app_builder_view/console/record_pane/record_pane_model";
 import type { PaneRegistration } from "@app_builder_view/console/types";
 import type { RecordRowJSON } from "@app_builder_view/console/wire";
+
+// `app_builder_ui` does not depend on `app_builder_view` (its manifest), so
+// nothing from that addon may be imported here at runtime -- it would be
+// missing from this addon's bundle whenever it is installed without it.
+// The typed facades are taken as *types* only (`import type`, erased from
+// the emitted `.js`) and applied to Odoo's own functions, which is all
+// `console/l10n.ts` and `console/odoo.ts` do at runtime anyway.
+const _t = _tUntyped as TranslateFn;
 
 const panes = registry.category("app_builder.panes");
 
@@ -59,15 +68,11 @@ function pane(
     surface: string,
     extra: PaneExtra = {},
 ): void {
-    // `PaneRegistration.label` is a plain, required `string` -- `_t(...)`'s
-    // own return type is not a `string` (see this migration's "Known
-    // traps" on `ReturnType<typeof _t>`) -- so it is resolved with
-    // `String(...)` here, the same single-place idiom every other real
-    // `app_builder.panes` registration already uses (`changes_pane.ts`,
-    // `cog_menu_item.ts`, ...) rather than wrapping it at every call site
-    // below.
+    // Called at module load, so `label` stays the lazy `_t` value it was
+    // given: `String()` on it here would throw before translations load
+    // (`PaneRegistration.label`'s own comment).
     const value: PaneRegistration = {
-        label: String(label),
+        label,
         icon,
         scope: "model",
         surface,

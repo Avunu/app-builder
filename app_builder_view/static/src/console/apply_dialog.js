@@ -1,6 +1,6 @@
 import { Component, useState } from "@odoo/owl";
 import { Dialog } from "@web/core/dialog/dialog";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { ConfirmationDialog, useService } from "./odoo";
 class ApplyDialog extends Component {
   // `template`/`props` are both declared on Owl's own `Component` base

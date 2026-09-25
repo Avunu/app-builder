@@ -35,7 +35,7 @@
  */
 
 import { Component, onWillDestroy, useEffect, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import type { ConsoleModel } from "../console_model";
 import { ConfirmationDialog, useService } from "../odoo";
 import type { DialogService } from "../odoo";

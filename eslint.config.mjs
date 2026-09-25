@@ -8,26 +8,14 @@
 // `include`, not a glob over the whole tree): the point is catching an
 // unsafe boundary *we* wrote, not re-litigating vendored JS we don't own
 // and that `scripts/typecheck.mjs` already treats as out of scope.
-// KNOWN BROKEN for now -- read this before trusting a "no-unsafe-*"
-// finding from this config. typescript-eslint's own program construction
-// (tried: `project` as a relative string, `project` as an absolute path,
-// `projectService: true` -- all three, same result) fails to resolve
-// tsconfig.json's ambient `registries`/`@odoo/owl` module declarations,
-// which are literal (non-glob) `include` entries reaching outside this
-// directory via `../../odoo/...`. Every file that touches a type from
-// one of those (`ViewsRegistryItemShape`, `Component`, ...) then reports
-// spurious `no-unsafe-*` findings on code that `npm run typecheck` (the
-// real, enforced checker -- `tsc -p tsconfig.json`) and the TypeScript
-// compiler API's own `getParsedCommandLineOfConfigFile` (what `tsc -p`
-// itself calls) both pass cleanly. Confirmed narrowly: calling
-// `ts.parseJsonConfigFileContent` directly with a *relative* base path
-// (`.`) silently drops those same `include` entries; an absolute one, or
-// the higher-level `getParsedCommandLineOfConfigFile`, does not.
-// typescript-eslint's parser evidently still hits the relative-basePath
-// path somewhere internal to it, which none of the public parserOptions
-// change. Not yet filed upstream. Until this is fixed (or narrowed down
-// further), eslint is NOT wired into the pre-commit hooks or CI
-// typecheck job -- see TYPING.md, Known traps.
+// Not yet enforced (no pre-commit hook, no CI step) -- but its findings
+// are real. They were once blamed on typescript-eslint's program
+// construction; a program built exactly the way `tsc -p` builds it,
+// passed in through `parserOptions.programs`, reports the same findings.
+// The cause is untyped vendor JS (`allowJs`, `checkJs: false`) carrying
+// TypeScript's `error` type into our code without a diagnostic -- `_t`
+// was most of it, and is typed at the boundary now (`console/l10n.ts`).
+// TYPING.md, Known traps, has the account and what remains.
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 

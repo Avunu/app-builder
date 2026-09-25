@@ -25,7 +25,7 @@
  * instance); this class is plain so it can be tested and ported as it is.
  */
 
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { DraftModel, messageOf } from "./draft_model";
 import type { ApplyResult } from "./draft_model";
 import { paneAvailable, paneRegistry, resolvePane, warnLegacyTabs } from "./pane_registry";
@@ -549,7 +549,7 @@ export class StudioShell {
             parts.push(this.modelLabel);
         }
         if (entry && entry.key !== "views") {
-            parts.push(entry.label);
+            parts.push(String(entry.label));
         } else if (this.view.view_type) {
             parts.push(this.view.view_type);
         }

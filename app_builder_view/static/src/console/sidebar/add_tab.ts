@@ -37,7 +37,7 @@
  */
 
 import { Component, useEffect, useRef, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "../l10n";
 import { focusLabelRow } from "../drag";
 import { useService } from "../odoo";
 import { iconForType } from "../pending_widget";

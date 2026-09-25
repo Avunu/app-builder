@@ -1,9 +1,11 @@
 import { Component } from "@odoo/owl";
 import { DropdownItem } from "@web/core/dropdown/dropdown_item";
-import { _t } from "@web/core/l10n/translation";
+import { _t as _tUntyped } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { user } from "@web/core/user";
-import { useService } from "@app_builder_view/console/odoo";
+import { useService as useServiceUntyped } from "@web/core/utils/hooks";
+const _t = _tUntyped;
+const useService = useServiceUntyped;
 class StudioAutomations extends Component {
   static template = "app_builder_ui.StudioAutomations";
   static components = { DropdownItem };

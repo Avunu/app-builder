@@ -9,7 +9,7 @@
  */
 
 import { Component, onWillStart, useState } from "@odoo/owl";
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "@app_builder_view/console/l10n";
 import { useService } from "@app_builder_view/console/odoo";
 import * as compat from "@app_builder_view/console/compat";
 import { paneRegistry } from "@app_builder_view/console/shell/pane_registry";
@@ -231,27 +231,26 @@ interface FlowShell {
 }
 
 paneRegistry.add("adopt_model", {
-    // `PaneRegistration.label` is a plain `string`, never the lazy
-    // `_t(...)` union itself -- `String(...)` throughout this
-    // registration, matching `create_package_flow.ts`'s own precedent.
-    label: String(_t("Adopt a model")),
+    // Lazy `_t` values, not `String(...)`: this runs at module load, before
+    // translations exist (`PaneRegistration.label`).
+    label: _t("Adopt a model"),
     icon: "fa fa-download",
     scope: "package",
     tab: false,
     flow: {
         key: "adopt_model",
-        title: String(_t("Adopt a model")),
-        doneLabel: String(_t("Adopt")),
+        title: _t("Adopt a model"),
+        doneLabel: _t("Adopt"),
         steps: [
             {
                 key: "choose",
-                label: String(_t("Choose")),
+                label: _t("Choose"),
                 Component: ChooseStep,
                 validate: (values: AdoptModelValues): string =>
                     (values.models || []).length ? "" : String(_t("Choose at least one model.")),
             },
-            { key: "preview", label: String(_t("Preview")), Component: PreviewStep },
-            { key: "review", label: String(_t("Review")), Component: ReviewStep },
+            { key: "preview", label: _t("Preview"), Component: PreviewStep },
+            { key: "review", label: _t("Review"), Component: ReviewStep },
         ],
         onDone: async (
             shell: FlowShell,

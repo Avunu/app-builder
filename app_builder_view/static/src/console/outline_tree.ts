@@ -32,7 +32,7 @@
  * Pure: no Owl, no services, no DOM.
  */
 
-import { _t } from "@web/core/l10n/translation";
+import { _t } from "./l10n";
 import { TYPE_ICONS } from "./pending_widget";
 import { labelOf, subtree, takesTag } from "./zones";
 import type { NodeTable, OutlineRow, StudioNode, Token, ZonePosition } from "./types";
