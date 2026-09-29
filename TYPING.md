@@ -3536,13 +3536,95 @@ Phase 1c and Phase 1d.
 project owns -- `tools/`, `models/`, `tests/`, and the two small
 top-level files the bonus cleanup caught -- type-checks and lints
 clean under this migration's own "stage 1" standard-mode ratchet.
-Remaining, per TYPING.md's own original plan: Phase 1e (optional
-runtime enforcement via `typeguard`, explicitly deferred "decide after
-1c" in the plan's own text -- now decidable, not yet decided) and the
-rest of Phase 3 (enforcement, docs, the final ratchet). Phase 2
+Remaining, per TYPING.md's own original plan: the rest of Phase 3
+(docs, the final ratchet); Phase 1e (runtime enforcement) was decided and
+built afterwards -- see its own section below. Phase 2
 (TypeScript) was already complete before Phase 1c's model sweep began
 -- see "Phase 2b is now complete" above; an earlier draft of this
 paragraph wrongly called it unstarted.
+
+## Phase 1e -- runtime enforcement (typeguard), decided and built
+
+The plan left this "optional, late: cheap on pure functions, worthless on
+ORM code; decide after 1c". Decided by measurement, not opinion: typeguard
+4.6 was hooked onto every `tools/` module in both addons (not `typed.py` /
+`lxml_types.py`, below) and the whole suite was run under it -- recording
+rather than raising, so one run gave the complete picture. 893 tests, 0
+failures, and **four unique violations**:
+
+- **One real annotation defect.** `modelspec.spec_to_json(spec: ModelSpec)`
+  is `asdict(spec)`, and the editor's draft calls it with a `FieldSpec` for
+  every field row. The signature was too narrow; `studio_model_draft.py`
+  carried two `# pyright: ignore[reportArgumentType]` (and a comment
+  explaining that `modelspec.py` was "out of scope") to get past it.
+  Phase 1c's agents had flagged those sites as "narrower-than-declared" and
+  correctly left them; nothing could say whether the annotation or the
+  calls were wrong until something checked what actually arrives. Widened
+  to `ModelSpec | FieldSpec`, both ignores and the comment deleted, pyright
+  clean.
+- **Three from one test** that drives an annotated function outside its
+  annotation on purpose: `test_the_default_resolver_does_not_guess` calls
+  `view_options.groups_json("form")` with the default resolver, which leaves
+  labels lazy (`OptionGroupJSON` says `str`; `view_options.py` already
+  admits this in a comment), and asserts exactly that. Not bugs -- a
+  documented, tested contract the annotation cannot express. Marked
+  explicitly at the call (`with unchecked():`, `tests/common.py`) rather
+  than excused globally, so every other use stays strictly checked.
+
+No `TypeHintWarning`s, no cast-and-comment lies found in the ORM-facing
+code -- which is the point of scoping it: `tools/` are pure functions over
+dataclasses, dicts and strings, where a runtime check is cheap and true.
+On ORM code the static type (`Users`, `StudioPackage`) is a claim
+`typed.model()` makes with a `cast`, and checking it at run time would
+only compare the cast with itself.
+
+**What it costs to make typeguard agree with code written for a static
+checker** (each was hit, not predicted):
+
+- `typed.py`: `TypeVar("M", bound="BaseModel")` with `BaseModel` imported
+  under `TYPE_CHECKING` -- typeguard resolves the bound when it checks a
+  `type[M]` argument, so 720 tests died with `NameError`. `typed.py` is all
+  casts and has nothing to check; excluded.
+- `lxml_types.py`'s `LxmlElement`/`ElementTree` `Protocol`s: hand-written
+  stand-ins for stubless lxml. typeguard checks a `Protocol` argument
+  structurally, which needs the protocol's own `TYPE_CHECKING`-only
+  annotations to resolve (`MutableMapping`, `Field`) -- and a real lxml
+  element does not carry those declared attribute types anyway. A checker
+  lookup function passes over any `Protocol` defined in this repo. It has
+  to be inserted *ahead of* typeguard's own (`insert(0, ...)`); appended,
+  as the docs example does, it is never consulted for a `Protocol`.
+- `manifest.py`: `Manifest: TypeAlias = "dict[str, ManifestValue]"` is a
+  quoted alias, and `Manifest | None` in an annotation is `str | None` to
+  anything that evaluates it (typeguard, or `get_type_hints`). The alias
+  was quoted for no reason -- `ManifestValue` is defined above it -- so it
+  is unquoted. (`ManifestValue` itself is genuinely recursive and stays
+  quoted; typeguard copes.)
+- Unresolvable annotations are set to `ForwardRefPolicy.ERROR`: the default
+  is a warning and a skipped check, which reads exactly like a passed one.
+
+**How it is wired.** Off unless `APP_BUILDER_TYPEGUARD` is set.
+`app_builder_base/__init__.py` installs the hook before importing `tools`
+(typeguard rewrites a module as it loads, so there is no installing it
+afterwards); `app_builder_base/_typeguard_hook.py` holds it. `typeguard` is
+in `test-requirements.txt`, so `oca_install_addons` puts it in both
+containers, and `test.yml` sets the variable for the OCB flavor only
+(`matrix.typeguard`; the two images do not differ for this). Locally:
+`APP_BUILDER_TYPEGUARD=1 odoo test app_builder_base`, with `typeguard`
+installed in the env -- it is deliberately not in the devenv's own
+dependencies. The `pyright` ignores on its three imports say why.
+
+**A hook that silently is not installed passes every test.** So
+`tests/test_typeguard.py` proves it: with the variable set, a call that
+breaks a `tools/` annotation must raise `TypeCheckError` (without the hook,
+the same call is a bare `TypeError` from `asdict`, so the class tells the
+two apart); without it, the test skips and says why rather than passing.
+Found on the first run that it was not even registered in
+`tests/__init__.py` -- the suite count did not move -- which is the same
+failure one level up. Both states were run for real: hook on, the proof
+passes; hook off, it reports the skip. The full suite under the final hook
+(raising, `ALL_ITEMS` collection checks): 893 tests, 0 failures, about the
+same wall time as without it (235 s). Not yet run in the container, like the
+rest of `test.yml`.
 
 ## Phase 3 -- enforcement
 

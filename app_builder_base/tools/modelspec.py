@@ -748,8 +748,16 @@ class ModelSpec:
 # -- json ----------------------------------------------------------------
 
 
-def spec_to_json(spec: ModelSpec) -> dict[str, Any]:
-    """Plain-dict form, for the transient edit buffer."""
+def spec_to_json(spec: ModelSpec | FieldSpec) -> dict[str, Any]:
+    """Plain-dict form, for the transient edit buffer.
+
+    A whole model, or one field of it: ``asdict`` is generic over any
+    dataclass, and the editor's draft sends a single ``FieldSpec`` this way
+    for every field row (``studio_model_draft.py``). The signature said
+    ``ModelSpec`` only, which is why those two call sites carried a
+    ``pyright: ignore`` -- and why running this module under typeguard
+    (TYPING.md, Phase 1e) flagged it on the first test that reached one.
+    """
     return asdict(spec)
 
 

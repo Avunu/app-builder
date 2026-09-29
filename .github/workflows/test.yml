@@ -41,8 +41,16 @@ jobs:
         include:
           - container: ghcr.io/oca/oca-ci/py3.10-odoo18.0:latest
             name: test with Odoo
+            typeguard: ""
+          # One flavor is enough for this: it checks our own tools/ against
+          # their annotations, which do not differ between the two images.
           - container: ghcr.io/oca/oca-ci/py3.10-ocb18.0:latest
             name: test with OCB
+            typeguard: "1"
+    env:
+      # TYPING.md, Phase 1e. Read by app_builder_base/__init__.py; empty means
+      # off. The hook is proven live by app_builder_base/tests/test_typeguard.py.
+      APP_BUILDER_TYPEGUARD: ${{ matrix.typeguard }}
     services:
       postgres:
         image: postgres:14

@@ -6,3 +6,9 @@
 # 19.0. app_builder_approval and app_builder_approval_formula declare them.
 odoo-addon-base_tier_validation>=18.0dev,<18.1dev
 odoo-addon-base_tier_validation_formula>=18.0dev,<18.1dev
+
+# Runtime type checking of the pure tools/ modules, switched on per run by
+# APP_BUILDER_TYPEGUARD (TYPING.md, Phase 1e). Installed everywhere, active
+# only where the job sets that variable. Not an Odoo addon -- the "unreleased
+# dependencies" check only rejects lines containing a "/".
+typeguard>=4.4,<5

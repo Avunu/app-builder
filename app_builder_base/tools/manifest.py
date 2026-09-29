@@ -39,7 +39,7 @@ ManifestValue: TypeAlias = Union[
 #: a hand-edited manifest may carry keys this module has never heard of
 #: (``post_init_hook``, a custom flag, ...) and ``merge_manifest`` exists
 #: specifically to preserve those, which a closed ``TypedDict`` would reject.
-Manifest: TypeAlias = "dict[str, ManifestValue]"
+Manifest: TypeAlias = dict[str, ManifestValue]
 
 # Emission order for manifest keys. Anything not listed follows, alphabetically.
 KEY_ORDER = (

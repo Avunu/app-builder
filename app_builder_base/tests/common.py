@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import io
 import os
 import tempfile
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
     # only imports what its own fixture methods' return types need -- not
     # every model this suite ever touches.
     import unittest
+    from contextlib import AbstractContextManager
     from unittest.case import _AssertRaisesContext
 
 
@@ -81,6 +83,24 @@ def raises(case: unittest.TestCase, exception: type[_E]) -> _AssertRaisesContext
     call shape) -- only which stub pyright reads to type the result.
     """
     return case.assertRaises(exception)
+
+
+def unchecked() -> AbstractContextManager[None]:
+    """Run the enclosed code outside typeguard's checks (TYPING.md, Phase 1e).
+
+    For a test that drives an annotated function *outside* its annotation on
+    purpose -- ``groups_json("form")`` with its default resolver leaves labels
+    lazy, and a test asserts exactly that, while ``OptionGroupJSON`` says
+    ``str``. Named at the call site rather than excused globally, so every
+    other use of the ``tools/`` modules stays strictly checked. A no-op when
+    typeguard is not running, which is nearly always.
+    """
+    if os.environ.get("APP_BUILDER_TYPEGUARD"):
+        # Optional test dependency: absent from a plain dev env.
+        import typeguard  # pyright: ignore[reportMissingImports]
+
+        return typeguard.suppress_type_checks()
+    return contextlib.nullcontext()
 
 
 def join_groups(users: Users, group_xmlids: list[str]) -> None:

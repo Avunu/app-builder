@@ -17,6 +17,7 @@ from . import (
     test_roundtrip,
     test_serializer,
     test_serializer_coverage,
+    test_typeguard,
     test_workspace,
     test_xml_writer,
 )

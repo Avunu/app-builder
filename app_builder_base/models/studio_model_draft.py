@@ -372,16 +372,7 @@ class StudioModelDraft(models.TransientModel):
             "spec": modelspec.spec_to_json(spec),
             "fields": [
                 {
-                    # `spec_to_json`'s own declared param is `ModelSpec`,
-                    # but `asdict()` (its real implementation,
-                    # `modelspec.py`) is generic over any dataclass -- `f`
-                    # here is a `FieldSpec`, the same frozen-dataclass
-                    # shape, reused deliberately for one field's own JSON
-                    # rather than the whole model's. Not a signature this
-                    # file can narrow (`modelspec.py` is Phase 1b, out of
-                    # scope); the same reuse `update_field`'s own `merged`
-                    # makes below.
-                    **modelspec.spec_to_json(f),  # pyright: ignore[reportArgumentType]
+                    **modelspec.spec_to_json(f),
                     "type_label": self._type_label(f.ttype),
                     "placement": placement.get(
                         f.name, modelspec.default_placement(f.ttype)
@@ -788,11 +779,8 @@ class StudioModelDraft(models.TransientModel):
             if widget and "widget" not in placement:
                 placement["widget"] = widget
             self._set_placement(name, modelspec.clean_placement(placement, picker_key))
-        # Same `spec_to_json`-on-a-`FieldSpec` reuse as `load()`'s own
-        # `fields` comprehension above -- see its comment for why this is a
-        # deliberate, safe (if narrowly-typed) call rather than a bug.
         merged = {
-            **modelspec.spec_to_json(existing),  # pyright: ignore[reportArgumentType]
+            **modelspec.spec_to_json(existing),
             **values,
             "name": name,
         }

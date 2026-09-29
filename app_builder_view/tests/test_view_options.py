@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, cast
 
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.app_builder_base.tests.common import StudioCase, unchecked
 from odoo.addons.app_builder_base.tools import catalogue, typed
 
 from ..models.studio_view_editor import StudioViewEditor
@@ -139,7 +139,8 @@ class TestOptionCatalogue(StudioCase):
 
     def test_the_default_resolver_does_not_guess(self):
         """Left alone rather than resolved against whatever frame is handy."""
-        payload = view_options.groups_json("form")
+        with unchecked():
+            payload = view_options.groups_json("form")
         titles = [group["title"] for group in payload]
         self.assertTrue(
             any(not isinstance(title, str) for title in titles),
