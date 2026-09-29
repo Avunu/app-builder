@@ -17,14 +17,32 @@ happened to produce.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+# lxml ships no type stubs in this environment (a compiled extension with no
+# `.pyi`/`py.typed` marker; `lxml-stubs`/`types-lxml` is not an installed
+# dependency here), so pyright cannot resolve `etree` as an exported member
+# of `lxml` at all -- confirmed directly, `from lxml import etree` alone
+# reports both `reportMissingTypeStubs` (on `lxml`) and
+# `reportAttributeAccessIssue` ("etree" is unknown import symbol, on
+# `etree`). Ignored narrowly on each name rather than rewriting the import
+# (e.g. `import lxml.etree as etree`), which trades this gap for a different
+# one: ruff's own `PLR0402` auto-fixes that form straight back to `from lxml
+# import etree` (`fix = true` project-wide), silently reintroducing the
+# failure. Same pattern as `studio_serializer.py`/`xml_writer.py`/
+# `placement.py`/`scaffold.py`/`ir_ui_menu.py`.
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
+from odoo.addons.app_builder_base.tools.i18n import _
+
 if TYPE_CHECKING:
+    from odoo.fields import Field
+
     from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
 
     # `studio_view_editor.py`'s own module also declares a class named
@@ -63,7 +81,7 @@ class StudioViewEditor(models.AbstractModel):
         prints.
         """
         model = self.env[model_name]
-        field = model._fields.get(name)
+        field = cast("dict[str, Field[Any]]", model._fields).get(name)
         if field is None:
             raise UserError(
                 _("%(model)s has no field %(name)s.", model=model_name, name=name)
@@ -160,7 +178,7 @@ class StudioViewEditor(models.AbstractModel):
         columns = cast("list[str] | None", operation.get("columns")) or []
         if not name or not model_name:
             raise UserError(_("A table needs a model and a one2many field."))
-        field = self.env[model_name]._fields.get(name)
+        field = cast("dict[str, Field[Any]]", self.env[model_name]._fields).get(name)
         if field is None or field.type not in ("one2many", "many2many"):
             raise UserError(
                 _("%s is not a list of records, so it cannot be a table.", name)

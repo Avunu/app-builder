@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_actions import IrActionsActWindow
@@ -42,6 +42,7 @@ from odoo.addons.app_builder_base.tools import (
     scaffold,
     typed,
 )
+from odoo.addons.app_builder_base.tools.i18n import _
 from odoo.addons.app_builder_base.tools.scaffold import FeatureJSON
 
 if TYPE_CHECKING:
@@ -387,7 +388,7 @@ class StudioAppBuilder(models.AbstractModel):
             # TYPING.md's own "Known traps" documents, already applied this
             # way throughout this migration; every other single-dict
             # `.create(...)` below in this file carries the same ignore.
-            vals = {
+            vals: dict[str, Any] = {
                 "name": "%s %s" % (ir_model.model, group.name),
                 "model_id": ir_model.id,
                 "group_id": group.id,
@@ -447,7 +448,7 @@ class StudioAppBuilder(models.AbstractModel):
         for view_type, arch in arches.items():
             # Same single-dict `create()` vendor gap as `_build_access`'s own
             # `.create(...)` above.
-            vals = {
+            vals: dict[str, Any] = {
                 "name": "%s.%s" % (spec.name, view_type),
                 "model": spec.name,
                 "type": view_type,
@@ -492,7 +493,7 @@ class StudioAppBuilder(models.AbstractModel):
         modes += sorted(set(views) - set(order) - {"search"})
         # Same single-dict `create()` vendor gap as `_build_access`'s own
         # `.create(...)` above.
-        vals = {
+        vals: dict[str, Any] = {
             "name": spec.description,
             "res_model": spec.name,
             "view_mode": ",".join(modes),
@@ -531,7 +532,7 @@ class StudioAppBuilder(models.AbstractModel):
             # Under an existing app: one item, no root and no icon. Same
             # single-dict `create()` vendor gap as `_build_access`'s own
             # `.create(...)` above.
-            item_vals = {
+            item_vals: dict[str, Any] = {
                 "name": spec.description,
                 "parent_id": parent.id,
                 "action": "ir.actions.act_window,%d" % action.id,
@@ -539,14 +540,14 @@ class StudioAppBuilder(models.AbstractModel):
             }
             item = Menu.create(item_vals)  # pyright: ignore[reportArgumentType]
             return {"root": Menu.browse(), "item": item}
-        root_vals = {
+        root_vals: dict[str, Any] = {
             "name": spec.description,
             "parent_id": False,
             "web_icon": package._seed_app_icon(),
             "sequence": 90,
         }
         root = Menu.create(root_vals)  # pyright: ignore[reportArgumentType]
-        item_vals = {
+        item_vals: dict[str, Any] = {
             "name": spec.description,
             "parent_id": root.id,
             "action": "ir.actions.act_window,%d" % action.id,
@@ -563,7 +564,7 @@ class StudioAppBuilder(models.AbstractModel):
             return None
         # Same single-dict `create()` vendor gap as `_build_access`'s own
         # `.create(...)` above.
-        vals = {
+        vals: dict[str, Any] = {
             "name": "%s Reference" % spec.description,
             "code": spec.sequence_code,
             "prefix": "%s" % spec.description[:3].upper(),
@@ -670,7 +671,8 @@ class StudioAppBuilder(models.AbstractModel):
             options = scaffold.ScaffoldOptions.from_keys(spec.get("features") or ())
         except ValueError as err:
             raise UserError(str(err)) from err
-        group_ids = [int(g) for g in (spec.get("groups") or []) if g]
+        raw_groups: list[Any] = spec.get("groups") or []
+        group_ids = [int(g) for g in raw_groups if g]
         groups = typed.model(self.env, Groups).browse(group_ids) if group_ids else None
         built = self.create_app(
             package,

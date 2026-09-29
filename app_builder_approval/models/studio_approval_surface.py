@@ -13,12 +13,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict, cast
 
-from odoo import _, api, models
+from odoo import api, models
 
 from odoo.addons.app_builder_base.models.studio_record_surface import (
     RecordCatalogueJSON,
 )
 from odoo.addons.app_builder_base.tools.catalogue import Row, Section
+from odoo.addons.app_builder_base.tools.i18n import _
 
 from .studio_approval import MIXIN
 

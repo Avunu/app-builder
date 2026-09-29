@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_actions import IrActionsActWindow
@@ -27,6 +27,7 @@ from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 from odoo.addons.app_builder_base.models.studio_record_surface import RecordRowJSON
 from odoo.addons.app_builder_base.tools import compat, typed
 from odoo.addons.app_builder_base.tools.catalogue import Row, Section
+from odoo.addons.app_builder_base.tools.i18n import _
 
 if TYPE_CHECKING:
     # Only for annotations/casts below; with `from __future__ import
@@ -117,7 +118,9 @@ class StudioMenu(models.AbstractModel):
             ),
         ),
     )
-    _surface_templates = (
+    _surface_templates: tuple[
+        tuple[str, str, str, dict[str, object], tuple[str, ...]], ...
+    ] = (
         (
             "submenu",
             "Submenu",
@@ -304,11 +307,11 @@ class StudioMenu(models.AbstractModel):
         self, row: Row, value: object, model_name: str
     ) -> dict[str, object]:
         if row.name == "groups":
-            ids = [
+            raw_ids: list[int | None] = [
                 v.get("id") if isinstance(v, dict) else v
-                for v in (cast("Any", value) or [])
+                for v in cast("list[dict[str, int] | int]", value or [])
             ]
-            ids = [int(i) for i in ids if i]
+            ids = [int(i) for i in raw_ids if i]
             # `_assert_in_source` lives on `studio.record.surface` -- same
             # rule 6 gap as `_model` above.
             cast("StudioRecordSurface", self)._assert_in_source(row, ids)
@@ -316,7 +319,7 @@ class StudioMenu(models.AbstractModel):
         if row.name == "opens_model":
             # Turned into an action after the write / on create (see below).
             if isinstance(value, dict):
-                value = value.get("id")
+                value = cast("dict[str, object]", value).get("id")
             return {"_opens_model_id": int(cast("Any", value)) if value else False}
         return cast("StudioRecordSurface", super())._coerce_virtual(
             row, value, model_name
@@ -342,7 +345,7 @@ class StudioMenu(models.AbstractModel):
         ir_model = typed.model(self.env, IrModel).sudo().browse(model_id).exists()
         if not ir_model:
             raise UserError(_("Say which model the menu opens."))
-        vals = {
+        vals: dict[str, object] = {
             "name": name,
             "res_model": ir_model.model,
             "view_mode": "list,form",
@@ -445,7 +448,9 @@ class StudioMenu(models.AbstractModel):
             siblings = self._menus().search(
                 [("parent_id", "=", vals.get("parent_id") or False)]
             )
-            vals["sequence"] = max(siblings.mapped("sequence") or [0]) + 10
+            vals["sequence"] = (
+                max(cast("list[int]", siblings.mapped("sequence")) or [0]) + 10
+            )
         if opens:
             action = self._make_action(
                 cast("str", vals["name"]), cast("int", opens), package

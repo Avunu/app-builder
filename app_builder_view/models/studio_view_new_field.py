@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias, TypedDict, 
 
 from typing_extensions import NotRequired
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_model import IrModelFields, IrModelSelection
@@ -36,6 +36,7 @@ from odoo.addons.base.models.ir_ui_view import View
 from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
 from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 from odoo.addons.app_builder_base.tools import modelspec, typed
+from odoo.addons.app_builder_base.tools.i18n import _
 
 from ..tools import manualfield
 
@@ -43,8 +44,11 @@ if TYPE_CHECKING:
     # Only for the annotations/casts below; with `from __future__ import
     # annotations` nothing here needs these at runtime, the same bargain
     # every other Phase 1c file's `TYPE_CHECKING` block makes.
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Collection, Iterable, Mapping
 
+    from odoo.fields import Field
+
+    from odoo.addons.app_builder_base.tools import catalogue
     from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
 
     from ..tools import canvas_stamp
@@ -190,12 +194,12 @@ class StudioViewEditor(models.AbstractModel):
         view = typed.model(self.env, View).browse(view_id).exists()
         if not view or not view.model:
             return {"can_create": False, "reason": _("This view has no model.")}
-        owner = self._python_owner(cast("str", view.model))
+        owner = self._python_owner(view.model)
         if owner:
             return {
                 "can_create": False,
                 "handoff": cast("int", owner.id),
-                "model": cast("str", view.model),
+                "model": view.model,
                 "reason": _(
                     "%(model)s is defined in Python by %(package)s, so a new "
                     "field is a class attribute and the model has to be "
@@ -205,7 +209,7 @@ class StudioViewEditor(models.AbstractModel):
                     package=owner.name,
                 ),
             }
-        return {"can_create": True, "model": cast("str", view.model), "prefix": "x_"}
+        return {"can_create": True, "model": view.model, "prefix": "x_"}
 
     @api.model
     def field_types_for(self, model_name: str) -> list[PickerFieldTypeJSON]:
@@ -239,7 +243,7 @@ class StudioViewEditor(models.AbstractModel):
             "list[PickerFieldTypeJSON]",
             modelspec.available_field_types(
                 cast("StudioViewEditorBase", self)._python_spec(owner, model_name),
-                self.env._,
+                cast("catalogue.Translator", self.env._),
             ),
         )
         has_currency = bool(manualfield.default_currency_field(model_name, self.env))
@@ -351,8 +355,10 @@ class StudioViewEditor(models.AbstractModel):
         has: a second Text tile dropped before the first was renamed is
         ``x_new_text_2``, not a refusal."""
         name = manualfield.field_name_for(label, prefix="x_")
-        taken = (
-            self.env[cast("str", model_name)]._fields if model_name in self.env else ()
+        taken: Collection[str] = (
+            cast("dict[str, Field[Any]]", self.env[cast("str", model_name)]._fields)
+            if model_name in self.env
+            else ()
         )
         return manualfield.unique_name(name, taken)
 
@@ -613,7 +619,7 @@ class StudioViewEditor(models.AbstractModel):
         """The clean name a label implies for a class attribute, kept clear
         of what the model has and what the draft is already adding."""
         name = manualfield.field_name_for(label, prefix="")
-        taken = set(self.env[model_name]._fields) | {
+        taken = set(cast("dict[str, Field[Any]]", self.env[model_name]._fields)) | {
             f.name for f in draft._spec().fields
         }
         return manualfield.unique_name(name, taken)

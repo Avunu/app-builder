@@ -17,19 +17,14 @@ import tempfile
 import time
 from typing import TYPE_CHECKING, Any, cast
 
-from odoo import _, api, fields, models
+from odoo import api, fields, models
 from odoo import models as models_module
 from odoo.exceptions import UserError, ValidationError
 from odoo.tools import config as tools_config
 from odoo.tools import file_path
 
-from odoo.addons.base.models.ir_model import (
-    IrModel,
-    IrModelData,
-    field_xmlid,
-    model_xmlid,
-    selection_xmlid,
-)
+from odoo.addons.base.models import ir_model as ir_model_module
+from odoo.addons.base.models.ir_model import IrModel, IrModelData
 from odoo.addons.base.models.ir_module import Module as IrModuleModule
 from odoo.addons.base.models.res_lang import Lang
 
@@ -45,6 +40,7 @@ from ..tools import (
     xml_writer,
 )
 from ..tools import manifest as manifest_tools
+from ..tools.i18n import _
 from .studio_serializer import StudioSerializer
 
 if TYPE_CHECKING:
@@ -253,33 +249,29 @@ class StudioPackage(models.Model):
     # other traced vendor gap in this migration.
     state = fields.Selection(STATES, default="draft", readonly=True)  # pyright: ignore[reportArgumentType]
 
-    # `file_ids`/`model_ids`/`apply_ids` below deliberately do NOT use the
-    # plan's own "typed relational field" syntax (`field: Cls = fields
-    # .One2many(...)`) -- traced and confirmed NOT to work under this real
-    # OCB tree, a significant finding of this file's own conversion (see
-    # this file's own PR notes): `_Relational.__get__` (`odoo/fields.py`)
+    # `file_ids`/`model_ids`/`apply_ids` carry an explicit `One2many[Cls]`
+    # annotation only to keep the *declaration* itself from being a
+    # partially-unknown name: `_Relational.__get__` (`odoo/fields.py`)
     # carries no return annotation of its own, and its two-branch body
-    # (`super().__get__(...)` vs `self.mapped(records)`) infers a messy,
-    # partially-`Unknown` union regardless of whether the field's own
-    # declaration carries an explicit comodel type argument (tested both
-    # with and without `fields.One2many[Cls](...)` subscripting) -- and the
-    # *declaration* assignment itself separately fails too
-    # (`One2many[Cls]` is not assignable to the declared attribute type
-    # `Cls`, confirmed even with explicit subscripting). Every real read of
-    # one of these three fields below therefore goes through the same
+    # (`super().__get__(...)` vs `self.mapped(records)`) still infers a
+    # messy, partially-`Unknown` union on every *read*. Every real read of
+    # one of these three fields below therefore still goes through the same
     # `cast()`-at-the-read-site idiom `pycodegen.py`'s own
-    # `record.selection_ids`/this file's own `model.field_id` already use,
-    # not a typed declaration.
-    file_ids = fields.One2many("studio.package.file", "package_id", readonly=True)
+    # `record.selection_ids`/this file's own `model.field_id` already use.
+    file_ids: fields.One2many[StudioPackageFile] = fields.One2many(
+        "studio.package.file", "package_id", readonly=True
+    )
     record_count = fields.Integer(compute="_compute_record_count")
 
-    model_ids = fields.One2many(
+    model_ids: fields.One2many[StudioPackageModel] = fields.One2many(
         "studio.package.model",
         "package_id",
         string="Models",
         help="Models this package defines, and where each definition lives.",
     )
-    apply_ids = fields.One2many("studio.package.apply", "package_id", readonly=True)
+    apply_ids: fields.One2many[StudioPackageApply] = fields.One2many(
+        "studio.package.apply", "package_id", readonly=True
+    )
     reload_mode = fields.Selection(
         [  # pyright: ignore[reportArgumentType] -- see `state`'s own comment above.
             ("inproc", "In this process"),
@@ -432,7 +424,7 @@ class StudioPackage(models.Model):
     def _compute_git_info(self) -> None:
         for package in self:
             path = package.root_path
-            package.is_git = bool(path) and gitrepo.is_repo(cast("str", path))
+            package.is_git = bool(path) and gitrepo.is_repo(path)
             package.git_branch = (
                 gitrepo.current_branch(cast("str", path)) if package.is_git else False
             )
@@ -486,7 +478,9 @@ class StudioPackage(models.Model):
     def _source_env(self) -> api.Environment:
         """Env for reading records during serialization: source language only."""
         self.ensure_one()
-        return self.env(context=dict(self.env.context, lang=None))
+        return self.env(
+            context=dict(cast("dict[str, Any]", self.env.context), lang=None)
+        )
 
     def _owned_records(self) -> dict[str, list[tuple[str, BaseModel]]]:
         """Group the package's records by model, keyed by xmlid.
@@ -516,9 +510,7 @@ class StudioPackage(models.Model):
             if not record.exists():
                 continue
             serializer = serializers._for_model(entry_model)
-            if serializer is not None and not cast(
-                "StudioSerializer", serializer
-            )._ownable(record):
+            if serializer is not None and not serializer._ownable(record):
                 continue
             grouped.setdefault(entry_model, []).append(
                 ("%s.%s" % (entry.module, entry.name), record)
@@ -611,7 +603,7 @@ class StudioPackage(models.Model):
             serializer = serializers._for_model(model)
             if serializer is None:
                 continue
-            serializer = cast("StudioSerializer", serializer).with_context(
+            serializer = serializer.with_context(
                 studio_package=self.name, studio_dep_sink=dep_sink
             )
             for xmlid, record in entries:
@@ -695,9 +687,7 @@ class StudioPackage(models.Model):
                 continue
             for xmlid, record in entries:
                 # Already `module.name` -- _owned_records qualifies it.
-                for fname in cast("StudioSerializer", serializer)._translatable_fields(
-                    record
-                ):
+                for fname in serializer._translatable_fields(record):
                     field = record._fields.get(fname)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
                     if field is None:
                         continue
@@ -1214,7 +1204,7 @@ class StudioPackage(models.Model):
                 # accepts at runtime (unwrapping the list back to one record
                 # on return). The same shape of decorator-stub gap already
                 # documented for `@tools.ormcache`/`assert_log_admin_access`.
-                vals = {
+                vals: dict[str, Any] = {
                     "package_id": self.id,
                     "path": relative,
                     "generated_checksum": digest,
@@ -1500,7 +1490,9 @@ class StudioPackage(models.Model):
             # Same required-Char cast as `_owned_records`'s own `entry_model`.
             by_model.setdefault(cast("str", entry.model), []).append(entry.res_id)
 
-        env = self.env(context=dict(self.env.context, _force_unlink=True))
+        env = self.env(
+            context=dict(cast("dict[str, Any]", self.env.context), _force_unlink=True)
+        )
         for model in UNLINK_ORDER:
             res_ids = by_model.pop(model, [])
             if res_ids and model in env:
@@ -1541,9 +1533,7 @@ class StudioPackage(models.Model):
                 keep.append(entry)  # a dangling row: dropping it is harmless
                 continue
             serializer = serializers._for_model(entry_model)
-            if serializer is not None and not cast(
-                "StudioSerializer", serializer
-            )._ownable(record):
+            if serializer is not None and not serializer._ownable(record):
                 continue
             keep.append(entry)
         return typed.model(self.env, IrModelData).browse([e.id for e in keep])
@@ -1567,7 +1557,7 @@ class StudioPackage(models.Model):
         reloads its own packages in process instead, and mutes the watcher
         for its own writes (``_mute_dev_watcher``).
         """
-        workers = tools_config["workers"]
+        workers = cast("int", tools_config["workers"])
         for package in self:
             package.reload_mode = "inproc" if not workers else "manual"
 
@@ -1609,7 +1599,7 @@ class StudioPackage(models.Model):
                     "would rebuild their registry against the Python they "
                     "already have in memory. Restart the server to pick this "
                     "change up.",
-                    workers=tools_config["workers"],
+                    workers=cast("int", tools_config["workers"]),
                 )
             )
         self._reimport_module()
@@ -1820,11 +1810,8 @@ class StudioPackage(models.Model):
             # column is already gone under its old name and it drops nothing.
             files.update(self._write_pre_migrations(dropped, stamp))
         apply_model = cast("StudioPackageApply", self.env["studio.package.apply"])
-        apply = cast(
-            "StudioPackageApply",
-            apply_model._snapshot(  # 3. keep the old bytes
-                self, files, reason=reason, stamp=stamp
-            ),
+        apply = apply_model._snapshot(  # 3. keep the old bytes
+            self, files, reason=reason, stamp=stamp
         )
         if self.is_git:
             root = cast("str", self.root_path)
@@ -1895,7 +1882,7 @@ class StudioPackage(models.Model):
             "view_mode": "form",
             "target": "current",
             "context": dict(
-                self.env.context,
+                cast("dict[str, Any]", self.env.context),
                 studio_diff=gitrepo.diff(cast("str", self.root_path)),
             ),
         }
@@ -1925,7 +1912,7 @@ class StudioPackage(models.Model):
                     "This server runs %(workers)s worker processes, so a "
                     "package cannot be reloaded in place. Restart the server "
                     "to read the package from disk.",
-                    workers=tools_config["workers"],
+                    workers=cast("int", tools_config["workers"]),
                 )
             )
         self._invalidate_module_caches()
@@ -1986,7 +1973,7 @@ class StudioPackage(models.Model):
 
     @api.model
     def _flatten(
-        self, records: BaseModel | Iterable[BaseModel] | None
+        self, records: BaseModel | Iterable[BaseModel | None] | None
     ) -> Iterator[BaseModel]:
         """Yield individual records from a recordset or a list of them.
 
@@ -2024,13 +2011,11 @@ class StudioPackage(models.Model):
             # same invariant `typed.py`'s own docstring already states.
             record_name = cast("str", record._name)
             serializer = serializers._for_model(record_name)
-            if serializer is not None and not cast(
-                "StudioSerializer", serializer
-            )._ownable(record):
+            if serializer is not None and not serializer._ownable(record):
                 # e.g. a model's magic columns, which arrive as part of
                 # field_id but belong to Odoo, not to this package.
                 continue
-            existing = record.get_external_id().get(record.id)
+            existing = cast("dict[Any, str]", record.get_external_id()).get(record.id)
             if existing:
                 module = existing.partition(".")[0]
                 if module != self.name:
@@ -2051,7 +2036,7 @@ class StudioPackage(models.Model):
             name = self._unique_xmlid(name)
             # Same `@api.model_create_multi` passthrough-decorator gap as
             # `_sync_file_records`'s own `create()` call.
-            vals = {
+            vals: dict[str, Any] = {
                 "module": self.name,
                 "name": name,
                 "model": record_name,
@@ -2083,23 +2068,29 @@ class StudioPackage(models.Model):
         # helpers, which is what makes graduation safe.
         serializer = self._serializer_env()._for_model(record_name)
         if serializer is not None:
-            suggested = cast("StudioSerializer", serializer)._suggest_xmlid(record)
+            suggested = serializer._suggest_xmlid(record)
             if suggested:
                 return suggested
         # `model_xmlid`/`field_xmlid`/`selection_xmlid` (core, `ir_model.py`)
         # take fully unannotated parameters, so nothing below needs a value
         # cast for *their* sake -- only the attribute reads that get there
         # need one, `record` being declared the bare `BaseModel` this whole
-        # method receives.
+        # method receives. They are reached as `ir_model_module` attributes
+        # because a `from ... import` of them is itself a partially-unknown
+        # name.
         if record_name == "ir.model":
-            return model_xmlid("", cast("IrModel", record).model).lstrip(".")
+            return ir_model_module.model_xmlid(
+                "", cast("IrModel", record).model
+            ).lstrip(".")
         if record_name == "ir.model.fields":
             record_fields = cast("IrModelFields", record)
             # `model_id` (`ir.model.fields`) is a plain-string-comodel
             # Many2one in core -- same `_Relational.__get__` gap as this
             # file's own `model_ids`/`file_ids`/`apply_ids`.
             field_model = cast("IrModel", record_fields.model_id)  # pyright: ignore[reportUnknownMemberType]
-            return field_xmlid("", field_model.model, record_fields.name).lstrip(".")
+            return ir_model_module.field_xmlid(
+                "", field_model.model, record_fields.name
+            ).lstrip(".")
         if record_name == "ir.model.fields.selection":
             selection = cast("IrModelSelection", record)
             # Same gap as `model_id` above, one level up: `field_id`
@@ -2107,7 +2098,7 @@ class StudioPackage(models.Model):
             # Many2one.
             field = cast("IrModelFields", selection.field_id)  # pyright: ignore[reportUnknownMemberType]
             field_model = cast("IrModel", field.model_id)  # pyright: ignore[reportUnknownMemberType]
-            return selection_xmlid(
+            return ir_model_module.selection_xmlid(
                 "",
                 field_model.model,
                 field.name,
@@ -2143,9 +2134,12 @@ class StudioPackageFile(models.Model):
     _description = "Studio Package File"
     _order = "path"
 
-    # No typed-relation declaration here either -- same traced gap as
-    # `StudioPackage`'s own `file_ids`/`model_ids`/`apply_ids` above.
-    package_id = fields.Many2one("studio.package", required=True, ondelete="cascade")
+    # Annotated only so the declaration is not a partially-unknown name --
+    # same read-side gap as `StudioPackage`'s own `file_ids`/`model_ids`/
+    # `apply_ids` above.
+    package_id: fields.Many2one[StudioPackage] = fields.Many2one(
+        "studio.package", required=True, ondelete="cascade"
+    )
     path = fields.Char(required=True, help="Path relative to the package root.")
     generated_checksum = fields.Char(
         readonly=True, help="Hash of the content the builder last wrote."

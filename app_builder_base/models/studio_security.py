@@ -27,8 +27,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import AccessError
+
+from ..tools.i18n import _
 
 if TYPE_CHECKING:
     # Only for the `cast` below; with `from __future__ import annotations`

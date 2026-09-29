@@ -26,10 +26,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
-from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 from typing_extensions import NotRequired
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_model import IrModelFields
@@ -37,6 +39,7 @@ from odoo.addons.base.models.ir_ui_view import View
 from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
 from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_base.tools.i18n import _
 
 from ..tools import canvas_stamp, manualfield
 from .studio_view_edit import StudioViewEdit
@@ -223,7 +226,7 @@ class StudioViewEditor(models.AbstractModel):
             # A report template: previewed as a document, not as a view.
             return payload
 
-        Model = self.env[cast("str", view.model)]
+        Model = self.env[view.model]
         # What get_view checks first (`ir_ui_view.py:2824`): a view of a
         # model the user may not read is not theirs to look at either.
         Model.browse().check_access("read")

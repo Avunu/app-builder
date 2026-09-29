@@ -39,7 +39,7 @@ import pathlib
 import typing
 
 #: Pure typing scaffolding: nothing at run time for a checker to test.
-_SKIP = {"__init__", "typed", "lxml_types"}
+_SKIP = {"__init__", "typed", "lxml_types", "i18n"}
 
 
 def modules() -> list[str]:

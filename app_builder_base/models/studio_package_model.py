@@ -26,12 +26,13 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING, Literal, NoReturn, cast
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
-from odoo import _, api, fields, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from ..tools import pycodegen, pyparse
+from ..tools.i18n import _
 
 if TYPE_CHECKING:
     # Only for the annotations/casts below; with `from __future__ import
@@ -52,7 +53,9 @@ class StudioPackageModel(models.Model):
     _description = "Studio Package Model"
     _order = "model"
 
-    package_id = fields.Many2one(
+    # Annotated `Many2one[Any]` only to silence the declaration's own
+    # partially-`Unknown` inferred type; reads still `cast()` (see below).
+    package_id: fields.Many2one[Any] = fields.Many2one(
         "studio.package", required=True, ondelete="cascade", index=True
     )
     model = fields.Char(
@@ -209,7 +212,7 @@ class StudioPackageModel(models.Model):
         )
         if existing:
             return existing
-        vals = {
+        vals: dict[str, Any] = {
             "package_id": package.id,
             "model": model_name,
             "source": source,

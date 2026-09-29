@@ -13,7 +13,7 @@ from lxml import (  # pyright: ignore[reportMissingTypeStubs]
     etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
 )
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 # Real, runtime-bound imports -- `typed.model()` reads `cls._name` at
@@ -24,6 +24,7 @@ from odoo.addons.base.models.ir_actions import IrActions
 from odoo.addons.base.models.ir_actions_report import IrActionsReport
 
 from ...tools import typed, xml_writer
+from ...tools.i18n import _
 from ..studio_serializer import SEQ_VIEW
 
 if TYPE_CHECKING:
@@ -284,4 +285,4 @@ class IrUiViewSerializer(models.AbstractModel):
         # or narrow this override's own ordering trick) rather than a silent
         # rewrite here.
         view = cast("View", record)
-        return (self._studio_sequence, bool(view.inherit_id), xmlid)  # pyright: ignore[reportReturnType]
+        return (self._studio_sequence, bool(cast("View", view.inherit_id)), xmlid)  # pyright: ignore[reportReturnType]

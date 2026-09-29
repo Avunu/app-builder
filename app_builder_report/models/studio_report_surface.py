@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_model import IrModel
@@ -23,6 +23,7 @@ from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 from odoo.addons.app_builder_base.models.studio_record_surface import RecordRowJSON
 from odoo.addons.app_builder_base.tools import compat, scaffold, typed
 from odoo.addons.app_builder_base.tools.catalogue import Row, Section
+from odoo.addons.app_builder_base.tools.i18n import _
 
 if TYPE_CHECKING:
     # Only used inside annotations (`from __future__ import annotations`
@@ -241,7 +242,7 @@ class StudioReport(models.AbstractModel):
         self, record: BaseModel, name: str
     ) -> bool | list[dict[str, object]] | str:
         if name == "in_print_menu":
-            return bool(cast("IrActions", record).binding_model_id)
+            return bool(cast("object", cast("IrActions", record).binding_model_id))
         if name == "groups":
             return [
                 {"id": group.id, "display_name": group.full_name}
@@ -266,9 +267,9 @@ class StudioReport(models.AbstractModel):
                 "binding_type": "report",
             }
         if row.name == "groups":
-            ids = [
+            ids: list[Any] = [
                 v.get("id") if isinstance(v, dict) else v
-                for v in (cast("Any", value) or [])
+                for v in (cast("list[Any]", value) or [])
             ]
             ids = [int(i) for i in ids if i]
             # `_assert_in_source` lives on `studio.record.surface`

@@ -24,12 +24,13 @@ somebody else's edit is a decision rather than a surprise.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
-from odoo import _, api, fields, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_base.tools.i18n import _
 
 if TYPE_CHECKING:
     # Only for annotations/casts below; with `from __future__ import
@@ -88,7 +89,7 @@ class StudioViewEdit(models.Model):
     _description = "Studio View Edit"
     _order = "id desc"
 
-    view_id = fields.Many2one(
+    view_id: fields.Many2one[Any] = fields.Many2one(
         "ir.ui.view",
         required=False,
         ondelete="set null",
@@ -98,7 +99,7 @@ class StudioViewEdit(models.Model):
         "undoing the edit that created the patch has removed it; redo then "
         "recreates the patch and fills this in again.",
     )
-    base_view_id = fields.Many2one(
+    base_view_id: fields.Many2one[Any] = fields.Many2one(
         "ir.ui.view",
         required=True,
         ondelete="cascade",
@@ -106,7 +107,9 @@ class StudioViewEdit(models.Model):
         help="The view the user was looking at, which is what the editor "
         "undoes against.",
     )
-    package_id = fields.Many2one("studio.package", required=True, ondelete="cascade")
+    package_id: fields.Many2one[Any] = fields.Many2one(
+        "studio.package", required=True, ondelete="cascade"
+    )
     summary = fields.Char(readonly=True)
     arch_before = fields.Text(
         readonly=True,
@@ -156,7 +159,7 @@ class StudioViewEdit(models.Model):
                 ("superseded", "=", False),
             ]
         ).write({"superseded": True})
-        vals = {
+        vals: dict[str, Any] = {
             "view_id": target.id,
             "base_view_id": base_view.id,
             "package_id": package.id,

@@ -29,10 +29,24 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
-from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+# lxml ships no type stubs in this environment (a compiled extension with no
+# `.pyi`/`py.typed` marker; `lxml-stubs`/`types-lxml` is not an installed
+# dependency here), so pyright cannot resolve `etree` as an exported member
+# of `lxml` at all -- confirmed directly, `from lxml import etree` alone
+# reports both `reportMissingTypeStubs` (on `lxml`) and
+# `reportAttributeAccessIssue` ("etree" is unknown import symbol, on
+# `etree`). Ignored narrowly on each name rather than rewriting the import
+# (e.g. `import lxml.etree as etree`), which trades this gap for a different
+# one: ruff's own `PLR0402` auto-fixes that form straight back to `from lxml
+# import etree` (`fix = true` project-wide), silently reintroducing the
+# failure. Same pattern as `studio_serializer.py`/`xml_writer.py`/
+# `placement.py`/`scaffold.py`/`ir_ui_menu.py`.
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 from typing_extensions import NotRequired
 
-from odoo import _, api, fields, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_actions_report import IrActionsReport
@@ -42,12 +56,16 @@ from odoo.addons.base.models.ir_qweb import IrQWeb
 from odoo.addons.base.models.ir_ui_view import View
 from odoo.addons.base.models.res_users import Users
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_base.tools.i18n import _
 from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
 
 if TYPE_CHECKING:
     # Only for the annotations/casts below; with `from __future__ import
     # annotations` nothing here needs these at runtime, the same bargain
     # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from datetime import datetime
+
+    from odoo.fields import Field
     from odoo.models import BaseModel
 
     from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
@@ -174,6 +192,20 @@ class StudioReportPreview(models.AbstractModel):
         # ._render_template`): the internal layout stamps the time with
         # `context_timestamp`, the external one reads `res_company`.
         user = typed.model(self.env, Users).browse(self.env.uid)
+
+        def context_timestamp(t: datetime) -> datetime:
+            return fields.Datetime.context_timestamp(
+                # `tz` reaches `res.users` only through its own
+                # `_inherits = {'res.partner': 'partner_id'}` (delegation,
+                # not `_inherit` composition) -- never a real attribute of
+                # `Users`'s own class body, so no cast to that concrete
+                # class resolves it either. `Any` is the honest type for a
+                # value only reachable through Odoo's registry-level
+                # delegation (`TYPING.md`'s own `ir.cron.model_id` note).
+                self.with_context(tz=cast("Any", user).tz),
+                t,
+            )
+
         html = qweb._render(
             view.id,
             {
@@ -182,17 +214,7 @@ class StudioReportPreview(models.AbstractModel):
                 "doc_model": model_name,
                 "env": self.env,
                 "time": time,
-                "context_timestamp": lambda t: fields.Datetime.context_timestamp(
-                    # `tz` reaches `res.users` only through its own
-                    # `_inherits = {'res.partner': 'partner_id'}` (delegation,
-                    # not `_inherit` composition) -- never a real attribute of
-                    # `Users`'s own class body, so no cast to that concrete
-                    # class resolves it either. `Any` is the honest type for a
-                    # value only reachable through Odoo's registry-level
-                    # delegation (`TYPING.md`'s own `ir.cron.model_id` note).
-                    self.with_context(tz=cast("Any", user).tz),
-                    t,
-                ),
+                "context_timestamp": context_timestamp,
                 "user": user,
                 "res_company": self.env.company,
                 "web_base_url": typed.model(self.env, IrConfigParameter)
@@ -229,7 +251,8 @@ class StudioReportPreview(models.AbstractModel):
             return {"values": [], "lists": []}
         values: list[PrintableFieldJSON] = []
         lists: list[PrintableListJSON] = []
-        for name, field in sorted(self.env[model_name]._fields.items()):
+        model_fields = cast("dict[str, Field[Any]]", self.env[model_name]._fields)
+        for name, field in sorted(model_fields.items()):
             if not field.store and not field.related:
                 continue
             entry: dict[str, object] = {
@@ -247,7 +270,10 @@ class StudioReportPreview(models.AbstractModel):
                         # comodel -- true by construction, the same idiom
                         # `studio_domain.py`'s own `fields_for` already casts
                         # for the identical field.
-                        self.env[cast("str", field.comodel_name)]._fields.items()
+                        cast(
+                            "dict[str, Field[Any]]",
+                            self.env[cast("str", field.comodel_name)]._fields,
+                        ).items()
                     )
                     if sf.store and sf.type not in ("one2many", "many2many", "binary")
                 ]

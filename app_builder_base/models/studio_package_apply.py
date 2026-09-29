@@ -23,10 +23,11 @@ import uuid
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from odoo import _, api, fields, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from ..tools import typed
+from ..tools.i18n import _
 from .studio_package import StudioPackage, _mute_dev_watcher
 
 if TYPE_CHECKING:
@@ -57,7 +58,7 @@ class StudioPackageApply(models.Model):
     # work under this real OCB/pyright combination (TYPING.md's own "Known
     # traps"); every real read below goes through `cast("StudioPackage",
     # self.package_id)` instead.
-    package_id = fields.Many2one(
+    package_id: fields.Many2one[Any] = fields.Many2one(
         "studio.package", required=True, ondelete="cascade", index=True
     )
     reason = fields.Char()
@@ -83,7 +84,9 @@ class StudioPackageApply(models.Model):
     backup_path = fields.Char(readonly=True)
     boot_id = fields.Char(readonly=True, help="The process that started the apply.")
     # Same "no typed-relation declaration" rule as `package_id` above.
-    file_ids = fields.One2many("studio.package.apply.file", "apply_id")
+    file_ids: fields.One2many[Any] = fields.One2many(
+        "studio.package.apply.file", "apply_id"
+    )
 
     # -- snapshot ---------------------------------------------------------
 
@@ -252,7 +255,7 @@ class StudioPackageApplyFile(models.Model):
     _description = "Studio Package Apply File"
     _order = "path"
 
-    apply_id = fields.Many2one(
+    apply_id: fields.Many2one[Any] = fields.Many2one(
         "studio.package.apply", required=True, ondelete="cascade", index=True
     )
     path = fields.Char(required=True)

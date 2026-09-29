@@ -22,7 +22,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_actions import IrActionsServer
@@ -31,6 +31,7 @@ from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 from odoo.addons.app_builder_base.models.studio_record_surface import RecordRowJSON
 from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.app_builder_base.tools.catalogue import Row, RowJSON, Section
+from odoo.addons.app_builder_base.tools.i18n import _
 
 from .studio_graduate_code import StudioGraduateCode
 
@@ -50,6 +51,7 @@ if TYPE_CHECKING:
     # never called from here, so no alias-import/cast of it is needed --
     # unlike `studio_workspace.py`'s own `StudioWorkspaceBase`, there is no
     # real read site that would use it.
+    from odoo.fields import Field
     from odoo.models import BaseModel
 
     from odoo.addons.base.models.ir_model import IrModel
@@ -562,9 +564,9 @@ class StudioAutomation(models.AbstractModel):
         values: dict[str, object] | None,
         template: str | None = None,
     ) -> AutomationRowJSON:
-        values = dict(values or {})
+        values = dict(values) if values else {}
         step_values: list[dict[str, object]] = [
-            dict(v) if isinstance(v, dict) else {}
+            dict(cast("dict[str, object]", v)) if isinstance(v, dict) else {}
             for v in cast("list[object]", values.pop("steps", []))
         ]
         # `steps.0.webhook_url` from the inline New form: a value on the
@@ -633,9 +635,11 @@ class StudioAutomation(models.AbstractModel):
         """The steps a template or the caller asked for, in order."""
         self._check_rule(record)
         Step = typed.model(self.env, StudioAutomationStep)
-        for sequence, step in enumerate(
-            self.env.context.get("studio_surface_steps") or [], 1
-        ):
+        steps = cast(
+            "list[dict[str, object]]",
+            self.env.context.get("studio_surface_steps") or [],
+        )
+        for sequence, step in enumerate(steps, 1):
             Step._make(record, package, {**step, "sequence": sequence * 10})
 
     @api.model
@@ -857,7 +861,9 @@ class StudioAutomationStep(models.AbstractModel):
 
     @api.model
     def _states(self) -> list[list[str]]:
-        field = typed.model(self.env, IrActionsServer)._fields["state"]
+        field = cast(
+            "dict[str, Field[Any]]", typed.model(self.env, IrActionsServer)._fields
+        )["state"]
         return [
             [value, label]
             for value, label in cast(
@@ -997,7 +1003,11 @@ class StudioAutomationStep(models.AbstractModel):
             "StudioRecordSurface", typed.model(self.env, StudioAutomation)
         )._assert_editable(automation, package)
         last = max(
-            cast("BaseModel", automation.action_server_ids).mapped("sequence") or [0]
+            cast(
+                "list[int]",
+                cast("BaseModel", automation.action_server_ids).mapped("sequence"),
+            )
+            or [0]
         )
         step = self._make(automation, package, {**values, "sequence": last + 10})
         return cast("StudioRecordSurface", self).describe(

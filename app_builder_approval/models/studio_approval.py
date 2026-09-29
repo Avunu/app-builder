@@ -29,15 +29,16 @@ than a pile of data records.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 from odoo.addons.app_builder_base.models.studio_package_model import StudioPackageModel
 from odoo.addons.app_builder_base.tools import modelspec, pycodegen, typed
+from odoo.addons.app_builder_base.tools.i18n import _
 
 if TYPE_CHECKING:
     # Only for the cast below; with `from __future__ import annotations`
@@ -49,7 +50,7 @@ if TYPE_CHECKING:
     # `candidate_state_fields()` already established is a stored selection;
     # invisible to pyright the same way every other traced dynamic-field gap
     # in this migration is.
-    from odoo.fields import Selection
+    from odoo.fields import Field, Selection
 
 MIXIN = "tier.validation"
 
@@ -184,7 +185,8 @@ class StudioApproval(models.AbstractModel):
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
         out: list[StateFieldJSON] = []
-        for name, field in sorted(self.env[model_name]._fields.items()):
+        fields_ = cast("dict[str, Field[Any]]", self.env[model_name]._fields)
+        for name, field in sorted(fields_.items()):
             if field.type != "selection" or not field.store:
                 continue
             out.append(
@@ -203,7 +205,7 @@ class StudioApproval(models.AbstractModel):
     def _selection_values(
         self, model_name: str, field_name: str
     ) -> list[tuple[str, str]]:
-        field = self.env[model_name]._fields[field_name]
+        field = cast("dict[str, Field[Any]]", self.env[model_name]._fields)[field_name]
         try:
             # See this file's own `TYPE_CHECKING` note: `_description_selection`
             # is `Selection`'s own, not the base `Field`'s -- true here only
@@ -216,8 +218,11 @@ class StudioApproval(models.AbstractModel):
             # the sibling accessor (`get_description(...).get("selection")`);
             # cast to what the method's own docstring promises ("pairs
             # (value, label)").
-            selection = cast("Selection", field)._description_selection(self.env)
-            return cast("list[tuple[str, str]]", selection or [])
+            selection = cast(
+                "list[tuple[str, str]] | None",
+                cast("Selection", field)._description_selection(self.env),
+            )
+            return selection or []
         except Exception:  # noqa: BLE001
             # A selection built by a callable can need a record to evaluate.
             # Offering no values is honest; guessing is not.

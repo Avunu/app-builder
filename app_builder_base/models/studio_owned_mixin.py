@@ -15,14 +15,15 @@ copy works.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from odoo import _, api, fields, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_model import IrModelData
 
 from ..tools import typed
+from ..tools.i18n import _
 from .studio_package import StudioPackage
 
 if TYPE_CHECKING:
@@ -47,7 +48,9 @@ class StudioOwnedMixin(models.AbstractModel):
     _name = "studio.owned.mixin"
     _description = "Studio Owned Record"
 
-    studio_package_id = fields.Many2one(
+    # Annotated `Many2one[Any]` only to silence the declaration's own
+    # partially-`Unknown` inferred type; reads still `cast()`.
+    studio_package_id: fields.Many2one[Any] = fields.Many2one(
         "studio.package",
         string="Studio Package",
         compute="_compute_studio_package_id",
@@ -190,7 +193,7 @@ class StudioCapturedOnCreate(models.AbstractModel):
             return records
         package = (
             typed.model(self.env, StudioPackage)
-            .browse(self.env.context.get("studio_package_id") or [])
+            .browse(cast("list[int]", self.env.context.get("studio_package_id") or []))
             .exists()
         )
         if package and package.writable:
@@ -254,7 +257,7 @@ class IrModelFields(models.Model):
             return records
         fallback = (
             typed.model(self.env, StudioPackage)
-            .browse(self.env.context.get("studio_package_id") or [])
+            .browse(cast("list[int]", self.env.context.get("studio_package_id") or []))
             .exists()
         )
         for record in records:

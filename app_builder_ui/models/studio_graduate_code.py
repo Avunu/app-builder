@@ -27,12 +27,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_actions import IrActionsServer
 from odoo.addons.app_builder_base.models.studio_package_model import StudioPackageModel
 from odoo.addons.app_builder_base.tools import modelspec, pycodegen, typed
+from odoo.addons.app_builder_base.tools.i18n import _
 
 if TYPE_CHECKING:
     # Only for the annotations/casts below; with `from __future__ import

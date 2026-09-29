@@ -22,19 +22,25 @@ import secrets
 from collections import Counter
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias, TypedDict, cast
 
-# lxml ships no type stubs in this environment, the same gap `xml_writer.py`/
-# `placement.py`/`studio_serializer.py`/`studio_model_draft.py` already
-# document -- `reportMissingTypeStubs` only escalates to `error` under
-# `tools/`'s own `executionEnvironments` override (`pyrightconfig.json`), not
-# at this (model) level, so the one real hit here (`etree` itself, an
-# unresolvable import symbol with no stub) is the only one that needs
-# silencing.
-from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+# lxml ships no type stubs in this environment (a compiled extension with no
+# `.pyi`/`py.typed` marker; `lxml-stubs`/`types-lxml` is not an installed
+# dependency here), so pyright cannot resolve `etree` as an exported member
+# of `lxml` at all -- confirmed directly, `from lxml import etree` alone
+# reports both `reportMissingTypeStubs` (on `lxml`) and
+# `reportAttributeAccessIssue` ("etree" is unknown import symbol, on
+# `etree`). Ignored narrowly on each name rather than rewriting the import
+# (e.g. `import lxml.etree as etree`), which trades this gap for a
+# different one: ruff's own `PLR0402` auto-fixes that form straight back to
+# `from lxml import etree` (`fix = true` project-wide), silently
+# reintroducing the failure.
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 from typing_extensions import NotRequired
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError, ValidationError
-from odoo.tools.template_inheritance import apply_inheritance_specs
+from odoo.tools import template_inheritance
 
 from odoo.addons.base.models.ir_actions import IrActionsActWindow, IrActionsServer
 from odoo.addons.base.models.ir_ui_view import View
@@ -51,6 +57,7 @@ from odoo.addons.app_builder_base.tools import (
     typed,
     xml_writer,
 )
+from odoo.addons.app_builder_base.tools.i18n import _
 
 from ..exceptions import STALE_VIEW_MESSAGE, StudioConfirmRequired, StudioStaleView
 from ..tools import canvas_stamp, view_options
@@ -636,7 +643,7 @@ class StudioViewEditor(models.AbstractModel):
         # calling form it genuinely accepts at runtime -- the documented
         # stub gap (TYPING.md's own "Known traps"), kept as the exact
         # original single-dict call rather than rewritten to `create([...])`.
-        vals = {
+        vals: dict[str, object] = {
             "name": name,
             "model": base_view.model,
             "inherit_id": base_view.id,
@@ -872,7 +879,10 @@ class StudioViewEditor(models.AbstractModel):
             # an accepted, pre-existing vendor gap (this migration's own
             # rule for a less-common core utility), cast to the real
             # `LxmlElement` it always returns.
-            arch = cast("LxmlElement", apply_inheritance_specs(primary, spec))
+            arch = cast(
+                "LxmlElement",
+                template_inheritance.apply_inheritance_specs(primary, spec),
+            )
         else:
             existing = self._find_extension(base_view, package)
             target = existing or self._get_or_create_extension(
@@ -927,12 +937,13 @@ class StudioViewEditor(models.AbstractModel):
     def _resolve_xpath(self, root: LxmlElement, expr: str) -> list[LxmlElement] | None:
         """The elements ``expr`` selects in ``root``; ``None`` if it is not an xpath."""
         try:
-            found = etree.ETXPath(expr)(root)
+            found = cast("object", etree.ETXPath(expr)(root))
         except etree.XPathError:
             return None
         if not isinstance(found, list):
             return None
-        return [node for node in found if etree.iselement(node)]
+        nodes = cast("list[LxmlElement]", found)
+        return [node for node in nodes if etree.iselement(node)]
 
     @api.model
     def _assert_move_is_sane(
@@ -1115,10 +1126,11 @@ class StudioViewEditor(models.AbstractModel):
         """
         # Same `studio.owned.mixin` composed-elsewhere cast as
         # `_find_extension` above.
-        return (
+        return cast(
+            "bool",
             view.mode == "primary"
             and cast("StudioPackage", cast("StudioOwnedMixin", view).studio_package_id)
-            == package
+            == package,
         )
 
     @api.model
@@ -1554,7 +1566,7 @@ class StudioViewEditor(models.AbstractModel):
         sheet instead, for the wrong model.
         """
         return Counter(
-            (cast("str", el.tag), attr, cast("str", el.get(attr)))
+            (el.tag, attr, cast("str", el.get(attr)))
             for el in root.iter()
             if isinstance(el.tag, str)
             for attr in IDENTIFYING_ATTRS
@@ -1700,7 +1712,7 @@ class StudioViewEditor(models.AbstractModel):
         view = typed.model(self.env, View).browse(view_id).exists()
         if not view or view.type != "form":
             raise UserError(_("Only a form has a chatter."))
-        model = self.env.get(cast("str", view.model))
+        model = cast("BaseModel | None", self.env.get(cast("str", view.model)))
         if model is None or "message_ids" not in model._fields:
             raise UserError(
                 _(
@@ -2679,11 +2691,7 @@ class StudioViewEditor(models.AbstractModel):
         for token, node in nodes.items():
             if node["name"] != name:
                 continue
-            parent = (
-                nodes.get(cast("canvas_stamp.Token", node["parent"]))
-                if node["parent"]
-                else None
-            )
+            parent = nodes.get(node["parent"]) if node["parent"] else None
             score = (
                 bool(node["selectable"]),
                 tag is None or node["tag"] == tag,
@@ -3146,7 +3154,9 @@ class StudioViewEditor(models.AbstractModel):
         """
         if node.tag != "field" or model_name not in self.env:
             return None
-        field = self.env[model_name]._fields.get(cast("str", node.get("name")))
+        field = cast("dict[str, Field[Any]]", self.env[model_name]._fields).get(
+            cast("str", node.get("name"))
+        )
         if not field:
             return None
         info: FieldInfoJSON = {
@@ -3216,8 +3226,9 @@ class StudioViewEditor(models.AbstractModel):
         # `_find_extension` above.
         owner = cast("StudioPackage", cast("StudioOwnedMixin", view).studio_package_id)
         suggested = owner or packages._suggested()
+        translate = cast("catalogue.Translator", self.env._)
         python_owner = (
-            cast("_ComposedViewEditor", self)._python_owner(cast("str", view.model))
+            cast("_ComposedViewEditor", self)._python_owner(view.model)
             if view.model
             else packages.browse()
         )
@@ -3239,7 +3250,7 @@ class StudioViewEditor(models.AbstractModel):
             "python_owned": bool(python_owner),
             "python_owner_id": cast("int", python_owner.id) if python_owner else False,
             "field_types": modelspec.available_field_types(
-                self._python_spec(python_owner, view.model), self.env._
+                self._python_spec(python_owner, view.model), translate
             ),
             # The draft this user already has open on the model, if any. Never
             # created here: opening the editor is not an edit.
@@ -3258,8 +3269,8 @@ class StudioViewEditor(models.AbstractModel):
             # vocabulary shared with the model composer. Sent here rather than
             # from an endpoint of its own because the editor already makes this
             # call and the answer never changes mid-session.
-            "options": view_options.groups_json(cast("str", view.type), self.env._),
-            "catalogue": catalogue.catalogue_json(self.env._),
+            "options": view_options.groups_json(cast("str", view.type), translate),
+            "catalogue": catalogue.catalogue_json(translate),
             "groups": self._selectable_groups(),
             # Whether an edit rewrites this view or emits a patch against it.
             # The preview shows the combined result either way, so saying which
@@ -3301,7 +3312,9 @@ class StudioViewEditor(models.AbstractModel):
         # worked around the same narrow way as `studio.owned.mixin`'s own,
         # for a dependency this addon already declares (`web`, in its
         # manifest) rather than one this migration adds.
-        for view_type in cast("WebView", view_model).get_view_info():
+        for view_type in cast(
+            "dict[str, dict[str, Any]]", cast("WebView", view_model).get_view_info()
+        ):
             view_id = cast("int", view_model.default_view(model_name, view_type))
             if not view_id:
                 continue
@@ -3368,7 +3381,9 @@ class StudioViewEditor(models.AbstractModel):
                 modelspec.FieldSpec(
                     name=name, ttype=field.type, comodel=field.comodel_name
                 )
-                for name, field in sorted(model._fields.items())
+                for name, field in sorted(
+                    cast("dict[str, Field[Any]]", model._fields).items()
+                )
                 if field.type == "many2one"
             ),
         )
@@ -3446,7 +3461,9 @@ class StudioViewEditor(models.AbstractModel):
         """
         return [
             {"name": name, "string": field.string or name}
-            for name, field in sorted(model._fields.items())
+            for name, field in sorted(
+                cast("dict[str, Field[Any]]", model._fields).items()
+            )
             if field.type in types
             and field.store
             and name not in modelspec.MAGIC_COLUMNS
@@ -3499,13 +3516,19 @@ class StudioViewEditor(models.AbstractModel):
             raise UserError(_("Unknown model '%s'.", model_name))
         model = self.env[model_name]
         existing = set(
-            typed.model(self.env, View)
-            .search([("model", "=", model_name), ("mode", "=", "primary")])
-            .mapped("type")
+            cast(
+                "list[str]",
+                typed.model(self.env, View)
+                .search([("model", "=", model_name), ("mode", "=", "primary")])
+                .mapped("type"),
+            )
         )
         # Same `web`-only `get_view_info` composed-elsewhere cast as
         # `_views_of` above.
-        known = cast("WebView", typed.model(self.env, View)).get_view_info()
+        known = cast(
+            "dict[str, dict[str, Any]]",
+            cast("WebView", typed.model(self.env, View)).get_view_info(),
+        )
         out: list[AddableViewTypeEntryJSON] = []
         for view_type, meta in known.items():
             if view_type in self.NOT_ADDABLE:
@@ -3688,7 +3711,7 @@ class StudioViewEditor(models.AbstractModel):
             return spec
         fields_ = [
             modelspec.FieldSpec(name=name, ttype=field.type, string=field.string)
-            for name, field in model._fields.items()
+            for name, field in cast("dict[str, Field[Any]]", model._fields).items()
             if field.store and name not in modelspec.MAGIC_COLUMNS
         ]
         return modelspec.ModelSpec(
@@ -3796,7 +3819,9 @@ class StudioViewEditor(models.AbstractModel):
         model_name = cast("str", model_name)
         return [
             {"name": name, "string": field.string or name, "type": field.type}
-            for name, field in sorted(self.env[model_name]._fields.items())
+            for name, field in sorted(
+                cast("dict[str, Field[Any]]", self.env[model_name]._fields).items()
+            )
             if field.store and name not in modelspec.MAGIC_COLUMNS
         ]
 
@@ -3828,7 +3853,7 @@ class StudioViewEditor(models.AbstractModel):
                     and not any(a.tag == "field" for a in node.iterancestors())
                 }
         result: list[AddableFieldEntryJSON] = []
-        for name, field in sorted(model._fields.items()):
+        for name, field in sorted(cast("dict[str, Field[Any]]", model._fields).items()):
             if name in present or name.startswith("_"):
                 continue
             # Non-stored, non-computed fields have no value to show on a form,

@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 # lxml ships no type stubs in this environment, the same gap `xml_writer.py`/
 # `placement.py`/`studio_serializer.py`/`studio_view_editor.py` already
@@ -44,9 +44,11 @@ from typing import TYPE_CHECKING, Literal, TypedDict, cast
 # at this (model) level, so the one real hit here (`etree` itself, an
 # unresolvable import symbol with no stub) is the only one that needs
 # silencing.
-from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 
-from odoo import _, api, fields, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import sql
 
@@ -55,6 +57,7 @@ from odoo.addons.app_builder_base.models.studio_model_draft import (
     AnchorJSON as _BaseAnchorJSON,
 )
 from odoo.addons.app_builder_base.tools import modelspec, scaffold, typed
+from odoo.addons.app_builder_base.tools.i18n import _
 
 from .studio_view_editor import StudioViewEditor
 
@@ -62,6 +65,7 @@ if TYPE_CHECKING:
     # Only for the annotations/casts below; with `from __future__ import
     # annotations` nothing here needs these at runtime, the same bargain
     # every other Phase 1c file's `TYPE_CHECKING` block makes.
+    from odoo.models import BaseModel
     from odoo.sql_db import Cursor
 
     from odoo.addons.app_builder_base.models.studio_model_draft import (
@@ -158,7 +162,7 @@ class StudioModelDraft(models.TransientModel):
             data = json.loads(self.anchors_json or "{}")
         except ValueError:
             data = {}
-        return data if isinstance(data, dict) else {}
+        return cast("dict[str, AnchorJSON]", data) if isinstance(data, dict) else {}
 
     def _store_anchors(self, data: dict[str, AnchorJSON]) -> Literal[True]:
         self.ensure_one()
@@ -628,12 +632,15 @@ class StudioModelDraft(models.TransientModel):
         upgrade that creates the column is exactly the half-way state a
         restart-mode apply can leave."""
         self.ensure_one()
-        Model = self.env.get(cast("str", cast("StudioModelDraftBase", self).model))
+        Model = cast(
+            "BaseModel | None",
+            self.env.get(cast("str", cast("StudioModelDraftBase", self).model)),
+        )
         if Model is None:
             return list(diff.added)
-        missing = []
+        missing: list[str] = []
         for name in diff.added:
-            field = Model._fields.get(name)
+            field = cast("fields.Field[Any] | None", Model._fields.get(name))
             if field is None or (
                 field.store
                 and field.column_type

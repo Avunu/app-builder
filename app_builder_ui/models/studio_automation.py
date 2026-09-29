@@ -27,12 +27,13 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_base.tools.i18n import _
 
 
 class AutomationActionJSON(TypedDict):

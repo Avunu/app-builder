@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 from typing_extensions import NotRequired
 
-from odoo import _, api, fields, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_model import IrModel, IrModelData
@@ -32,6 +32,7 @@ from odoo.addons.base.models.ir_module import Module as IrModuleModule
 from odoo.addons.base.models.ir_ui_view import View
 
 from ..tools import gitrepo, typed
+from ..tools.i18n import _
 from .studio_model_draft import StudioModelDraft
 from .studio_package import RESERVED_NAMES, StudioPackage
 from .studio_package_apply import StudioPackageApply
@@ -48,7 +49,6 @@ if TYPE_CHECKING:
     from .studio_package import StudioPackageFile
     from .studio_package_apply import StudioPackageApplyFile
     from .studio_package_model import StudioPackageModel
-    from .studio_serializer import StudioSerializer
 
 # Keys a user may keep about their own use of the studio. Whitelisted so
 # the preference blob stays a small, known shape rather than a scratchpad.
@@ -569,9 +569,7 @@ class StudioWorkspace(models.AbstractModel):
 
         import odoo.addons
 
-        core_root = os.path.dirname(
-            os.path.dirname(os.path.abspath(cast("str", odoo.__file__)))
-        )
+        core_root = os.path.dirname(os.path.dirname(os.path.abspath(odoo.__file__)))
         Package = typed.model(self.env, StudioPackage)
         out: list[AddonsDirJSON] = []
         for path in odoo.addons.__path__:
@@ -760,16 +758,8 @@ class StudioWorkspace(models.AbstractModel):
                 # An AbstractModel recordset is empty and therefore falsy;
                 # the question is whether a serializer exists at all.
                 has_serializer = serializer is not None
-                subject = (
-                    cast("StudioSerializer", serializer)._group_model(record)
-                    if has_serializer
-                    else None
-                )
-                target = (
-                    cast("StudioSerializer", serializer)._target_file(record)
-                    if has_serializer
-                    else None
-                )
+                subject = serializer._group_model(record) if has_serializer else None
+                target = serializer._target_file(record) if has_serializer else None
                 entry: InventoryEntryJSON = {
                     "id": cast("int", record.id),
                     "model": model_name,
@@ -847,7 +837,9 @@ class StudioWorkspace(models.AbstractModel):
                     if row is not None
                     else "",
                     "in_registry": in_registry,
-                    "field_count": len(self.env[model_name]._fields)
+                    "field_count": len(
+                        cast("dict[str, Any]", self.env[model_name]._fields)
+                    )
                     if in_registry
                     else len(fields_),
                     "owned_field_count": owned,
@@ -1013,7 +1005,7 @@ class StudioWorkspace(models.AbstractModel):
             ],
             "can_rollback": apply.state in ("applied", "failed", "awaiting_restart")
             and package.writable
-            and bool(apply.file_ids),
+            and bool(cast("StudioPackageApplyFile", apply.file_ids)),
         }
 
     @api.model
@@ -1226,7 +1218,9 @@ class StudioWorkspace(models.AbstractModel):
         # then narrowed back on return.
         prefs = cast("dict[str, Any]", self.user_prefs())
         if key == "recent_models":
-            value = [v for v in (value or []) if isinstance(v, str)][:RECENT_MODELS]
+            value = [v for v in cast("list[Any]", value or []) if isinstance(v, str)][
+                :RECENT_MODELS
+            ]
         prefs[key] = value
         self.env.user.sudo().write({"studio_prefs": json.dumps(prefs)})
         return cast("UserPrefsJSON", prefs)

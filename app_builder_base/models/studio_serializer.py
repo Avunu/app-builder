@@ -48,9 +48,9 @@ from lxml import (  # pyright: ignore[reportMissingTypeStubs]
 
 from odoo import api, models
 from odoo.exceptions import UserError
-from odoo.tools.translate import _
 
 from ..tools import xml_writer
+from ..tools.i18n import _
 
 # `LxmlElement` (`tools/lxml_types.py`, shared with `xml_writer.py`,
 # `placement.py` and `app_builder_view/tools/canvas_stamp.py`) is the real,
@@ -167,14 +167,15 @@ class StudioSerializer(models.AbstractModel):
 
     @api.model
     def _package_name(self) -> str | None:
-        return self.env.context.get("studio_package")
+        return cast("str | None", self.env.context.get("studio_package"))
 
     @api.model
     def _xmlid_of(self, record: BaseModel) -> str | Literal[False]:
         """Full xmlid of ``record``, or ``False``."""
         if not record:
             return False
-        return record.get_external_id().get(record.id) or False
+        xmlid = cast("dict[Any, str]", record.get_external_id()).get(record.id)
+        return xmlid or False
 
     @api.model
     def _ref_of(self, record: BaseModel, source: str | None = None) -> str:
@@ -212,7 +213,7 @@ class StudioSerializer(models.AbstractModel):
         # honest type for what `Context.get` returns here -- `Context` itself
         # is a generic Mapping-like object, and there is no way for pyright to
         # know the value type at this one key from the dict alone.
-        sink: set[str] | None = self.env.context.get("studio_dep_sink")
+        sink = cast("set[str] | None", self.env.context.get("studio_dep_sink"))
         if sink is not None and module:
             sink.add(module)
         return xmlid
@@ -243,7 +244,7 @@ class StudioSerializer(models.AbstractModel):
             # is meaningless, and an empty relation is always safe to omit.
             return not value
 
-        default = field.default
+        default = cast("Any", field.default)
         if default is None:
             return not value
         if callable(default):
@@ -306,7 +307,7 @@ class StudioSerializer(models.AbstractModel):
     def _note_value_dependency(self, fname: str, value: Any) -> None:
         module = (self._value_depends().get(fname) or {}).get(value)
         # See `_ref_of`'s own comment on this same read.
-        sink: set[str] | None = self.env.context.get("studio_dep_sink")
+        sink = cast("set[str] | None", self.env.context.get("studio_dep_sink"))
         if module and sink is not None:
             sink.add(module)
 

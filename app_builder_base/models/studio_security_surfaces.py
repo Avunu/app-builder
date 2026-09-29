@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_rule import IrRule
@@ -21,6 +21,7 @@ from odoo.addons.base.models.res_users import Groups
 
 from ..tools import compat, typed
 from ..tools.catalogue import Row, Section
+from ..tools.i18n import _
 from .studio_record_surface import RecordRowJSON
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     # `IrRule`/`Groups` are real, top-level imports instead (above):
     # `typed.model()` reads `cls._name` at *runtime*, the same reason
     # `studio_record_surface.py` imports `IrModel`/`IrModelData` for real.
+    from odoo.fields import Field
     from odoo.models import BaseModel
 
     from odoo.addons.base.models.ir_model import IrModel, IrModelAccess
@@ -289,9 +291,9 @@ class StudioRuleSurface(models.AbstractModel):
         self, row: Row, value: object, model_name: str
     ) -> dict[str, object]:
         if row.name == "groups":
-            ids = [
+            ids: list[Any] = [
                 v.get("id") if isinstance(v, dict) else v
-                for v in (cast("Any", value) or [])
+                for v in cast("list[Any]", value or [])
             ]
             return {self._groups_field(): [(6, 0, [int(i) for i in ids if i])]}
         return cast("StudioRecordSurface", super())._coerce_virtual(
@@ -328,7 +330,7 @@ class StudioRuleSurface(models.AbstractModel):
     @api.model
     def _domain_eval_context(self, model_name: str) -> dict[str, object] | None:
         # What ir.rule itself evaluates a domain with: user, company_ids, time.
-        return typed.model(self.env, IrRule)._eval_context()
+        return cast("dict[str, object]", typed.model(self.env, IrRule)._eval_context())
 
     @api.model
     def _describe_extra(
@@ -350,6 +352,6 @@ class StudioRuleSurface(models.AbstractModel):
         out = cast("StudioRecordSurface", super()).templates(model_name)
         if not model_name or model_name not in self.env:
             return out
-        fields_ = self.env[model_name]._fields
+        fields_ = cast("dict[str, Field[Any]]", self.env[model_name]._fields)
         needs = {"assigned_to_me": "user_id", "own_company": "company_id"}
         return [t for t in out if t["key"] not in needs or needs[t["key"]] in fields_]

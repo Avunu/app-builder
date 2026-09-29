@@ -14,17 +14,20 @@ are both accepted by Odoo and neither is a thing anybody means.
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING, Literal, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from ..tools import domainspec, typed
+from ..tools.i18n import _
 
 if TYPE_CHECKING:
     # `write_domain`'s own parameter type only; with `from __future__ import
     # annotations` nothing here needs `Sequence` at runtime.
     from collections.abc import Sequence
+
+    from odoo.fields import Field
 
 # Operators worth offering, per family of field. Order is the order they are
 # shown, so the common one comes first.
@@ -159,7 +162,10 @@ class StudioDomain(models.AbstractModel):
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
         out: list[FieldSpecJSON] = []
-        for name, field in sorted(self.env[model_name]._fields.items()):
+        # `_fields` is OCB's own bare, unparameterized `dict[str, Field]`;
+        # the cast is the same fix `studio_serializer.py`'s `fields_` makes.
+        fields_ = cast("dict[str, Field[Any]]", self.env[model_name]._fields)
+        for name, field in sorted(fields_.items()):
             if not field.store or field.type not in OPERATORS_BY_TYPE:
                 continue
             entry: FieldSpecJSON = {

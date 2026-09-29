@@ -29,13 +29,14 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
 from typing_extensions import NotRequired
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
-from odoo.tools.safe_eval import safe_eval
+from odoo.tools import safe_eval as safe_eval_module
 
 from odoo.addons.base.models.ir_model import IrModel, IrModelData
 
 from ..tools import catalogue, typed
+from ..tools.i18n import _
 from .studio_package import StudioPackage
 
 if TYPE_CHECKING:
@@ -46,6 +47,7 @@ if TYPE_CHECKING:
     # imports instead (above): `typed.model()` reads `cls._name` at
     # *runtime*, which needs a real binding, the same reason
     # `studio_package.py` imports them for real too.
+    from odoo.fields import Field
     from odoo.models import BaseModel
 
 
@@ -207,7 +209,9 @@ class StudioRecordSurface(models.AbstractModel):
     def _sections(self, model_name: str | None = None) -> list[catalogue.Section]:
         """The sections that apply -- a surface may drop rows whose fields
         this database does not have."""
-        available = self.env[cast("str", self._surface_model)]._fields
+        available = cast(
+            "dict[str, Field[Any]]", self.env[cast("str", self._surface_model)]._fields
+        )
         out: list[catalogue.Section] = []
         for section in self._surface_sections:
             rows = tuple(
@@ -227,7 +231,7 @@ class StudioRecordSurface(models.AbstractModel):
     def _section_json(
         self, section: catalogue.Section, model_name: str | None
     ) -> catalogue.SectionJSON:
-        data = section.to_json(self.env._)
+        data = section.to_json(cast("catalogue.Translator", self.env._))
         for row, spec in zip(section.rows, data["rows"], strict=True):
             if row.selection_from:
                 # `RowJSON.choices` is `list[tuple[str, str]]`
@@ -259,7 +263,7 @@ class StudioRecordSurface(models.AbstractModel):
         model_name, _sep, field_name = spec.rpartition(".")
         if model_name not in self.env:
             return []
-        field = self.env[model_name]._fields.get(field_name)
+        field = cast("Field[Any] | None", self.env[model_name]._fields.get(field_name))
         if field is None or field.type != "selection":
             return []
         # `get_description` (`odoo/fields.py`) carries no annotation of its
@@ -384,7 +388,7 @@ class StudioRecordSurface(models.AbstractModel):
     @api.model
     def _row(self, record: BaseModel, package: StudioPackage) -> RecordRowJSON:
         owner = self._owner(record)
-        owned = bool(package) and owner["package"] == package
+        owned = bool(package) and cast("bool", owner["package"] == package)
         editable = owned and package.writable
         if owned and not package.writable:
             reason = _("%s is read-only.", package.name)
@@ -599,7 +603,11 @@ class StudioRecordSurface(models.AbstractModel):
             if context is None:
                 parsed = ast.literal_eval(domain or "[]")
             else:
-                parsed = safe_eval(domain or "[]", context)
+                # The module, not `from ... import safe_eval`: that function's
+                # own unannotated parameters make the bare import itself
+                # `partially unknown` under strict, whereas a call through
+                # the module is checked against its `-> Any` return alone.
+                parsed = safe_eval_module.safe_eval(domain or "[]", context)
             model = self.env[model_name].sudo()
             count = model.search_count(parsed)
             total = model.search_count([])
@@ -635,17 +643,17 @@ class StudioRecordSurface(models.AbstractModel):
                 raise UserError(_("%s must be a whole number.", row.label)) from err
         if row.type == "many2one":
             if isinstance(value, dict):
-                value = value.get("id")
+                value = cast("dict[str, object]", value).get("id")
             value = int(cast("Any", value)) if value else False
             if value:
-                self._assert_in_source(row, [cast("int", value)])
+                self._assert_in_source(row, [value])
             return value
         if row.type in ("many2many", "groups", "fields"):
-            ids = [
-                v.get("id") if isinstance(v, dict) else v
-                for v in (cast("Any", value) or [])
+            raw_ids = [
+                cast("dict[str, Any]", v).get("id") if isinstance(v, dict) else v
+                for v in cast("list[Any]", value or [])
             ]
-            ids = [int(i) for i in ids if i]
+            ids = [int(i) for i in raw_ids if i]
             self._assert_in_source(row, ids)
             return [(6, 0, ids)]
         if row.type == "domain":
@@ -679,7 +687,7 @@ class StudioRecordSurface(models.AbstractModel):
         if not row.comodel or row.comodel not in self.env or not ids:
             return
         records = self.env[row.comodel].sudo().browse(ids).exists()
-        xmlids = records.get_external_id()
+        xmlids = cast("dict[Any, str]", records.get_external_id())
         for record in records:
             if not xmlids.get(record.id):
                 raise UserError(

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
-from odoo import _, api, models
+from odoo import api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_actions_report import IrActionsReport
@@ -36,6 +36,7 @@ from odoo.addons.base.models.ir_model import IrModel, IrModelData
 from odoo.addons.base.models.ir_ui_view import View
 from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 from odoo.addons.app_builder_base.tools import scaffold, typed
+from odoo.addons.app_builder_base.tools.i18n import _
 
 if TYPE_CHECKING:
     # `studio_package_id` is added to `ir.actions.report` by `studio.owned
@@ -142,7 +143,11 @@ class StudioReport(models.AbstractModel):
                     "name": cast("str", cast("IrActions", report).name),
                     "report_name": cast("str", report.report_name),
                     "view_id": cast("int", view.id) or False,
-                    "owned": bool(cast("StudioOwnedMixin", report).studio_package_id),
+                    "owned": bool(
+                        cast(
+                            "object", cast("StudioOwnedMixin", report).studio_package_id
+                        )
+                    ),
                     # No template means nothing to edit, and it is worth saying
                     # rather than offering an editor that opens on nothing.
                     "editable": bool(view),
@@ -217,8 +222,11 @@ class StudioReport(models.AbstractModel):
             # `found.id`'s declared `IdType | Literal[False]` un-narrowed --
             # same cast as `ir_ui_view.py`'s own `_concrete_action()`.
             return Views.browse(cast("int", found.id))
-        model, res_id = typed.model(self.env, IrModelData)._xmlid_to_res_model_res_id(
-            name, raise_if_not_found=False
+        model, res_id = cast(
+            "tuple[str | Literal[False], int | Literal[False]]",
+            typed.model(self.env, IrModelData)._xmlid_to_res_model_res_id(
+                name, raise_if_not_found=False
+            ),
         )
         if model != "ir.ui.view" or not res_id:
             return Views.browse()

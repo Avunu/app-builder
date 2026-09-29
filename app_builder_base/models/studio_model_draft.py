@@ -23,16 +23,21 @@ import difflib
 import json
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
-# lxml ships no type stubs in this environment, the same gap `xml_writer.py`/
-# `placement.py`/`studio_serializer.py` already document -- `reportMissingTypeStubs`
-# only escalates to `error` under `tools/`'s own `executionEnvironments` override
-# (`pyrightconfig.json`), not at this (model) level, so the one real hit here
-# (`etree` itself, an unresolvable import symbol with no stub) is the only one
-# that needs silencing.
-from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
+# lxml ships no type stubs in this environment (a compiled extension with no
+# `.pyi`/`py.typed` marker; `lxml-stubs`/`types-lxml` is not an installed
+# dependency here), so pyright cannot resolve `etree` as an exported member
+# of `lxml` at all -- `from lxml import etree` alone reports both
+# `reportMissingTypeStubs` (on `lxml`) and `reportUnknownVariableType` (on
+# `etree`). Ignored narrowly on each name rather than rewriting the import
+# (`import lxml.etree as etree` is auto-fixed straight back by ruff's
+# `PLR0402`). Same pattern as `xml_writer.py`/`placement.py`/
+# `studio_serializer.py`.
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 from typing_extensions import NotRequired
 
-from odoo import _, api, fields, models
+from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 from odoo.addons.base.models.ir_model import IrModel
@@ -40,6 +45,7 @@ from odoo.addons.base.models.ir_ui_view import View
 
 from ..tools import modelspec, pycodegen, typed, xml_writer
 from ..tools import placement as placement_tool
+from ..tools.i18n import _
 from .studio_package_model import StudioPackageModel
 
 if TYPE_CHECKING:
@@ -205,10 +211,10 @@ class StudioModelDraft(models.TransientModel):
     # (TYPING.md's own "Known traps"), not fixable from this side.
     _transient_max_hours = 168  # pyright: ignore[reportAssignmentType]
 
-    package_model_id = fields.Many2one(
+    package_model_id: fields.Many2one[Any] = fields.Many2one(
         "studio.package.model", required=True, ondelete="cascade"
     )
-    package_id = fields.Many2one(
+    package_id: fields.Many2one[Any] = fields.Many2one(
         "studio.package", related="package_model_id.package_id", readonly=True
     )
     model = fields.Char(related="package_model_id.model", readonly=True)
@@ -233,10 +239,10 @@ class StudioModelDraft(models.TransientModel):
     # field has to exist by the time the registry is rebuilt or setup fails on
     # the inverse it cannot resolve. So the other model's edit is staged here
     # too, and both are written before the single reload.
-    parent_draft_id = fields.Many2one(
+    parent_draft_id: fields.Many2one[Any] = fields.Many2one(
         "studio.model.draft", ondelete="cascade", readonly=True
     )
-    companion_ids = fields.One2many(
+    companion_ids: fields.One2many[Any] = fields.One2many(
         "studio.model.draft", "parent_draft_id", readonly=True
     )
 
@@ -250,7 +256,7 @@ class StudioModelDraft(models.TransientModel):
         """A draft holding whatever is on disk right now."""
         typed.security(self)._assert_studio_manager()
         payload = self._payload_for(package_model)
-        vals = {
+        vals: dict[str, Any] = {
             "package_model_id": package_model.id,
             "base_spec_json": payload,
             "spec_json": payload,
@@ -466,7 +472,7 @@ class StudioModelDraft(models.TransientModel):
 
     # -- operations -------------------------------------------------------
 
-    def add_field(self, values: dict[str, Any]) -> Literal[True]:
+    def add_field(self, values: dict[str, Any] | None) -> Literal[True]:
         """Stage a new field. ``values`` is a FieldSpec-shaped dict.
 
         ``placement`` rides along but is not part of the spec: it says which
@@ -556,14 +562,16 @@ class StudioModelDraft(models.TransientModel):
         if not steps:
             return {"ok": False, "reason": _("Choose a field to follow.")}
         model_name = self.model
-        field = None
+        field: Field[Any] | None = None
         for index, step in enumerate(steps):
             if model_name not in self.env:
                 return {
                     "ok": False,
                     "reason": _("%s is not a model this database has.", model_name),
                 }
-            field = self.env[cast("str", model_name)]._fields.get(step)
+            field = cast(
+                "dict[str, Field[Any]]", self.env[cast("str", model_name)]._fields
+            ).get(step)
             if field is None:
                 return {
                     "ok": False,
@@ -587,7 +595,7 @@ class StudioModelDraft(models.TransientModel):
         # pyright cannot see that a `for` loop over a non-literal-length
         # list always executes, so the guarantee is asserted with a cast
         # rather than left as `Field | None`.
-        field = cast("Field", field)
+        field = cast("Field[Any]", field)
         return {
             "ok": True,
             "ttype": field.type,
@@ -663,7 +671,9 @@ class StudioModelDraft(models.TransientModel):
         if comodel in self.env:
             return {
                 name: field.string or name
-                for name, field in self.env[comodel]._fields.items()
+                for name, field in cast(
+                    "dict[str, Field[Any]]", self.env[comodel]._fields
+                ).items()
                 if field.type == "many2one" and field.comodel_name == self.model
             }
         return {}
@@ -674,7 +684,9 @@ class StudioModelDraft(models.TransientModel):
         if sibling:
             spec = sibling._current_spec()
             return {f.name for f in (spec.fields if spec else ())}
-        return set(self.env[comodel]._fields) if comodel in self.env else set()
+        if comodel not in self.env:
+            return set()
+        return set(cast("dict[str, Field[Any]]", self.env[comodel]._fields))
 
     def _suggest_inverse_name(self, comodel: str) -> str:
         """``workshop.project`` linked from its lines becomes ``project_id``."""
@@ -759,7 +771,7 @@ class StudioModelDraft(models.TransientModel):
             name, modelspec.clean_placement(values, spec_field.ttype)
         )
 
-    def update_field(self, name: str, values: dict[str, Any]) -> Literal[True]:
+    def update_field(self, name: str, values: dict[str, Any] | None) -> Literal[True]:
         """Replace one field, keeping its position in the class."""
         typed.security(self)._assert_studio_manager()
         self.ensure_one()
@@ -779,7 +791,7 @@ class StudioModelDraft(models.TransientModel):
             if widget and "widget" not in placement:
                 placement["widget"] = widget
             self._set_placement(name, modelspec.clean_placement(placement, picker_key))
-        merged = {
+        merged: dict[str, Any] = {
             **modelspec.spec_to_json(existing),
             **values,
             "name": name,
@@ -962,7 +974,7 @@ class StudioModelDraft(models.TransientModel):
         """A unified diff of every block Apply will write, so it is never a
         leap of faith -- including the one on the other model."""
         self.ensure_one()
-        chunks = []
+        chunks: list[str] = []
         for draft in self | self.companion_ids:
             base = pycodegen.render_block(draft._base_spec())
             before = base.splitlines(keepends=True)

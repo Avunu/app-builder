@@ -206,7 +206,9 @@ hoot `onRpc` mocks typed against the same map.
 - **Ratchet to done**: `checkJs` never needed (converted files are strict
   from day one); when the last `.js` source is gone, drop `allowJs` from
   `include` (keep it for reading Odoo's sources) and turn on
-  `reportUnknown*` for `models/`. That is the finish line.
+  `reportUnknown*` for `models/`. That is the finish line. (Done -- see
+  "Stage 2 -- `models/` under the strict bundle" below, which also says
+  which two `reportUnknown*` rules are deliberately left off.)
 
 ## Known traps, so they are not rediscovered
 
@@ -3740,6 +3742,61 @@ which imports `base_tier_validation`'s tests and fails on
 `odoo_test_helper`, absent from this environment. `-u <our addons>` limits
 collection to the addons being updated -- the same thing odoo-nix's own
 `odoo test` command does.
+
+## Stage 2 -- `models/` under the strict bundle
+
+Every `app_builder*/models` root in `pyrightconfig.json` now passes the same
+strict-equivalent bundle `tools/` does, **minus two rules**:
+
+* `reportUnknownMemberType` (559 findings when measured) and
+  `reportUnknownLambdaType` (33). Neither polices anything we wrote. They
+  fire on Odoo's own unannotated surface: `search`/`with_context`/`filtered`/
+  `mapped` take unannotated parameters, so the method type is "partially
+  unknown" at every call, and a lambda handed to `filtered` has a parameter
+  no annotation of ours can reach. Silencing them would mean rewriting
+  recordset idioms or an ignore at every call. The `# pyright:
+  ignore[reportUnknownMemberType]` comments already in the tree stay
+  (they are where a vendor *attribute* read leaves no typed alternative).
+* Everything else in the bundle -- unknown variables, arguments and
+  parameters, stale casts, dead imports, redundant `isinstance`, missing
+  type arguments and stubs -- is on. Measured at 269 findings in 39 files;
+  now 0.
+
+How the findings were cleared, so the next file follows the same moves:
+
+* **`_`** (about 30 files): `from odoo import _` became `from
+  ..tools.i18n import _` (`from odoo.addons.app_builder_base.tools.i18n
+  import _` in other addons). `tools/i18n.py` re-exports the **identical
+  function object** as `odoo._` behind a `Gettext` Protocol. It must never
+  become a wrapper: `get_text_alias` finds the addon and language from its
+  *caller's* frame, so a wrapper would put itself there and every string
+  would translate against the wrong module. Term extraction is unaffected
+  (it reads the call, not the import). `i18n` is in `_typeguard_hook._SKIP`.
+* **`models/__init__.py`**: `__all__` listing the submodules, as `tools/`
+  already does; importing them is what registers the models, and nothing
+  reads the names.
+* **Relational field declarations** now carry an LHS annotation
+  (`file_ids: fields.One2many[StudioPackageFile] = ...`) where pyright
+  accepts it (it does now; older comments claiming otherwise were
+  corrected). Reads are still partially unknown, so the read-site `cast`
+  stays.
+* **Unannotated core functions imported by name** (`field_xmlid`,
+  `apply_inheritance_specs`, `safe_eval`) are called through their module
+  (`ir_model_module.field_xmlid(...)`): same object, no unknown import.
+* **`_fields`** is read as `cast("dict[str, Field[Any]]", ...)`;
+  `get_external_id()` as `dict[Any, str]`; `tools_config["workers"]` as
+  `int`; `env._` bound once to a typed local.
+* **lxml**: the existing two-line `from lxml import (  # pyright:
+  ignore[reportMissingTypeStubs]` / `etree,  # pyright:
+  ignore[reportAttributeAccessIssue, reportUnknownVariableType]` idiom.
+* A `reportUnnecessaryIsInstance` is only deleted when the check is dead at
+  run time; where the value crosses a trust boundary (dirty Odoo data) the
+  declared type was widened instead.
+
+Verified: pyright 0 errors, ruff clean, the whole suite (894 tests) green.
+One tour (`test_a_line_and_a_rule_are_made_from_the_panes`) timed out once
+in the full run and passed twice alone; the diff to the code behind it is
+casts and the `_` import only.
 
 ## CI: the OCA container's real layout
 

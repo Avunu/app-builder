@@ -17,11 +17,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict, cast
 
-from odoo import _, models
+from odoo import models
 from odoo.exceptions import UserError
 
 from odoo.addons.base.models.ir_ui_view import View
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_base.tools.i18n import _
 
 if TYPE_CHECKING:
     # This file is a pure `_inherit = "studio.package.model"` extension --
