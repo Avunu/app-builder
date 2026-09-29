@@ -344,6 +344,19 @@ python odoo/odoo-bin -c odoo.conf -d studio_test -i app_builder \
 app_builder_base/tests/e2e/run_probes.sh -c odoo.conf -t studio_test
 ```
 
+Static and runtime type checks (what each one is for, and the traps behind them, are in [TYPING.md](TYPING.md)):
+
+```sh
+npx pyright                            # Python, standard mode; app_builder_*/tools also strict
+node scripts/typecheck.mjs            # tsc, TypeScript, our sources only (vendored diagnostics filtered)
+npx eslint '**/*.ts'                   # type-aware: an `any` leaking in from untyped Odoo JS
+node scripts/build_ts.mjs              # the committed .js must equal what esbuild emits from the .ts
+npx prettier --check '**/*.ts'
+APP_BUILDER_TYPEGUARD=1 <the unit suite above>   # tools/ under typeguard; needs `typeguard` installed
+```
+
+The `.js` beside every `.ts` is generated and is what Odoo ships -- edit the `.ts`. All of the above run in CI (`test.yml`'s `typecheck` job and the OCB `test` leg) and, where they can, in pre-commit; none of it has been run inside the OCA container yet.
+
 End-to-end acceptance, in order:
 
 1.  Create a package -> the addon directory appears with a manifest

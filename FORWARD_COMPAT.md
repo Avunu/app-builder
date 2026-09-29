@@ -214,6 +214,40 @@ master (master:35-36, :44-47, :73-83). `html_builder` itself (19+) is an
 `html_editor` plugin stack bound to a contenteditable iframe and does not
 exist in 18; its conventions were mirrored, not imported.
 
+## Type-checking against a new branch
+
+The types are checked against a *specific* Odoo checkout, and four things in
+this repo encode which one. Moving to 19.0 (or a saas/master line) is not
+only the runtime changes above; each of these has to be pointed at the new
+tree and the checks re-run, because a vendor change shows up as a type error
+long before it shows up as a broken console.
+
+- **`tsconfig.json` / `tsconfig.ci.json`.** `paths` maps `@web/*`,
+  `@html_editor/*`, `@web_tour/*`, `@mail/*` to the checkout
+  (`../../odoo/addons/...` locally, `/opt/odoo/addons/...` in CI), and
+  `include` lists Odoo's ambient `@types/*.d.ts` files *by path*. Those
+  files move and are renamed between series -- `TYPING.md`, Known traps,
+  says why each one is on the list. They are standalone, not `extends`
+  (`extends` replaces `paths` outright), so both files change together.
+  A 19.0 workspace type-checks against 19.0's `@types`; run it as a second,
+  advisory CI job once there is a 19.0 CI.
+- **`pyrightconfig.json` / `pyrightconfig.ci.json`.** `extraPaths` and the
+  venv. The CI one `extends` the local one and overrides only those, so the
+  rules cannot drift; do not turn it back into a copy.
+- **The typed facades are transcriptions of vendor shapes**, not imports:
+  `console/odoo.ts` (`useService`'s services, the dialog, `user.hasGroup`,
+  the registries), `console/l10n.ts` (`_t`), `console/compat.ts` (the RPC
+  bus). Each cites the vendor file it was read from. After an OCB bump,
+  re-read those against the new source; nothing else will tell you one has
+  gone stale, because the vendor JS is `checkJs: false` on purpose.
+- **eslint is the tripwire for the above.** Untyped vendor JS can carry
+  TypeScript's `error` type into our code without a `tsc` diagnostic (a JSDoc
+  that names a type the file never declares -- `_t`'s did), and the
+  `no-unsafe-*` rules are what report it. A bump that introduces one shows up
+  there first. Also re-check the vendored files that opt themselves into
+  checking with `//@ts-check` (`scripts/typecheck.mjs` filters their
+  diagnostics out as not ours).
+
 ## What was checked how
 
 - Run on 18: the whole suite, the tours and the hoot tests (`compat.test.js`

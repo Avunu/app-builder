@@ -102,7 +102,7 @@ python odoo/odoo-bin -c odoo.conf -d studio_test -i app_builder \
   --stop-after-init
 ```
 
-See [DESIGN.md](DESIGN.md) for the full architecture, the core machinery it drives, and the traps it works around — three Odoo caches that are never invalidated, two reserved module names, the `ir_cron` lock `button_immediate_upgrade` takes, and the findings from an adversarial review. See [TYPING.md](TYPING.md) for the plan to strongly-typed Python (pyright) and TypeScript across the addons.
+See [DESIGN.md](DESIGN.md) for the full architecture, the core machinery it drives, and the traps it works around — three Odoo caches that are never invalidated, two reserved module names, the `ir_cron` lock `button_immediate_upgrade` takes, and the findings from an adversarial review. See [TYPING.md](TYPING.md) for how the Python (pyright, plus typeguard on `tools/`) and TypeScript (`tsc`, eslint) are typed and checked, what was found doing it, and the traps that cost time.
 
 ## Licence
 
