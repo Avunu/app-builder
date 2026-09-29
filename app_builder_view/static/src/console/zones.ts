@@ -39,6 +39,7 @@
  */
 
 import { _t } from "./l10n";
+import type { Translated } from "./l10n";
 import type {
     DragPayload,
     NodeKind,
@@ -249,12 +250,9 @@ export function labelOf(node: StudioNode | null | undefined): string {
     return String(KIND_LABELS[node.kind] || _t("element"));
 }
 
-/** `_t`'s own return type (`string | Markup | LazyTranslatedString`,
- * `translation.js`) is not one we have an ambient declaration for; every
- * caller here immediately wraps a lookup in `String(...)` (`labelOf`),
- * which is what actually resolves it to a plain string, so this stays
- * loose rather than reaching for a type this file cannot see. */
-const KIND_LABELS: Partial<Record<NodeKind, unknown>> = {
+/** Each label is a `_t(...)` (`Translated`, see `l10n.ts`); `labelOf` wraps
+ * the lookup in `String(...)`, which is what resolves it to a plain string. */
+const KIND_LABELS: Partial<Record<NodeKind, Translated>> = {
     root: _t("the view"),
     sheet: _t("the sheet"),
     group: _t("the group"),

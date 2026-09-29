@@ -106,6 +106,20 @@ function stubActionService(controller: ActionController | null): ActionHolder {
     return holder;
 }
 
+/**
+ * The one member of the mounted item's `env` this file reaches: Owl's
+ * `EventBus#trigger` (`@odoo/owl`), which `item.env.bus` exposes as the
+ * vendor "error" type.
+ */
+interface EnvBus {
+    trigger(name: string, payload?: unknown): void;
+}
+
+/** `item.env.bus`, typed. */
+function envBus(item: StudioSystrayItem): EnvBus {
+    return item.env.bus;
+}
+
 async function mountItem(): Promise<StudioSystrayItem> {
     if (!getMockEnv()) {
         await makeMockEnv();
@@ -128,7 +142,7 @@ test("a window action gets the toggle; a client action and a placeholder do not"
     // Navigation: the action manager announces the new controller once it
     // is mounted, and the item re-reads the stack.
     holder.controller = FORM_CONTROLLER;
-    item.env.bus.trigger("ACTION_MANAGER:UI-UPDATED", "current");
+    envBus(item).trigger("ACTION_MANAGER:UI-UPDATED", "current");
     await animationFrame();
     expect(".o_studio_systray_toggle").toHaveCount(1);
     expect(queryOne(".o_studio_systray_toggle")).toHaveAttribute(
@@ -138,12 +152,12 @@ test("a window action gets the toggle; a client action and a placeholder do not"
 
     // A controller restored from the URL, not yet loaded.
     holder.controller = { virtual: true, action: {}, props: {}, currentState: {} };
-    item.env.bus.trigger("ACTION_MANAGER:UI-UPDATED", "current");
+    envBus(item).trigger("ACTION_MANAGER:UI-UPDATED", "current");
     await animationFrame();
     expect(".o_studio_systray_toggle").toHaveCount(0);
 
     holder.controller = null;
-    item.env.bus.trigger("ACTION_MANAGER:UI-UPDATED", "current");
+    envBus(item).trigger("ACTION_MANAGER:UI-UPDATED", "current");
     await animationFrame();
     expect(".o_studio_systray_toggle").toHaveCount(0);
 });

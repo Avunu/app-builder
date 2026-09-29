@@ -148,16 +148,18 @@ test("both view caches are told to clear, whichever bus this server listens on",
     await makeMockEnv();
   }
   const env = getMockEnv();
+  const envBus = env.bus;
+  const rpcEvents = rpcBus;
   const heard = [];
   const onEnvBus = () => heard.push("env");
   const onRpcBus = (ev) => heard.push(`rpc:${ev.detail}`);
-  env.bus.addEventListener("CLEAR-CACHES", onEnvBus);
-  rpcBus.addEventListener("CLEAR-CACHES", onRpcBus);
+  envBus.addEventListener("CLEAR-CACHES", onEnvBus);
+  rpcEvents.addEventListener("CLEAR-CACHES", onRpcBus);
   try {
     compat.clearViewCaches(env);
   } finally {
-    env.bus.removeEventListener("CLEAR-CACHES", onEnvBus);
-    rpcBus.removeEventListener("CLEAR-CACHES", onRpcBus);
+    envBus.removeEventListener("CLEAR-CACHES", onEnvBus);
+    rpcEvents.removeEventListener("CLEAR-CACHES", onRpcBus);
   }
   expect(heard.sort()).toEqual(["env", "rpc:get_views"]);
 });

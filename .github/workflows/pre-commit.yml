@@ -25,7 +25,8 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit
       - name: Run pre-commit
-        # pyright/tsc-typecheck/build-ts (.pre-commit-config.yaml, TYPING.md)
+        # pyright/tsc-typecheck/build-ts/prettier-ts/eslint-ts
+        # (.pre-commit-config.yaml, TYPING.md)
         # need this workspace's own .venv and node_modules, neither of
         # which exists in this checkout-only job. They run for real in
         # test.yml's `typecheck` job, inside the OCB container that has
@@ -33,4 +34,4 @@ jobs:
         run: >-
           pre-commit run --all-files --show-diff-on-failure --color=always
         env:
-          SKIP: pyright,tsc-typecheck,build-ts,prettier-ts
+          SKIP: pyright,tsc-typecheck,build-ts,prettier-ts,eslint-ts

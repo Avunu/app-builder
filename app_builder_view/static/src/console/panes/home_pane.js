@@ -410,7 +410,7 @@ class HomePane extends Component {
     for (const [key, label] of Object.entries(labels)) {
       const n = counts[key] || 0;
       if (n) {
-        parts.push(n === 1 ? `1 ${label}` : `${n} ${label}s`);
+        parts.push(n === 1 ? `1 ${String(label)}` : `${n} ${String(label)}s`);
       }
     }
     return parts.join(" · ");

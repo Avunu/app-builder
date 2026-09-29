@@ -38,6 +38,7 @@
  */
 
 import type { Component } from "@odoo/owl";
+import { user as userUntyped } from "@web/core/user";
 import { useService as useServiceUntyped } from "@web/core/utils/hooks";
 import type { NotificationService, OrmService, PaneRegistration } from "./types";
 
@@ -492,5 +493,26 @@ export function useService(name: "notification"): NotificationService;
 export function useService(name: "dialog"): DialogService;
 export function useService(name: "action"): ActionService;
 export function useService(name: string): unknown {
-    return useServiceUntyped(name);
+    // `useService` is untyped vendor JS whose generic JSDoc collapses to the
+    // `error` type; assigning it to `unknown` is the honest boundary.
+    const service: unknown = useServiceUntyped(name);
+    return service;
 }
+
+// -- user -----------------------------------------------------------------
+
+/**
+ * `user` (`@web/core/user`), narrowly: what this tree calls on it.
+ * `hasGroup` is `groupCache.read(group, this.context)` in `user.js`, and
+ * `Cache.read` (`core/utils/cache.js`) is untyped JS returning whatever
+ * `getGroupCacheValue` produced -- an `rpc` promise resolving to a
+ * boolean (`user.js`'s `groupCache`, pre-seeded with
+ * `Promise.resolve(isInternalUser)`) -- so `Promise<boolean>`, which the
+ * checker cannot see through `Cache`'s untyped `read`.
+ */
+export interface UserFacade {
+    hasGroup(group: string): Promise<boolean>;
+}
+
+/** The same `user` object, typed. Nothing changes at runtime. */
+export const user: UserFacade = userUntyped;

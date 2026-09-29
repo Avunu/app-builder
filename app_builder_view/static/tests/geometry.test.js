@@ -86,7 +86,7 @@ async function mountForm() {
   if (!getMockEnv()) {
     await makeMockEnv();
   }
-  const modelFields = MockServer.env.partner.fields_get();
+  const modelFields = MockServer.env["partner"].fields_get();
   await mountWithCleanup(View, {
     props: {
       type: "form",

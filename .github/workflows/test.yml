@@ -112,5 +112,8 @@ jobs:
         run: node scripts/build_ts.mjs
       - name: prettier
         run: npx prettier --check '**/*.ts'
-      # No eslint step: see eslint.config.mjs's own top-of-file comment
-      # and TYPING.md, Known traps -- not enforced anywhere yet.
+      - name: eslint
+        # Type-aware (no-unsafe-*): catches an `any`/error type leaking in
+        # from untyped Odoo JS that tsc, by design, lets through. Same
+        # TSC_PROJECT switch as the tsc step above.
+        run: TSC_PROJECT=tsconfig.ci.json npx eslint '**/*.ts'

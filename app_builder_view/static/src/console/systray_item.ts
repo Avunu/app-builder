@@ -26,10 +26,10 @@
 import { Component, onWillStart, useState } from "@odoo/owl";
 import { _t } from "./l10n";
 import { registry } from "@web/core/registry";
-import { user } from "@web/core/user";
 import { useBus } from "@web/core/utils/hooks";
+import type { EnvWithBus } from "./compat";
 import type { ActionController, ActionService } from "./odoo";
-import { useService } from "./odoo";
+import { useService, user } from "./odoo";
 
 // `registry.category("systray")`'s item shape (`SystrayRegistryItemShape`)
 // and its `declare module "registries"` augmentation both live in
@@ -59,7 +59,7 @@ interface SystrayTarget {
     res_id: number | false;
 }
 
-export class StudioSystrayItem extends Component<Props> {
+export class StudioSystrayItem extends Component<Props, EnvWithBus> {
     static override template = "app_builder_view.StudioSystrayItem";
     static override props = {};
 

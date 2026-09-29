@@ -8,14 +8,16 @@
 // `include`, not a glob over the whole tree): the point is catching an
 // unsafe boundary *we* wrote, not re-litigating vendored JS we don't own
 // and that `scripts/typecheck.mjs` already treats as out of scope.
-// Not yet enforced (no pre-commit hook, no CI step) -- but its findings
-// are real. They were once blamed on typescript-eslint's program
-// construction; a program built exactly the way `tsc -p` builds it,
-// passed in through `parserOptions.programs`, reports the same findings.
-// The cause is untyped vendor JS (`allowJs`, `checkJs: false`) carrying
-// TypeScript's `error` type into our code without a diagnostic -- `_t`
-// was most of it, and is typed at the boundary now (`console/l10n.ts`).
-// TYPING.md, Known traps, has the account and what remains.
+// Enforced: the `eslint-ts` pre-commit hook and test.yml's `typecheck` job
+// (`TSC_PROJECT=tsconfig.ci.json`, same switch as the tsc step). Its findings
+// were once blamed on typescript-eslint's program construction and set aside
+// as spurious; a program built exactly the way `tsc -p` builds it, passed in
+// through `parserOptions.programs`, reported the same findings. The cause
+// was untyped vendor JS (`allowJs`, `checkJs: false`) carrying TypeScript's
+// `error` type into our code without a diagnostic -- `_t` was most of it, and
+// is typed at the boundary now (`console/l10n.ts`, likewise `user` and the
+// bus in `console/odoo.ts`/`compat.ts`). TYPING.md, Known traps, has the
+// account.
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
@@ -33,7 +35,10 @@ export default tseslint.config(
     {
         languageOptions: {
             parserOptions: {
-                projectService: true,
+                // Same switch `scripts/typecheck.mjs` uses: in the OCA CI
+                // container `@web/*` etc. resolve to /opt/odoo/addons, which
+                // only tsconfig.ci.json knows about.
+                project: [process.env.TSC_PROJECT ?? "tsconfig.json"],
                 tsconfigRootDir: import.meta.dirname,
             },
         },
@@ -49,6 +54,17 @@ export default tseslint.config(
             // direction (catching a value import that could have been
             // type-only) and would just duplicate that enforcement.
             "@typescript-eslint/consistent-type-imports": "off",
+            // `const { a, b, ...rest } = obj` is how a key is stripped from
+            // an object; the stripped names are unused on purpose.
+            "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true }],
         },
+    },
+    {
+        // Test doubles implement the async service interfaces
+        // (`orm.call`, `learnContext`, ...) with synchronous bodies; the
+        // signature is dictated by the interface, so `async` without
+        // `await` is the correct shape there, not a mistake.
+        files: ["**/static/tests/**/*.ts"],
+        rules: { "@typescript-eslint/require-await": "off" },
     }
 );

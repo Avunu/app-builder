@@ -1,4 +1,3 @@
-import { _t } from "@app_builder_view/console/l10n";
 import { registry } from "@web/core/registry";
 import { FieldPopover } from "./field_popover";
 class ConsoleFieldEditor extends FieldPopover {

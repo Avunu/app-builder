@@ -32,7 +32,6 @@
  * is the popover's own contract.
  */
 
-import { _t } from "@app_builder_view/console/l10n";
 import { registry } from "@web/core/registry";
 import { FieldPopover } from "./field_popover";
 import type { FieldEditorProps } from "@app_builder_view/console/types";

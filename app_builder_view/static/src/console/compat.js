@@ -1,5 +1,6 @@
-import { rpcBus } from "@web/core/network/rpc";
+import { rpcBus as rpcBusUntyped } from "@web/core/network/rpc";
 import { session } from "@web/session";
+const rpcBus = rpcBusUntyped;
 function serverVersion() {
   const info = session.server_version_info || [];
   const major = digitsOf(info[0]);

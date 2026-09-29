@@ -39,6 +39,16 @@ import { CANVAS_PREFIX, canvasJsClass } from "@app_builder_view/console/canvas_v
 import * as compat from "@app_builder_view/console/compat";
 
 /**
+ * The one shape read off hoot's mock server here: `MockServer.env` is the
+ * vendored Proxy-backed server environment (`mock_server.js:makeServerEnv`),
+ * whose model handles come back through the vendor "error" type. A model's
+ * `fields_get()` (`mock_model.js`) returns its field-definition map.
+ */
+interface MockModelHandle {
+    fields_get(): Record<string, Record<string, unknown>>;
+}
+
+/**
  * The view types a `View` component's `type` prop accepts. `view.js` never
  * exports this as a named type -- its own `ViewProps`/`ViewType` are bare
  * JSDoc `@typedef`s in one file-top comment block -- but that is exactly
@@ -98,7 +108,9 @@ async function mountCanvasView(
     // over `.partner`). Both are real at the type level only: `makeMockEnv()`
     // just started a real mock server, and `partner` is the one model
     // `defineModels` registered above.
-    const modelFields = MockServer.env!["partner"]!.fields_get();
+    const modelFields = (MockServer.env as unknown as Record<string, MockModelHandle>)[
+        "partner"
+    ]!.fields_get();
     const props = {
         type,
         resModel: "partner",

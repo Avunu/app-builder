@@ -26,9 +26,15 @@
  * first drag.
  */
 
-import { rpcBus } from "@web/core/network/rpc";
+import type { EventBus } from "@odoo/owl";
+import { rpcBus as rpcBusUntyped } from "@web/core/network/rpc";
 import { session } from "@web/session";
 import type { BoxRect, OdooRpcError } from "./types";
+
+// `rpc.js` declares `export const rpcBus = new EventBus()` with Owl's
+// `EventBus`, but as untyped vendor JS the checker cannot resolve it (the
+// `error` type, no diagnostic under `checkJs: false`).
+const rpcBus = rpcBusUntyped as EventBus;
 
 /** A digit-bearing primitive, the only shape a version part is ever
  * spelled as (a number, or a `saas~xx` string). Narrower than `unknown`
@@ -259,7 +265,7 @@ export function isConfirmError(err: unknown): boolean {
  * all three, so both are told and there is no branch.
  */
 /** The one piece of `OdooEnv` this file touches. */
-interface EnvWithBus {
+export interface EnvWithBus {
     bus: { trigger: (name: string) => void };
 }
 

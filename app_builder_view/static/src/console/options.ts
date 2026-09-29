@@ -217,7 +217,7 @@ function readOptions(target: DescribedTarget): Record<string, OptionValue> {
                 .replace(/'/g, '"')
                 .replace(/\bTrue\b/g, "true")
                 .replace(/\bFalse\b/g, "false"),
-        );
+        ) as Record<string, OptionValue>;
     } catch {
         return {};
     }

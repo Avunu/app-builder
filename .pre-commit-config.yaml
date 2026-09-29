@@ -97,7 +97,13 @@ repos:
         entry: npx prettier --write
         language: system
         files: \.ts$
-      # No eslint hook: eslint.config.mjs's own top-of-file comment (and
-      # TYPING.md, Known traps) explain why it is not enforced yet -- it
-      # currently reports spurious findings that npm run typecheck (the
-      # real checker) does not.
+      - id: eslint-ts
+        name: eslint (typescript-eslint no-unsafe-* etc., .ts only)
+        entry: npx eslint
+        language: system
+        files: \.ts$
+        # Whole project, not just the staged files: the rules are
+        # type-aware, so a change to one file's types can create a finding
+        # in another (`tsc` behaves the same way -- see tsc-typecheck).
+        pass_filenames: false
+        args: ["**/*.ts"]

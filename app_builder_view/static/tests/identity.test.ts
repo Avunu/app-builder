@@ -41,6 +41,16 @@ import {
 } from "@app_builder_view/console/identity";
 import type { NodeKind, NodeTable, StudioNode, Token } from "@app_builder_view/console/types";
 
+/**
+ * The one shape read off hoot's mock server here: `MockServer.env` is the
+ * vendored Proxy-backed server environment (`mock_server.js:makeServerEnv`),
+ * whose model handles come back through the vendor "error" type. A model's
+ * `fields_get()` (`mock_model.js`) returns its field-definition map.
+ */
+interface MockModelHandle {
+    fields_get(): Record<string, Record<string, unknown>>;
+}
+
 // `queryFirst`'s JSDoc marks its second `options` param required (no
 // `[options]` brackets, and its own declared type excludes `undefined`),
 // but the real function (`hoot-dom/helpers/dom.js`) destructures
@@ -88,7 +98,9 @@ async function mountArch(
     // `noUncheckedIndexedAccess` (a second `!`) apply. Both `!`s trust the
     // same runtime fact the original untyped call did: a mock env exists
     // here, one line after `makeMockEnv()`/`getMockEnv()` confirmed it.
-    const modelFields = MockServer.env!["partner"]!.fields_get();
+    const modelFields = (MockServer.env as unknown as Record<string, MockModelHandle>)[
+        "partner"
+    ]!.fields_get();
     const props = {
         type,
         resModel: "partner",

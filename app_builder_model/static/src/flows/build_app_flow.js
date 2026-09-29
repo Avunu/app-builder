@@ -5,9 +5,6 @@ import { MultiRecordSelector } from "@web/core/record_selectors/multi_record_sel
 import { RecordSelector } from "@web/core/record_selectors/record_selector";
 import * as compat from "@app_builder_view/console/compat";
 import { paneRegistry } from "@app_builder_view/console/shell/pane_registry";
-function slug(text) {
-  return (text || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-}
 class NameStep extends Component {
   static template = "app_builder_model.BuildAppName";
   static props = { shell: Object, flow: Object };

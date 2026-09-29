@@ -41,6 +41,16 @@ import {
 } from "@app_builder_view/console/geometry";
 import type { NodeKind, NodeTable, StudioNode, Token } from "@app_builder_view/console/types";
 
+/**
+ * The one shape read off hoot's mock server here: `MockServer.env` is the
+ * vendored Proxy-backed server environment (`mock_server.js:makeServerEnv`),
+ * whose model handles come back through the vendor "error" type. A model's
+ * `fields_get()` (`mock_model.js`) returns its field-definition map.
+ */
+interface MockModelHandle {
+    fields_get(): Record<string, Record<string, unknown>>;
+}
+
 // `queryFirst`'s JSDoc marks its second `options` param required (no
 // `[options]` brackets, and its own declared type excludes `undefined`),
 // but the real function (`hoot-dom/helpers/dom.js`) destructures
@@ -137,7 +147,9 @@ async function mountForm(): Promise<Element> {
     // -- `MockServerBaseEnvironment` declares no index signature and no
     // `partner` member, so this one access is cast rather than pretending
     // to know a shape tsc cannot verify. See openQuestions.
-    const modelFields = (MockServer.env as any).partner.fields_get();
+    const modelFields = (MockServer.env as unknown as Record<string, MockModelHandle>)[
+        "partner"
+    ]!.fields_get();
     await mountWithCleanup(View, {
         props: {
             type: "form",

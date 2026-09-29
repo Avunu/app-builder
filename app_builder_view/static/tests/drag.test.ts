@@ -44,6 +44,16 @@ import { OUTLINE_INDENT, OUTLINE_PAD } from "@app_builder_view/console/sidebar/o
 import type { DragPayload, StudioNode, Token, ZonePosition } from "@app_builder_view/console/types";
 
 /**
+ * The one shape read off hoot's mock server here: `MockServer.env` is the
+ * vendored Proxy-backed server environment (`mock_server.js:makeServerEnv`),
+ * whose model handles come back through the vendor "error" type. A model's
+ * `fields_get()` (`mock_model.js`) returns its field-definition map.
+ */
+interface MockModelHandle {
+    fields_get(): Record<string, Record<string, unknown>>;
+}
+
+/**
  * `queryOne`/`queryAll`/`queryFirst` (`@odoo/hoot-dom`) all return the
  * DOM lib's own `Element`/`Element[]`, not the generic-parameterized
  * form their own JSDoc examples suggest (`queryOne\`iframe\`` reads as if
@@ -312,7 +322,9 @@ async function mountConsole({
     // `MockServer.env` is only set once a mock env exists, which the
     // check above guarantees before this line ever runs -- a real
     // invariant `MockServer`'s own declared type does not encode.
-    const modelFields = MockServer.env!["partner"]!.fields_get();
+    const modelFields = (MockServer.env as unknown as Record<string, MockModelHandle>)[
+        "partner"
+    ]!.fields_get();
     await mountWithCleanup(Harness, {
         props: {
             outline: outline ? OUTLINE_ROWS : null,

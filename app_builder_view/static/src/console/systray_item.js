@@ -1,9 +1,8 @@
 import { Component, onWillStart, useState } from "@odoo/owl";
 import { _t } from "./l10n";
 import { registry } from "@web/core/registry";
-import { user } from "@web/core/user";
 import { useBus } from "@web/core/utils/hooks";
-import { useService } from "./odoo";
+import { useService, user } from "./odoo";
 class StudioSystrayItem extends Component {
   static template = "app_builder_view.StudioSystrayItem";
   static props = {};

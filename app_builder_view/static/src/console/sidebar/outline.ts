@@ -99,7 +99,10 @@ export interface OutlinePrefs {
 /** What this browser remembers of the outline, or nothing. */
 export function loadPrefs(): OutlinePrefs {
     try {
-        return JSON.parse(browser.localStorage.getItem(PREF_KEY) || "{}") || {};
+        return (
+            (JSON.parse(browser.localStorage.getItem(PREF_KEY) || "{}") as OutlinePrefs | null) ||
+            {}
+        );
     } catch {
         return {};
     }

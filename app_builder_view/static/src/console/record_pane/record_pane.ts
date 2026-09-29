@@ -22,6 +22,7 @@ import { FormViewDialog as FormViewDialogImpl } from "@web/views/view_dialogs/fo
 import * as compat from "../compat";
 import { ConfirmationDialog, useService } from "../odoo";
 import type { DialogService } from "../odoo";
+import type { EnvWithBus } from "../compat";
 import { setPaneResolver } from "../shell/pane_registry";
 import type { StudioShell } from "../shell/shell_model";
 import type {
@@ -189,7 +190,7 @@ interface RecordPaneState {
     gate: GateState;
 }
 
-export class RecordPane extends Component<Props> {
+export class RecordPane extends Component<Props, EnvWithBus> {
     static override template = "app_builder_view.RecordPane";
     static components = { RowEditor };
     static override props = { shell: Object, model: { type: Object, optional: true } };

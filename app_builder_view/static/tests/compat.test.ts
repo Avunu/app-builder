@@ -33,6 +33,26 @@ import { useDragAndDrop } from "@html_editor/utils/drag_and_drop";
 import { View } from "@web/views/view";
 import * as compat from "@app_builder_view/console/compat";
 
+/**
+ * The one shape read off hoot's mock server here: `MockServer.env` is the
+ * vendored Proxy-backed server environment (`mock_server.js:makeServerEnv`),
+ * whose model handles come back through the vendor "error" type. A model's
+ * `fields_get()` (`mock_model.js`) returns its field-definition map.
+ */
+interface MockModelHandle {
+    fields_get(): Record<string, Record<string, unknown>>;
+}
+
+/**
+ * Owl's `EventBus` (an `EventTarget` subclass, `@odoo/owl`) as this test
+ * uses it. Both `env.bus` and `rpcBus` (`core/network/rpc.js`) reach us
+ * through the vendor "error" type, so each is cast to this once.
+ */
+interface ListenableBus {
+    addEventListener(type: string, listener: (ev: Event) => void): void;
+    removeEventListener(type: string, listener: (ev: Event) => void): void;
+}
+
 class Partner extends models.Model {
     // `mock_fields.js`'s `makeFieldGenerator` returns `{ [name](props) {...} }
     // [name]` -- a self-indexing extraction, so its own type is an index
@@ -142,7 +162,9 @@ test("the read-only props render this server's form read-only", async () => {
     // already guarantees at runtime. `.partner` (an index-signature member,
     // not a declared one) needs bracket notation under
     // `noPropertyAccessFromIndexSignature`.
-    const modelFields = MockServer.env!["partner"]!.fields_get();
+    const modelFields = (MockServer.env as unknown as Record<string, MockModelHandle>)[
+        "partner"
+    ]!.fields_get();
     await mountWithCleanup(View, {
         props: {
             type: "form" as const,
@@ -214,6 +236,8 @@ test("both view caches are told to clear, whichever bus this server listens on",
     // Same guarantee as above: `getMockEnv()` returns `OdooEnv | null`, and
     // the guard just above already ensures it is set.
     const env = getMockEnv()!;
+    const envBus = env.bus as unknown as ListenableBus;
+    const rpcEvents = rpcBus as unknown as ListenableBus;
     const heard: string[] = [];
     const onEnvBus = () => heard.push("env");
     // `EventTarget#addEventListener`'s callback is typed against `Event`,
@@ -222,13 +246,13 @@ test("both view caches are told to clear, whichever bus this server listens on",
     // stays `Event` and the `.detail` read is cast, matching what
     // `EventBus#trigger` (`@odoo/owl`) actually dispatches.
     const onRpcBus = (ev: Event) => heard.push(`rpc:${(ev as CustomEvent<string>).detail}`);
-    env.bus.addEventListener("CLEAR-CACHES", onEnvBus);
-    rpcBus.addEventListener("CLEAR-CACHES", onRpcBus);
+    envBus.addEventListener("CLEAR-CACHES", onEnvBus);
+    rpcEvents.addEventListener("CLEAR-CACHES", onRpcBus);
     try {
         compat.clearViewCaches(env);
     } finally {
-        env.bus.removeEventListener("CLEAR-CACHES", onEnvBus);
-        rpcBus.removeEventListener("CLEAR-CACHES", onRpcBus);
+        envBus.removeEventListener("CLEAR-CACHES", onEnvBus);
+        rpcEvents.removeEventListener("CLEAR-CACHES", onRpcBus);
     }
     expect(heard.sort()).toEqual(["env", "rpc:get_views"]);
 });

@@ -49,6 +49,9 @@ function stubActionService(controller) {
   }));
   return holder;
 }
+function envBus(item) {
+  return item.env.bus;
+}
 async function mountItem() {
   if (!getMockEnv()) {
     await makeMockEnv();
@@ -66,7 +69,7 @@ test("a window action gets the toggle; a client action and a placeholder do not"
   const item = await mountItem();
   expect(".o_studio_systray_toggle").toHaveCount(0);
   holder.controller = FORM_CONTROLLER;
-  item.env.bus.trigger("ACTION_MANAGER:UI-UPDATED", "current");
+  envBus(item).trigger("ACTION_MANAGER:UI-UPDATED", "current");
   await animationFrame();
   expect(".o_studio_systray_toggle").toHaveCount(1);
   expect(queryOne(".o_studio_systray_toggle")).toHaveAttribute(
@@ -74,11 +77,11 @@ test("a window action gets the toggle; a client action and a placeholder do not"
     "Edit this form view in Studio"
   );
   holder.controller = { virtual: true, action: {}, props: {}, currentState: {} };
-  item.env.bus.trigger("ACTION_MANAGER:UI-UPDATED", "current");
+  envBus(item).trigger("ACTION_MANAGER:UI-UPDATED", "current");
   await animationFrame();
   expect(".o_studio_systray_toggle").toHaveCount(0);
   holder.controller = null;
-  item.env.bus.trigger("ACTION_MANAGER:UI-UPDATED", "current");
+  envBus(item).trigger("ACTION_MANAGER:UI-UPDATED", "current");
   await animationFrame();
   expect(".o_studio_systray_toggle").toHaveCount(0);
 });

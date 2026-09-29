@@ -281,8 +281,19 @@ hoot `onRpc` mocks typed against the same map.
   suppresses the diagnostic that would have said so. `tsc` then reports
   nothing, because an `any` flowing into typed code is legal; the
   `no-unsafe-*` rules exist precisely to flag it. `_t` alone accounted for
-  154 of ~200. Typed at the boundary now (`console/l10n.ts`); the rest are
-  the event bus, `user.hasGroup`, `JSON.parse` and test mock-server casts.
+  154 of ~200. Typed at the boundary now -- `_t` in `console/l10n.ts`,
+  `user.hasGroup` in `console/odoo.ts`, the RPC bus in `console/compat.ts`,
+  hoot's `MockServer.env` per test file -- and the last 51 findings (event
+  bus, `user.hasGroup`, `JSON.parse`, mock-server handles, three
+  `Translated`-in-a-template sites, two dead declarations) are gone.
+  **eslint is enforced: 0 findings**, via the `eslint-ts` pre-commit hook
+  and a `typecheck`-job step (`TSC_PROJECT=tsconfig.ci.json`, `eslint.
+  config.mjs` reads it). Two config choices, both reasoned rather than
+  reflexive: `no-unused-vars` ignores rest-siblings (`const { a, ...rest }`
+  is how a key is stripped from an object), and `require-await` is off
+  under `static/tests/` (test doubles implement the async service
+  interfaces with synchronous bodies). The CI step has not run in the
+  container, like the rest of that job.
   When eslint and `tsc` disagree, check the type the checker actually
   resolves (`checker.getTypeAtLocation`, `type.intrinsicName ===
   "error"`) before calling either one wrong.

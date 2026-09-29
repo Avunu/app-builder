@@ -16,8 +16,7 @@
 import { Component } from "@odoo/owl";
 import { DropdownItem } from "@web/core/dropdown/dropdown_item";
 import { registry } from "@web/core/registry";
-import { user } from "@web/core/user";
-import { useService } from "./odoo";
+import { useService, user } from "./odoo";
 import type { ActionController, ActionService, CogMenuItem, ViewEnv } from "./odoo";
 
 // `registry.category("cogMenu")`'s item shape (`CogMenuItem`), the

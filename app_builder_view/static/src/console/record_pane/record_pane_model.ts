@@ -324,7 +324,9 @@ export class RecordPaneModel implements PaneModel {
             values || (this.record && this.record.values) || this.creatingValues();
         for (const [name, allowed] of clauses || []) {
             const value = current[name];
-            const key = value && typeof value === "object" ? (value as { id?: unknown }).id : value;
+            const key = (
+                value && typeof value === "object" ? (value as { id?: unknown }).id : value
+            ) as string | number | boolean | null | undefined;
             if (!allowed.includes(key === false ? "" : String(key === undefined ? "" : key))) {
                 return false;
             }

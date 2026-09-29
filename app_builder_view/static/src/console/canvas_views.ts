@@ -69,10 +69,10 @@ export function canvasJsClass(type: string, origJsClass: string | null = null): 
 export function deriveCanvasView(descriptor: ViewsRegistryItemShape): ViewsRegistryItemShape {
     const derived = { ...descriptor };
     if (descriptor.Controller) {
-        derived.Controller = noSave(descriptor.Controller);
+        derived.Controller = noSave(descriptor.Controller as typeof Component);
     }
     if (descriptor.Renderer) {
-        derived.Renderer = noResequence(descriptor.Renderer);
+        derived.Renderer = noResequence(descriptor.Renderer as typeof Component);
     }
     return derived;
 }

@@ -17,13 +17,14 @@ import { Component } from "@odoo/owl";
 import { DropdownItem } from "@web/core/dropdown/dropdown_item";
 import { _t as _tUntyped } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
-import { user } from "@web/core/user";
+import { user as userUntyped } from "@web/core/user";
 import { useService as useServiceUntyped } from "@web/core/utils/hooks";
 import type { TranslateFn } from "@app_builder_view/console/l10n";
 import type {
     ActionService,
     CogMenuItem,
     useService as UseService,
+    UserFacade,
     ViewEnv,
 } from "@app_builder_view/console/odoo";
 import type { OrmService } from "@app_builder_view/console/types";
@@ -36,6 +37,7 @@ import type { OrmService } from "@app_builder_view/console/types";
 // `console/l10n.ts` and `console/odoo.ts` do at runtime anyway.
 const _t = _tUntyped as TranslateFn;
 const useService = useServiceUntyped as typeof UseService;
+const user = userUntyped as UserFacade;
 
 // No props: `static props = {}` below is a strict empty schema, the same
 // "genuinely takes nothing" situation `cog_menu_item.ts`'s own `Props`

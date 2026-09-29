@@ -65,16 +65,6 @@ interface FlowStepProps<S = unknown> {
     flow: { values: BuildAppValues };
 }
 
-/** `Workshop Job` -> `workshop_job`, the way the server will spell it.
- * Dead code, confirmed pre-existing (defined, never called, in the
- * original `.js` too) -- not this migration's job to remove. */
-function slug(text: string): string {
-    return (text || "")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "");
-}
-
 /**
  * `suggest_name`'s answer (`studio_app_builder.py:suggest_name`): the
  * technical name a label would get, and whether it is already taken.

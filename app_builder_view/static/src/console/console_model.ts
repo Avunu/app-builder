@@ -554,7 +554,7 @@ export class ConsoleModel implements PaneModel {
         if (!name && NAMED_KINDS.includes(node.kind)) {
             name = node.name;
         }
-        return name && node.kind !== "root" ? `${kind} · ${name}` : String(kind);
+        return name && node.kind !== "root" ? `${String(kind)} · ${name}` : String(kind);
     }
 
     // -- loading ------------------------------------------------------------
