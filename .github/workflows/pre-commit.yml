@@ -14,8 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
+        if: runner.environment == 'github-hosted'
         with:
           python-version: "3.11"
+      - name: Python 3.11 from Nix (self-hosted)
+        if: runner.environment != 'github-hosted'
+        run: |
+          "$(nix build --no-link --print-out-paths nixpkgs#python311)/bin/python3" -m venv "$RUNNER_TEMP/py"
+          echo "$RUNNER_TEMP/py/bin" >> "$GITHUB_PATH"
       - name: Get python version
         run: echo "PY=$(python -VV | sha256sum | cut -d' ' -f1)" >> $GITHUB_ENV
       - uses: actions/cache@v4
