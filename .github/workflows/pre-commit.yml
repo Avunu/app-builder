@@ -22,6 +22,8 @@ jobs:
         run: |
           "$(nix build --no-link --print-out-paths nixpkgs#python311)/bin/python3" -m venv "$RUNNER_TEMP/py"
           echo "$RUNNER_TEMP/py/bin" >> "$GITHUB_PATH"
+          # oca-gen-addon-readme needs pandoc (preinstalled on ubuntu-latest)
+          echo "$(nix build --no-link --print-out-paths nixpkgs#pandoc)/bin" >> "$GITHUB_PATH"
       - name: Get python version
         run: echo "PY=$(python -VV | sha256sum | cut -d' ' -f1)" >> $GITHUB_ENV
       - uses: actions/cache@v4
