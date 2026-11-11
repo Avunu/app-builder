@@ -1,1 +1,0 @@
-- Kevin Shenk \<kevin@avu.nu\> (https://avu.nu)

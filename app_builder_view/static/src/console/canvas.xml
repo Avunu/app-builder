@@ -1,21 +1,24 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <templates xml:space="preserve">
 
-<t t-name="app_builder_view.StudioCanvas">
-    <div class="o_studio_canvas" t-ref="scroll">
-        <div class="o_studio_canvas_ground" t-ref="ground">
-            <!-- No records yet: what is on screen is made up, and the edits
+<t t-name="app_builder_view.BuilderCanvas">
+        <div class="o_builder_canvas" t-ref="scroll">
+            <div class="o_builder_canvas_ground" t-ref="ground">
+                <!-- No records yet: what is on screen is made up, and the edits
                  are as real as ever. -->
-            <div t-if="hasCanvas and showsSampleData" class="o_studio_canvas_note"
-                 title="This model has no records yet, so the view shows sample data. Changes to the view are real.">
-                <i class="fa fa-flask me-1"/>Sample data
+                <div
+                    t-if="hasCanvas and showsSampleData"
+                    class="o_builder_canvas_note"
+                    title="This model has no records yet, so the view shows sample data. Changes to the view are real."
+                >
+                <i class="fa fa-flask me-1" />Sample data
             </div>
-            <View t-if="hasCanvas" t-key="viewKey" t-props="viewProps"/>
-            <div t-else="" class="alert alert-info m-3" role="alert">
+                <View t-if="hasCanvas" t-key="viewKey" t-props="viewProps" />
+                <div t-else="" class="alert alert-info m-3" role="alert">
                 There is nothing to render for this view yet.
             </div>
+            </div>
         </div>
-    </div>
-</t>
+    </t>
 
 </templates>

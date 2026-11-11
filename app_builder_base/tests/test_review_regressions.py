@@ -20,40 +20,45 @@ from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 from odoo.tools import config
 
+from odoo.addons.app_builder_base.models.builder_package_apply import (
+    BuilderPackageApply,
+)
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.builder_view_editor import BuilderViewEditor
 from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.base.models.ir_ui_view import View
 from odoo.addons.base.models.res_lang import Lang
-from odoo.addons.app_builder_base.models.studio_package_apply import StudioPackageApply
-from odoo.addons.app_builder_base.tools import typed
-from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
 
 from ..tools import checksum, migrationgen, pycodegen, xml_writer
-from .common import StudioCase, raises
+from .common import BuilderCase, raises
 
 if TYPE_CHECKING:
     # Only for the cast() calls below; with `from __future__ import
     # annotations` nothing here needs these at runtime, the same bargain
-    # every Phase 1c file's own `TYPE_CHECKING` block makes. `StudioPackageApply`
+    # every Phase 1c file's own `TYPE_CHECKING` block makes. `BuilderPackageApply`
     # (above) is a real, top-level import -- every use of it is a runtime
     # `typed.model()` call -- but its siblings below never appear outside a
     # `cast("...", ...)` string, so they stay `TYPE_CHECKING`-only, the same
-    # split `studio_package_model.py`'s own comment on `StudioPackage`
+    # split `builder_package_model.py`'s own comment on `BuilderPackage`
     # documents.
     from odoo.sql_db import Cursor
 
     from odoo.addons.base.models.res_users import Users
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
-    from odoo.addons.app_builder_base.models.studio_package import StudioPackageFile
-    from odoo.addons.app_builder_base.models.studio_package_apply import (
-        StudioPackageApplyFile,
+
+    from ..models.builder_owned_mixin import (
+        BuilderOwnedMixin,
     )
-    from odoo.addons.app_builder_base.models.studio_package_model import (
-        StudioPackageModel,
+    from ..models.builder_package import BuilderPackageFile
+    from ..models.builder_package_apply import (
+        BuilderPackageApplyFile,
+    )
+    from ..models.builder_package_model import (
+        BuilderPackageModel,
     )
 
 
 @tagged("post_install", "-at_install")
-class TestLoadOrder(StudioCase):
+class TestLoadOrder(BuilderCase):
     def test_security_loads_after_the_models_it_references(self):
         """A generated package with an ir.rule was uninstallable.
 
@@ -63,7 +68,7 @@ class TestLoadOrder(StudioCase):
         """
         package = self.make_package(name="x_order_pkg")
         self.build_demo_content(package)
-        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_builder_project")
         rule_vals: dict[str, object] = {
             "name": "order rule",
             "model_id": model.id,
@@ -74,11 +79,11 @@ class TestLoadOrder(StudioCase):
 
         data = ast.literal_eval(package._render_files()["__manifest__.py"])["data"]
         self.assertLess(
-            data.index("models/x_studio_project.xml"),
-            data.index("security/x_studio_project_security.xml"),
+            data.index("models/x_builder_project.xml"),
+            data.index("security/x_builder_project_security.xml"),
         )
         self.assertLess(
-            data.index("models/x_studio_project.xml"),
+            data.index("models/x_builder_project.xml"),
             data.index("security/ir.model.access.csv"),
         )
 
@@ -88,7 +93,7 @@ class TestLoadOrder(StudioCase):
         self.build_demo_content(package)
         data = ast.literal_eval(package._render_files()["__manifest__.py"])["data"]
         self.assertLess(
-            data.index("views/x_studio_project_views.xml"),
+            data.index("views/x_builder_project_views.xml"),
             data.index("views/menus.xml"),
         )
 
@@ -96,7 +101,7 @@ class TestLoadOrder(StudioCase):
         """The end-to-end consequence of getting load order wrong."""
         package = self.make_package(name="x_installable")
         self.build_demo_content(package)
-        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_builder_project")
         installable_rule_vals: dict[str, object] = {
             "name": "installable rule",
             "model_id": model.id,
@@ -109,11 +114,11 @@ class TestLoadOrder(StudioCase):
         self.wipe_package_records(package)
         # Raises ParseError on an unresolvable ref, which is exactly the bug.
         self.load_rendered(package, rendered)
-        self.assertIn("x_studio_project", self.env)
+        self.assertIn("x_builder_project", self.env)
 
 
 @tagged("post_install", "-at_install")
-class TestTranslationNeutrality(StudioCase):
+class TestTranslationNeutrality(BuilderCase):
     def _translate(self, model, french):
         """Give the model a French name, and prove the translation took.
 
@@ -127,7 +132,7 @@ class TestTranslationNeutrality(StudioCase):
         self.assertEqual(model.with_context(lang="fr_FR").name, french)
         self.assertEqual(
             model.with_context(lang="en_US").name,
-            "Studio Demo Project",
+            "Builder Demo Project",
             "sanity: the two languages must actually differ for this to test anything",
         )
 
@@ -150,8 +155,8 @@ class TestTranslationNeutrality(StudioCase):
             french,
             "the same package must serialize identically whoever saves it",
         )
-        self.assertIn("Studio Demo Project", english["models/x_studio_project.xml"])
-        self.assertNotIn("Projet Demo", english["models/x_studio_project.xml"])
+        self.assertIn("Builder Demo Project", english["models/x_builder_project.xml"])
+        self.assertNotIn("Projet Demo", english["models/x_builder_project.xml"])
 
     def test_source_term_survives_a_round_trip_under_a_translation(self):
         package = self.make_package(name="x_lang_rt")
@@ -162,16 +167,16 @@ class TestTranslationNeutrality(StudioCase):
         self.wipe_package_records(package)
         self.load_rendered(package, rendered)
 
-        reloaded = typed.model(self.env, IrModel)._get("x_studio_project")
+        reloaded = typed.model(self.env, IrModel)._get("x_builder_project")
         self.assertEqual(
             reloaded.with_context(lang="en_US").name,
-            "Studio Demo Project",
+            "Builder Demo Project",
             "the English source term must not be overwritten by its translation",
         )
 
 
 @tagged("post_install", "-at_install")
-class TestRawIdRefusal(StudioCase):
+class TestRawIdRefusal(BuilderCase):
     def test_many2one_reference_is_refused_rather_than_emitted(self):
         """Its value is a raw id and would not survive a fresh install."""
         package = self.make_package(name="x_m2oref")
@@ -185,8 +190,8 @@ class TestRawIdRefusal(StudioCase):
         field = self.env["ir.model.fields"].create(m2o_ref_vals)  # pyright: ignore[reportArgumentType]
         package._assign(field)
         serializer = typed.serializer(
-            self.env["studio.serializer.ir.model.fields"].with_context(
-                studio_package=package.name
+            self.env["builder.serializer.ir.model.fields"].with_context(
+                builder_package=package.name
             )
         )
         record = self.env["res.partner"].search([], limit=1)
@@ -201,7 +206,7 @@ class TestRawIdRefusal(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestOwnershipConflicts(StudioCase):
+class TestOwnershipConflicts(BuilderCase):
     def test_assigning_a_record_owned_elsewhere_is_refused(self):
         """Returning silently made 'assign to my package' a no-op."""
         first = self.make_package(name="x_owner_a")
@@ -218,13 +223,13 @@ class TestOwnershipConflicts(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestTeardownKeepsFiles(StudioCase):
+class TestTeardownKeepsFiles(BuilderCase):
     def test_write_after_delete_does_not_erase_the_kept_source(self):
         """The confirm dialog promises the files survive so you can reinstall."""
         package = self.make_package(name="x_keepfiles")
         self.build_demo_content(package)
         package.action_write_files()
-        source = os.path.join(package.root_path or "", "models/x_studio_project.xml")
+        source = os.path.join(package.root_path or "", "models/x_builder_project.xml")
         self.assertTrue(os.path.isfile(source))
 
         package.action_delete_records()
@@ -237,7 +242,7 @@ class TestTeardownKeepsFiles(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestWhitespaceSafety(StudioCase):
+class TestWhitespaceSafety(BuilderCase):
     def test_indent_preserves_non_breaking_space_content(self):
         """str.strip() treats U+00A0 as insignificant; it is content.
 
@@ -259,34 +264,34 @@ class TestWhitespaceSafety(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestDriftAccounting(StudioCase):
+class TestDriftAccounting(BuilderCase):
     def test_freshly_written_files_are_not_reported_as_drifted(self):
         """disk_checksum was left stale, marking every file drifted on write."""
         package = self.make_package(name="x_drift_acct")
         self.build_demo_content(package)
         package.action_write_files()
         self.assertFalse(
-            cast("StudioPackageFile", package.file_ids).filtered("drifted"),
+            cast("BuilderPackageFile", package.file_ids).filtered("drifted"),
             "nothing can be drifted immediately after we wrote it",
         )
         self.assertEqual(package.state, "synced")
 
 
 @tagged("post_install", "-at_install")
-class TestDeterministicRefs(StudioCase):
+class TestDeterministicRefs(BuilderCase):
     def test_x2many_refs_are_sorted(self):
         """Recordset order follows the comodel's _order, which for res.groups
         is a translated, non-unique column."""
         package = self.make_package(name="x_refsort")
         self.build_demo_content(package)
         view = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project")], limit=1
+            [("model", "=", "x_builder_project")], limit=1
         )
         groups = typed.ref(self.env, "base.group_user") + typed.ref(
             self.env, "base.group_system"
         )
         view.groups_id = [(6, 0, groups.ids)]
-        rendered = package._render_files()["views/x_studio_project_views.xml"]
+        rendered = package._render_files()["views/x_builder_project_views.xml"]
         refs = [
             part.split("'")[1] for part in rendered.split("ref(")[1:] if "'" in part
         ]
@@ -294,10 +299,10 @@ class TestDeterministicRefs(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestStudioAccessControl(StudioCase):
-    """D1 -- every RPC-reachable studio method was callable by any user.
+class TestBuilderAccessControl(BuilderCase):
+    """D1 -- every RPC-reachable builder method was callable by any user.
 
-    ``ir.model.access`` cannot protect this: ``studio.view.editor`` is an
+    ``ir.model.access`` cannot protect this: ``builder.view.editor`` is an
     AbstractModel, which ACL rows do not apply to, and ``call_kw`` is
     ``auth="user"`` with no access check of its own. Since these methods write
     Python and XML into a directory on ``addons_path``, an unguarded entry
@@ -308,13 +313,13 @@ class TestStudioAccessControl(StudioCase):
         super().setUp()
         outsider_vals: dict[str, object] = {
             "name": "Nosy Employee",
-            "login": "studio_outsider",
+            "login": "builder_outsider",
             "groups_id": [(6, 0, [typed.ref(self.env, "base.group_user").id])],
         }
         self.outsider = self.env["res.users"].create(outsider_vals)  # pyright: ignore[reportArgumentType]
 
     def test_view_editor_methods_refuse_a_plain_user(self):
-        editor = typed.model(self.env, StudioViewEditor).with_user(self.outsider)
+        editor = typed.model(self.env, BuilderViewEditor).with_user(self.outsider)
         view = typed.ref(self.env, "base.view_partner_form")
         view_id = cast("int", view.id)
         package = self.make_package(name="x_acl_probe")
@@ -348,7 +353,7 @@ class TestStudioAccessControl(StudioCase):
     def test_package_write_methods_refuse_a_plain_user(self):
         package = self.make_package(name="x_acl_pkg")
         # sudo() to dodge the record-level ACL so we are proving the *method*
-        # guard fires, not merely that the user cannot read studio.package.
+        # guard fires, not merely that the user cannot read builder.package.
         as_outsider = package.with_user(self.outsider).sudo(False)
         with raises(self, AccessError):
             as_outsider.action_write_files()
@@ -362,11 +367,11 @@ class TestStudioAccessControl(StudioCase):
         package = self.make_package(name="x_acl_ok")
         self.assertTrue(package.action_check_drift())
         admin = cast("Users", typed.ref(self.env, "base.user_admin"))
-        self.assertTrue(admin.has_group("app_builder_base.group_studio_manager"))
+        self.assertTrue(admin.has_group("app_builder_base.group_builder_manager"))
 
 
 @tagged("post_install", "-at_install")
-class TestLocatorAmbiguity(StudioCase):
+class TestLocatorAmbiguity(BuilderCase):
     """D2 -- a bare //tag[@name='x'] is not a locator when it is not unique.
 
     ``res.partner``'s form carries ``function`` three times: once on the sheet
@@ -384,7 +389,7 @@ class TestLocatorAmbiguity(StudioCase):
         node-list API that used to expose it has been retired along with the
         editor that consumed it.
         """
-        editor = typed.model(self.env, StudioViewEditor)
+        editor = typed.model(self.env, BuilderViewEditor)
         view = cast("View", typed.ref(self.env, "base.view_partner_form"))
         root = etree.fromstring(view.get_combined_arch().encode())
         occurrences = editor._occurrences(root)
@@ -427,7 +432,7 @@ class TestLocatorAmbiguity(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestOrphanManualField(StudioCase):
+class TestOrphanManualField(BuilderCase):
     """D3 -- autocapture had no else, so a manual field on a core model was
     created live and written to no file at all: the exact drift the project
     exists to prevent, on the models people reach for first."""
@@ -436,53 +441,53 @@ class TestOrphanManualField(StudioCase):
         package = self.make_package(name="x_orphan_pkg")
         partner_model = typed.model(self.env, IrModel)._get("res.partner")
         loyalty_field_vals: dict[str, object] = {
-            "name": "x_studio_loyalty",
+            "name": "x_builder_loyalty",
             "ttype": "integer",
             "field_description": "Loyalty",
             "model_id": partner_model.id,
         }
         field = (
             self.env["ir.model.fields"]
-            .with_context(studio_package_id=package.id)
+            .with_context(builder_package_id=package.id)
             .create(loyalty_field_vals)  # pyright: ignore[reportArgumentType]
         )
         self.assertEqual(
-            cast("StudioOwnedMixin", field).studio_package_id,
+            cast("BuilderOwnedMixin", field).builder_package_id,
             package,
             "a manual field on a core model must land in the editing package",
         )
         rendered = package._render_files()
         self.assertTrue(
-            any("x_studio_loyalty" in body for body in rendered.values()),
+            any("x_builder_loyalty" in body for body in rendered.values()),
             "the field must reach the source tree, not just the database",
         )
 
     def test_orphan_field_warns_rather_than_raising(self):
-        """A non-studio caller creating a manual field is legitimate and must
+        """A non-builder caller creating a manual field is legitimate and must
         not be forced into a package -- but it must not be silent either."""
         partner_model = typed.model(self.env, IrModel)._get("res.partner")
         unowned_field_vals: dict[str, object] = {
-            "name": "x_studio_unowned",
+            "name": "x_builder_unowned",
             "ttype": "char",
             "field_description": "Unowned",
             "model_id": partner_model.id,
         }
         with self.assertLogs(
-            "odoo.addons.app_builder_base.models.studio_owned_mixin", "WARNING"
+            "odoo.addons.app_builder_base.models.builder_owned_mixin", "WARNING"
         ) as logs:
             field = self.env["ir.model.fields"].create(unowned_field_vals)  # pyright: ignore[reportArgumentType]
         self.assertTrue(field.exists())
-        self.assertTrue(any("x_studio_unowned" in line for line in logs.output))
+        self.assertTrue(any("x_builder_unowned" in line for line in logs.output))
 
 
 @tagged("post_install", "-at_install")
-class TestAddableFieldScope(StudioCase):
+class TestAddableFieldScope(BuilderCase):
     """D4 -- arch.iter() is recursive, so a field inside an embedded x2many
     subview (a different model entirely) masked the parent's field of the same
     name and the palette came back empty on core models."""
 
     def test_subview_fields_do_not_mask_parent_model_fields(self):
-        editor = typed.model(self.env, StudioViewEditor)
+        editor = typed.model(self.env, BuilderViewEditor)
         view = cast("View", typed.ref(self.env, "base.view_partner_form"))
         root = etree.fromstring(view.get_combined_arch().encode())
         nested_only = {
@@ -507,14 +512,14 @@ class TestAddableFieldScope(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestAddFieldIdempotence(StudioCase):
+class TestAddFieldIdempotence(BuilderCase):
     """D5 -- _op_add_field always appended a new <xpath>, so a double-click put
     the field into the combined arch twice."""
 
     def test_same_field_twice_is_a_no_op(self):
         package = self.make_package(name="x_idem_pkg")
         package_id = cast("int", package.id)
-        editor = typed.model(self.env, StudioViewEditor)
+        editor = typed.model(self.env, BuilderViewEditor)
         view = typed.ref(self.env, "base.view_partner_form")
         view_id = cast("int", view.id)
         operation: dict[str, object] = {
@@ -540,7 +545,7 @@ class TestAddFieldIdempotence(StudioCase):
         two position="after" blocks apply in sequence, one block does not."""
         package = self.make_package(name="x_order_pkg")
         package_id = cast("int", package.id)
-        editor = typed.model(self.env, StudioViewEditor)
+        editor = typed.model(self.env, BuilderViewEditor)
         view = typed.ref(self.env, "base.view_partner_form")
         view_id = cast("int", view.id)
         for name in ("ref", "lang"):
@@ -559,7 +564,7 @@ class TestAddFieldIdempotence(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestOwnedViewsAreEditedDirectly(StudioCase):
+class TestOwnedViewsAreEditedDirectly(BuilderCase):
     """D6 -- apply_operation always emitted an inheriting view, so a package's
     own generated form shipped alongside a pile of <xpath> patches against
     itself in the same addon: source no developer would have written."""
@@ -567,14 +572,14 @@ class TestOwnedViewsAreEditedDirectly(StudioCase):
     def _owned_form(self, package):
         self.build_demo_content(package)
         return typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
 
     def test_a_package_edits_its_own_primary_view_in_place(self):
         package = self.make_package(name="x_owned_pkg")
         form = self._owned_form(package)
         self.assertEqual(
-            cast("StudioOwnedMixin", form).studio_package_id,
+            cast("BuilderOwnedMixin", form).builder_package_id,
             package,
             "fixture must own it",
         )
@@ -585,7 +590,7 @@ class TestOwnedViewsAreEditedDirectly(StudioCase):
             "xpath": "//field[@name='x_name']",
             "position": "after",
         }
-        result = typed.model(self.env, StudioViewEditor).apply_operation(
+        result = typed.model(self.env, BuilderViewEditor).apply_operation(
             cast("int", form.id),
             cast("int", package.id),
             own_add_field_operation,
@@ -610,7 +615,7 @@ class TestOwnedViewsAreEditedDirectly(StudioCase):
             "xpath": "//field[@name='function']",
             "position": "after",
         }
-        result = typed.model(self.env, StudioViewEditor).apply_operation(
+        result = typed.model(self.env, BuilderViewEditor).apply_operation(
             cast("int", core_view.id),
             cast("int", package.id),
             foreign_add_field_operation,
@@ -623,7 +628,7 @@ class TestOwnedViewsAreEditedDirectly(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestEmitterIsIdempotent(StudioCase):
+class TestEmitterIsIdempotent(BuilderCase):
     """Phase 2 -- the .py file is the definition, so it is regenerated on every
     write rather than written once. That is only safe because it is also the
     *input*: what the parser can read is reproduced, what it cannot freezes the
@@ -633,16 +638,16 @@ class TestEmitterIsIdempotent(StudioCase):
         package = self.make_package(name="x_emit_pkg")
         self.build_demo_content(package)
         package.action_write_files()
-        package.action_adopt(["x_studio_project"])
+        package.action_adopt(["x_builder_project"])
         return package
 
     def _source(self, package):
-        path = os.path.join(package.root_path, "models/x_studio_project.py")
+        path = os.path.join(package.root_path, "models/x_builder_project.py")
         with open(path, encoding="utf-8") as handle:
             return handle.read()
 
     def _write(self, package, content):
-        path = os.path.join(package.root_path, "models/x_studio_project.py")
+        path = os.path.join(package.root_path, "models/x_builder_project.py")
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(content)
 
@@ -661,8 +666,8 @@ class TestEmitterIsIdempotent(StudioCase):
         source = self._source(package)
         self.assertNotIn("x_hand_added", source)
         edited = source.replace(
-            '    _description = "Studio Demo Project"',
-            '    _description = "Studio Demo Project"\n'
+            '    _description = "Builder Demo Project"',
+            '    _description = "Builder Demo Project"\n'
             '    x_hand_added = fields.Char(string="Hand Added")',
         )
         self._write(package, edited)
@@ -689,8 +694,8 @@ class TestEmitterIsIdempotent(StudioCase):
 
         package.action_write_files()
 
-        entry = cast("StudioPackageModel", package.model_ids).filtered(
-            lambda m: m.model == "x_studio_project"
+        entry = cast("BuilderPackageModel", package.model_ids).filtered(
+            lambda m: m.model == "x_builder_project"
         )
         self.assertEqual(entry.source, "python", "must still be builder-owned")
         source = self._source(package)
@@ -713,8 +718,8 @@ class TestEmitterIsIdempotent(StudioCase):
 
         package.action_write_files()
 
-        entry = cast("StudioPackageModel", package.model_ids).filtered(
-            lambda m: m.model == "x_studio_project"
+        entry = cast("BuilderPackageModel", package.model_ids).filtered(
+            lambda m: m.model == "x_builder_project"
         )
         self.assertEqual(entry.source, "frozen")
         self.assertTrue(entry.parse_error)
@@ -726,12 +731,12 @@ class TestEmitterIsIdempotent(StudioCase):
         _process_end then reaps our own xmlids."""
         package = self._python_package()
         files = package._render_files()
-        self.assertIn("models/x_studio_project.py", files)
-        self.assertNotIn("models/x_studio_project.xml", files)
+        self.assertIn("models/x_builder_project.py", files)
+        self.assertNotIn("models/x_builder_project.xml", files)
 
 
 @tagged("post_install", "-at_install")
-class TestLoadOrderFollowsModelSource(StudioCase):
+class TestLoadOrderFollowsModelSource(BuilderCase):
     """security/ had to follow models/ only because generated ACLs ref an
     ir.model record that models/*.xml defines. A package whose models are all
     Python has no such file: reflection creates the row during init_models,
@@ -742,7 +747,7 @@ class TestLoadOrderFollowsModelSource(StudioCase):
         self.build_demo_content(package)
         data = ast.literal_eval(package._render_files()["__manifest__.py"])["data"]
         self.assertLess(
-            data.index("models/x_studio_project.xml"),
+            data.index("models/x_builder_project.xml"),
             data.index("security/ir.model.access.csv"),
         )
 
@@ -750,9 +755,9 @@ class TestLoadOrderFollowsModelSource(StudioCase):
         package = self.make_package(name="x_order_py")
         self.build_demo_content(package)
         package.action_write_files()
-        package.action_adopt(["x_studio_project"])
+        package.action_adopt(["x_builder_project"])
         data = ast.literal_eval(package._render_files()["__manifest__.py"])["data"]
-        self.assertNotIn("models/x_studio_project.xml", data)
+        self.assertNotIn("models/x_builder_project.xml", data)
         self.assertEqual(
             data[0],
             "security/ir.model.access.csv",
@@ -761,7 +766,7 @@ class TestLoadOrderFollowsModelSource(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestDeleteRecordsSpareReflection(StudioCase):
+class TestDeleteRecordsSpareReflection(BuilderCase):
     """action_delete_records runs with _force_unlink, which makes
     IrModelFields.unlink drop columns. Reflection writes an ir.model.data row
     for every field a Python class declares -- including the magic columns and
@@ -785,7 +790,7 @@ class TestDeleteRecordsSpareReflection(StudioCase):
         reflected = self.env["ir.model.fields"].create(reflected_vals)  # pyright: ignore[reportArgumentType]
         reflected_data_vals: dict[str, object] = {
             "module": package.name,
-            "name": "field_x_studio_project__x_reflected",
+            "name": "field_x_builder_project__x_reflected",
             "model": "ir.model.fields",
             "res_id": reflected.id,
         }
@@ -801,7 +806,7 @@ class TestDeleteRecordsSpareReflection(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestDestructiveApplyGate(StudioCase):
+class TestDestructiveApplyGate(BuilderCase):
     """Phase 0 measured that removing a field from the generated .py drops its
     column and its data. The gate makes that a decision rather than a
     side effect, and the pre-migration makes it recoverable."""
@@ -810,11 +815,11 @@ class TestDestructiveApplyGate(StudioCase):
         package = self.make_package(name="x_destr_pkg")
         self.build_demo_content(package)
         package.action_write_files()
-        package.action_adopt(["x_studio_project"])
+        package.action_adopt(["x_builder_project"])
         return package
 
     def _path(self, package):
-        return os.path.join(package.root_path, "models/x_studio_project.py")
+        return os.path.join(package.root_path, "models/x_builder_project.py")
 
     def _drop_a_field(self, package, name="x_active_flag"):
         """Remove one field's declaration, and nothing else.
@@ -838,8 +843,8 @@ class TestDestructiveApplyGate(StudioCase):
         package = self._python_package()
         self._drop_a_field(package)
         dropped = package._destructive_changes(package._render_files())
-        self.assertIn("x_studio_project", dropped)
-        self.assertIn("x_active_flag", dropped["x_studio_project"])
+        self.assertIn("x_builder_project", dropped)
+        self.assertIn("x_active_flag", dropped["x_builder_project"])
 
     def test_removing_a_field_a_compute_depends_on_freezes_instead(self):
         """Better to stop rewriting the file than to report a tidy diff for
@@ -855,8 +860,8 @@ class TestDestructiveApplyGate(StudioCase):
 
         package._render_files()
 
-        entry = cast("StudioPackageModel", package.model_ids).filtered(
-            lambda m: m.model == "x_studio_project"
+        entry = cast("BuilderPackageModel", package.model_ids).filtered(
+            lambda m: m.model == "x_builder_project"
         )
         self.assertEqual(entry.source, "frozen")
 
@@ -866,24 +871,24 @@ class TestDestructiveApplyGate(StudioCase):
 
     def test_the_pre_migration_renames_rather_than_drops(self):
         rendered = migrationgen.render_pre_migration(
-            "x_studio_project", ["x_budget"], "20260728120000"
+            "x_builder_project", ["x_budget"], "20260728120000"
         )
         assert rendered is not None, "fixture must produce a pre-migration"
         ast.parse(rendered)  # it has to be importable by Odoo's migration loader
         self.assertIn("RENAME COLUMN", rendered)
         self.assertNotIn("DROP COLUMN", rendered)
-        self.assertIn("x_budget_studio_removed_20260728120000", rendered)
+        self.assertIn("x_budget_builder_removed_20260728120000", rendered)
 
     def test_a_long_column_name_stays_within_the_identifier_limit(self):
         target = migrationgen.rename_column_sql(
             "t", "x_" + "a" * 60, migrationgen.suffix_for("20260728120000")
         )
         self.assertLessEqual(len(target), 63)
-        self.assertIn("studio_removed", target, "the marker must survive truncation")
+        self.assertIn("builder_removed", target, "the marker must survive truncation")
 
 
 @tagged("post_install", "-at_install")
-class TestApplyIsRecoverable(StudioCase):
+class TestApplyIsRecoverable(BuilderCase):
     """Module operations commit, so a failed apply is not something the ORM
     rolls back. The snapshot is what makes it recoverable."""
 
@@ -906,9 +911,9 @@ class TestApplyIsRecoverable(StudioCase):
 
     def test_generated_python_that_cannot_be_reparsed_is_refused(self):
         package = self._python_package()
-        package.action_adopt(["x_studio_project"])
-        entry = cast("StudioPackageModel", package.model_ids).filtered(
-            lambda m: m.model == "x_studio_project"
+        package.action_adopt(["x_builder_project"])
+        entry = cast("BuilderPackageModel", package.model_ids).filtered(
+            lambda m: m.model == "x_builder_project"
         )
         with raises(self, UserError):
             package._assert_specs_reparse(
@@ -916,7 +921,7 @@ class TestApplyIsRecoverable(StudioCase):
                     entry.python_path or "": (
                         "from odoo import fields, models\n\n\n"
                         "class X(models.Model):\n"
-                        '    _name = "x_studio_project"\n'
+                        '    _name = "x_builder_project"\n'
                         "    _inherits = {'a': 'b'}\n"
                     )
                 }
@@ -925,12 +930,12 @@ class TestApplyIsRecoverable(StudioCase):
     def test_snapshot_records_the_bytes_that_were_there(self):
         package = self._python_package()
         files = package._render_files()
-        apply = typed.model(self.env, StudioPackageApply)._snapshot(
+        apply = typed.model(self.env, BuilderPackageApply)._snapshot(
             package, files, reason="test", stamp="20260728120000"
         )
         self.assertEqual(apply.state, "pending")
         self.assertTrue(apply.file_ids)
-        manifest = cast("StudioPackageApplyFile", apply.file_ids).filtered(
+        manifest = cast("BuilderPackageApplyFile", apply.file_ids).filtered(
             lambda f: f.path == "__manifest__.py"
         )
         self.assertTrue(manifest.existed)
@@ -940,7 +945,7 @@ class TestApplyIsRecoverable(StudioCase):
     def test_restore_puts_the_previous_bytes_back(self):
         package = self._python_package()
         files = package._render_files()
-        apply = typed.model(self.env, StudioPackageApply)._snapshot(
+        apply = typed.model(self.env, BuilderPackageApply)._snapshot(
             package, files, reason="test", stamp="20260728120001"
         )
         target = os.path.join(package.root_path or "", "__manifest__.py")
@@ -954,7 +959,7 @@ class TestApplyIsRecoverable(StudioCase):
 
     def test_restore_removes_files_that_did_not_exist_before(self):
         package = self._python_package()
-        apply = typed.model(self.env, StudioPackageApply)._snapshot(
+        apply = typed.model(self.env, BuilderPackageApply)._snapshot(
             package, {"views/brand_new.xml": "<odoo/>"}, stamp="20260728120002"
         )
         target = os.path.join(package.root_path or "", "views/brand_new.xml")
@@ -975,7 +980,7 @@ class TestApplyIsRecoverable(StudioCase):
         never completed; one this process started, or one a sibling worker
         started a moment ago, is in progress and is left alone."""
         package = self._python_package()
-        Apply = typed.model(self.env, StudioPackageApply)
+        Apply = typed.model(self.env, BuilderPackageApply)
         own = Apply._snapshot(
             package, {"__manifest__.py": "{}"}, stamp="20260728120003"
         )
@@ -985,7 +990,7 @@ class TestApplyIsRecoverable(StudioCase):
         self.assertFalse(Apply._reap_abandoned(package), "too young to be abandoned")
 
         cast("Cursor", self.env.cr).execute(
-            "UPDATE studio_package_apply"
+            "UPDATE builder_package_apply"
             " SET create_date = now() - interval '10 minutes' WHERE id = %s",
             (own.id,),
         )
@@ -1008,7 +1013,7 @@ class TestApplyIsRecoverable(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestPartialWriteDoesNotPrune(StudioCase):
+class TestPartialWriteDoesNotPrune(BuilderCase):
     """A partial write must not read *absent* as *deleted*.
 
     ``_write_files`` removes tracked files missing from the dict it is handed,
@@ -1028,7 +1033,7 @@ class TestPartialWriteDoesNotPrune(StudioCase):
         self.package.action_write_files()
 
     def _paths(self):
-        return set(cast("StudioPackageFile", self.package.file_ids).mapped("path"))
+        return set(cast("BuilderPackageFile", self.package.file_ids).mapped("path"))
 
     def _on_disk(self, relative):
         return os.path.isfile(os.path.join(self.package.root_path or "", relative))
@@ -1061,7 +1066,7 @@ class TestPartialWriteDoesNotPrune(StudioCase):
             "path": "views/leftover.xml",
             "generated_checksum": checksum.hash_text("<odoo/>\n"),
         }
-        record = self.env["studio.package.file"].create(leftover_vals)  # pyright: ignore[reportArgumentType]
+        record = self.env["builder.package.file"].create(leftover_vals)  # pyright: ignore[reportArgumentType]
         self.package.invalidate_recordset(["file_ids"])
 
         self.package._write_files({"__manifest__.py": "{'name': 'x'}\n"}, prune=True)

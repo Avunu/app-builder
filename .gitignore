@@ -1,94 +1,33 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-/.venv
-/.pytest_cache
-/.ruff_cache
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-env/
-bin/
-build/
-develop-eggs/
-dist/
-eggs/
-lib64/
-parts/
-sdist/
-var/
 *.egg-info/
-.installed.cfg
-*.egg
-*.eggs
-
-# Windows installers
-*.msi
-
-# Debian packages
-*.deb
-
-# Redhat packages
-*.rpm
-
-# MacOS packages
-*.dmg
-*.pkg
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
+node_modules/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
 .coverage
-.cache
-nosetests.xml
 coverage.xml
-
-# Translations
-*.mo
-
-# Pycharm
-.idea
-
-# Eclipse
-.settings
-
-# Visual Studio cache/options directory
-.vs/
-.vscode
-
-# OSX Files
-.DS_Store
-
-# Django stuff:
 *.log
-
-# Mr Developer
-.mr.developer.cfg
-.project
-.pydevproject
-
-# Rope
-.ropeproject
-
-# Sphinx documentation
-docs/_build/
-
-# Backup files
 *~
 *.swp
+.DS_Store
 
-# OCA rules
-!static/lib/
-
-# TypeScript/typecheck tooling (TYPING.md): installed locally with npm,
-# not vendored via Nix/uv -- pyright and esbuild's own npm packages are the
-# upstream distribution, not a Python rebuild of the whole workspace.
-# package-lock.json IS committed, same as uv.lock, for a reproducible install.
+# Each addon's `build` script (its package.json) compiles every .ts under
+# static/ to the .js beside it. Odoo's own transpiler then treats that .js as
+# an @odoo-module, which is why it lives in static/src and not static/dist.
+# Nix rebuilds it into the deployed tree (docs: odoo-nix, Addon frontends).
+/app_builder*/static/src/**/*.js
+/app_builder*/static/tests/**/*.js
+# >>> odoo-nix: dev-shell (managed) >>>
+/odoo.conf
+/odools.toml
+/.venv
+/.devenv/
+/.direnv/
+/.odoo-nix/
+/tools/.venv
+/tools/.bin
 /node_modules
+/result
+/result-*
+__pycache__/
+*.py[cod]
+# <<< odoo-nix: dev-shell (managed) <<<

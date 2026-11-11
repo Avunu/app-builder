@@ -2,171 +2,299 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.TopBar">
-    <div class="o_studio_top_bar">
-        <div class="o_studio_crumb_bar">
-            <button type="button" class="o_studio_crumb_home" data-tooltip="Home"
+        <div class="o_builder_top_bar">
+            <div class="o_builder_crumb_bar">
+                <button
+                    type="button"
+                    class="o_builder_crumb_home"
+                    data-tooltip="Home"
                     t-att-class="{ active: this.shell.pane === 'home' }"
-                    t-on-click="() => this.shell.openPane('home')">
-                <i class="fa fa-magic"/>
-            </button>
-
-            <!-- The package: the workspace every pane is scoped to. -->
-            <Dropdown menuClass="'o_studio_package_menu'">
-                <button type="button" class="o_studio_crumb o_studio_crumb_package"
-                        t-att-data-tooltip="this.packagePinned ? this.packagePinnedReason : undefined">
-                    <span class="o_studio_dot" t-attf-class="o_studio_dot_{{ this.packageDot }}"/>
-                    <span t-esc="this.packageLabel"/>
-                    <i class="fa fa-caret-down ms-1 opacity-75"/>
+                    t-on-click="() => this.shell.openPane('home')"
+                >
+                    <i class="fa fa-magic" />
                 </button>
-                <t t-set-slot="content">
-                    <DropdownItem t-foreach="this.packages" t-as="info" t-key="info.id"
-                                  class="{ 'o_studio_package_item': true, active: info.active, disabled: this.packagePinned and !info.active }"
-                                  onSelected="() => this.onPackage(info)">
-                        <span class="o_studio_dot me-2" t-attf-class="o_studio_dot_{{ info.dot }}"/>
-                        <span t-esc="info.name"/>
-                        <small t-if="!info.writable" class="text-muted ms-2">read-only</small>
-                        <small t-elif="info.title and info.title !== info.name" class="text-muted ms-2" t-esc="info.title"/>
-                    </DropdownItem>
-                    <div t-if="this.packages.length" role="separator" class="dropdown-divider"/>
-                    <DropdownItem class="'o_studio_package_new'" onSelected="() => this.onNewPackage()">
-                        <i class="fa fa-plus me-2"/>New package…
-                    </DropdownItem>
-                </t>
-            </Dropdown>
 
-            <span class="mx-1 opacity-50">›</span>
-
-            <!-- The model: what the package defines and touches. -->
-            <Dropdown menuClass="'o_studio_model_menu'" beforeOpen="() => this.loadPicker()">
-                <button type="button" class="o_studio_crumb o_studio_crumb_model">
-                    <t t-if="this.modelLabel"><t t-esc="this.modelLabel"/></t>
-                    <span t-else="" class="opacity-75">choose a model</span>
-                    <i class="fa fa-caret-down ms-1 opacity-75"/>
-                </button>
-                <t t-set-slot="content">
-                    <div class="px-2 py-1">
-                        <input type="search" class="form-control form-control-sm o_studio_model_search"
-                               placeholder="Any model…" t-on-input="(ev) => this.onModelSearch(ev)"/>
-                    </div>
-                    <t t-if="this.state.modelMatches.length">
-                        <DropdownItem t-foreach="this.state.modelMatches" t-as="entry" t-key="entry.model"
-                                      onSelected="() => this.onModel(entry)">
-                            <span t-esc="entry.display_name"/>
-                            <small class="text-muted ms-2" t-esc="entry.model"/>
+                <!-- The package: the workspace every pane is scoped to. -->
+                <Dropdown menuClass="'o_builder_package_menu'">
+                    <button
+                        type="button"
+                        class="o_builder_crumb o_builder_crumb_package"
+                        t-att-data-tooltip="this.packagePinned ? this.packagePinnedReason : undefined"
+                    >
+                        <span
+                            class="o_builder_dot"
+                            t-attf-class="o_builder_dot_{{ this.packageDot }}"
+                        />
+                        <span t-esc="this.packageLabel" />
+                        <i class="fa fa-caret-down ms-1 opacity-75" />
+                    </button>
+                    <t t-set-slot="content">
+                        <DropdownItem
+                            t-foreach="this.packages"
+                            t-as="info"
+                            t-key="info.id"
+                            class="{ 'o_builder_package_item': true, active: info.active, disabled: this.packagePinned and !info.active }"
+                            onSelected="() => this.onPackage(info)"
+                        >
+                            <span
+                                class="o_builder_dot me-2"
+                                t-attf-class="o_builder_dot_{{ info.dot }}"
+                            />
+                            <span t-esc="info.name" />
+                            <small
+                                t-if="!info.writable"
+                                class="text-muted ms-2"
+                            >read-only</small>
+                            <small
+                                t-elif="info.title and info.title !== info.name"
+                                class="text-muted ms-2"
+                                t-esc="info.title"
+                            />
                         </DropdownItem>
+                        <div
+                            t-if="this.packages.length"
+                            role="separator"
+                            class="dropdown-divider"
+                        />
+                        <DropdownItem
+                            class="'o_builder_package_new'"
+                            onSelected="() => this.onNewPackage()"
+                        >
+                        <i class="fa fa-plus me-2" />New package…
+                    </DropdownItem>
                     </t>
-                    <t t-elif="this.state.picker">
-                        <div t-if="this.state.picker.defined.length" class="dropdown-header">Defined in <t t-esc="this.packageLabel"/></div>
-                        <DropdownItem t-foreach="this.state.picker.defined" t-as="entry" t-key="'d' + entry.model"
-                                      onSelected="() => this.onModel(entry)">
-                            <span t-esc="entry.display_name"/>
-                            <small class="text-muted ms-2" t-esc="entry.model"/>
-                        </DropdownItem>
-                        <div t-if="this.state.picker.extended.length" class="dropdown-header">Extended in <t t-esc="this.packageLabel"/></div>
-                        <DropdownItem t-foreach="this.state.picker.extended" t-as="entry" t-key="'e' + entry.model"
-                                      onSelected="() => this.onModel(entry)">
-                            <span t-esc="entry.display_name"/>
-                            <small class="text-muted ms-2" t-esc="entry.model"/>
-                        </DropdownItem>
-                        <div t-if="this.state.picker.recent.length" class="dropdown-header">Recent</div>
-                        <DropdownItem t-foreach="this.state.picker.recent" t-as="entry" t-key="'r' + entry.model"
-                                      onSelected="() => this.onModel(entry)">
-                            <span t-esc="entry.display_name"/>
-                            <small class="text-muted ms-2" t-esc="entry.model"/>
-                        </DropdownItem>
-                    </t>
-                    <div role="separator" class="dropdown-divider"/>
-                    <DropdownItem class="'o_studio_model_build'" onSelected="() => this.onBuildApp()">
-                        <i class="fa fa-plus me-2"/>Build an app
-                    </DropdownItem>
-                    <DropdownItem class="'o_studio_model_adopt'" onSelected="() => this.onAdoptModel()">
-                        <i class="fa fa-download me-2"/>Adopt a model
-                    </DropdownItem>
-                </t>
-            </Dropdown>
+                </Dropdown>
 
-            <t t-if="this.onViews and this.viewTypeLabel">
                 <span class="mx-1 opacity-50">›</span>
-                <span class="o_studio_crumb_view" t-esc="this.viewTypeLabel"/>
-            </t>
-        </div>
 
-        <nav class="o_studio_tabs" aria-label="Console">
-            <button t-foreach="this.tabs" t-as="tab" t-key="tab.key" type="button"
-                    class="o_studio_top_tab" t-att-class="{ active: tab.active, disabled: !tab.available }"
+                <!-- The model: what the package defines and touches. -->
+                <Dropdown
+                    menuClass="'o_builder_model_menu'"
+                    beforeOpen="() => this.loadPicker()"
+                >
+                    <button type="button" class="o_builder_crumb o_builder_crumb_model">
+                        <t t-if="this.modelLabel">
+                            <t t-esc="this.modelLabel" />
+                        </t>
+                        <span t-else="" class="opacity-75">choose a model</span>
+                        <i class="fa fa-caret-down ms-1 opacity-75" />
+                    </button>
+                    <t t-set-slot="content">
+                        <div class="px-2 py-1">
+                            <input
+                                type="search"
+                                class="form-control form-control-sm o_builder_model_search"
+                                placeholder="Any model…"
+                                t-on-input="(ev) => this.onModelSearch(ev)"
+                            />
+                        </div>
+                        <t t-if="this.state.modelMatches.length">
+                            <DropdownItem
+                                t-foreach="this.state.modelMatches"
+                                t-as="entry"
+                                t-key="entry.model"
+                                onSelected="() => this.onModel(entry)"
+                            >
+                                <span t-esc="entry.display_name" />
+                                <small class="text-muted ms-2" t-esc="entry.model" />
+                            </DropdownItem>
+                        </t>
+                        <t t-elif="this.state.picker">
+                            <div
+                                t-if="this.state.picker.defined.length"
+                                class="dropdown-header"
+                            >Defined in <t t-esc="this.packageLabel" /></div>
+                            <DropdownItem
+                                t-foreach="this.state.picker.defined"
+                                t-as="entry"
+                                t-key="'d' + entry.model"
+                                onSelected="() => this.onModel(entry)"
+                            >
+                                <span t-esc="entry.display_name" />
+                                <small class="text-muted ms-2" t-esc="entry.model" />
+                            </DropdownItem>
+                            <div
+                                t-if="this.state.picker.extended.length"
+                                class="dropdown-header"
+                            >Extended in <t t-esc="this.packageLabel" /></div>
+                            <DropdownItem
+                                t-foreach="this.state.picker.extended"
+                                t-as="entry"
+                                t-key="'e' + entry.model"
+                                onSelected="() => this.onModel(entry)"
+                            >
+                                <span t-esc="entry.display_name" />
+                                <small class="text-muted ms-2" t-esc="entry.model" />
+                            </DropdownItem>
+                            <div
+                                t-if="this.state.picker.recent.length"
+                                class="dropdown-header"
+                            >Recent</div>
+                            <DropdownItem
+                                t-foreach="this.state.picker.recent"
+                                t-as="entry"
+                                t-key="'r' + entry.model"
+                                onSelected="() => this.onModel(entry)"
+                            >
+                                <span t-esc="entry.display_name" />
+                                <small class="text-muted ms-2" t-esc="entry.model" />
+                            </DropdownItem>
+                        </t>
+                        <div role="separator" class="dropdown-divider" />
+                        <DropdownItem
+                            class="'o_builder_model_build'"
+                            onSelected="() => this.onBuildApp()"
+                        >
+                        <i class="fa fa-plus me-2" />Build an app
+                    </DropdownItem>
+                        <DropdownItem
+                            class="'o_builder_model_adopt'"
+                            onSelected="() => this.onAdoptModel()"
+                        >
+                        <i class="fa fa-download me-2" />Adopt a model
+                    </DropdownItem>
+                    </t>
+                </Dropdown>
+
+                <t t-if="this.onViews and this.viewTypeLabel">
+                    <span class="mx-1 opacity-50">›</span>
+                    <span class="o_builder_crumb_view" t-esc="this.viewTypeLabel" />
+                </t>
+            </div>
+
+            <nav class="o_builder_tabs" aria-label="Console">
+                <button
+                    t-foreach="this.tabs"
+                    t-as="tab"
+                    t-key="tab.key"
+                    type="button"
+                    class="o_builder_top_tab"
+                    t-att-class="{ active: tab.active, disabled: !tab.available }"
                     t-att-data-tab="tab.key"
                     t-att-aria-disabled="!tab.available"
                     t-att-data-tooltip="tab.available ? undefined : tab.reason"
-                    t-on-click="() => this.openTab(tab)">
-                <t t-esc="tab.label"/>
-            </button>
-        </nav>
+                    t-on-click="() => this.openTab(tab)"
+                >
+                    <t t-esc="tab.label" />
+                </button>
+            </nav>
 
-        <div class="o_studio_switcher" t-if="this.switcher.length">
-            <button t-foreach="this.switcher" t-as="entry" t-key="entry.key" type="button"
-                    class="o_studio_switch" t-att-class="{ active: entry.active, add: entry.add }"
+            <div class="o_builder_switcher" t-if="this.switcher.length">
+                <button
+                    t-foreach="this.switcher"
+                    t-as="entry"
+                    t-key="entry.key"
+                    type="button"
+                    class="o_builder_switch"
+                    t-att-class="{ active: entry.active, add: entry.add }"
                     t-att-data-view-type="entry.type"
                     t-att-data-tooltip="entry.label"
                     t-att-disabled="this.busy"
-                    t-on-click="() => this.onSwitch(entry)">
-                <i t-att-class="entry.icon"/>
-                <i t-if="entry.add" class="fa fa-plus o_studio_switch_plus"/>
-            </button>
-        </div>
+                    t-on-click="() => this.onSwitch(entry)"
+                >
+                    <i t-att-class="entry.icon" />
+                    <i t-if="entry.add" class="fa fa-plus o_builder_switch_plus" />
+                </button>
+            </div>
 
-        <div class="o_studio_top_actions">
-            <t t-if="this.history">
-                <button type="button" class="o_studio_top_button o_studio_undo"
+            <div class="o_builder_top_actions">
+                <t t-if="this.history">
+                    <button
+                        type="button"
+                        class="o_builder_top_button o_builder_undo"
                         t-att-disabled="!this.undoEntry or this.busy"
                         t-att-data-tooltip="this.undoTooltip"
-                        t-on-click="() => this.onUndo()">
-                    <i class="fa fa-undo"/><span class="ms-1 o_studio_top_word">Undo</span>
-                </button>
-                <button type="button" class="o_studio_top_button o_studio_redo"
+                        t-on-click="() => this.onUndo()"
+                    >
+                        <i class="fa fa-undo" />
+                        <span class="ms-1 o_builder_top_word">Undo</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="o_builder_top_button o_builder_redo"
                         t-att-disabled="!this.redoEntry or this.busy"
                         t-att-data-tooltip="this.redoTooltip"
-                        t-on-click="() => this.onRedo()">
-                    <i class="fa fa-repeat"/><span class="ms-1 o_studio_top_word">Redo</span>
-                </button>
-            </t>
-            <span class="o_studio_status" t-attf-class="o_studio_status_{{ this.status.cls }}"
-                  t-att-data-tooltip="this.status.tooltip"
-                  t-att-role="this.status.cls === 'pending' ? 'button' : undefined"
-                  t-on-click="() => this.onStatusClick()">
-                <i t-if="this.status.cls === 'saved'" class="fa fa-check me-1"/>
-                <i t-elif="this.status.cls === 'saving'" class="fa fa-circle-o-notch fa-spin me-1"/>
-                <i t-elif="this.status.cls === 'error'" class="fa fa-exclamation-triangle me-1"/>
-                <i t-elif="this.status.cls === 'dragging'" class="fa fa-arrows me-1"/>
-                <i t-elif="this.status.cls === 'pending'" class="fa fa-clock-o me-1"/>
-                <i t-elif="this.status.cls === 'readonly'" class="fa fa-lock me-1"/>
-                <t t-esc="this.status.label"/>
-            </span>
-            <button type="button" class="o_studio_top_button o_studio_changes_badge"
+                        t-on-click="() => this.onRedo()"
+                    >
+                        <i class="fa fa-repeat" />
+                        <span class="ms-1 o_builder_top_word">Redo</span>
+                    </button>
+                </t>
+                <span
+                    class="o_builder_status"
+                    t-attf-class="o_builder_status_{{ this.status.cls }}"
+                    t-att-data-tooltip="this.status.tooltip"
+                    t-att-role="this.status.cls === 'pending' ? 'button' : undefined"
+                    t-on-click="() => this.onStatusClick()"
+                >
+                    <i t-if="this.status.cls === 'saved'" class="fa fa-check me-1" />
+                    <i
+                        t-elif="this.status.cls === 'saving'"
+                        class="fa fa-circle-o-notch fa-spin me-1"
+                    />
+                    <i
+                        t-elif="this.status.cls === 'error'"
+                        class="fa fa-exclamation-triangle me-1"
+                    />
+                    <i
+                        t-elif="this.status.cls === 'dragging'"
+                        class="fa fa-arrows me-1"
+                    />
+                    <i
+                        t-elif="this.status.cls === 'pending'"
+                        class="fa fa-clock-o me-1"
+                    />
+                    <i
+                        t-elif="this.status.cls === 'readonly'"
+                        class="fa fa-lock me-1"
+                    />
+                    <t t-esc="this.status.label" />
+                </span>
+                <button
+                    type="button"
+                    class="o_builder_top_button o_builder_changes_badge"
                     t-att-class="{ active: this.shell.pane === 'changes' }"
                     data-tooltip="Changes: what is pending, written and committed"
-                    t-on-click="() => this.openChanges()">
-                <i class="fa fa-code-fork"/>
-                <span t-if="this.changesCount" class="o_studio_badge_count" t-esc="this.changesCount"/>
-            </button>
-            <t t-if="this.pendingCount and !this.shell.activity.drag">
-                <button type="button" class="o_studio_top_button o_studio_apply"
+                    t-on-click="() => this.openChanges()"
+                >
+                    <i class="fa fa-code-fork" />
+                    <span
+                        t-if="this.changesCount"
+                        class="o_builder_badge_count"
+                        t-esc="this.changesCount"
+                    />
+                </button>
+                <t t-if="this.pendingCount and !this.shell.activity.drag">
+                    <button
+                        type="button"
+                        class="o_builder_top_button o_builder_apply"
                         t-att-disabled="this.busy or this.applying"
                         t-att-data-tooltip="this.applyTooltip || undefined"
-                        t-on-click="() => this.openApply()">
-                    <i class="fa fa-bolt"/><span class="ms-1" t-esc="this.applyLabel"/>
-                </button>
-                <button type="button" class="o_studio_top_button o_studio_discard"
+                        t-on-click="() => this.openApply()"
+                    >
+                        <i class="fa fa-bolt" />
+                        <span class="ms-1" t-esc="this.applyLabel" />
+                    </button>
+                    <button
+                        type="button"
+                        class="o_builder_top_button o_builder_discard"
                         t-att-disabled="this.busy or this.applying"
-                        t-on-click="() => this.onDiscard()">
-                    <i class="fa fa-trash-o"/><span class="ms-1 o_studio_top_word">Discard</span>
+                        t-on-click="() => this.onDiscard()"
+                    >
+                        <i class="fa fa-trash-o" />
+                        <span class="ms-1 o_builder_top_word">Discard</span>
+                    </button>
+                </t>
+                <button
+                    type="button"
+                    class="o_builder_top_button o_builder_close"
+                    t-on-click="() => this.props.onClose()"
+                >
+                    <i class="fa fa-times" />
+                    <span class="ms-1">Close</span>
                 </button>
-            </t>
-            <button type="button" class="o_studio_top_button o_studio_close"
-                    t-on-click="() => this.props.onClose()">
-                <i class="fa fa-times"/><span class="ms-1">Close</span>
-            </button>
+            </div>
         </div>
-    </div>
-</t>
+    </t>
 
 </templates>

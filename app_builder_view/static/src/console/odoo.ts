@@ -37,54 +37,54 @@
  *    then throws out of `odoo.define`, aborting the whole asset bundle.
  */
 
-import type { Component } from "@odoo/owl";
-import { user as userUntyped } from "@web/core/user";
-import { useService as useServiceUntyped } from "@web/core/utils/hooks";
-import type { NotificationService, OrmService, PaneRegistration } from "./types";
+import type {Component} from "@odoo/owl";
+import {user as userUntyped} from "@web/core/user";
+import {useService as useServiceUntyped} from "@web/core/utils/hooks";
+import type {NotificationService, OrmService, PaneRegistration} from "./types";
 
 declare module "registries" {
-    interface GlobalRegistryCategories {
-        "app_builder.panes": PaneRegistration;
-        // Nothing registers here any more (`pane_registry.ts`'s own
-        // `warnLegacyTabs` exists to say so) -- no real shape to name,
-        // and nothing here reads more than an entry's own key.
-        "app_builder.console_tabs": unknown;
-        /** `field_editor_fallback.ts`'s own fallback, and
-         * `app_builder_model`'s full popover (`console_items.js`) --
-         * whichever registers first wins (`fieldEditorComponent()`'s own
-         * `entries[0]`). Every registrant is a plain component class
-         * taking `FieldEditorProps` (`types.ts`); typed as the bare
-         * class (never instantiated or read for its own `Props` by this
-         * registry itself, only passed on to `usePopover`), the same way
-         * core's own `DialogsRegistryItemShape` types a category that
-         * only ever stores component classes. */
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        "app_builder.field_editor": typeof Component<any, any>;
-        /** The component the Views pane renders for a view's
-         * `editable_as` (`panes/views_pane.ts`'s own `canvasComponent`) --
-         * registered into by `canvas.ts` (`"canvas"`),
-         * `canvases/search_lists_canvas.ts` (`"search_lists"`) and
-         * `app_builder_report`'s own `report_canvas.ts` (`"report"`). A
-         * plain component-class registry, taken only for
-         * identity (`canvasRegistry.contains`/`.get`, compared against a
-         * known class) and handed straight to the template's
-         * `t-component`, the same shape as `app_builder.field_editor`/
-         * `cogMenu`/`systray`. */
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        "app_builder.canvas": typeof Component<any, any>;
-        cogMenu: CogMenuItem;
-        systray: SystrayRegistryItemShape;
-        // Odoo's own category, not ours -- see the "-- view widgets --"
-        // section below for why it is transcribed here instead of
-        // imported from the real vendor `.d.ts`.
-        view_widgets: ViewWidgetsRegistryItemShape;
-        // Odoo's own category (`console.ts` is the first real registrant
-        // in this tree) -- see the "-- actions registry --" section below.
-        actions: ActionsRegistryItemShape;
-        // Odoo's own category, registered into by every tour file under
-        // `static/tests/tours/` -- see the "-- tours --" section below.
-        "web_tour.tours": ToursRegistryShape;
-    }
+  interface GlobalRegistryCategories {
+    "app_builder.panes": PaneRegistration;
+    // Nothing registers here any more (`pane_registry.ts`'s own
+    // `warnLegacyTabs` exists to say so) -- no real shape to name,
+    // and nothing here reads more than an entry's own key.
+    "app_builder.console_tabs": unknown;
+    /** `field_editor_fallback.ts`'s own fallback, and
+     * `app_builder_model`'s full popover (`console_items.js`) --
+     * whichever registers first wins (`fieldEditorComponent()`'s own
+     * `entries[0]`). Every registrant is a plain component class
+     * taking `FieldEditorProps` (`types.ts`); typed as the bare
+     * class (never instantiated or read for its own `Props` by this
+     * registry itself, only passed on to `usePopover`), the same way
+     * core's own `DialogsRegistryItemShape` types a category that
+     * only ever stores component classes. */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    "app_builder.field_editor": typeof Component<any, any>;
+    /** The component the Views pane renders for a view's
+     * `editable_as` (`panes/views_pane.ts`'s own `canvasComponent`) --
+     * registered into by `canvas.ts` (`"canvas"`),
+     * `canvases/search_lists_canvas.ts` (`"search_lists"`) and
+     * `app_builder_report`'s own `report_canvas.ts` (`"report"`). A
+     * plain component-class registry, taken only for
+     * identity (`canvasRegistry.contains`/`.get`, compared against a
+     * known class) and handed straight to the template's
+     * `t-component`, the same shape as `app_builder.field_editor`/
+     * `cogMenu`/`systray`. */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    "app_builder.canvas": typeof Component<any, any>;
+    cogMenu: CogMenuItem;
+    systray: SystrayRegistryItemShape;
+    // Odoo's own category, not ours -- see the "-- view widgets --"
+    // section below for why it is transcribed here instead of
+    // imported from the real vendor `.d.ts`.
+    view_widgets: ViewWidgetsRegistryItemShape;
+    // Odoo's own category (`console.ts` is the first real registrant
+    // in this tree) -- see the "-- actions registry --" section below.
+    actions: ActionsRegistryItemShape;
+    // Odoo's own category, registered into by every tour file under
+    // `static/tests/tours/` -- see the "-- tours --" section below.
+    "web_tour.tours": ToursRegistryShape;
+  }
 }
 
 // -- dialog -----------------------------------------------------------
@@ -99,7 +99,7 @@ declare module "registries" {
 /** `DialogServiceInterfaceAddOptions`, transcribed from the vendor's own
  * JSDoc typedef (`dialog_service.js`). */
 export interface DialogServiceAddOptions {
-    onClose?(): void;
+  onClose?(): void;
 }
 
 /**
@@ -114,21 +114,21 @@ export interface DialogServiceAddOptions {
  * over the vendor's own looser typing, not a guess.
  */
 export interface DialogService {
-    // `...args: unknown[]` looks like the obvious constructor signature
-    // here, but does not actually work: TS cannot unify a rest parameter
-    // typed `unknown[]` with a real constructor's own specific first
-    // parameter (`props: P`) the way it can with `any[]`, which turns
-    // this check off for the constructor's *parameter list* specifically
-    // while still fully checking `props` against `P` at the call site --
-    // confirmed by testing both forms for real: `unknown[]` rejects the
-    // valid call this type exists to accept.
-    add<P extends object>(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        dialogClass: new (...args: any[]) => Component<P>,
-        props: P,
-        options?: DialogServiceAddOptions,
-    ): () => void;
-    closeAll(): void;
+  // `...args: unknown[]` looks like the obvious constructor signature
+  // here, but does not actually work: TS cannot unify a rest parameter
+  // typed `unknown[]` with a real constructor's own specific first
+  // parameter (`props: P`) the way it can with `any[]`, which turns
+  // this check off for the constructor's *parameter list* specifically
+  // while still fully checking `props` against `P` at the call site --
+  // confirmed by testing both forms for real: `unknown[]` rejects the
+  // valid call this type exists to accept.
+  add<P extends object>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    dialogClass: new (...args: any[]) => Component<P>,
+    props: P,
+    options?: DialogServiceAddOptions
+  ): () => void;
+  closeAll(): void;
 }
 
 /**
@@ -141,22 +141,22 @@ export interface DialogService {
  * them converts rather than re-derived nine times.
  */
 export interface DialogProps {
-    contentClass?: string;
-    bodyClass?: string;
-    fullscreen?: boolean;
-    footer?: boolean;
-    header?: boolean;
-    size?: "sm" | "md" | "lg" | "xl" | "fs" | "fullscreen";
-    technical?: boolean;
-    title?: string;
-    modalRef?: (el: HTMLElement | null) => void;
-    slots: {
-        default: unknown;
-        header?: unknown;
-        footer?: unknown;
-    };
-    withBodyPadding?: boolean;
-    onExpand?(): void;
+  contentClass?: string;
+  bodyClass?: string;
+  fullscreen?: boolean;
+  footer?: boolean;
+  header?: boolean;
+  size?: "sm" | "md" | "lg" | "xl" | "fs" | "fullscreen";
+  technical?: boolean;
+  title?: string;
+  modalRef?: (el: HTMLElement | null) => void;
+  slots: {
+    default: unknown;
+    header?: unknown;
+    footer?: unknown;
+  };
+  withBodyPadding?: boolean;
+  onExpand?(): void;
 }
 
 // -- confirmation dialog ----------------------------------------------------
@@ -179,7 +179,7 @@ export interface DialogProps {
 // the same "narrow, hand-traced facade over a vendor boundary" move this
 // file already makes for `OrmService`/`NotificationService`/`ActionService`.
 
-import { ConfirmationDialog as ConfirmationDialogImpl } from "@web/core/confirmation_dialog/confirmation_dialog";
+import {ConfirmationDialog as ConfirmationDialogImpl} from "@web/core/confirmation_dialog/confirmation_dialog";
 
 /** What a real caller supplies to `dialog.add(ConfirmationDialog, {...})`
  * -- `close` is not among them: the dialog service injects it itself
@@ -192,19 +192,19 @@ import { ConfirmationDialog as ConfirmationDialogImpl } from "@web/core/confirma
  * Owl's own prop validation does not enforce that distinction at
  * runtime. */
 export interface ConfirmationDialogProps {
-    title?: unknown;
-    body?: unknown;
-    confirm?: () => void;
-    confirmLabel?: unknown;
-    confirmClass?: string;
-    cancel?: () => void;
-    cancelLabel?: unknown;
-    dismiss?: () => void;
+  title?: unknown;
+  body?: unknown;
+  confirm?: () => void;
+  confirmLabel?: unknown;
+  confirmClass?: string;
+  cancel?: () => void;
+  cancelLabel?: unknown;
+  dismiss?: () => void;
 }
 
 export const ConfirmationDialog = ConfirmationDialogImpl as unknown as new (
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ...args: any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ...args: any[]
 ) => Component<ConfirmationDialogProps>;
 
 // -- action -------------------------------------------------------------
@@ -221,11 +221,11 @@ export const ConfirmationDialog = ConfirmationDialogImpl as unknown as new (
  * needs one.
  */
 export interface ActionDescription {
-    type: string;
-    tag?: string;
-    name?: string;
-    target?: string;
-    params?: Record<string, unknown>;
+  type: string;
+  tag?: string;
+  name?: string;
+  target?: string;
+  params?: Record<string, unknown>;
 }
 
 /**
@@ -248,45 +248,45 @@ export interface ActionDescription {
  * that file.
  */
 export interface ActionController {
-    /** Set only on a restored-from-router placeholder
-     * (`_controllersFromState`), whose `action`/`props` may still be
-     * empty objects -- every real caller bails out on this before
-     * reading anything else off the controller. */
-    virtual?: boolean;
-    action: {
-        type?: string;
-        id?: number | false;
-        views?: Array<[number | false, string]>;
-        res_model?: string;
-        [key: string]: unknown;
-    };
-    props?: {
-        resModel?: string;
-        type?: string;
-        resId?: number | false;
-        [key: string]: unknown;
-    };
-    currentState?: { resId?: number | false };
+  /** Set only on a restored-from-router placeholder
+   * (`_controllersFromState`), whose `action`/`props` may still be
+   * empty objects -- every real caller bails out on this before
+   * reading anything else off the controller. */
+  virtual?: boolean;
+  action: {
+    type?: string;
+    id?: number | false;
+    views?: Array<[number | false, string]>;
+    res_model?: string;
+    [key: string]: unknown;
+  };
+  props?: {
+    resModel?: string;
+    type?: string;
+    resId?: number | false;
+    [key: string]: unknown;
+  };
+  currentState?: {resId?: number | false};
 }
 
 export interface ActionService {
-    /** `action_service.js`'s own real first-parameter type is `ActionId
-     * | ActionXMLId | ActionTag | ActionDescription` (its own
-     * `ActionRequest` typedef); widened here from `ActionDescription`
-     * alone to also cover `number` (a plain action id) once `shell.ts`
-     * needed it (`_loadAction`'s own `typeof actionRequest === "number"`
-     * branch) -- the `string` variants stay unadded until a real caller
-     * needs one, per this interface's own original note. */
-    doAction(
-        action: ActionDescription | number,
-        options?: Record<string, unknown>,
-    ): Promise<unknown>;
-    /** `action_service.js`'s own `restore(jsId)` -- `jsId` genuinely
-     * optional (`if (!jsId) { ... }` falls back to the previous
-     * controller in the stack), confirmed against the real source
-     * rather than guessed. */
-    restore(jsId?: string): Promise<unknown>;
-    readonly currentController: ActionController | undefined;
+  /** `action_service.js`'s own real first-parameter type is `ActionId
+   * | ActionXMLId | ActionTag | ActionDescription` (its own
+   * `ActionRequest` typedef); widened here from `ActionDescription`
+   * alone to also cover `number` (a plain action id) once `shell.ts`
+   * needed it (`_loadAction`'s own `typeof actionRequest === "number"`
+   * branch) -- the `string` variants stay unadded until a real caller
+   * needs one, per this interface's own original note. */
+  doAction(
+    action: ActionDescription | number,
+    options?: Record<string, unknown>
+  ): Promise<unknown>;
+  /** `action_service.js`'s own `restore(jsId)` -- `jsId` genuinely
+   * optional (`if (!jsId) { ... }` falls back to the previous
+   * controller in the stack), confirmed against the real source
+   * rather than guessed. */
+  restore(jsId?: string): Promise<unknown>;
+  readonly currentController: ActionController | undefined;
 }
 
 // -- cog menu -------------------------------------------------------------
@@ -313,14 +313,14 @@ export interface ActionService {
  * own `onEdit` falls back to the current controller's action for exactly
  * this reason. */
 export interface ViewEnvConfig {
-    resModel?: string;
-    viewId: number | false;
-    viewType: string;
-    actionId: number | false;
+  resModel?: string;
+  viewId: number | false;
+  viewType: string;
+  actionId: number | false;
 }
 
 export interface ViewEnv {
-    config: ViewEnvConfig;
+  config: ViewEnvConfig;
 }
 
 /**
@@ -335,10 +335,10 @@ export interface ViewEnv {
  * `Registry.get`/`queryFirst`/`useDragAndDrop`/`moveTo`.
  */
 export interface CogMenuItem {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Component: typeof Component<any, any>;
-    groupNumber: number;
-    isDisplayed?: (env: ViewEnv) => boolean | Promise<boolean>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Component: typeof Component<any, any>;
+  groupNumber: number;
+  isDisplayed?: (env: ViewEnv) => boolean | Promise<boolean>;
 }
 
 // -- systray ----------------------------------------------------------------
@@ -346,9 +346,9 @@ export interface CogMenuItem {
 // `registry.category("systray")`, Odoo's own category (`systray_item.ts`).
 
 export interface SystrayRegistryItemShape {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Component: typeof Component<any, any>;
-    isDisplayed?: (env: unknown) => boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Component: typeof Component<any, any>;
+  isDisplayed?: (env: unknown) => boolean;
 }
 
 // -- view widgets ---------------------------------------------------------
@@ -370,7 +370,7 @@ export interface SystrayRegistryItemShape {
  * only `readonly`, resolved from the node's own modifiers, unlike
  * `StaticWidgetInfo`'s raw, unevaluated `attrs.readonly`. */
 export interface DynamicWidgetInfo {
-    readonly: boolean;
+  readonly: boolean;
 }
 
 /** One `<widget>` arch node, as `Widget.parseWidgetNode` (`widget.js`)
@@ -379,33 +379,34 @@ export interface DynamicWidgetInfo {
  * entirely up to whichever widget declares it (a caller narrows it, the
  * way `pending_widget.ts`'s own `PendingWidgetInfo` does). */
 export interface StaticWidgetInfo {
-    attrs: Record<string, string>;
-    name: string;
-    options: object;
-    widget: ViewWidgetsRegistryItemShape;
+  attrs: Record<string, string>;
+  name: string;
+  options: object;
+  widget: ViewWidgetsRegistryItemShape;
 }
 
 /** A `"view_widgets"` registry entry. */
 export interface ViewWidgetsRegistryItemShape {
-    additionalClasses?: string[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    component: typeof Component<any, any>;
-    extractProps?(options: StaticWidgetInfo, dynamicInfo: DynamicWidgetInfo): object;
-    fieldDependencies?:
-        Partial<StaticWidgetInfo>[] | ((baseInfo: StaticWidgetInfo) => Partial<StaticWidgetInfo>[]);
+  additionalClasses?: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  component: typeof Component<any, any>;
+  extractProps?(options: StaticWidgetInfo, dynamicInfo: DynamicWidgetInfo): object;
+  fieldDependencies?:
+    | Partial<StaticWidgetInfo>[]
+    | ((baseInfo: StaticWidgetInfo) => Partial<StaticWidgetInfo>[]);
 }
 
 // -- actions registry -------------------------------------------------------
 //
 // `registry.category("actions")` -- core Odoo's own category, registered
-// into by `console.ts` (`StudioConsole`, under two tags: the console's
+// into by `console.ts` (`BuilderConsole`, under two tags: the console's
 // own and a legacy one kept for old bookmarks/callers). Transcribed from
 // the real vendor `@types/registries/registries.d.ts` -- not in
 // `tsconfig.json`'s `include` (unlike its `fields_registry.d.ts`/
 // `views_registry.d.ts` siblings; the same reason `cogMenu`/`systray`/
 // `view_widgets` are transcribed here rather than imported). A real
 // registrant is either a plain handler function or a component class
-// (`StudioConsole` is the latter); `target`/`path`/`displayName` are the
+// (`BuilderConsole` is the latter); `target`/`path`/`displayName` are the
 // action-framework's own convention, read off the registered class/
 // function by `action_service.js`, matching `shell.ts`'s own doc comment
 // on why `static target`/`static path` need no `override` (neither is a
@@ -417,19 +418,19 @@ export interface ViewWidgetsRegistryItemShape {
 
 /** A registrant is either a plain handler function (given the console's
  * `env` and an `ActionDescription`) or a component class -- no real
- * registration in this tree uses the function arm (`StudioConsole` is a
+ * registration in this tree uses the function arm (`BuilderConsole` is a
  * component), but the vendor category accepts both, so both are named
  * here rather than narrowed to just this addon's own usage, the same
  * "transcribe the whole real shape" choice already made for `cogMenu`/
  * `systray`/`view_widgets`. */
 export type ActionsRegistryItemShape = (
-    | ((env: unknown, action: ActionDescription) => void)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    | typeof Component<any, any>
+  | ((env: unknown, action: ActionDescription) => void)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  | typeof Component<any, any>
 ) & {
-    displayName?: string;
-    path?: string;
-    target?: string;
+  displayName?: string;
+  path?: string;
+  target?: string;
 };
 
 // -- tours --------------------------------------------------------------
@@ -465,15 +466,15 @@ export type ActionsRegistryItemShape = (
 //    real step in this tree sets one.
 
 export interface TourStep {
-    content: string;
-    trigger: string;
-    run?: string | ((this: { anchor: Element }, helpers: unknown) => void | Promise<void>);
+  content: string;
+  trigger: string;
+  run?: string | ((this: {anchor: Element}, helpers: unknown) => void | Promise<void>);
 }
 
 export interface ToursRegistryShape {
-    test?: boolean;
-    url?: string;
-    steps(): TourStep[];
+  test?: boolean;
+  url?: string;
+  steps(): TourStep[];
 }
 
 // -- useService -----------------------------------------------------------
@@ -493,10 +494,10 @@ export function useService(name: "notification"): NotificationService;
 export function useService(name: "dialog"): DialogService;
 export function useService(name: "action"): ActionService;
 export function useService(name: string): unknown {
-    // `useService` is untyped vendor JS whose generic JSDoc collapses to the
-    // `error` type; assigning it to `unknown` is the honest boundary.
-    const service: unknown = useServiceUntyped(name);
-    return service;
+  // `useService` is untyped vendor JS whose generic JSDoc collapses to the
+  // `error` type; assigning it to `unknown` is the honest boundary.
+  const service: unknown = useServiceUntyped(name);
+  return service;
 }
 
 // -- user -----------------------------------------------------------------
@@ -511,7 +512,7 @@ export function useService(name: string): unknown {
  * checker cannot see through `Cache`'s untyped `read`.
  */
 export interface UserFacade {
-    hasGroup(group: string): Promise<boolean>;
+  hasGroup(group: string): Promise<boolean>;
 }
 
 /** The same `user` object, typed. Nothing changes at runtime. */

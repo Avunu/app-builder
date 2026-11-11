@@ -2,9 +2,9 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.EditThisView">
-    <DropdownItem class="'o_studio_edit_view'" onSelected.bind="onEdit">
-        <i class="fa fa-magic me-1"/>Edit this view
+        <DropdownItem class="'o_builder_edit_view'" onSelected.bind="onEdit">
+        <i class="fa fa-magic me-1" />Edit this view
     </DropdownItem>
-</t>
+    </t>
 
 </templates>

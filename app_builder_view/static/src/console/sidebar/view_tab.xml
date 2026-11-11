@@ -2,148 +2,226 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.ViewTab">
-    <div class="o_studio_view_tab">
-        <div class="alert alert-light small py-1" role="alert" t-esc="ownershipNote"/>
+        <div class="o_builder_view_tab">
+            <div
+                class="alert alert-light small py-1"
+                role="alert"
+                t-esc="ownershipNote"
+            />
 
-        <t t-foreach="panels" t-as="panel" t-key="panel.id">
-            <div class="o_studio_section_title" t-esc="panel.title"/>
-            <div t-foreach="panel.rows" t-as="row" t-key="row.key"
-                 class="o_studio_row" t-att-data-row="row.name">
-                <label class="o_studio_row_label" t-esc="row.label" t-att-title="row.help"/>
-                <div class="o_studio_row_content">
-                    <input t-if="row.type === 'toggle'" class="form-check-input mt-0"
-                           type="checkbox"
-                           t-att-checked="row.value"
-                           t-att-disabled="model.busy"
-                           t-on-change="(ev) => this.onToggle(row, ev)"/>
-                    <select t-elif="row.type === 'select'"
+            <t t-foreach="panels" t-as="panel" t-key="panel.id">
+                <div class="o_builder_section_title" t-esc="panel.title" />
+                <div
+                    t-foreach="panel.rows"
+                    t-as="row"
+                    t-key="row.key"
+                    class="o_builder_row"
+                    t-att-data-row="row.name"
+                >
+                    <label
+                        class="o_builder_row_label"
+                        t-esc="row.label"
+                        t-att-title="row.help"
+                    />
+                    <div class="o_builder_row_content">
+                        <input
+                            t-if="row.type === 'toggle'"
+                            class="form-check-input mt-0"
+                            type="checkbox"
+                            t-att-checked="row.value"
+                            t-att-disabled="model.busy"
+                            t-on-change="(ev) => this.onToggle(row, ev)"
+                        />
+                        <select
+                            t-elif="row.type === 'select'"
                             class="form-select form-select-sm"
                             t-att-disabled="model.busy"
-                            t-on-change="(ev) => this.onInput(row, ev)">
-                        <option t-foreach="row.choices" t-as="choice"
-                                t-key="choice[0]" t-att-value="choice[0]"
+                            t-on-change="(ev) => this.onInput(row, ev)"
+                        >
+                            <option
+                                t-foreach="row.choices"
+                                t-as="choice"
+                                t-key="choice[0]"
+                                t-att-value="choice[0]"
                                 t-att-selected="choice[0] === row.value"
-                                t-esc="choice[1]"/>
-                    </select>
-                    <input t-elif="row.type === 'condition'"
-                           class="form-control form-control-sm font-monospace"
-                           type="text" t-att-value="row.value"
-                           t-att-disabled="model.busy"
-                           t-on-change="(ev) => this.onInput(row, ev)"/>
-                    <input t-else="" class="form-control form-control-sm"
-                           type="text" t-att-value="row.value"
-                           t-att-placeholder="row.placeholder"
-                           t-att-disabled="model.busy"
-                           t-on-change="(ev) => this.onInput(row, ev)"/>
+                                t-esc="choice[1]"
+                            />
+                        </select>
+                        <input
+                            t-elif="row.type === 'condition'"
+                            class="form-control form-control-sm font-monospace"
+                            type="text"
+                            t-att-value="row.value"
+                            t-att-disabled="model.busy"
+                            t-on-change="(ev) => this.onInput(row, ev)"
+                        />
+                        <input
+                            t-else=""
+                            class="form-control form-control-sm"
+                            type="text"
+                            t-att-value="row.value"
+                            t-att-placeholder="row.placeholder"
+                            t-att-disabled="model.busy"
+                            t-on-change="(ev) => this.onInput(row, ev)"
+                        />
+                    </div>
+                </div>
+            </t>
+
+            <div class="o_builder_section_title">Canvas</div>
+            <div class="o_builder_row">
+                <label
+                    class="o_builder_row_label"
+                    for="o_builder_show_invisible"
+                >Show invisible elements</label>
+                <div class="o_builder_row_content">
+                    <input
+                        id="o_builder_show_invisible"
+                        class="form-check-input mt-0"
+                        type="checkbox"
+                        t-att-checked="model.showInvisible"
+                        t-att-disabled="model.busy"
+                        t-on-change="() => this.model.toggleInvisible()"
+                    />
                 </div>
             </div>
-        </t>
 
-        <div class="o_studio_section_title">Canvas</div>
-        <div class="o_studio_row">
-            <label class="o_studio_row_label" for="o_studio_show_invisible">Show invisible elements</label>
-            <div class="o_studio_row_content">
-                <input id="o_studio_show_invisible" class="form-check-input mt-0" type="checkbox"
-                       t-att-checked="model.showInvisible"
-                       t-att-disabled="model.busy"
-                       t-on-change="() => this.model.toggleInvisible()"/>
-            </div>
-        </div>
-
-        <t t-if="model.addable.length">
-            <div class="o_studio_section_title">Add a view</div>
-            <div class="o_studio_add_view mb-2">
-                <div t-foreach="model.addable" t-as="entry" t-key="entry.type" class="mb-1">
-                    <button class="btn btn-light btn-sm w-100 text-start"
+            <t t-if="model.addable.length">
+                <div class="o_builder_section_title">Add a view</div>
+                <div class="o_builder_add_view mb-2">
+                    <div
+                        t-foreach="model.addable"
+                        t-as="entry"
+                        t-key="entry.type"
+                        class="mb-1"
+                    >
+                        <button
+                            class="btn btn-light btn-sm w-100 text-start"
                             t-att-disabled="!entry.enabled or !model.packageId or model.busy"
                             t-att-title="entry.reason || entry.label"
-                            t-on-click="() => this.model.addView(entry)">
-                        <i t-att-class="'me-1 ' + (entry.icon || 'fa fa-plus')"/>
-                        <t t-esc="entry.label || entry.type"/>
-                    </button>
-                    <small t-if="entry.reason" class="text-muted d-block" t-esc="entry.reason"/>
+                            t-on-click="() => this.model.addView(entry)"
+                        >
+                            <i t-att-class="'me-1 ' + (entry.icon || 'fa fa-plus')" />
+                            <t t-esc="entry.label || entry.type" />
+                        </button>
+                        <small
+                            t-if="entry.reason"
+                            class="text-muted d-block"
+                            t-esc="entry.reason"
+                        />
+                    </div>
                 </div>
-            </div>
-        </t>
+            </t>
 
-        <t t-if="showsModel">
-            <div class="o_studio_section_title">Model</div>
-            <div class="small text-muted mb-1">
-                The fields of <code t-esc="model.modelName"/>, in class order — the order
+            <t t-if="showsModel">
+                <div class="o_builder_section_title">Model</div>
+                <div class="small text-muted mb-1">
+                The fields of <code
+                    t-esc="model.modelName"
+                />, in class order — the order
                 they are written to Python. Edits here are staged and land on Apply.
             </div>
-            <div class="o_studio_model_fields mb-2">
-                <div class="o_studio_model_field d-flex align-items-center gap-1" t-att-class="{ 'o_studio_model_field_removed': entry.pendingKind === 'removed' }" t-foreach="modelFields"
-                     t-as="entry"
-                     t-key="entry.name"
-                     t-att-data-field="entry.name">
-                    <i class="text-muted" t-att-class="entry.icon"/>
-                    <span class="flex-grow-1 text-truncate" t-att-title="entry.name">
-                        <t t-esc="entry.string || entry.name"/>
-                        <small class="text-muted ms-1" t-esc="entry.typeLabel"/>
-                    </span>
-                    <span t-if="entry.pendingKind" class="badge text-bg-info o_studio_model_badge"
-                          t-esc="pendingBadge(entry)"/>
-                    <t t-if="entry.pendingKind !== 'removed'">
-                        <button type="button" class="btn btn-link btn-sm p-0 o_studio_model_up" title="Move up"
+                <div class="o_builder_model_fields mb-2">
+                    <div
+                        class="o_builder_model_field d-flex align-items-center gap-1"
+                        t-att-class="{ 'o_builder_model_field_removed': entry.pendingKind === 'removed' }"
+                        t-foreach="modelFields"
+                        t-as="entry"
+                        t-key="entry.name"
+                        t-att-data-field="entry.name"
+                    >
+                        <i class="text-muted" t-att-class="entry.icon" />
+                        <span
+                            class="flex-grow-1 text-truncate"
+                            t-att-title="entry.name"
+                        >
+                            <t t-esc="entry.string || entry.name" />
+                            <small class="text-muted ms-1" t-esc="entry.typeLabel" />
+                        </span>
+                        <span
+                            t-if="entry.pendingKind"
+                            class="badge text-bg-info o_builder_model_badge"
+                            t-esc="pendingBadge(entry)"
+                        />
+                        <t t-if="entry.pendingKind !== 'removed'">
+                            <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 o_builder_model_up"
+                                title="Move up"
                                 t-att-disabled="model.busy or entry_first"
-                                t-on-click="() => this.onMoveUp(entry)">
-                            <i class="fa fa-arrow-up"/>
-                        </button>
-                        <button type="button" class="btn btn-link btn-sm p-0 o_studio_model_down" title="Move down"
+                                t-on-click="() => this.onMoveUp(entry)"
+                            >
+                                <i class="fa fa-arrow-up" />
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 o_builder_model_down"
+                                title="Move down"
                                 t-att-disabled="model.busy or entry_last"
-                                t-on-click="() => this.onMoveDown(entry)">
-                            <i class="fa fa-arrow-down"/>
-                        </button>
-                        <button type="button" class="btn btn-link btn-sm p-0 o_studio_model_edit" title="Edit definition"
+                                t-on-click="() => this.onMoveDown(entry)"
+                            >
+                                <i class="fa fa-arrow-down" />
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 o_builder_model_edit"
+                                title="Edit definition"
                                 t-att-disabled="model.busy"
-                                t-on-click="(ev) => this.onEditModelField(ev, entry)">
-                            <i class="fa fa-pencil"/>
-                        </button>
-                    </t>
-                </div>
-                <div t-if="!modelFields.length" class="small text-muted">
+                                t-on-click="(ev) => this.onEditModelField(ev, entry)"
+                            >
+                                <i class="fa fa-pencil" />
+                            </button>
+                        </t>
+                    </div>
+                    <div t-if="!modelFields.length" class="small text-muted">
                     No fields yet.
                 </div>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm w-100 mb-2 o_studio_model_add"
+                </div>
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm w-100 mb-2 o_builder_model_add"
                     t-att-disabled="model.busy or !model.packageId"
-                    t-on-click="(ev) => this.onAddModelField(ev)">
-                <i class="fa fa-plus me-1"/>Add a field to the model
+                    t-on-click="(ev) => this.onAddModelField(ev)"
+                >
+                <i class="fa fa-plus me-1" />Add a field to the model
             </button>
-            <small class="text-muted d-block mb-3">
+                <small class="text-muted d-block mb-3">
                 A field added here has no place on this canvas yet; Apply puts it
                 where the balanced layout says, or drop it from the Add tab to
                 choose the spot.
             </small>
-        </t>
+            </t>
 
-        <div class="o_studio_section_title">Written so far</div>
-        <t t-if="source">
-            <div class="small text-muted mb-1">
-                <t t-if="source.owned">This view itself.</t>
-                <t t-else="">An inheriting view: <code t-esc="source.name"/></t>
-            </div>
-            <pre class="o_studio_source small" t-esc="source.arch"/>
-        </t>
-        <div t-else="" class="small text-muted mb-2">
+            <div class="o_builder_section_title">Written so far</div>
+            <t t-if="source">
+                <div class="small text-muted mb-1">
+                    <t t-if="source.owned">This view itself.</t>
+                    <t t-else="">An inheriting view: <code t-esc="source.name" /></t>
+                </div>
+                <pre class="o_builder_source small" t-esc="source.arch" />
+            </t>
+            <div t-else="" class="small text-muted mb-2">
             Nothing yet — the first change writes an inheriting view.
         </div>
 
-        <t t-if="recentChanges.length">
-            <div class="o_studio_section_title">Recent changes</div>
-            <div t-foreach="recentChanges" t-as="entry" t-key="entry.id"
-                 class="small text-muted o_studio_history_entry">
-                <t t-esc="entry.summary"/>
-                <span class="ms-1 opacity-75">· <t t-esc="entry.author"/></span>
-            </div>
-        </t>
+            <t t-if="recentChanges.length">
+                <div class="o_builder_section_title">Recent changes</div>
+                <div
+                    t-foreach="recentChanges"
+                    t-as="entry"
+                    t-key="entry.id"
+                    class="small text-muted o_builder_history_entry"
+                >
+                    <t t-esc="entry.summary" />
+                    <span class="ms-1 opacity-75">· <t t-esc="entry.author" /></span>
+                </div>
+            </t>
 
-        <div class="text-muted small mt-3">
+            <div class="text-muted small mt-3">
             Changes are saved as you make them and are visible to everyone
             straight away — a view is data, so there is nothing to reload.
         </div>
-    </div>
-</t>
+        </div>
+    </t>
 
 </templates>

@@ -22,44 +22,45 @@ from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 from odoo import Command
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.models.builder_package import BuilderPackage
+from odoo.addons.app_builder_base.tests.common import BuilderHttpCase, join_groups
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.builder_view_editor import BuilderViewEditor
 from odoo.addons.base.models.ir_model import IrModel, IrModelFields
 from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.models.studio_package import StudioPackage
-from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
-from odoo.addons.app_builder_base.tools import typed
-from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
 
 if TYPE_CHECKING:
     # Only for the cast() calls below; with `from __future__ import
     # annotations` nothing here needs these at runtime, the same bargain
     # every Phase 1c file's own `TYPE_CHECKING` block makes. `canvas()` is
-    # composed onto `studio.view.editor` by `studio_view_canvas.py`'s own
+    # composed onto `builder.view.editor` by `builder_view_canvas.py`'s own
     # pure `_inherit` extension -- a different Python class than the real
-    # base `StudioViewEditor` above, the same split `probe_console_apply.py`
+    # base `BuilderViewEditor` above, the same split `probe_console_apply.py`
     # already worked around.
     from odoo.addons.base.models.res_users import Users
-    from odoo.addons.app_builder_view.models.studio_view_canvas import (
-        StudioViewEditor as StudioViewEditorCanvas,
+
+    from ..models.builder_view_canvas import (
+        BuilderViewEditor as BuilderViewEditorCanvas,
     )
 
 
 @tagged("post_install", "-at_install")
-class TestConsoleTour(StudioHttpCase):
+class TestConsoleTour(BuilderHttpCase):
     def _package(self, name, label):
         # Exactly one writable package, so editing_context can suggest it
         # without the console having to ask which one to record into.
         package_vals = {
             "name": name,
             "display_name_": label,
-            "root_path": tempfile.mkdtemp(prefix="studio-tour-"),
+            "root_path": tempfile.mkdtemp(prefix="builder-tour-"),
             "auto_commit": "off",
         }
-        package = typed.model(self.env, StudioPackage).create(package_vals)  # pyright: ignore[reportArgumentType]
+        package = typed.model(self.env, BuilderPackage).create(package_vals)  # pyright: ignore[reportArgumentType]
         module_vals = {"name": name, "state": "installed"}
         self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
             cast("Users", typed.ref(self.env, "base.user_admin")),
-            ["app_builder_base.group_studio_manager"],
+            ["app_builder_base.group_builder_manager"],
         )
         return package
 
@@ -80,12 +81,12 @@ class TestConsoleTour(StudioHttpCase):
         on disk, or the next canvas would be stamped on top of the last.
         """
         for view in views:
-            self.assertNotIn("o_studio_", view.arch, view.name)
+            self.assertNotIn("o_builder_", view.arch, view.name)
         for folder, _dirs, names in os.walk(package.root_path):
             for name in names:
                 path = os.path.join(folder, name)
                 with open(path, encoding="utf-8", errors="ignore") as handle:
-                    self.assertNotIn("o_studio_", handle.read(), path)
+                    self.assertNotIn("o_builder_", handle.read(), path)
 
     def test_a_list_view_can_be_edited_by_clicking_it(self):
         """A rename through Properties, undone and redone, reaches the real
@@ -119,7 +120,7 @@ class TestConsoleTour(StudioHttpCase):
         # Renamed, undone, redone: what is on disk at the end is the rename,
         # put back byte for byte by redo.
         patch = typed.model(self.env, View).search(
-            [("inherit_id", "=", base.id), ("name", "like", "studio")]
+            [("inherit_id", "=", base.id), ("name", "like", "builder")]
         )
         self.assertTrue(patch, "the rename should live in an inheriting view")
         self.assertIn("Full Name", cast("str", patch.arch))
@@ -158,7 +159,7 @@ class TestConsoleTour(StudioHttpCase):
         base = cast("View", typed.ref(self.env, "base.view_partner_form"))
         self.assertNotIn("x_tour_extra", cast("str", base.arch))
         patch = typed.model(self.env, View).search(
-            [("inherit_id", "=", base.id), ("name", "like", "studio")]
+            [("inherit_id", "=", base.id), ("name", "like", "builder")]
         )
         self.assertTrue(patch)
         # The group and the field the palette added are there; the required
@@ -198,7 +199,7 @@ class TestConsoleTour(StudioHttpCase):
         base = cast("View", typed.ref(self.env, "base.view_res_partner_filter"))
         self.assertNotIn("x_tour_search", cast("str", base.arch))
         patch = typed.model(self.env, View).search(
-            [("inherit_id", "=", base.id), ("name", "like", "studio")]
+            [("inherit_id", "=", base.id), ("name", "like", "builder")]
         )
         self.assertTrue(patch, "the field should live in an inheriting view")
         self.assertIn('name="x_tour_search"', cast("str", patch.arch))
@@ -244,7 +245,7 @@ class TestConsoleTour(StudioHttpCase):
         )
 
         patch = self.env["ir.ui.view"].search(
-            [("inherit_id", "=", base.id), ("name", "like", "studio")]
+            [("inherit_id", "=", base.id), ("name", "like", "builder")]
         )
         self.assertTrue(patch)
         base.invalidate_recordset()
@@ -286,7 +287,7 @@ class TestConsoleTour(StudioHttpCase):
 
         base = cast("View", typed.ref(self.env, "base.view_partner_form"))
         patch = typed.model(self.env, View).search(
-            [("inherit_id", "=", base.id), ("name", "like", "studio")]
+            [("inherit_id", "=", base.id), ("name", "like", "builder")]
         )
         self.assertTrue(patch, "the drops should live in an inheriting view")
         root = etree.fromstring(base.get_combined_arch().encode())
@@ -301,23 +302,23 @@ class TestConsoleTour(StudioHttpCase):
         self.assertEqual(extra[0].getparent().get("name"), "purchase")
 
         # Job Position moved into the group dropped at the end of the sheet,
-        # a direct child of the sheet with a studio name.
+        # a direct child of the sheet with a builder name.
         function = root.xpath(own % "function")
         self.assertEqual(len(function), 1)
         group = function[0].getparent()
         self.assertEqual(group.getparent(), sheet)
-        self.assertTrue(group.get("name", "").startswith("studio_group_"))
+        self.assertTrue(group.get("name", "").startswith("builder_group_"))
 
         # Two columns: one outer group holding two named groups, after that.
         columns = [
             g
             for g in sheet.findall("group")
-            if g.get("name", "").startswith("studio_group_")
+            if g.get("name", "").startswith("builder_group_")
             and len(g.findall("group")) == 2
         ]
         self.assertEqual(len(columns), 1, "Columns should be one group of two")
         for inner in columns[0].findall("group"):
-            self.assertTrue(inner.get("name", "").startswith("studio_group_"))
+            self.assertTrue(inner.get("name", "").startswith("builder_group_"))
 
         # The tab landed in the notebook, last.
         pages = root.xpath("//notebook/page")
@@ -365,16 +366,16 @@ class TestConsoleTour(StudioHttpCase):
 
         base = cast("View", typed.ref(self.env, "base.view_partner_tree"))
         patch = self.env["ir.ui.view"].search(
-            [("inherit_id", "=", base.id), ("name", "like", "studio")]
+            [("inherit_id", "=", base.id), ("name", "like", "builder")]
         )
         self.assertTrue(patch)
         root = etree.fromstring(base.get_combined_arch().encode())
         names = [f.get("name") for f in root.findall("field")]
         self.assertEqual(names.count("email"), 1, "moved, not copied")
-        self.assertLess(names.index("email"), names.index("display_name"))
+        self.assertLess(names.index("email"), names.index("complete_name"))
         self.assertEqual(
             names.index("x_tour_extra"),
-            names.index("display_name") + 1,
+            names.index("complete_name") + 1,
             "the palette field goes right after Name",
         )
         self._assert_nothing_leaked(package, patch)
@@ -436,7 +437,7 @@ class TestConsoleTour(StudioHttpCase):
         root = etree.fromstring(base.get_combined_arch().encode())
         self.assertFalse(root.xpath("//field[@name='x_new_text']"))
         patches = self.env["ir.ui.view"].search(
-            [("inherit_id", "=", base.id), ("name", "like", "studio")]
+            [("inherit_id", "=", base.id), ("name", "like", "builder")]
         )
         self._assert_nothing_leaked(package, patches)
 
@@ -563,7 +564,9 @@ class TestConsoleTour(StudioHttpCase):
         drop into one still lands in the template."""
         package = self._package("x_tour_kanban_sample_pkg", "Tour Kanban Sample")
         view, action = self._kanban_model(package, records=False)
-        editor = cast("StudioViewEditorCanvas", typed.model(self.env, StudioViewEditor))
+        editor = cast(
+            "BuilderViewEditorCanvas", typed.model(self.env, BuilderViewEditor)
+        )
         self.assertEqual(editor.canvas(cast("int", view.id))["record_count"], 0)
 
         self.start_tour(
@@ -667,7 +670,7 @@ class TestConsoleTour(StudioHttpCase):
         # adopted instead, since the builder's Apply cannot reload under
         # test -- see `_python_owned_model`.
         self.assertTrue(
-            typed.model(self.env, StudioViewEditor).editing_context(
+            typed.model(self.env, BuilderViewEditor).editing_context(
                 cast("int", view.id)
             )["python_owned"]
         )
@@ -681,7 +684,7 @@ class TestConsoleTour(StudioHttpCase):
 
         # Discarded: the draft is clean, no field exists, the view is as
         # it was, and nothing on disk mentions a decimal.
-        draft = self.env["studio.model.draft"].search(
+        draft = self.env["builder.model.draft"].search(
             [("package_model_id.model", "=", "x_tour_staged")]
         )
         self.assertTrue(draft, "the drop should have opened a draft")

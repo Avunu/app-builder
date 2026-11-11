@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!-- The console from the Builder menu: its Home, on the package the user
+         last had open (the console works that out from its own preferences).
+         A client action declared as a server action so its name and tag stay
+         one record other addons can point at. Running a server action needs
+         write access on its model, so builder users have it on the (abstract)
+         editor model (see security/ir.model.access.csv). -->
+    <record id="builder_console_action" model="ir.actions.server">
+        <field name="name">Builder</field>
+        <field name="model_id" ref="model_builder_view_editor" />
+        <field name="state">code</field>
+        <field name="code">
+action = {
+    "type": "ir.actions.client",
+    "tag": "app_builder_console",
+    "name": "Builder",
+    "target": "fullscreen",
+    "params": {"pane": "home", "opened_from": "menu"},
+}
+        </field>
+    </record>
+
+    <!-- The Builder app is one entry: the console. The root menu belongs to
+         app_builder_base, which has no console to point it at; this gives it
+         one, and clears it again on uninstall (see the hook). -->
+    <record id="app_builder_base.menu_builder_root" model="ir.ui.menu">
+        <field name="action" ref="builder_console_action" />
+    </record>
+</odoo>

@@ -22,43 +22,43 @@
  * here by hand.
  */
 
-import type { Component } from "@odoo/owl";
-import type { Translated } from "./l10n";
+import type {Component} from "@odoo/owl";
+import type {Translated} from "./l10n";
 import type {
-    DraftFieldJSON,
-    DraftPayload,
-    FieldTypeEntry,
-    InverseOptions,
-    PackageEntryJSON,
-    ResolveRelatedResult,
+  DraftFieldJSON,
+  DraftPayload,
+  FieldTypeEntry,
+  InverseOptions,
+  PackageEntryJSON,
+  ResolveRelatedResult,
 } from "./wire";
 
 /** A node's role in the arch. One tag can be several kinds (`div` is
  * `label`, `button_box` or `html`); `_kind()` is the single source. */
 export type NodeKind =
-    | "root"
-    | "html"
-    | "button_box"
-    | "label"
-    | "column"
-    | "field"
-    | "button"
-    | "page"
-    | "group"
-    | "notebook"
-    | "sheet"
-    | "header"
-    | "footer"
-    | "separator"
-    | "widget"
-    | "chatter"
-    | "main"
-    | "aside"
-    | "card"
-    // Emitted only for a field staged on a draft, spliced into the canvas
-    // under a `p_<name>` token (`studio_view_canvas.py`); not one of
-    // `canvas_stamp.py`'s own kinds.
-    | "pending";
+  | "root"
+  | "html"
+  | "button_box"
+  | "label"
+  | "column"
+  | "field"
+  | "button"
+  | "page"
+  | "group"
+  | "notebook"
+  | "sheet"
+  | "header"
+  | "footer"
+  | "separator"
+  | "widget"
+  | "chatter"
+  | "main"
+  | "aside"
+  | "card"
+  // Emitted only for a field staged on a draft, spliced into the canvas
+  // under a `p_<name>` token (`builder_view_canvas.py`); not one of
+  // `canvas_stamp.py`'s own kinds.
+  | "pending";
 
 /** How a container lays its children out (`_orientation`; never `null`). */
 export type Orientation = "row" | "column";
@@ -75,73 +75,73 @@ export type HiddenReason = "groups" | "invisible" | null;
  * branch) -- every other node's `label` is `null`.
  */
 export interface FieldLabel {
-    /** Whether the compiler draws a label for this field at all. */
-    shown: boolean;
-    by: "group" | "label" | null;
-    /** The token of the `<label for>` naming this field, when `by` is
-     * `"label"`. */
-    token: Token | null;
-    in_group: boolean;
+  /** Whether the compiler draws a label for this field at all. */
+  shown: boolean;
+  by: "group" | "label" | null;
+  /** The token of the `<label for>` naming this field, when `by` is
+   * `"label"`. */
+  token: Token | null;
+  in_group: boolean;
 }
 
-/** A token naming one node of the arch (`o_studio_n_<ordinal>`), or the
+/** A token naming one node of the arch (`o_builder_n_<ordinal>`), or the
  * ghost of a staged field (`p_<name>`). Opaque on the client: never parsed,
  * only compared and looked up in a `NodeTable`. */
 export type Token = string;
 
 /** One entry of the canvas's node table (`canvas_stamp.py:stamp`). */
-export interface StudioNode {
-    tag: string;
-    name: string | null;
-    kind: NodeKind;
-    parent: Token | null;
-    children: Token[];
-    index: number;
-    string: string | null;
-    container: boolean;
-    orientation: Orientation;
-    /** Child kinds/tags this node's `ACCEPTS` entry allows a drop of. */
-    accepts: readonly string[];
-    movable: boolean;
-    removable: boolean;
-    selectable: boolean;
-    hidden: HiddenReason;
-    attrs: Readonly<Record<string, string>>;
-    /** Whether this node renders an element at all (a page's tab does; a
-     * hidden-and-not-shown node does not). */
-    dom: boolean;
-    /** Field metadata for a `field`/`column` node. */
-    field: CanvasFieldInfo | null;
-    view_id: number | null;
-    label: FieldLabel | null;
-    /** Present only on a `kind: "pending"` ghost -- a field staged on a
-     * draft, not yet applied (`studio_view_canvas.py`'s `_stamp_pending`
-     * construction, the block after `"label": None,`). `StudioNode` stays
-     * one flat shape rather than a `kind`-discriminated union for now;
-     * this is the one field that is genuinely conditional on `kind`. */
-    pending?: PendingFieldInfo;
+export interface BuilderNode {
+  tag: string;
+  name: string | null;
+  kind: NodeKind;
+  parent: Token | null;
+  children: Token[];
+  index: number;
+  string: string | null;
+  container: boolean;
+  orientation: Orientation;
+  /** Child kinds/tags this node's `ACCEPTS` entry allows a drop of. */
+  accepts: readonly string[];
+  movable: boolean;
+  removable: boolean;
+  selectable: boolean;
+  hidden: HiddenReason;
+  attrs: Readonly<Record<string, string>>;
+  /** Whether this node renders an element at all (a page's tab does; a
+   * hidden-and-not-shown node does not). */
+  dom: boolean;
+  /** Field metadata for a `field`/`column` node. */
+  field: CanvasFieldInfo | null;
+  view_id: number | null;
+  label: FieldLabel | null;
+  /** Present only on a `kind: "pending"` ghost -- a field staged on a
+   * draft, not yet applied (`builder_view_canvas.py`'s `_stamp_pending`
+   * construction, the block after `"label": None,`). `BuilderNode` stays
+   * one flat shape rather than a `kind`-discriminated union for now;
+   * this is the one field that is genuinely conditional on `kind`. */
+  pending?: PendingFieldInfo;
 }
 
 /** The canvas's node table: every node of the arch, by token. */
-export type NodeTable = Readonly<Record<Token, StudioNode>>;
+export type NodeTable = Readonly<Record<Token, BuilderNode>>;
 
 /** Where a field came from: a real column (`ir.model.fields` with
- * `state="base"`, from Python) or one the studio itself created
+ * `state="base"`, from Python) or one the builder itself created
  * (`state="manual"`). Decides whether the definition panel shows facts or
  * lets the user edit them (`_field_origin`). */
 export type FieldOrigin = "core" | "manual";
 
 /** A field on some model, no more than a picker needs
- * (`studio_view_editor.py:_model_fields`, `app_builder_base/tools/catalogue.py`'s
+ * (`builder_view_editor.py:_model_fields`, `app_builder_base/tools/catalogue.py`'s
  * own `field_types` rows read the same three keys). */
-export interface StudioModelFieldEntry {
-    name: string;
-    string: string;
-    type: string;
+export interface BuilderModelFieldEntry {
+  name: string;
+  string: string;
+  type: string;
 }
 
 /**
- * `studio.view.editor._field_info`, plus where the field came from
+ * `builder.view.editor._field_info`, plus where the field came from
  * (`_canvas_field_info`). `comodel_fields` is present only when explicitly
  * asked for (`describe_node`'s `comodel_fields=True`) -- the plain canvas
  * payload leaves it out to avoid shipping a relation's whole comodel field
@@ -149,59 +149,59 @@ export interface StudioModelFieldEntry {
  * docstring.
  */
 export interface CanvasFieldInfo {
-    name: string;
-    type: string;
-    string: string;
-    store: boolean;
-    required: boolean;
-    readonly: boolean;
-    origin: FieldOrigin;
-    comodel_fields?: StudioModelFieldEntry[];
+  name: string;
+  type: string;
+  string: string;
+  store: boolean;
+  required: boolean;
+  readonly: boolean;
+  origin: FieldOrigin;
+  comodel_fields?: BuilderModelFieldEntry[];
 }
 
 /**
- * A field staged on a `studio.model.draft`, not yet applied: what
- * `StudioNode.pending` carries on the ghost node the canvas splices in
- * for it (`studio_view_canvas.py`, the `_stamp_pending`-style
+ * A field staged on a `builder.model.draft`, not yet applied: what
+ * `BuilderNode.pending` carries on the ghost node the canvas splices in
+ * for it (`builder_view_canvas.py`, the `_stamp_pending`-style
  * construction under `"kind": "pending"`).
  */
 export interface PendingFieldInfo {
-    draft_id: number;
-    name: string;
-    /** The field's Odoo type (`ir.model.fields.ttype`) -- named `ttype`,
-     * not `type`, on this one shape, matching the Python dict key. */
-    ttype: string;
-    string: string;
-    resolved: boolean;
+  draft_id: number;
+  name: string;
+  /** The field's Odoo type (`ir.model.fields.ttype`) -- named `ttype`,
+   * not `type`, on this one shape, matching the Python dict key. */
+  ttype: string;
+  string: string;
+  resolved: boolean;
 }
 
 /** One value of a manual selection field (`_field_definition`). */
 export interface SelectionOption {
-    value: string;
-    label: string;
-    sequence: number;
+  value: string;
+  label: string;
+  sequence: number;
 }
 
 /**
  * The model-level facts of a field and which of them the definition panel
- * may write (`studio_view_canvas.py:_field_definition`). `editable` names
+ * may write (`builder_view_canvas.py:_field_definition`). `editable` names
  * only the keys of `values` a manual field's ``ir.model.fields`` row
  * actually accepts; a core field's `editable` is always empty.
  */
 export interface FieldDefinition {
-    origin: FieldOrigin;
-    editable: readonly string[];
-    values: {
-        field_description: string;
-        help: string;
-        required: boolean;
-        readonly: boolean;
-        index: boolean;
-        translate: boolean;
-        ttype: string;
-        relation: string | false;
-        selection?: SelectionOption[];
-    };
+  origin: FieldOrigin;
+  editable: readonly string[];
+  values: {
+    field_description: string;
+    help: string;
+    required: boolean;
+    readonly: boolean;
+    index: boolean;
+    translate: boolean;
+    ttype: string;
+    relation: string | false;
+    selection?: SelectionOption[];
+  };
 }
 
 /**
@@ -212,28 +212,28 @@ export interface FieldDefinition {
  * table's own `field` when `describe_node` found none of its own, which
  * is why it is typed the same `CanvasFieldInfo | null` either way.
  */
-/** `describe_node`'s own raw RPC answer (`studio_view_canvas.py:
+/** `describe_node`'s own raw RPC answer (`builder_view_canvas.py:
  * describe_node`) -- before `describe()` merges in the node table's own
  * `kind`/`name`/`token` to build a `DescribedTarget`. */
 export type DescribeNodeAnswer =
-    | { found: false }
-    | {
-          found: true;
-          tag: string;
-          attrs: Readonly<Record<string, string>>;
-          field: CanvasFieldInfo | null;
-          definition: FieldDefinition | null;
-      };
+  | {found: false}
+  | {
+      found: true;
+      tag: string;
+      attrs: Readonly<Record<string, string>>;
+      field: CanvasFieldInfo | null;
+      definition: FieldDefinition | null;
+    };
 
 export interface DescribedTarget {
-    kind: NodeKind;
-    name: string | null;
-    token: Token;
-    found: boolean;
-    tag?: string;
-    attrs?: Readonly<Record<string, string>>;
-    field: CanvasFieldInfo | null;
-    definition?: FieldDefinition | null;
+  kind: NodeKind;
+  name: string | null;
+  token: Token;
+  found: boolean;
+  tag?: string;
+  attrs?: Readonly<Record<string, string>>;
+  field: CanvasFieldInfo | null;
+  definition?: FieldDefinition | null;
 }
 
 // -- drop zones -------------------------------------------------------------
@@ -257,29 +257,29 @@ export type ZoneLayer = "canvas" | "outline";
 /** One place a drag can land, as a rectangle plus what dropping there
  * would mean (`zones.js:buildZones`, `outline_zones.js:outlineZones`). */
 export interface Zone {
-    layer: ZoneLayer;
-    token: Token;
-    position: ZonePosition;
-    kind: NodeKind;
-    name: string;
-    container: Token;
-    containerKind: NodeKind;
-    containerLabel: string;
-    depth: number;
-    axis: ZoneAxis;
-    edge: ZoneEdge;
-    rect: PlainRect;
-    caption: string;
-    /** The outline's own boundary line (viewport y), or `null` for a box
-     * zone; absent entirely on a canvas zone, which draws no line. */
-    line?: number | null;
+  layer: ZoneLayer;
+  token: Token;
+  position: ZonePosition;
+  kind: NodeKind;
+  name: string;
+  container: Token;
+  containerKind: NodeKind;
+  containerLabel: string;
+  depth: number;
+  axis: ZoneAxis;
+  edge: ZoneEdge;
+  rect: PlainRect;
+  caption: string;
+  /** The outline's own boundary line (viewport y), or `null` for a box
+   * zone; absent entirely on a canvas zone, which draws no line. */
+  line?: number | null;
 }
 
 /** A container a zone can be dropped into, empty or not
  * (`zones.js:buildZones`'s second return value). */
 export interface ZoneContainer {
-    token: Token;
-    rect: PlainRect;
+  token: Token;
+  rect: PlainRect;
 }
 
 /** What a drag is carrying, named by `payloadTag` (`zones.js`) to decide
@@ -288,189 +288,189 @@ export interface ZoneContainer {
  * name, a pending edit's staged values...) are the dragging code's own
  * business and pass through untyped here. */
 export interface DragPayload {
-    kind: "existing_field" | "new_field" | "move_pending" | "component" | "move";
-    /** For `kind: "component"`: the palette's name for it
-     * (`zones.js:COMPONENT_TAGS`). `| undefined`, not just optional: a
-     * component tile's `payloadFor` (`drag.ts`) builds this from
-     * `el.dataset["key"] || el.dataset["name"]`, which is legitimately
-     * `undefined` when a tile's markup sets neither -- an explicit
-     * `component: undefined` on the built payload, which
-     * `exactOptionalPropertyTypes` treats differently from the key being
-     * absent altogether. */
-    component?: string | undefined;
-    /** For `kind: "move"`: the node being moved. */
-    token?: Token;
-    /** What a drag's own chip and status pill show while it is in the
-     * air (`zones.ts:labelOf`, or a tile's own `dataset.label`/text) --
-     * always set by `drag.ts:payloadFor`, the one builder that constructs
-     * a payload for an actual drag. Optional, not required: the other
-     * `DragPayload` construction sites (`console_model.ts`'s own
-     * `addNewField`/`addButton`, the click-to-add path with no chip to
-     * label) never set it. */
-    label?: string;
-    [key: string]: unknown;
+  kind: "existing_field" | "new_field" | "move_pending" | "component" | "move";
+  /** For `kind: "component"`: the palette's name for it
+   * (`zones.js:COMPONENT_TAGS`). `| undefined`, not just optional: a
+   * component tile's `payloadFor` (`drag.ts`) builds this from
+   * `el.dataset["key"] || el.dataset["name"]`, which is legitimately
+   * `undefined` when a tile's markup sets neither -- an explicit
+   * `component: undefined` on the built payload, which
+   * `exactOptionalPropertyTypes` treats differently from the key being
+   * absent altogether. */
+  component?: string | undefined;
+  /** For `kind: "move"`: the node being moved. */
+  token?: Token;
+  /** What a drag's own chip and status pill show while it is in the
+   * air (`zones.ts:labelOf`, or a tile's own `dataset.label`/text) --
+   * always set by `drag.ts:payloadFor`, the one builder that constructs
+   * a payload for an actual drag. Optional, not required: the other
+   * `DragPayload` construction sites (`console_model.ts`'s own
+   * `addNewField`/`addButton`, the click-to-add path with no chip to
+   * label) never set it. */
+  label?: string;
+  [key: string]: unknown;
 }
 
 /** A viewport or content-relative rectangle, as every geometry helper
  * here returns it -- never a live `DOMRect`, so it survives past the
  * layout that produced it. */
 export interface PlainRect {
-    top: number;
-    left: number;
-    width: number;
-    height: number;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
 }
 
 /** A viewport point, e.g. from a pointer event. */
 export interface Point {
-    x: number;
-    y: number;
+  x: number;
+  y: number;
 }
 
 /** A `PlainRect` with the two derived edges some callers want (`compat.rowRect`,
  * a plain `DOMRect` satisfies this structurally, so no conversion is needed
  * at that boundary). */
 export interface BoxRect extends PlainRect {
-    bottom: number;
-    right: number;
+  bottom: number;
+  right: number;
 }
 
 // -- the outline --------------------------------------------------------
 
 /** One row of the outline tree, as `outline_tree.ts:flatten` lays it out. */
 export interface OutlineRow {
-    token: Token;
-    node: StudioNode;
-    depth: number;
-    /** `pathKey`'s answer for this row -- survives a re-stamp, unlike
-     * `token`. */
-    key: string;
-    hasChildren: boolean;
-    expanded: boolean;
-    label: string;
-    /** A Font Awesome class string (`KIND_ICONS`/`TYPE_ICONS`). */
-    icon: string;
-    badges: {
-        hidden: HiddenReason;
-        pending: boolean;
-        required: boolean;
-    };
-    /** Whether the row cannot be dragged (`!node.movable`). */
-    fixed: boolean;
+  token: Token;
+  node: BuilderNode;
+  depth: number;
+  /** `pathKey`'s answer for this row -- survives a re-stamp, unlike
+   * `token`. */
+  key: string;
+  hasChildren: boolean;
+  expanded: boolean;
+  label: string;
+  /** A Font Awesome class string (`KIND_ICONS`/`TYPE_ICONS`). */
+  icon: string;
+  badges: {
+    hidden: HiddenReason;
+    pending: boolean;
+    required: boolean;
+  };
+  /** Whether the row cannot be dragged (`!node.movable`). */
+  fixed: boolean;
 }
 
 /** One row as `outline_zones.ts:outlineZones` is handed it: just enough
  * to lay bars out over, not a full `OutlineRow` (no `label`/`icon`/etc). */
 export interface OutlineZoneRow {
-    token: Token;
-    depth: number;
-    /** In viewport coordinates. */
-    rect: PlainRect;
-    /** Passed through by some callers; this module's own layout never
-     * reads it (a caller has already left a collapsed row's children out
-     * of `rows` by the time it gets here). */
-    collapsed?: boolean;
+  token: Token;
+  depth: number;
+  /** In viewport coordinates. */
+  rect: PlainRect;
+  /** Passed through by some callers; this module's own layout never
+   * reads it (a caller has already left a collapsed row's children out
+   * of `rows` by the time it gets here). */
+  collapsed?: boolean;
 }
 
 // -- the canvas payload ---------------------------------------------------
 //
-// `app_builder_view/models/studio_view_canvas.py`,
-// `app_builder_view/models/studio_view_editor.py`,
-// `app_builder_view/models/studio_view_new_field.py` -- the Views pane's
+// `app_builder_view/models/builder_view_canvas.py`,
+// `app_builder_view/models/builder_view_editor.py`,
+// `app_builder_view/models/builder_view_new_field.py` -- the Views pane's
 // own RPC surface (`console_model.ts`). Kept here rather than in
 // `wire.ts` since every one of these carries a `Token` or a `NodeTable`,
 // this module's own concern per the docstring above; `wire.ts` has the
 // rest of this RPC surface (`EditingContext`, `OperationResult`, ...),
 // which does not.
 
-/** One row of `canvas()`'s `history` (`studio_view_edit.py:_entry`). */
+/** One row of `canvas()`'s `history` (`builder_view_edit.py:_entry`). */
 export interface HistoryEntry {
-    id: number;
-    summary: string;
-    author: string;
+  id: number;
+  summary: string;
+  author: string;
 }
 
 /** `canvas()`'s `package` -- who a drop here would record into
- * (`studio_view_canvas.py:_canvas_package`), a narrower vocabulary than
- * `PackageEntryJSON` (`studio.workspace`'s own, unrelated `package`). */
+ * (`builder_view_canvas.py:_canvas_package`), a narrower vocabulary than
+ * `PackageEntryJSON` (`builder.workspace`'s own, unrelated `package`). */
 export interface CanvasPackageSummary {
-    id: number;
-    name: string;
-    writable: boolean;
+  id: number;
+  name: string;
+  writable: boolean;
 }
 
 /** A field staged on the draft this canvas shows, drawn as a ghost or not
- * (`studio_view_canvas.py:_splice_pending`, `_pending_anchored`'s own
+ * (`builder_view_canvas.py:_splice_pending`, `_pending_anchored`'s own
  * `{name, label, ttype, widget, anchor}` plus what splicing adds). Not
- * `StudioNode.pending` (`PendingFieldInfo`, the ghost *node's* own entry
+ * `BuilderNode.pending` (`PendingFieldInfo`, the ghost *node's* own entry
  * in the node table) -- this is the tray's flat list, one per staged
  * field whether or not it has a place to draw. */
 export interface CanvasPendingEntry {
-    name: string;
-    label: string;
-    ttype: string;
-    widget: string;
-    /** `p_<name>` -- the ghost's own token, whether or not it was placed. */
-    token: Token;
-    /** Whether a ghost was actually spliced into `nodes` under `token`. */
-    placed: boolean;
-    /** Whether the anchor resolved to a real neighbour, as opposed to the
-     * balanced fallback spot. */
-    resolved: boolean;
-    view_id: number | false;
+  name: string;
+  label: string;
+  ttype: string;
+  widget: string;
+  /** `p_<name>` -- the ghost's own token, whether or not it was placed. */
+  token: Token;
+  /** Whether a ghost was actually spliced into `nodes` under `token`. */
+  placed: boolean;
+  /** Whether the anchor resolved to a real neighbour, as opposed to the
+   * balanced fallback spot. */
+  resolved: boolean;
+  view_id: number | false;
 }
 
 /**
- * `canvas()`'s whole return (`studio_view_canvas.py:canvas`) -- everything
+ * `canvas()`'s whole return (`builder_view_canvas.py:canvas`) -- everything
  * the console needs to render one view and address it. `models`/`source`
  * are left `unknown`: nothing converted so far reads either (the field
- * descriptions of inline subviews, and "what the studio wrote" for a View
+ * descriptions of inline subviews, and "what the builder wrote" for a View
  * tab neither pane model owns); narrow when a real reader appears.
  */
 export interface CanvasPayload {
-    view: {
-        id: number;
-        name: string;
-        type: string;
-        model: string | false;
-        mode: string;
-        js_class: string | null;
-    };
-    arch: string | null;
-    models: unknown;
-    arch_version: string;
-    res_id: number | false;
-    root: Token | null;
-    nodes: NodeTable;
-    pending: CanvasPendingEntry[];
-    draft_id: number | false;
-    editable_as: "canvas" | "report" | "search_lists";
-    source: unknown;
-    history: { undo: HistoryEntry[]; redo: HistoryEntry[] };
-    package: CanvasPackageSummary | null;
-    record_count: number;
+  view: {
+    id: number;
+    name: string;
+    type: string;
+    model: string | false;
+    mode: string;
+    js_class: string | null;
+  };
+  arch: string | null;
+  models: unknown;
+  arch_version: string;
+  res_id: number | false;
+  root: Token | null;
+  nodes: NodeTable;
+  pending: CanvasPendingEntry[];
+  draft_id: number | false;
+  editable_as: "canvas" | "report" | "search_lists";
+  source: unknown;
+  history: {undo: HistoryEntry[]; redo: HistoryEntry[]};
+  package: CanvasPackageSummary | null;
+  record_count: number;
 }
 
 /** What a live-created field's `created` names, on a `drop_at` answer
- * (`studio_view_new_field.py:_drop_live_field`). */
+ * (`builder_view_new_field.py:_drop_live_field`). */
 export interface DropCreatedField {
-    name: string;
-    label: string;
-    live: true;
+  name: string;
+  label: string;
+  live: true;
 }
 
 /** What a staged field's `staged` names, on a `drop_at` answer
- * (`studio_view_new_field.py:_drop_field_definition`). */
+ * (`builder_view_new_field.py:_drop_field_definition`). */
 export interface DropStagedField {
-    name: string;
-    label: string;
-    draft_id: number;
+  name: string;
+  label: string;
+  draft_id: number;
 }
 
 /**
  * `drop_at`'s settled answer -- what a caller of `ConsoleModel`'s own
- * mutators actually receives (`studio_view_editor.py:drop_at`,
- * `studio_view_new_field.py:_drop_live_field`/`_drop_field_definition`,
+ * mutators actually receives (`builder_view_editor.py:drop_at`,
+ * `builder_view_new_field.py:_drop_live_field`/`_drop_field_definition`,
  * the three return sites that are not the stale one). `_mutate` peels the
  * stale answer (`{stale: true, canvas}`, no other key) off internally and
  * resolves to `undefined` instead of handing it on, so nothing that
@@ -478,13 +478,13 @@ export interface DropStagedField {
  * seeing it here would be typing ahead of what any reader actually gets.
  */
 export interface DropSuccessResult {
-    stale: false;
-    select: Token | null;
-    created: DropCreatedField | null;
-    staged: DropStagedField | null;
-    canvas: CanvasPayload;
-    history: CanvasPayload["history"];
-    draft: DraftPayload | null;
+  stale: false;
+  select: Token | null;
+  created: DropCreatedField | null;
+  staged: DropStagedField | null;
+  canvas: CanvasPayload;
+  history: CanvasPayload["history"];
+  draft: DraftPayload | null;
 }
 
 // -- errors ---------------------------------------------------------------
@@ -499,12 +499,12 @@ export interface DropSuccessResult {
  * what the console itself ever reads off one.
  */
 export interface OdooRpcError {
+  message?: string;
+  data?: {
+    name?: string;
     message?: string;
-    data?: {
-        name?: string;
-        message?: string;
-        context?: { confirm_required?: boolean };
-    };
+    context?: {confirm_required?: boolean};
+  };
 }
 
 // -- panes ------------------------------------------------------------------
@@ -554,13 +554,13 @@ export interface OdooRpcError {
 /** What a pane needs in hand to decide it can be shown
  * (`pane_registry.ts:paneAvailable`, `shell_model.ts:paneContext`). */
 export interface PaneContext {
-    packageId: number | false;
-    package: PackageEntryJSON | null;
-    modelName: string;
-    view: { view_id: number | false; view_type: string | false; res_id: number | false };
-    pane: string;
-    inventory: unknown;
-    pythonOwned: boolean;
+  packageId: number | false;
+  package: PackageEntryJSON | null;
+  modelName: string;
+  view: {view_id: number | false; view_type: string | false; res_id: number | false};
+  pane: string;
+  inventory: unknown;
+  pythonOwned: boolean;
 }
 
 /**
@@ -571,51 +571,51 @@ export interface PaneContext {
  * this tree names that category yet.
  */
 export interface PaneRegistration {
-    /** Built at module load by every real registration, so a lazy `_t`
-     * value (`Translated`, `l10n.ts`) and never a primitive `string`:
-     * translations are not loaded yet when a module body runs, and
-     * `String()` on a lazy value at that moment throws `translation error`
-     * out of `odoo.define`, aborting the rest of the asset bundle -- the
-     * whole backend, not just this pane. Stringify where it is read. */
-    label: Translated;
-    icon?: string;
-    scope?: "package" | "model" | "view";
-    isAvailable?: (ctx: PaneContext) => boolean;
-    /** `false` for a pane the top bar does not list (a flow). */
-    tab?: false;
-    /** A custom pane's own component (`ViewsPane`, `HomePane`,
-     * `ChangesPane`, ...) -- the first of `resolvePane`'s three
-     * discriminators. Only ever checked for truthiness and passed
-     * through untouched by `pane_registry.ts`; never instantiated or
-     * read for its `Props` there, so this names the class and nothing
-     * more. */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Component?: typeof Component<any, any>;
-    /** The custom pane's sidebar, or `null` for none (`home_pane.js`
-     * sets this explicitly; every other `Component`-bearing entry
-     * supplies a real one). */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sidebar?: typeof Component<any, any> | null;
-    /** `(shell) => new SomeModel(...)` at every real registration that
-     * has one (`record_pane.js`, `views_pane.js`, `home_pane.js`,
-     * `changes_pane.js`, `flow.js` -- never a literal `null` on this
-     * side); `resolvePane`'s own Component-branch default can still
-     * produce `null` on the *resolved* `PaneEntry` when an entry
-     * supplies none, which is why `null` is part of this shared type at
-     * all (see this section's own header comment). */
-    makeModel?: ((shell: unknown) => PaneModel) | null;
-    /** A record pane's surface name -- the second discriminator.
-     * `surfaceArgs`/`rowActions`/`empty`/`newFlow`, the rest of "a
-     * record pane"'s own vocabulary, are read by
-     * `record_pane_model.ts`/`record_pane.js`, never by
-     * `pane_registry.ts`, so they stay under the index signature below. */
-    surface?: string;
-    /** A flow pane's spec -- the third discriminator. Only ever checked
-     * for truthiness in `pane_registry.ts`; `console/flows/flow.ts`'s own
-     * `FlowModel` is the real reader of it -- modeled now that this
-     * conversion has happened, per this comment's own earlier promise. */
-    flow?: FlowSpec;
-    [key: string]: unknown;
+  /** Built at module load by every real registration, so a lazy `_t`
+   * value (`Translated`, `l10n.ts`) and never a primitive `string`:
+   * translations are not loaded yet when a module body runs, and
+   * `String()` on a lazy value at that moment throws `translation error`
+   * out of `odoo.define`, aborting the rest of the asset bundle -- the
+   * whole backend, not just this pane. Stringify where it is read. */
+  label: Translated;
+  icon?: string;
+  scope?: "package" | "model" | "view";
+  isAvailable?: (ctx: PaneContext) => boolean;
+  /** `false` for a pane the top bar does not list (a flow). */
+  tab?: false;
+  /** A custom pane's own component (`ViewsPane`, `HomePane`,
+   * `ChangesPane`, ...) -- the first of `resolvePane`'s three
+   * discriminators. Only ever checked for truthiness and passed
+   * through untouched by `pane_registry.ts`; never instantiated or
+   * read for its `Props` there, so this names the class and nothing
+   * more. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Component?: typeof Component<any, any>;
+  /** The custom pane's sidebar, or `null` for none (`home_pane.js`
+   * sets this explicitly; every other `Component`-bearing entry
+   * supplies a real one). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sidebar?: typeof Component<any, any> | null;
+  /** `(shell) => new SomeModel(...)` at every real registration that
+   * has one (`record_pane.js`, `views_pane.js`, `home_pane.js`,
+   * `changes_pane.js`, `flow.js` -- never a literal `null` on this
+   * side); `resolvePane`'s own Component-branch default can still
+   * produce `null` on the *resolved* `PaneEntry` when an entry
+   * supplies none, which is why `null` is part of this shared type at
+   * all (see this section's own header comment). */
+  makeModel?: ((shell: unknown) => PaneModel) | null;
+  /** A record pane's surface name -- the second discriminator.
+   * `surfaceArgs`/`rowActions`/`empty`/`newFlow`, the rest of "a
+   * record pane"'s own vocabulary, are read by
+   * `record_pane_model.ts`/`record_pane.js`, never by
+   * `pane_registry.ts`, so they stay under the index signature below. */
+  surface?: string;
+  /** A flow pane's spec -- the third discriminator. Only ever checked
+   * for truthiness in `pane_registry.ts`; `console/flows/flow.ts`'s own
+   * `FlowModel` is the real reader of it -- modeled now that this
+   * conversion has happened, per this comment's own earlier promise. */
+  flow?: FlowSpec;
+  [key: string]: unknown;
 }
 
 /**
@@ -629,7 +629,7 @@ export interface PaneRegistration {
  * to files this migration has not reached yet).
  */
 export interface PaneEntry extends PaneRegistration {
-    key: string;
+  key: string;
 }
 
 // -- flows ----------------------------------------------------------------
@@ -644,7 +644,7 @@ export interface PaneEntry extends PaneRegistration {
 // import the concrete shell class (`shell/shell_model.ts`) or `FlowModel`
 // itself, to stay a leaf the rest of `console/` can depend on without a
 // cycle. `flow.ts`'s own `FlowModel` narrows `shell` back to the real
-// `StudioShell` on its own fields; nothing here needs to.
+// `BuilderShell` on its own fields; nothing here needs to.
 
 /** One value a flow's steps read and write, keyed by name. A plain bag
  * rather than a per-flow union: `create_package_flow.ts` keys it
@@ -656,14 +656,14 @@ export type FlowValues = Record<string, unknown>;
 
 /** One step of a flow, as `flow.ts:FlowModel` reads it off `spec.steps`. */
 export interface FlowStep {
-    key: string;
-    /** A lazy `_t` value, built at module load -- see
-     * `PaneRegistration.label`. */
-    label: Translated;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Component: typeof Component<any, any>;
-    validate?(values: FlowValues, shell: unknown): string;
-    onEnter?(values: FlowValues, shell: unknown, flow: unknown): void | Promise<void>;
+  key: string;
+  /** A lazy `_t` value, built at module load -- see
+   * `PaneRegistration.label`. */
+  label: Translated;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Component: typeof Component<any, any>;
+  validate?(values: FlowValues, shell: unknown): string;
+  onEnter?(values: FlowValues, shell: unknown, flow: unknown): void | Promise<void>;
 }
 
 /**
@@ -674,18 +674,18 @@ export interface FlowStep {
  * comment said so); it is `FlowSpec` now.
  */
 export interface FlowSpec {
-    /** Set by every real registration, matching the registry's own key;
-     * read only by the template (`flow.xml`'s `t-att-data-flow`), never
-     * by `FlowModel` itself. */
-    key?: string;
-    /** Lazy `_t` values, like every flow's step labels. */
-    title: Translated;
-    doneLabel?: Translated;
-    initial?: FlowValues;
-    steps: FlowStep[];
-    onOpen?(shell: unknown, flow: unknown): void | Promise<void>;
-    onDone(shell: unknown, flow: unknown): Promise<unknown>;
-    onCancel?(shell: unknown, flow: unknown): void | Promise<void>;
+  /** Set by every real registration, matching the registry's own key;
+   * read only by the template (`flow.xml`'s `t-att-data-flow`), never
+   * by `FlowModel` itself. */
+  key?: string;
+  /** Lazy `_t` values, like every flow's step labels. */
+  title: Translated;
+  doneLabel?: Translated;
+  initial?: FlowValues;
+  steps: FlowStep[];
+  onOpen?(shell: unknown, flow: unknown): void | Promise<void>;
+  onDone(shell: unknown, flow: unknown): Promise<unknown>;
+  onCancel?(shell: unknown, flow: unknown): void | Promise<void>;
 }
 
 // -- field editor -----------------------------------------------------------
@@ -706,8 +706,8 @@ export interface FlowSpec {
  * `{ttype, string}` (`sidebar/add_tab.js`'s new-field tiles); given
  * instead of `field` when there is nothing staged yet to edit. */
 export interface FieldEditorInitial {
-    ttype?: string;
-    string?: string;
+  ttype?: string;
+  string?: string;
 }
 
 /**
@@ -715,41 +715,41 @@ export interface FieldEditorInitial {
  * implements alike.
  */
 export interface FieldEditorProps {
-    /** The staged definition to edit, or `null`/absent for a new field
-     * with nothing chosen yet -- every real opener passes a
-     * `DraftFieldJSON` (`console_model.ts:stagedField`), never a live
-     * `ir.model.fields` row directly. */
-    field?: DraftFieldJSON | null;
-    initial?: FieldEditorInitial;
-    /** `live` (an `ir.model.fields` row) or `staged` (a draft) -- absent
-     * only on the one call site (`view_tab.js`'s model-field editor) that
-     * never varies it, always effectively `"staged"`. */
-    mode?: "live" | "staged";
-    /** The picker's entries for this model, each saying whether it can be
-     * made live here and whether it needs this editor first
-     * (`console_model.ts`'s own `ConsoleModel.fieldTypes`, the one real
-     * builder every call site hands through unchanged). */
-    fieldTypes: FieldTypeEntry[];
-    existingNames: string[];
-    modelName: string;
-    inverseOptions: (comodel: string) => Promise<InverseOptions>;
-    resolveRelated: (path: string) => Promise<ResolveRelatedResult>;
-    /** The draft's spec shape: `string`, `ttype`, `comodel`, `inverse_name`,
-     * `selection`, `related`, ... -- every real handler forwards this
-     * straight into one of `ConsoleModel`'s own mutators (`addNewField`,
-     * `updateStaged`, `addModelField`), all three of which already take
-     * the same `Record<string, unknown>`. */
-    onSave: (values: Record<string, unknown>) => void;
-    /** Offered only for a staged field that can be removed; `null` or
-     * absent when there is nothing to delete (a brand new field). */
-    onDelete?: (() => void) | null;
-    close: () => void;
+  /** The staged definition to edit, or `null`/absent for a new field
+   * with nothing chosen yet -- every real opener passes a
+   * `DraftFieldJSON` (`console_model.ts:stagedField`), never a live
+   * `ir.model.fields` row directly. */
+  field?: DraftFieldJSON | null;
+  initial?: FieldEditorInitial;
+  /** `live` (an `ir.model.fields` row) or `staged` (a draft) -- absent
+   * only on the one call site (`view_tab.js`'s model-field editor) that
+   * never varies it, always effectively `"staged"`. */
+  mode?: "live" | "staged";
+  /** The picker's entries for this model, each saying whether it can be
+   * made live here and whether it needs this editor first
+   * (`console_model.ts`'s own `ConsoleModel.fieldTypes`, the one real
+   * builder every call site hands through unchanged). */
+  fieldTypes: FieldTypeEntry[];
+  existingNames: string[];
+  modelName: string;
+  inverseOptions: (comodel: string) => Promise<InverseOptions>;
+  resolveRelated: (path: string) => Promise<ResolveRelatedResult>;
+  /** The draft's spec shape: `string`, `ttype`, `comodel`, `inverse_name`,
+   * `selection`, `related`, ... -- every real handler forwards this
+   * straight into one of `ConsoleModel`'s own mutators (`addNewField`,
+   * `updateStaged`, `addModelField`), all three of which already take
+   * the same `Record<string, unknown>`. */
+  onSave: (values: Record<string, unknown>) => void;
+  /** Offered only for a staged field that can be removed; `null` or
+   * absent when there is nothing to delete (a brand new field). */
+  onDelete?: (() => void) | null;
+  close: () => void;
 }
 
 // -- services -----------------------------------------------------------
 //
 // Narrow facades for the two `env.services` every plain (Owl-free) model
-// class in `console/` is handed (`DraftModel`, `StudioShell`, and every
+// class in `console/` is handed (`DraftModel`, `BuilderShell`, and every
 // pane model besides). Each names only what these files actually call;
 // the real services (`@web/core/orm_service`, `@web/core/notifications/
 // notification_service`) take a context, extra kwargs, more notification
@@ -757,26 +757,26 @@ export interface FieldEditorProps {
 // `console/odoo.ts`) is where these belong once one exists.
 
 export interface OrmService {
-    call<T = unknown>(
-        model: string,
-        method: string,
-        args?: unknown[],
-        kwargs?: Record<string, unknown>,
-    ): Promise<T>;
-    /** `@web/core/orm_service.js:searchRead` -- `console_model.ts`'s own
-     * server-actions list is the one caller so far (the others go through
-     * `call`, whose method name and args vary too much to lift into its
-     * own facade member). */
-    searchRead<T = unknown>(
-        model: string,
-        domain: unknown[],
-        fields: string[],
-        kwargs?: Record<string, unknown>,
-    ): Promise<T[]>;
+  call<T = unknown>(
+    model: string,
+    method: string,
+    args?: unknown[],
+    kwargs?: Record<string, unknown>
+  ): Promise<T>;
+  /** `@web/core/orm_service.js:searchRead` -- `console_model.ts`'s own
+   * server-actions list is the one caller so far (the others go through
+   * `call`, whose method name and args vary too much to lift into its
+   * own facade member). */
+  searchRead<T = unknown>(
+    model: string,
+    domain: unknown[],
+    fields: string[],
+    kwargs?: Record<string, unknown>
+  ): Promise<T[]>;
 }
 
 export interface NotificationService {
-    add(message: string, options?: { type?: string; sticky?: boolean }): void;
+  add(message: string, options?: {type?: string; sticky?: boolean}): void;
 }
 
 /** As much of a field's definition as `console_model.ts:resolveRelated`/
@@ -787,36 +787,36 @@ export interface NotificationService {
  * `def.string`, `def.store`) rather than to a vendor type that does not
  * exist. */
 export interface FieldDefLite {
-    type: string;
-    relation?: string | false;
-    string?: string;
-    store?: boolean;
+  type: string;
+  relation?: string | false;
+  string?: string;
+  store?: boolean;
 }
 
 /** `@web/core/field_service`'s own two calls, narrowed the same way
  * (`loadPath`'s `modelsInfo`/`isInvalid`, `loadFields`'s dict by name). */
 export interface FieldService {
-    loadFields(
-        resModel: string,
-        options?: { fieldNames?: string[] | false; attributes?: string[] },
-    ): Promise<Record<string, FieldDefLite>>;
-    loadPath(
-        resModel: string,
-        path: string,
-    ): Promise<{
-        isInvalid?: string;
-        modelsInfo: { resModel: string | null; fieldDefs: Record<string, FieldDefLite> }[];
-    }>;
+  loadFields(
+    resModel: string,
+    options?: {fieldNames?: string[] | false; attributes?: string[]}
+  ): Promise<Record<string, FieldDefLite>>;
+  loadPath(
+    resModel: string,
+    path: string
+  ): Promise<{
+    isInvalid?: string;
+    modelsInfo: {resModel: string | null; fieldDefs: Record<string, FieldDefLite>}[];
+  }>;
 }
 
 /** What the status pill reads (`shell_model.ts`'s `NEUTRAL_ACTIVITY`
  * names every key and its neutral value). */
 export interface PaneActivity {
-    busy: boolean;
-    status: string;
-    error: string;
-    drag: unknown;
-    applying: boolean;
+  busy: boolean;
+  status: string;
+  error: string;
+  drag: unknown;
+  applying: boolean;
 }
 
 /**
@@ -829,13 +829,13 @@ export interface PaneActivity {
  * be tested and ported" rule.
  */
 export interface PaneModel {
-    /** Set by the shell itself after the first `open()`; read before
-     * deciding whether to `open()` or `reactivate()`. */
-    opened: boolean;
-    open(target: unknown): void | Promise<void>;
-    reactivate?(): void | Promise<void>;
-    activity?: PaneActivity;
-    history?: unknown;
-    afterApply?(): void | Promise<void>;
-    refresh?(): void | Promise<void>;
+  /** Set by the shell itself after the first `open()`; read before
+   * deciding whether to `open()` or `reactivate()`. */
+  opened: boolean;
+  open(target: unknown): void | Promise<void>;
+  reactivate?(): void | Promise<void>;
+  activity?: PaneActivity;
+  history?: unknown;
+  afterApply?(): void | Promise<void>;
+  refresh?(): void | Promise<void>;
 }

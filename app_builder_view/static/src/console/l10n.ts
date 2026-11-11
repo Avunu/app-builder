@@ -38,7 +38,7 @@
  * emitted `.js`.
  */
 
-import { _t as _tUntyped } from "@web/core/l10n/translation";
+import {_t as _tUntyped} from "@web/core/l10n/translation";
 
 /** What `_t` returns: see this module's own header. */
 export type Translated = string | String; // eslint-disable-line @typescript-eslint/no-wrapper-object-types

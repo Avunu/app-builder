@@ -13,23 +13,23 @@ from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
+from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
-from odoo.addons.app_builder_base.tools import typed
 
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
     from odoo.addons.base.models.ir_model import IrModelFields
 
 
 @tagged("post_install", "-at_install")
-class TestViewEditor(StudioCase):
+class TestViewEditor(BuilderCase):
     def setUp(self):
         super().setUp()
         self.package = self.make_package(name="x_view_pkg")
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         self.base_view = cast("View", typed.ref(self.env, "base.view_partner_form"))
 
     def test_edit_creates_an_inheriting_view_not_a_rewrite(self):
@@ -196,7 +196,7 @@ class TestViewEditor(StudioCase):
             )
 
     def test_edit_on_a_custom_model_view(self):
-        """End to end on a model the studio itself owns.
+        """End to end on a model the builder itself owns.
 
         Builds the model directly rather than through the wizard: the wizard
         now writes Python and reloads the package, which commits -- so it
@@ -217,7 +217,7 @@ class TestViewEditor(StudioCase):
             ],
         }
         model = typed.model(self.env, IrModel).create(model_vals)  # pyright: ignore[reportArgumentType]
-        self.package.studio_capture(
+        self.package.builder_capture(
             [
                 model,
                 cast("IrModelFields", model.field_id).filtered(
@@ -235,7 +235,7 @@ class TestViewEditor(StudioCase):
             ),
         }
         view = self.env["ir.ui.view"].create(view_vals)  # pyright: ignore[reportArgumentType]
-        self.package.studio_capture(view)
+        self.package.builder_capture(view)
         field_vals: dict[str, object] = {
             "name": "x_note",
             "field_description": "Note",

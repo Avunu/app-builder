@@ -352,7 +352,7 @@ class TestCodegenFixedPoint(BaseCase):
     def test_anything_outside_the_block_survives_a_rewrite(self):
         """The whole point of the marker convention.
 
-        The studio never reads outside the block, so none of this needs to be
+        The builder never reads outside the block, so none of this needs to be
         modelled, preserved, or even understood -- it simply is not touched.
         """
         spec = spec_with(FieldSpec(name="f_char", ttype="char", string="Char"))

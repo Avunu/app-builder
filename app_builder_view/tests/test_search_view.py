@@ -23,11 +23,11 @@ from odoo import Command
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_ui_view import View
 
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_editor import BuilderViewEditor
 
 SEARCH_ARCH = """
 <search string="Demo">
@@ -38,10 +38,10 @@ SEARCH_ARCH = """
 
 
 @tagged("post_install", "-at_install")
-class TestSearchView(StudioCase):
+class TestSearchView(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         self.package = self.make_package(name="x_search_pkg")
         model_vals: dict[str, object] = {
             "name": "Search Demo",
@@ -69,13 +69,13 @@ class TestSearchView(StudioCase):
         }
         self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
         view_vals: dict[str, object] = {
-            "name": "studio.search.test",
+            "name": "builder.search.test",
             "model": "x_search_demo",
             "type": "search",
             "arch": SEARCH_ARCH,
         }
         self.view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
 
     def _arch(self):
         self.view.invalidate_recordset()
@@ -220,7 +220,7 @@ class TestSearchView(StudioCase):
         """It has no rendering of its own, so it is shown filling a real list's
         control panel -- the menus on screen are the ones being edited."""
         host_vals: dict[str, object] = {
-            "name": "studio.search.host",
+            "name": "builder.search.host",
             "model": "x_search_demo",
             "type": "list",
             "arch": '<list><field name="x_name"/></list>',
@@ -242,7 +242,7 @@ class TestSearchView(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestBuiltFilters(StudioCase):
+class TestBuiltFilters(BuilderCase):
     """A filter with a value, or more than one term, from the condition builder.
 
     The four one-click conditions stay: naming "is set" takes no thought. What
@@ -255,7 +255,7 @@ class TestBuiltFilters(StudioCase):
         return View_.browse(cast("int", View_.default_view("res.partner", "search")))
 
     def _add(self, package, **values):
-        return typed.model(self.env, StudioViewEditor).add_search_element(
+        return typed.model(self.env, BuilderViewEditor).add_search_element(
             cast("int", self._search_view().id),
             cast("int", package.id),
             "filter",
@@ -273,7 +273,7 @@ class TestBuiltFilters(StudioCase):
         patch = typed.model(self.env, View).search(
             [
                 ("inherit_id", "=", self._search_view().id),
-                ("studio_package_id", "=", package.id),
+                ("builder_package_id", "=", package.id),
             ]
         )
         self.assertIn("is_company", cast("str", patch.arch))
@@ -294,7 +294,7 @@ class TestBuiltFilters(StudioCase):
         patch = typed.model(self.env, View).search(
             [
                 ("inherit_id", "=", self._search_view().id),
-                ("studio_package_id", "=", package.id),
+                ("builder_package_id", "=", package.id),
             ]
         )
         self.assertIn("&amp;", cast("str", patch.arch))
@@ -338,7 +338,7 @@ class TestBuiltFilters(StudioCase):
             self.env["ir.ui.view"].search_count(
                 [
                     ("inherit_id", "=", self._search_view().id),
-                    ("studio_package_id", "=", package.id),
+                    ("builder_package_id", "=", package.id),
                 ]
             )
         )

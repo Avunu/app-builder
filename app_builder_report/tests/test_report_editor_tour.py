@@ -14,23 +14,23 @@ from typing import TYPE_CHECKING, cast
 from odoo import Command
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.models.builder_package import BuilderPackage
+from odoo.addons.app_builder_base.tests.common import BuilderHttpCase
+from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base.models.ir_actions_report import IrActionsReport
 from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.models.studio_package import StudioPackage
-from odoo.addons.app_builder_base.tests.common import StudioHttpCase
-from odoo.addons.app_builder_base.tools import typed
 
-from ..models.studio_report import StudioReport
+from ..models.builder_report import BuilderReport
 
 if TYPE_CHECKING:
-    from odoo.addons.base.models.res_users import Groups, Users
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import (
-        StudioOwnedMixin,
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
     )
+    from odoo.addons.base.models.res_users import Groups, Users
 
 
 @tagged("post_install", "-at_install")
-class TestReportEditorTour(StudioHttpCase):
+class TestReportEditorTour(BuilderHttpCase):
     def test_a_report_can_be_edited_by_clicking_it(self):
         # `@api.model_create_multi`'s own stub gap (TYPING.md's "Known
         # traps"): every single-dict `.create(vals)` below needs its own
@@ -40,10 +40,10 @@ class TestReportEditorTour(StudioHttpCase):
         package_vals: dict[str, object] = {
             "name": "x_tour_report_pkg",
             "display_name_": "Tour Reports",
-            "root_path": tempfile.mkdtemp(prefix="studio-tour-report-"),
+            "root_path": tempfile.mkdtemp(prefix="builder-tour-report-"),
             "auto_commit": "off",
         }
-        package = typed.model(self.env, StudioPackage).create(package_vals)  # pyright: ignore[reportArgumentType]
+        package = typed.model(self.env, BuilderPackage).create(package_vals)  # pyright: ignore[reportArgumentType]
         module_vals: dict[str, object] = {
             "name": "x_tour_report_pkg",
             "state": "installed",
@@ -56,12 +56,12 @@ class TestReportEditorTour(StudioHttpCase):
         # of `|=` since the write half (`Field.__set__`) is unannotated and
         # needs none.
         admin.groups_id = cast("Groups", admin.groups_id) | typed.ref(
-            self.env, "app_builder_base.group_studio_manager"
+            self.env, "app_builder_base.group_builder_manager"
         )
 
         # A manual model, so the report has a field of its own to print and a
         # record to draw. res.partner would work too, but its fields are core's
-        # and the point here is a report over something the studio made.
+        # and the point here is a report over something the builder made.
         model_vals: dict[str, object] = {
             "name": "Tour Job",
             "model": "x_tour_job",
@@ -95,7 +95,7 @@ class TestReportEditorTour(StudioHttpCase):
         self.env["ir.model.access"].create(access_vals)  # pyright: ignore[reportArgumentType]
         # The report binds to its model by xmlid, so the model has to be the
         # package's before a report over it can be written to source.
-        package.studio_capture(model)
+        package.builder_capture(model)
         job_vals: dict[str, object] = {"x_name": "Bridge survey"}
         self.env["x_tour_job"].create(job_vals)  # pyright: ignore[reportArgumentType]
 
@@ -118,14 +118,14 @@ class TestReportEditorTour(StudioHttpCase):
             [("model", "=", "x_tour_job"), ("name", "=", "Job Sheet")]
         )
         self.assertEqual(len(report), 1)
-        # `studio_package_id` is added to `ir.actions.report` by
-        # `studio.owned.mixin` (registry-level `_inherit`, never a real
+        # `builder_package_id` is added to `ir.actions.report` by
+        # `builder.owned.mixin` (registry-level `_inherit`, never a real
         # Python base class of `IrActionsReport`) -- same cast idiom
-        # `studio_report.py`'s own `_row()` uses for the identical field.
-        self.assertEqual(cast("StudioOwnedMixin", report).studio_package_id, package)
+        # `builder_report.py`'s own `_row()` uses for the identical field.
+        self.assertEqual(cast("BuilderOwnedMixin", report).builder_package_id, package)
         made = {
             "view_id": cast(
-                "int", typed.model(self.env, StudioReport)._template_of(report).id
+                "int", typed.model(self.env, BuilderReport)._template_of(report).id
             )
         }
 

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, cast
 
 from odoo import api, models
 
-from odoo.addons.app_builder_base.models.studio_serializer import SEQ_RULE
+from odoo.addons.app_builder_base.models.builder_serializer import SEQ_RULE
 
 if TYPE_CHECKING:
     # Only for annotations/casts below; with `from __future__ import
@@ -32,27 +32,27 @@ if TYPE_CHECKING:
     # (cross-addon, not this addon's own files).
     from odoo.models import BaseModel
 
+    from odoo.addons.app_builder_base.models.builder_serializer import (
+        BuilderSerializer,
+    )
     from odoo.addons.base.models.ir_model import IrModel
     from odoo.addons.base_tier_validation.models.tier_definition import (
         TierDefinition,
     )
-    from odoo.addons.app_builder_base.models.studio_serializer import (
-        StudioSerializer,
-    )
 
 
 class TierDefinitionSerializer(models.AbstractModel):
-    _name = "studio.serializer.tier.definition"
-    _inherit = "studio.serializer"
-    _description = "Studio Serializer for tier.definition"
+    _name = "builder.serializer.tier.definition"
+    _inherit = "builder.serializer"
+    _description = "Builder Serializer for tier.definition"
 
-    _studio_model = "tier.definition"
+    _builder_model = "tier.definition"
     # Beside record rules: both answer "who may do what", both reference groups,
     # and both must load after the models they name.
-    _studio_sequence = SEQ_RULE
-    _studio_dir = "security"
-    _studio_suffix = "_approval"
-    _studio_fields = (
+    _builder_sequence = SEQ_RULE
+    _builder_dir = "security"
+    _builder_suffix = "_approval"
+    _builder_fields = (
         "name",
         "model_id",
         "sequence",
@@ -75,7 +75,7 @@ class TierDefinitionSerializer(models.AbstractModel):
         "company_id",
         "active",
     )
-    _studio_ignored = (
+    _builder_ignored = (
         # A stored related of model_id.model, readonly and with no inverse. It
         # is the column the engine actually *matches* on, which makes it look
         # important -- but writing it from a data file is impossible and
@@ -93,7 +93,7 @@ class TierDefinitionSerializer(models.AbstractModel):
         #
         # `model_id` is a plain-string-comodel Many2one -- same
         # `_Relational.__get__` gap as every other read of one in this
-        # migration (`studio_package.py`'s own `IrModelFields.model_id`).
+        # migration (`builder_package.py`'s own `IrModelFields.model_id`).
         definition = cast("TierDefinition", record)
         model = cast("IrModel", definition.model_id)  # pyright: ignore[reportUnknownMemberType]
         return model.model or "misc"
@@ -103,7 +103,7 @@ class TierDefinitionSerializer(models.AbstractModel):
         # By sequence first: the order is the approval order, and a reader of
         # the file should see the steps in the order they happen.
         #
-        # NB: the base class declares (and `studio_package.py`'s own
+        # NB: the base class declares (and `builder_package.py`'s own
         # `_render_files` bucket types already pin) a 2-tuple, `(sequence,
         # xmlid)`. This override actually returns a 3-tuple -- pre-existing
         # in the untyped original, not introduced by this migration -- so
@@ -112,7 +112,7 @@ class TierDefinitionSerializer(models.AbstractModel):
         # is flagged (not silently fixed, per this migration's own rule) in
         # this file's own conversion notes rather than papered over.
         definition = cast("TierDefinition", record)
-        return (self._studio_sequence, definition.sequence, xmlid)  # pyright: ignore[reportReturnType]
+        return (self._builder_sequence, definition.sequence, xmlid)  # pyright: ignore[reportReturnType]
 
     @api.model
     def _should_skip(self, record: BaseModel, fname: str) -> bool:
@@ -122,10 +122,10 @@ class TierDefinitionSerializer(models.AbstractModel):
         # `super()` here resolves, to pyright, only as far as this class's
         # own *declared* Python base (`models.AbstractModel`) -- the same
         # `_inherit`-mixin-invisible-to-pyright gap `typed.security()` exists
-        # for on `self`, one level up: `_inherit = "studio.serializer"` is a
+        # for on `self`, one level up: `_inherit = "builder.serializer"` is a
         # registry-level composition, not a real Python base class, so
-        # `StudioSerializer._should_skip` is nowhere in the MRO pyright can
+        # `BuilderSerializer._should_skip` is nowhere in the MRO pyright can
         # see. At runtime the registry *does* build the final class with
-        # `StudioSerializer` in its bases, so `super()` genuinely reaches it
+        # `BuilderSerializer` in its bases, so `super()` genuinely reaches it
         # -- this cast only tells pyright what is already true.
-        return cast("StudioSerializer", super())._should_skip(record, fname)
+        return cast("BuilderSerializer", super())._should_skip(record, fname)

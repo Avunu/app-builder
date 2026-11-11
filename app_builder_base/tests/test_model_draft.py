@@ -21,40 +21,40 @@ from odoo.tests import tagged
 
 from odoo.addons.base.models.ir_model import IrModel
 
-from ..models.studio_model_draft import StudioModelDraft
+from ..models.builder_model_draft import BuilderModelDraft
 from ..tools import modelspec, typed
 from ..tools import placement as placement_tool
-from .common import StudioCase, raises
+from .common import BuilderCase, raises
 
 if TYPE_CHECKING:
     # Only for the casts below; with `from __future__ import annotations`
     # nothing here needs these at runtime, the same bargain every other
     # converted file's own `TYPE_CHECKING` block makes. `IrModel` and
-    # `StudioModelDraft` above are real, runtime imports instead -- both
+    # `BuilderModelDraft` above are real, runtime imports instead -- both
     # are passed to `typed.model()`, not just named in a cast string.
     from odoo.sql_db import Cursor
 
     from odoo.addons.base.models.ir_model import IrModelFields
 
-    from ..models.studio_package import StudioPackage
-    from ..models.studio_package_model import StudioPackageModel
+    from ..models.builder_package import BuilderPackage
+    from ..models.builder_package_model import BuilderPackageModel
     from ..tools.modelspec import FieldSpec
 
 
 @tagged("post_install", "-at_install")
-class TestModelDraft(StudioCase):
+class TestModelDraft(BuilderCase):
     def setUp(self):
         super().setUp()
         self.package = self.make_package(name="x_draft_pkg")
         self.build_demo_content(self.package)
         self.package.action_write_files()
-        self.package.action_adopt(["x_studio_project"])
+        self.package.action_adopt(["x_builder_project"])
         self.package_model = cast(
-            "StudioPackageModel", self.package.model_ids
-        ).filtered(lambda m: m.model == "x_studio_project")
+            "BuilderPackageModel", self.package.model_ids
+        ).filtered(lambda m: m.model == "x_builder_project")
 
     def _draft(self):
-        return typed.model(self.env, StudioModelDraft).open_for(self.package_model)
+        return typed.model(self.env, BuilderModelDraft).open_for(self.package_model)
 
     # -- opening ----------------------------------------------------------
 
@@ -87,20 +87,20 @@ class TestModelDraft(StudioCase):
 
         with raises(self, UserError) as caught:
             self._draft()
-        self.assertIn("x_studio_project", str(caught.exception))
+        self.assertIn("x_builder_project", str(caught.exception))
 
     # -- staging ----------------------------------------------------------
 
     def test_staging_an_edit_does_not_touch_the_registry(self):
         """The whole reason the buffer exists: no setup_models per keystroke."""
         draft = self._draft()
-        before = set(self.env["x_studio_project"]._fields)
+        before = set(self.env["x_builder_project"]._fields)
 
         draft.add_field({"name": "x_colour", "ttype": "char", "string": "Colour"})
 
         self.assertTrue(draft.dirty)
         self.assertEqual(
-            set(self.env["x_studio_project"]._fields),
+            set(self.env["x_builder_project"]._fields),
             before,
             "nothing may reach the registry until Apply",
         )
@@ -119,7 +119,7 @@ class TestModelDraft(StudioCase):
         self.assertEqual(draft._spec().field_names, before)
         # `x_budget` is one of `build_demo_content`'s own fixed fields, so
         # `.field()` is never `None` here -- same reasoning as
-        # `studio_model_draft.py`'s own `spec_field = cast("FieldSpec",
+        # `builder_model_draft.py`'s own `spec_field = cast("FieldSpec",
         # after.field(name))`.
         self.assertEqual(
             cast("FieldSpec", draft._spec().field("x_budget")).string, "Renamed"
@@ -279,10 +279,10 @@ class TestModelDraft(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestRelationships(StudioCase):
+class TestRelationships(BuilderCase):
     """A related list needs a field on the other model pointing back.
 
-    Making the user go and build that first is the gesture every studio gets
+    Making the user go and build that first is the gesture every builder gets
     wrong. The interesting part is not the UI but the atomicity: both classes
     have to be written before the single reload, because a one2many whose
     inverse does not exist yet fails registry setup -- and the setup it fails
@@ -295,20 +295,20 @@ class TestRelationships(StudioCase):
         self.build_demo_content(self.package)
         self._make_sibling()
         self.package.action_write_files()
-        self.package.action_adopt(["x_studio_project", "x_studio_task"])
-        self.project = cast("StudioPackageModel", self.package.model_ids).filtered(
-            lambda m: m.model == "x_studio_project"
+        self.package.action_adopt(["x_builder_project", "x_builder_task"])
+        self.project = cast("BuilderPackageModel", self.package.model_ids).filtered(
+            lambda m: m.model == "x_builder_project"
         )
-        self.task = cast("StudioPackageModel", self.package.model_ids).filtered(
-            lambda m: m.model == "x_studio_task"
+        self.task = cast("BuilderPackageModel", self.package.model_ids).filtered(
+            lambda m: m.model == "x_builder_task"
         )
 
     def _make_sibling(self):
         # `@api.model_create_multi`'s own stub gap: named local first, same
         # idiom as `common.py`'s own `build_demo_content`.
         vals: dict[str, object] = {
-            "name": "Studio Demo Task",
-            "model": "x_studio_task",
+            "name": "Builder Demo Task",
+            "model": "x_builder_task",
             "field_id": [
                 Command.create(
                     {
@@ -320,7 +320,7 @@ class TestRelationships(StudioCase):
             ],
         }
         model = typed.model(self.env, IrModel).create(vals)  # pyright: ignore[reportArgumentType]
-        self.package.studio_capture(
+        self.package.builder_capture(
             [
                 model,
                 cast("IrModelFields", model.field_id).filtered(
@@ -330,14 +330,14 @@ class TestRelationships(StudioCase):
         )
 
     def _draft(self):
-        return typed.model(self.env, StudioModelDraft).open_for(self.project)
+        return typed.model(self.env, BuilderModelDraft).open_for(self.project)
 
     # -- what the picker offers -------------------------------------------
 
     def test_a_sibling_can_have_the_link_made_for_it(self):
-        options = self._draft().inverse_options("x_studio_task")
+        options = self._draft().inverse_options("x_builder_task")
         self.assertTrue(options["can_create"])
-        self.assertEqual(options["suggested"], "x_studio_project_id")
+        self.assertEqual(options["suggested"], "x_builder_project_id")
         self.assertFalse(options["reason"])
 
     def test_a_model_we_do_not_own_says_why_not(self):
@@ -362,18 +362,18 @@ class TestRelationships(StudioCase):
             {
                 "name": "x_owner_id",
                 "ttype": "many2one",
-                "comodel": "x_studio_project",
+                "comodel": "x_builder_project",
                 "string": "Owner",
             }
         )
-        cast("StudioPackage", self.task.package_id)._write_files(
+        cast("BuilderPackage", self.task.package_id)._write_files(
             {
                 cast("str", self.task.python_path): companion._rewritten_source(
                     companion._spec()
                 )
             }
         )
-        options = draft.inverse_options("x_studio_task")
+        options = draft.inverse_options("x_builder_task")
         self.assertEqual(
             [candidate["name"] for candidate in options["candidates"]], ["x_owner_id"]
         )
@@ -389,19 +389,19 @@ class TestRelationships(StudioCase):
             {
                 "name": "task_ids",
                 "ttype": "one2many",
-                "comodel": "x_studio_task",
-                "inverse_name": "x_studio_project_id",
+                "comodel": "x_builder_task",
+                "inverse_name": "x_builder_project_id",
                 "string": "Tasks",
                 "create_inverse": True,
             }
         )
-        companion = cast("StudioModelDraft", draft.companion_ids)
+        companion = cast("BuilderModelDraft", draft.companion_ids)
         self.assertEqual(len(companion), 1)
-        self.assertEqual(companion.model, "x_studio_task")
+        self.assertEqual(companion.model, "x_builder_task")
         # Just staged above as the one2many's inverse, so never `None`.
-        inverse = cast("FieldSpec", companion._spec().field("x_studio_project_id"))
+        inverse = cast("FieldSpec", companion._spec().field("x_builder_project_id"))
         self.assertEqual(inverse.ttype, "many2one")
-        self.assertEqual(inverse.comodel, "x_studio_project")
+        self.assertEqual(inverse.comodel, "x_builder_project")
         self.assertEqual(
             inverse.ondelete,
             "cascade",
@@ -414,8 +414,8 @@ class TestRelationships(StudioCase):
             {
                 "name": "task_ids",
                 "ttype": "one2many",
-                "comodel": "x_studio_task",
-                "inverse_name": "x_studio_project_id",
+                "comodel": "x_builder_task",
+                "inverse_name": "x_builder_project_id",
                 "string": "Tasks",
                 "create_inverse": True,
             }
@@ -433,8 +433,8 @@ class TestRelationships(StudioCase):
             {
                 "name": "task_ids",
                 "ttype": "one2many",
-                "comodel": "x_studio_task",
-                "inverse_name": "x_studio_project_id",
+                "comodel": "x_builder_task",
+                "inverse_name": "x_builder_project_id",
                 "string": "Tasks",
                 "create_inverse": True,
             }
@@ -446,8 +446,8 @@ class TestRelationships(StudioCase):
         # is set on this entry -- `.get()` reads it the same way
         # `pending_changes()`'s own splice (`out.append({**change, "model":
         # ...})`) sets it, without `reportTypedDictNotRequiredAccess`.
-        self.assertEqual(companion[0].get("model"), "x_studio_task")
-        self.assertEqual(companion[0]["name"], "x_studio_project_id")
+        self.assertEqual(companion[0].get("model"), "x_builder_task")
+        self.assertEqual(companion[0]["name"], "x_builder_project_id")
 
     def test_the_diff_shows_both_files(self):
         draft = self._draft()
@@ -455,16 +455,16 @@ class TestRelationships(StudioCase):
             {
                 "name": "task_ids",
                 "ttype": "one2many",
-                "comodel": "x_studio_task",
-                "inverse_name": "x_studio_project_id",
+                "comodel": "x_builder_task",
+                "inverse_name": "x_builder_project_id",
                 "string": "Tasks",
                 "create_inverse": True,
             }
         )
         diff = draft.preview_diff()
-        self.assertIn("x_studio_project (after)", diff)
-        self.assertIn("x_studio_task (after)", diff)
-        self.assertIn("x_studio_project_id", diff)
+        self.assertIn("x_builder_project (after)", diff)
+        self.assertIn("x_builder_task (after)", diff)
+        self.assertIn("x_builder_project_id", diff)
 
     def test_discarding_drops_the_companion(self):
         draft = self._draft()
@@ -472,8 +472,8 @@ class TestRelationships(StudioCase):
             {
                 "name": "task_ids",
                 "ttype": "one2many",
-                "comodel": "x_studio_task",
-                "inverse_name": "x_studio_project_id",
+                "comodel": "x_builder_task",
+                "inverse_name": "x_builder_project_id",
                 "string": "Tasks",
                 "create_inverse": True,
             }
@@ -490,20 +490,20 @@ class TestRelationships(StudioCase):
         would write every companion's file from that old spec, taking with
         it anything applied to the other model since. Reuse has to drop them
         the way discard does."""
-        Draft = typed.model(self.env, StudioModelDraft)
-        draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
+        Draft = typed.model(self.env, BuilderModelDraft)
+        draft = Draft.browse(Draft.open_for_model("x_builder_project")["id"])
         draft.add_field(
             {
                 "name": "task_ids",
                 "ttype": "one2many",
-                "comodel": "x_studio_task",
-                "inverse_name": "x_studio_project_id",
+                "comodel": "x_builder_task",
+                "inverse_name": "x_builder_project_id",
                 "string": "Tasks",
                 "create_inverse": True,
             }
         )
-        companion = cast("StudioModelDraft", draft.companion_ids)
-        self.assertEqual(companion.model, "x_studio_task", "sanity: staged")
+        companion = cast("BuilderModelDraft", draft.companion_ids)
+        self.assertEqual(companion.model, "x_builder_task", "sanity: staged")
         # Rebased the way action_apply does at the end -- without calling it,
         # since it reloads the registry.
         for staged in draft | companion:
@@ -515,18 +515,18 @@ class TestRelationships(StudioCase):
         # with it: this is what the stale companion would have overwritten.
         other = Draft.open_for(self.task)
         other.add_field({"name": "x_colour", "ttype": "char", "string": "Colour"})
-        cast("StudioPackage", self.task.package_id)._write_files(
+        cast("BuilderPackage", self.task.package_id)._write_files(
             {cast("str", self.task.python_path): other._rewritten_source(other._spec())}
         )
         other.base_spec_json = other.spec_json
 
-        again = Draft.open_for_model("x_studio_project")
+        again = Draft.open_for_model("x_builder_project")
         self.assertEqual(again["id"], draft.id, "sanity: reused")
         self.assertFalse(draft.companion_ids)
         self.assertFalse(companion.exists())
         self.assertFalse(
             [entry for entry in again["pending"] if entry.get("model")],
-            "nothing about x_studio_task may still be pending",
+            "nothing about x_builder_task may still be pending",
         )
         self.assertEqual(draft.placement_json, "{}")
         self.assertTrue(
@@ -542,7 +542,7 @@ class TestRelationships(StudioCase):
                     "name": "partner_ids",
                     "ttype": "one2many",
                     "comodel": "res.partner",
-                    "inverse_name": "x_studio_project_id",
+                    "inverse_name": "x_builder_project_id",
                     "string": "Partners",
                     "create_inverse": True,
                 }
@@ -559,13 +559,13 @@ class TestRelationships(StudioCase):
         errors = draft.validate()
         self.assertTrue(errors)
         self.assertTrue(
-            any(error.startswith("x_studio_task: ") for error in errors),
+            any(error.startswith("x_builder_task: ") for error in errors),
             "an error has to say which model it is about: %s" % errors,
         )
 
 
 @tagged("post_install", "-at_install")
-class TestConsoleHooks(StudioCase):
+class TestConsoleHooks(BuilderCase):
     """What the drag-and-drop console leans on the draft for.
 
     The console drops a field at a spot in a view before the column exists,
@@ -581,13 +581,13 @@ class TestConsoleHooks(StudioCase):
         self.package = self.make_package(name="x_hook_pkg")
         self.build_demo_content(self.package)
         self.package.action_write_files()
-        self.package.action_adopt(["x_studio_project"])
+        self.package.action_adopt(["x_builder_project"])
         self.package_model = cast(
-            "StudioPackageModel", self.package.model_ids
-        ).filtered(lambda m: m.model == "x_studio_project")
+            "BuilderPackageModel", self.package.model_ids
+        ).filtered(lambda m: m.model == "x_builder_project")
 
     def _draft(self):
-        return typed.model(self.env, StudioModelDraft).open_for(self.package_model)
+        return typed.model(self.env, BuilderModelDraft).open_for(self.package_model)
 
     def _age(self, draft, days):
         """Make a draft look idle for ``days``, the way the vacuum sees it."""
@@ -595,10 +595,10 @@ class TestConsoleHooks(StudioCase):
         # `Environment.cr` is declared `BaseCursor`, which has no
         # `.execute()` of its own -- only the real `Cursor` subclass every
         # live request actually gets (TYPING.md's own "Known traps"), same
-        # cast `studio_package.py`'s own `cr = cast("Cursor", self.env.cr)`
+        # cast `builder_package.py`'s own `cr = cast("Cursor", self.env.cr)`
         # already uses.
         cast("Cursor", self.env.cr).execute(
-            "UPDATE studio_model_draft SET write_date = "
+            "UPDATE builder_model_draft SET write_date = "
             "(now() AT TIME ZONE 'UTC') - interval '%s days' WHERE id = %s",
             (days, draft.id),
         )
@@ -618,7 +618,7 @@ class TestConsoleHooks(StudioCase):
     def test_a_draft_survives_a_working_week_of_idleness(self):
         """The server default is an hour, and the daily vacuum would take a
         draft left open over lunch -- with the pending drops in it."""
-        Draft = typed.model(self.env, StudioModelDraft)
+        Draft = typed.model(self.env, BuilderModelDraft)
         self.assertEqual(Draft._transient_max_hours, 168)
         kept, gone = self._draft(), self._draft()
         self._age(kept, 2)
@@ -630,14 +630,14 @@ class TestConsoleHooks(StudioCase):
     # -- one draft per user and model ------------------------------------
 
     def test_open_for_model_reuses_this_users_draft(self):
-        Draft = typed.model(self.env, StudioModelDraft)
-        first = Draft.open_for_model("x_studio_project")
-        second = Draft.open_for_model("x_studio_project")
+        Draft = typed.model(self.env, BuilderModelDraft)
+        first = Draft.open_for_model("x_builder_project")
+        second = Draft.open_for_model("x_builder_project")
         self.assertEqual(first["id"], second["id"])
-        self.assertEqual(first["model"], "x_studio_project")
+        self.assertEqual(first["model"], "x_builder_project")
         other = Draft.with_user(self.env.ref("base.user_admin"))
         self.assertNotEqual(
-            other.open_for_model("x_studio_project")["id"],
+            other.open_for_model("x_builder_project")["id"],
             first["id"],
             "another builder's tray is their own",
         )
@@ -645,18 +645,18 @@ class TestConsoleHooks(StudioCase):
     def test_open_for_model_keeps_pending_edits(self):
         """Finding the draft again is the whole point: the drop staged a
         minute ago has to still be in it."""
-        Draft = typed.model(self.env, StudioModelDraft)
-        draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
+        Draft = typed.model(self.env, BuilderModelDraft)
+        draft = Draft.browse(Draft.open_for_model("x_builder_project")["id"])
         draft.add_field({"name": "x_colour", "ttype": "char", "string": "Colour"})
-        again = Draft.open_for_model("x_studio_project")
+        again = Draft.open_for_model("x_builder_project")
         self.assertEqual(again["id"], draft.id)
         self.assertIn("x_colour", [f["name"] for f in again["fields"]])
 
     def test_open_for_model_refreshes_a_clean_draft_from_disk(self):
         """A clean draft has nothing to lose and a baseline that may predate
         an Apply; staging on the stale one would write the old block back."""
-        Draft = typed.model(self.env, StudioModelDraft)
-        draft = Draft.browse(Draft.open_for_model("x_studio_project")["id"])
+        Draft = typed.model(self.env, BuilderModelDraft)
+        draft = Draft.browse(Draft.open_for_model("x_builder_project")["id"])
         stale = json.loads(cast("str", draft.base_spec_json))
         stale["description"] = "Stale"
         draft.write(
@@ -665,7 +665,7 @@ class TestConsoleHooks(StudioCase):
                 "spec_json": json.dumps(stale, sort_keys=True),
             }
         )
-        again = Draft.open_for_model("x_studio_project")
+        again = Draft.open_for_model("x_builder_project")
         self.assertEqual(again["id"], draft.id)
         self.assertNotEqual(again["spec"]["description"], "Stale")
 
@@ -673,7 +673,7 @@ class TestConsoleHooks(StudioCase):
         """The live x_ path is the right door for those, and a draft that
         could never be applied would only hide that."""
         with raises(self, UserError) as caught:
-            typed.model(self.env, StudioModelDraft).open_for_model("res.partner")
+            typed.model(self.env, BuilderModelDraft).open_for_model("res.partner")
         self.assertIn("res.partner", str(caught.exception))
 
     # -- the anchored placement hook -------------------------------------

@@ -15,16 +15,16 @@ from typing import TYPE_CHECKING, cast
 
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_model import IrModel
-from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
+from odoo.addons.app_builder_base.tests.common import BuilderHttpCase, join_groups
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_model import IrModel
 
 if TYPE_CHECKING:
     from odoo.addons.base.models.res_users import Users
 
 
 @tagged("post_install", "-at_install")
-class TestConsoleTabsTour(StudioHttpCase):
+class TestConsoleTabsTour(BuilderHttpCase):
     def setUp(self):
         super().setUp()
         # The console lives in app_builder_view, which this addon does not
@@ -37,7 +37,7 @@ class TestConsoleTabsTour(StudioHttpCase):
             self.skipTest("app_builder_view is not installed")
         # base_automation patches create/write onto the target model class
         # with its own patcher, which the leak detector does not recognise;
-        # see TestStudioUi.setUp.
+        # see TestBuilderUi.setUp.
         self.addCleanup(self.env["base.automation"]._unregister_hook)
 
     def _package(self, name, label):
@@ -46,15 +46,15 @@ class TestConsoleTabsTour(StudioHttpCase):
         vals = {
             "name": name,
             "display_name_": label,
-            "root_path": tempfile.mkdtemp(prefix="studio-tour-"),
+            "root_path": tempfile.mkdtemp(prefix="builder-tour-"),
             "auto_commit": "off",
         }
-        package = self.env["studio.package"].create(vals)  # pyright: ignore[reportArgumentType]
+        package = self.env["builder.package"].create(vals)  # pyright: ignore[reportArgumentType]
         module_vals = {"name": name, "state": "installed"}
         self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
             cast("Users", typed.ref(self.env, "base.user_admin")),
-            ["app_builder_base.group_studio_manager"],
+            ["app_builder_base.group_builder_manager"],
         )
         return package
 

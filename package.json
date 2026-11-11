@@ -1,21 +1,19 @@
 {
-  "name": "odoo-studio-typecheck",
+  "name": "app-builder-tools",
   "private": true,
   "version": "0.0.0",
-  "description": "Type-checking and TS->JS build tooling for the console. Not published; not part of the addons' runtime.",
+  "description": "The locked lint tools (odoo-nix's js-xml module) and the type checkers (see TYPING.md). Each addon's own package.json compiles its TypeScript.",
   "scripts": {
-    "build": "node scripts/build_ts.mjs",
-    "build:watch": "node scripts/build_ts.mjs --watch",
     "typecheck": "node scripts/typecheck.mjs",
-    "lint": "eslint '**/*.ts'",
-    "format": "prettier --check '**/*.ts'",
-    "format:fix": "prettier --write '**/*.ts'"
+    "lint:ts": "eslint -c eslint.typescript.config.mjs '**/*.ts'"
   },
   "devDependencies": {
     "@odoo/owl": "2.8.3",
-    "esbuild": "^0.24.0",
-    "eslint": "^9.15.0",
-    "prettier": "^3.3.3",
+    "@prettier/plugin-xml": "3.4.1",
+    "eslint": "9.12.0",
+    "eslint-plugin-jsdoc": "50.3.1",
+    "globals": "16.0.0",
+    "prettier": "3.3.3",
     "pyright": "^1.1.389",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.15.0"

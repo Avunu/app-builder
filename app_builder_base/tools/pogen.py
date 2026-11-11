@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     # Only for `merge_terms`'s own parameter annotation below -- `rows` is
     # never mutated, only iterated once, so `Iterable` is the honest,
     # minimal type rather than the concrete `list` every real caller
-    # happens to pass (`studio_package.py`'s `rows[lang]`). `from __future__
+    # happens to pass (`builder_package.py`'s `rows[lang]`). `from __future__
     # import annotations` (above) means the annotation is never evaluated
     # at runtime, so this stays out of the real import list.
     from collections.abc import Iterable
@@ -105,7 +105,7 @@ def merge_po(
     in code.
 
     The rule is the manifest's rule. A msgid this package emits is the
-    database's to state, because that is where the studio's own users translate
+    database's to state, because that is where the builder's own users translate
     and the record is ours. A msgid it does not emit is left exactly as found.
     So a PO entry for a term we manage is refreshed on the next save, and
     everything else survives.

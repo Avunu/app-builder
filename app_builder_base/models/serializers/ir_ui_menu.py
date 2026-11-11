@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 if TYPE_CHECKING:
     # Only used inside annotations (`from __future__ import annotations`
     # defers all of them to strings), never at runtime -- same bargain
-    # `studio_serializer.py`'s own `TYPE_CHECKING`-guarded imports make.
+    # `builder_serializer.py`'s own `TYPE_CHECKING`-guarded imports make.
     from collections.abc import Callable
 
     from odoo.models import BaseModel
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 # (e.g. `import lxml.etree as etree`), which trades this gap for a different
 # one: ruff's own `PLR0402` auto-fixes that form straight back to `from lxml
 # import etree` (`fix = true` project-wide), silently reintroducing the
-# failure. Same pattern as `studio_serializer.py`/`xml_writer.py`/
+# failure. Same pattern as `builder_serializer.py`/`xml_writer.py`/
 # `placement.py`/`scaffold.py`.
 from lxml import (  # pyright: ignore[reportMissingTypeStubs]
     etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
@@ -35,28 +35,28 @@ from lxml import (  # pyright: ignore[reportMissingTypeStubs]
 from odoo import api, models
 
 from ...tools.lxml_types import LxmlElement
-from ..studio_serializer import SEQ_MENU, StudioSerializer
+from ..builder_serializer import SEQ_MENU, BuilderSerializer
 
 Element: TypeAlias = LxmlElement
 
 # `etree.Element` is the one constructor this module calls; grabbing it once,
 # behind a single documented cast, keeps the "Unknown member of an unstubbed
 # module" gap to two lines instead of a `# pyright: ignore` at the one call
-# site. Same idiom as `studio_serializer.py`'s own `_element` wrapper.
+# site. Same idiom as `builder_serializer.py`'s own `_element` wrapper.
 _element_raw = etree.Element  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 _element: Callable[..., Element] = cast("Callable[..., Element]", _element_raw)
 
 
 class IrUiMenuSerializer(models.AbstractModel):
-    _name = "studio.serializer.ir.ui.menu"
-    _inherit = "studio.serializer"
-    _description = "Studio Serializer for ir.ui.menu"
+    _name = "builder.serializer.ir.ui.menu"
+    _inherit = "builder.serializer"
+    _description = "Builder Serializer for ir.ui.menu"
 
-    _studio_model = "ir.ui.menu"
-    _studio_sequence = SEQ_MENU
-    _studio_dir = "views"
-    _studio_suffix = "_views"
-    _studio_fields = (
+    _builder_model = "ir.ui.menu"
+    _builder_sequence = SEQ_MENU
+    _builder_dir = "views"
+    _builder_suffix = "_views"
+    _builder_fields = (
         "name",
         "parent_id",
         "action",
@@ -65,7 +65,7 @@ class IrUiMenuSerializer(models.AbstractModel):
         "web_icon",
         "active",
     )
-    _studio_ignored = (
+    _builder_ignored = (
         # The other end of parent_id, which each child emits itself.
         "child_id",
         # Internal hierarchy cache, maintained by the ORM from parent_id.
@@ -86,7 +86,7 @@ class IrUiMenuSerializer(models.AbstractModel):
         # overridden method's own declared parameter type is `BaseModel` --
         # see TYPING.md's house convention on not narrowing `record` in a
         # subclass override. Cast at the read site instead, same idiom as
-        # `studio_package.py`'s `cast("IrModel", record).model`.
+        # `builder_package.py`'s `cast("IrModel", record).model`.
         #
         # `action` is declared `fields.Reference(...)` with no class-body
         # annotation, and `Reference` inherits `Selection`'s own declared
@@ -103,7 +103,7 @@ class IrUiMenuSerializer(models.AbstractModel):
         # `ir.actions.report`) -- there is no common declared base for either
         # attribute to type `action` as here, the same "genuinely
         # dynamically-dispatched, no shared contract" shape already
-        # established for `studio_package.py`'s own `cast("Any",
+        # established for `builder_package.py`'s own `cast("Any",
         # serializer)._csv_row(...)`. The `_name` check and the `hasattr`
         # guard below are the real runtime checks; `Any` only stands in for
         # the attribute's own static type once they have passed.
@@ -123,7 +123,7 @@ class IrUiMenuSerializer(models.AbstractModel):
         before its parent -- an unresolvable ``parent_id`` ref on a fresh
         install. One file keeps the ordering guarantee meaningful.
 
-        studio.package._order_data_files gives this file a rank just after the
+        builder.package._order_data_files gives this file a rank just after the
         other views, because a menu refs an action those files define.
         """
         return "views/menus.xml"
@@ -139,23 +139,23 @@ class IrUiMenuSerializer(models.AbstractModel):
                 return None
             node = _element("field")
             node.set("name", "action")
-            # `_ref_of` lives on `StudioSerializer`, composed onto this class
-            # only at the Odoo registry level (`_inherit = "studio.serializer"`
+            # `_ref_of` lives on `BuilderSerializer`, composed onto this class
+            # only at the Odoo registry level (`_inherit = "builder.serializer"`
             # above) -- never a real Python base class, so it is invisible to
             # pyright on `self` here. Same "_inherit-mixin-invisible-to-pyright"
             # shape `typed.security()` already fixes for
-            # `studio.security.mixin`; no shared helper exists for this mixin,
+            # `builder.security.mixin`; no shared helper exists for this mixin,
             # so cast inline instead.
-            serializer = cast("StudioSerializer", self)
-            node.set("ref", serializer._ref_of(action, source=self._studio_model))
+            serializer = cast("BuilderSerializer", self)
+            node.set("ref", serializer._ref_of(action, source=self._builder_model))
             return node
         # Same mixin-invisibility as `_ref_of` above, on the `super()` proxy
         # this time rather than on `self` -- `cast` only changes what pyright
         # believes the proxy's type is, not the proxy object itself, so the
         # dispatch this performs at runtime (up through the *real*,
-        # registry-composed MRO, landing on `StudioSerializer._field_node`)
+        # registry-composed MRO, landing on `BuilderSerializer._field_node`)
         # is exactly what the original, untyped call already did.
-        return cast("StudioSerializer", super())._field_node(record, fname)
+        return cast("BuilderSerializer", super())._field_node(record, fname)
 
     @api.model
     def _sort_key(self, record: BaseModel, xmlid: str) -> tuple[int, int, int, str]:
@@ -169,4 +169,4 @@ class IrUiMenuSerializer(models.AbstractModel):
         while node and depth < 32:
             depth += 1
             node = cast("IrUiMenu | None", node.parent_id)
-        return (self._studio_sequence, depth, cast("IrUiMenu", record).sequence, xmlid)
+        return (self._builder_sequence, depth, cast("IrUiMenu", record).sequence, xmlid)

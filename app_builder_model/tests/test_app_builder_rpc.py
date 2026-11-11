@@ -17,37 +17,39 @@ from odoo import Command
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.models.builder_model_draft import BuilderModelDraft
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
+from odoo.addons.app_builder_base.tools import scaffold, typed
 from odoo.addons.base.models.ir_actions import IrActionsActWindow
 from odoo.addons.base.models.ir_model import IrModelFields
-from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
-from odoo.addons.app_builder_base.tools import scaffold, typed
 
-from ..models.studio_app_builder import StudioAppBuilder
+from ..models.builder_app import BuilderApp
 
 if TYPE_CHECKING:
     # Only for the cast() calls below; with `from __future__ import
     # annotations` nothing here needs these at runtime -- same bargain
     # `typed.py`'s own `TYPE_CHECKING` block makes.
-    from odoo.addons.base.models.ir_ui_menu import IrUiMenu
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
-    from odoo.addons.app_builder_base.models.studio_package_model import (
-        StudioPackageModel,
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
     )
+    from odoo.addons.app_builder_base.models.builder_package_model import (
+        BuilderPackageModel,
+    )
+    from odoo.addons.base.models.ir_ui_menu import IrUiMenu
 
 
 @tagged("post_install", "-at_install")
-class TestAppBuilderRpc(StudioCase):
+class TestAppBuilderRpc(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.builder = typed.model(self.env, StudioAppBuilder)
+        self.builder = typed.model(self.env, BuilderApp)
         self.package = self.make_package(name="x_rpc_pkg")
 
     def _python_package(self, name="x_rpc_py"):
         package = self.make_package(name=name)
         self.build_demo_content(package)
         package.action_write_files()
-        package.action_adopt(["x_studio_project"])
+        package.action_adopt(["x_builder_project"])
         return package
 
     # -- features and names -----------------------------------------------------
@@ -109,7 +111,7 @@ class TestAppBuilderRpc(StudioCase):
                 {"label": "X", "features": ["nope"]},
             )
         self.assertIn("nope", str(caught.exception))
-        builder = self.make_user("rpc_builder", ["app_builder_base.group_studio_user"])
+        builder = self.make_user("rpc_builder", ["app_builder_base.group_builder_user"])
         with raises(self, AccessError):
             self.builder.with_user(builder).create_app_rpc(
                 cast("int", self.package.id), {"label": "X"}
@@ -120,11 +122,11 @@ class TestAppBuilderRpc(StudioCase):
     def test_add_feature_stages_fields_and_options_on_the_draft(self):
         package = self._python_package()
         answer = self.builder.add_feature(
-            cast("int", package.id), "x_studio_project", "user"
+            cast("int", package.id), "x_builder_project", "user"
         )
         self.assertEqual(answer["added"], ["user_id"])
         self.assertEqual(answer["views"], [])
-        draft = typed.model(self.env, StudioModelDraft).browse(answer["draft_id"])
+        draft = typed.model(self.env, BuilderModelDraft).browse(answer["draft_id"])
         self.assertTrue(draft.dirty)
         self.assertIsNotNone(draft._spec().field("user_id"))
         self.assertEqual(draft._features(), ["user"])
@@ -132,33 +134,33 @@ class TestAppBuilderRpc(StudioCase):
     def test_add_feature_chatter_stages_the_mixins(self):
         package = self._python_package(name="x_rpc_chat")
         answer = self.builder.add_feature(
-            cast("int", package.id), "x_studio_project", "chatter"
+            cast("int", package.id), "x_builder_project", "chatter"
         )
         self.assertTrue(answer["chatter"])
         self.assertIn("mail.thread", answer["options"]["inherit"])
-        draft = typed.model(self.env, StudioModelDraft).browse(answer["draft_id"])
+        draft = typed.model(self.env, BuilderModelDraft).browse(answer["draft_id"])
         self.assertIn("mail.activity.mixin", draft._spec().inherit)
         # Asking twice has nothing left to add.
         with raises(self, UserError) as caught:
             self.builder.add_feature(
-                cast("int", package.id), "x_studio_project", "chatter"
+                cast("int", package.id), "x_builder_project", "chatter"
             )
         self.assertIn("already has everything", str(caught.exception))
 
     def test_add_feature_reference_stages_the_sequence(self):
         package = self._python_package(name="x_rpc_ref")
         answer = self.builder.add_feature(
-            cast("int", package.id), "x_studio_project", "reference"
+            cast("int", package.id), "x_builder_project", "reference"
         )
         self.assertEqual(answer["added"], ["reference"])
         self.assertEqual(answer["options"]["sequence_field"], "reference")
-        draft = typed.model(self.env, StudioModelDraft).browse(answer["draft_id"])
+        draft = typed.model(self.env, BuilderModelDraft).browse(answer["draft_id"])
         self.assertEqual(draft._spec().sequence_field, "reference")
 
     def test_add_feature_stage_wants_a_kanban_after_apply(self):
         package = self._python_package(name="x_rpc_stage")
         answer = self.builder.add_feature(
-            cast("int", package.id), "x_studio_project", "stage"
+            cast("int", package.id), "x_builder_project", "stage"
         )
         self.assertIn("state", answer["added"])
         self.assertEqual(answer["views"], ["kanban"])
@@ -168,7 +170,7 @@ class TestAppBuilderRpc(StudioCase):
         for key in ("tags", "lines"):
             with raises(self, UserError) as caught:
                 self.builder.add_feature(
-                    cast("int", package.id), "x_studio_project", key
+                    cast("int", package.id), "x_builder_project", key
                 )
             self.assertIn("second model", str(caught.exception))
 
@@ -176,7 +178,7 @@ class TestAppBuilderRpc(StudioCase):
         package = self._python_package(name="x_rpc_owner")
         with raises(self, UserError) as caught:
             self.builder.add_feature(
-                cast("int", self.package.id), "x_studio_project", "user"
+                cast("int", self.package.id), "x_builder_project", "user"
             )
         self.assertIn("switch", str(caught.exception).lower())
         self.assertIn(package.name, str(caught.exception))
@@ -208,7 +210,7 @@ class TestAppBuilderRpc(StudioCase):
     def test_a_model_already_in_python_is_not_adoptable(self):
         self._python_package(name="x_rpc_haspy")
         self.assertNotIn(
-            "x_studio_project", [m["model"] for m in self.builder.adoptable_models()]
+            "x_builder_project", [m["model"] for m in self.builder.adoptable_models()]
         )
 
     def test_adopt_captures_and_writes_the_class(self):
@@ -219,7 +221,7 @@ class TestAppBuilderRpc(StudioCase):
         self.assertEqual(answer["captured"], ["x_rpc_adopted"])
         self.assertFalse(answer["applied"])
         self.assertFalse(answer["restart_required"])
-        entry = cast("StudioPackageModel", self.package.model_ids).filtered(
+        entry = cast("BuilderPackageModel", self.package.model_ids).filtered(
             lambda m: m.model == "x_rpc_adopted"
         )
         self.assertEqual(entry.source, "python")
@@ -244,7 +246,7 @@ class TestAppBuilderRpc(StudioCase):
         field = typed.model(self.env, IrModelFields).browse(answer["field_id"])
         self.assertEqual(field.compute, "for r in self: r['x_rpc_score'] = 1.0")
         self.assertEqual(
-            cast("StudioOwnedMixin", field.sudo()).studio_package_id, self.package
+            cast("BuilderOwnedMixin", field.sudo()).builder_package_id, self.package
         )
         with raises(self, UserError):
             self.builder.create_field(

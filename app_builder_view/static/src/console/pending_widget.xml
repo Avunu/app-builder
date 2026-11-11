@@ -2,15 +2,19 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.PendingFieldWidget">
-    <div class="o_studio_pending" t-att-class="{ o_studio_pending_unresolved: !props.resolved }"
-         t-att-data-name="props.name" t-att-title="label">
-        <i t-att-class="icon + ' o_studio_pending_icon me-2'"/>
-        <span class="o_studio_pending_label" t-esc="label"/>
-        <small class="o_studio_pending_note text-muted ms-2">
-            <t t-if="props.resolved">Pending — appears after Apply</t>
-            <t t-else="">Will be placed automatically</t>
-        </small>
-    </div>
-</t>
+        <div
+            class="o_builder_pending"
+            t-att-class="{ o_builder_pending_unresolved: !props.resolved }"
+            t-att-data-name="props.name"
+            t-att-title="label"
+        >
+            <i t-att-class="icon + ' o_builder_pending_icon me-2'" />
+            <span class="o_builder_pending_label" t-esc="label" />
+            <small class="o_builder_pending_note text-muted ms-2">
+                <t t-if="props.resolved">Pending — appears after Apply</t>
+                <t t-else="">Will be placed automatically</t>
+            </small>
+        </div>
+    </t>
 
 </templates>

@@ -26,15 +26,11 @@
  * first drag.
  */
 
-import type { EventBus } from "@odoo/owl";
-import { rpcBus as rpcBusUntyped } from "@web/core/network/rpc";
-import { session } from "@web/session";
-import type { BoxRect, OdooRpcError } from "./types";
+import {rpcBus as rpcBusUntyped} from "@web/core/network/rpc";
+import {session} from "@web/session";
+import type {BoxRect, OdooRpcError} from "./types";
 
-// `rpc.js` declares `export const rpcBus = new EventBus()` with Owl's
-// `EventBus`, but as untyped vendor JS the checker cannot resolve it (the
-// `error` type, no diagnostic under `checkJs: false`).
-const rpcBus = rpcBusUntyped as EventBus;
+const rpcBus = rpcBusUntyped;
 
 /** A digit-bearing primitive, the only shape a version part is ever
  * spelled as (a number, or a `saas~xx` string). Narrower than `unknown`
@@ -50,7 +46,7 @@ type VersionPart = string | number;
  * state this file has no business widening.
  */
 interface VersionInfo {
-    server_version_info?: readonly [VersionPart, VersionPart, ...VersionPart[]];
+  server_version_info?: readonly [VersionPart, VersionPart, ...VersionPart[]];
 }
 
 /** `[major, minor]`, both numbers. */
@@ -68,29 +64,29 @@ type ServerVersion = readonly [number, number];
  * no line.
  */
 export function serverVersion(): ServerVersion {
-    const info = (session as VersionInfo).server_version_info || [];
-    const major = digitsOf(info[0]);
-    const minor = digitsOf(info[1]);
-    return Number.isFinite(major) ? [major, Number.isFinite(minor) ? minor : 0] : [18, 0];
+  const info = (session as VersionInfo).server_version_info || [];
+  const major = digitsOf(info[0]);
+  const minor = digitsOf(info[1]);
+  return Number.isFinite(major) ? [major, Number.isFinite(minor) ? minor : 0] : [18, 0];
 }
 
 /** The integer spelled by the digits of `value`, or `NaN` when there are none. */
 function digitsOf(value: VersionPart | undefined): number {
-    if (value === undefined || value === null) {
-        return NaN;
-    }
-    return parseInt(String(value).replace(/\D/g, ""), 10);
+  if (value === undefined || value === null) {
+    return NaN;
+  }
+  return parseInt(String(value).replace(/\D/g, ""), 10);
 }
 
 /** Whether the server is `major.minor` or later. */
 export function versionAtLeast(major: number, minor = 0): boolean {
-    const [ownMajor, ownMinor] = serverVersion();
-    return ownMajor > major || (ownMajor === major && ownMinor >= minor);
+  const [ownMajor, ownMinor] = serverVersion();
+  return ownMajor > major || (ownMajor === major && ownMinor >= minor);
 }
 
 /** The 19 line: 19.0 and everything after it, master included. */
 function is19Line(): boolean {
-    return versionAtLeast(19);
+  return versionAtLeast(19);
 }
 
 /**
@@ -99,7 +95,7 @@ function is19Line(): boolean {
  * about saas releases in between; see the module docstring.
  */
 function isMasterLine(): boolean {
-    return versionAtLeast(19, 5);
+  return versionAtLeast(19, 5);
 }
 
 /**
@@ -115,11 +111,11 @@ function isMasterLine(): boolean {
  * (18:935-948) -- so the shape has to be chosen.
  */
 export interface DragRef {
-    el: HTMLElement | null;
+  el: HTMLElement | null;
 }
 
 export function dragRef(ref: DragRef): DragRef | (() => HTMLElement | null) {
-    return isMasterLine() ? () => ref.el : ref;
+  return isMasterLine() ? () => ref.el : ref;
 }
 
 /**
@@ -133,8 +129,8 @@ export function dragRef(ref: DragRef): DragRef | (() => HTMLElement | null) {
  * validator walks the params it *accepts* and never the ones it was handed
  * (18:935-948), so the key is passed everywhere and there is no branch.
  */
-export function dragExtraParams(): { allowDisconnected: boolean } {
-    return { allowDisconnected: true };
+export function dragExtraParams(): {allowDisconnected: boolean} {
+  return {allowDisconnected: true};
 }
 
 /**
@@ -147,8 +143,8 @@ export function dragExtraParams(): { allowDisconnected: boolean } {
  * tour runs in -- the wrong key is an "unknown prop" error, so the two
  * cannot simply both be passed.
  */
-export function readonlyViewProps(): { readonly: boolean } | { mode: string } {
-    return is19Line() ? { readonly: true } : { mode: "readonly" };
+export function readonlyViewProps(): {readonly: boolean} | {mode: string} {
+  return is19Line() ? {readonly: true} : {mode: "readonly"};
 }
 
 /**
@@ -171,15 +167,15 @@ export function readonlyViewProps(): { readonly: boolean } | { mode: string } {
  * in viewport coordinates.
  */
 export function rowRect(el: Element): BoxRect {
-    const cell = el.closest(".o_cell");
-    if (!cell) {
-        return el.getBoundingClientRect();
-    }
-    const label = cell.previousElementSibling;
-    if (label && label.matches(".o_cell.o_wrap_label")) {
-        return union(label.getBoundingClientRect(), cell.getBoundingClientRect());
-    }
-    return cell.getBoundingClientRect();
+  const cell = el.closest(".o_cell");
+  if (!cell) {
+    return el.getBoundingClientRect();
+  }
+  const label = cell.previousElementSibling;
+  if (label && label.matches(".o_cell.o_wrap_label")) {
+    return union(label.getBoundingClientRect(), cell.getBoundingClientRect());
+  }
+  return cell.getBoundingClientRect();
 }
 
 /**
@@ -195,28 +191,30 @@ export function rowRect(el: Element): BoxRect {
  * stamped in its own right and never reaches this.
  */
 export function labelWidget(label: HTMLLabelElement): Element | null {
-    const doc = label.ownerDocument;
-    if (label.htmlFor) {
-        const input = doc.getElementById(label.htmlFor);
-        const widget = input && input.closest(".o_field_widget");
-        if (widget) {
-            return widget;
-        }
+  const doc = label.ownerDocument;
+  if (label.htmlFor) {
+    const input = doc.getElementById(label.htmlFor);
+    const widget = input && input.closest(".o_field_widget");
+    if (widget) {
+      return widget;
     }
-    const cell = label.closest(".o_cell.o_wrap_label, .o_wrap_label");
-    const next = cell && cell.nextElementSibling;
-    if (next) {
-        return next.matches(".o_field_widget") ? next : next.querySelector(".o_field_widget");
-    }
-    return null;
+  }
+  const cell = label.closest(".o_cell.o_wrap_label, .o_wrap_label");
+  const next = cell && cell.nextElementSibling;
+  if (next) {
+    return next.matches(".o_field_widget")
+      ? next
+      : next.querySelector(".o_field_widget");
+  }
+  return null;
 }
 
 function union(a: BoxRect, b: BoxRect): BoxRect {
-    const top = Math.min(a.top, b.top);
-    const left = Math.min(a.left, b.left);
-    const bottom = Math.max(a.bottom, b.bottom);
-    const right = Math.max(a.right, b.right);
-    return { top, left, bottom, right, width: right - left, height: bottom - top };
+  const top = Math.min(a.top, b.top);
+  const left = Math.min(a.left, b.left);
+  const bottom = Math.max(a.bottom, b.bottom);
+  const right = Math.max(a.right, b.right);
+  return {top, left, bottom, right, width: right - left, height: bottom - top};
 }
 
 /**
@@ -229,27 +227,27 @@ export const TAB_SELECTOR = ".o_notebook .nav-link";
 /**
  * Whether an RPC error says the view changed under the client.
  *
- * The server raises `StudioStaleView` for that, and the RPC layer serialises
+ * The server raises `BuilderStaleView` for that, and the RPC layer serialises
  * the exception's class name -- the one thing about it that is not
  * translated -- so that is what is matched. `data.name` is
  * `f"{module}.{name}"` in all three (`odoo/http.py` 18:432-441, 19:469-478;
  * `odoo/http/dispatcher.py` master:78-91).
  */
 export function isStaleError(err: unknown): boolean {
-    const name = (err as OdooRpcError | undefined)?.data?.name || "";
-    return name.endsWith(".StudioStaleView");
+  const name = (err as OdooRpcError | undefined)?.data?.name || "";
+  return name.endsWith(".BuilderStaleView");
 }
 
 /**
  * Whether an RPC error is the server asking for a confirmation first.
  *
- * `StudioConfirmRequired` travels with a `context` the RPC layer keeps
+ * `BuilderConfirmRequired` travels with a `context` the RPC layer keeps
  * (`getattr(exception, 'context', {})`, the same lines as above), so a
  * client can word its own question rather than parse the sentence.
  */
 export function isConfirmError(err: unknown): boolean {
-    const context = (err as OdooRpcError | undefined)?.data?.context || {};
-    return Boolean(context.confirm_required);
+  const context = (err as OdooRpcError | undefined)?.data?.context || {};
+  return Boolean(context.confirm_required);
 }
 
 /**
@@ -266,12 +264,12 @@ export function isConfirmError(err: unknown): boolean {
  */
 /** The one piece of `OdooEnv` this file touches. */
 export interface EnvWithBus {
-    bus: { trigger: (name: string) => void };
+  bus: {trigger: (name: string) => void};
 }
 
 export function clearViewCaches(env: EnvWithBus): void {
-    rpcBus.trigger("CLEAR-CACHES", "get_views");
-    env.bus.trigger("CLEAR-CACHES");
+  rpcBus.trigger("CLEAR-CACHES", "get_views");
+  env.bus.trigger("CLEAR-CACHES");
 }
 
 /**
@@ -282,10 +280,10 @@ export function clearViewCaches(env: EnvWithBus): void {
  * checkout; it is assumed to be on the 18 side until it is.
  */
 export function fieldSelectorFollow(
-    follow = true,
-): { followRelation: boolean } | { followRelations: boolean } {
-    if (versionAtLeast(19, 5)) {
-        return { followRelation: follow };
-    }
-    return { followRelations: follow };
+  follow = true
+): {followRelation: boolean} | {followRelations: boolean} {
+  if (versionAtLeast(19, 5)) {
+    return {followRelation: follow};
+  }
+  return {followRelations: follow};
 }

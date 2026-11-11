@@ -24,8 +24,8 @@
  */
 
 import * as compat from "./compat";
-import { cardAt, cardsOf, elementsFor, instanceAt, rectFor, tabFor } from "./identity";
-import type { NodeTable, PlainRect, Point, Token } from "./types";
+import {cardAt, cardsOf, elementsFor, instanceAt, rectFor, tabFor} from "./identity";
+import type {NodeTable, PlainRect, Point, Token} from "./types";
 
 /**
  * The rendered instance of a node, or `null`.
@@ -36,21 +36,21 @@ import type { NodeTable, PlainRect, Point, Token } from "./types";
  * `point`, for the kanban case where one node is many.
  */
 export function instanceOf(
-    token: Token,
-    root: Element | null,
-    nodes: NodeTable,
-    point: Point | null = null,
+  token: Token,
+  root: Element | null,
+  nodes: NodeTable,
+  point: Point | null = null
 ): Element | null {
-    const node = nodes[token];
-    if (!node || !root) {
-        return null;
-    }
-    let instance =
-        node.kind === "page" ? tabFor(token, root) : instanceAt(token, root, nodes, point);
-    if (!instance && node.kind === "card") {
-        instance = cardAt(root, point) || cardsOf(root)[0] || null;
-    }
-    return instance && instance.isConnected ? instance : null;
+  const node = nodes[token];
+  if (!node || !root) {
+    return null;
+  }
+  let instance =
+    node.kind === "page" ? tabFor(token, root) : instanceAt(token, root, nodes, point);
+  if (!instance && node.kind === "card") {
+    instance = cardAt(root, point) || cardsOf(root)[0] || null;
+  }
+  return instance && instance.isConnected ? instance : null;
 }
 
 /**
@@ -58,17 +58,17 @@ export function instanceOf(
  * not rendered or has no size.
  */
 export function outlineRect(
-    token: Token,
-    root: Element | null,
-    nodes: NodeTable,
-    point: Point | null = null,
+  token: Token,
+  root: Element | null,
+  nodes: NodeTable,
+  point: Point | null = null
 ): PlainRect | null {
-    const instance = instanceOf(token, root, nodes, point);
-    if (!instance) {
-        return null;
-    }
-    const rect = rectFor(nodes[token], instance);
-    return rect && (rect.width || rect.height) ? plain(rect) : null;
+  const instance = instanceOf(token, root, nodes, point);
+  if (!instance) {
+    return null;
+  }
+  const rect = rectFor(nodes[token], instance);
+  return rect && (rect.width || rect.height) ? plain(rect) : null;
 }
 
 /**
@@ -81,48 +81,50 @@ export function outlineRect(
  * at a time and an inactive page's children are nowhere.
  */
 export function contentElement(
-    token: Token,
-    root: Element | null,
-    nodes: NodeTable,
-    point: Point | null = null,
+  token: Token,
+  root: Element | null,
+  nodes: NodeTable,
+  point: Point | null = null
 ): Element | null {
-    const node = nodes[token];
-    const instance = instanceOf(token, root, nodes, point);
-    if (!node || !instance) {
-        return null;
+  const node = nodes[token];
+  const instance = instanceOf(token, root, nodes, point);
+  if (!node || !instance) {
+    return null;
+  }
+  if (node.kind === "sheet") {
+    return instance.querySelector(":scope > .o_form_sheet") || instance;
+  }
+  if (node.kind === "notebook") {
+    return instance.querySelector(":scope > .o_notebook_headers") || instance;
+  }
+  if (node.kind === "page") {
+    if (!instance.classList.contains("active")) {
+      return null;
     }
-    if (node.kind === "sheet") {
-        return instance.querySelector(":scope > .o_form_sheet") || instance;
-    }
-    if (node.kind === "notebook") {
-        return instance.querySelector(":scope > .o_notebook_headers") || instance;
-    }
-    if (node.kind === "page") {
-        if (!instance.classList.contains("active")) {
-            return null;
-        }
-        const notebook = instance.closest(".o_notebook");
-        return notebook ? notebook.querySelector(":scope > .o_notebook_content > .tab-pane") : null;
-    }
-    if (node.kind === "card") {
-        return instance.closest(".o_kanban_record") || instance;
-    }
-    return instance;
+    const notebook = instance.closest(".o_notebook");
+    return notebook
+      ? notebook.querySelector(":scope > .o_notebook_content > .tab-pane")
+      : null;
+  }
+  if (node.kind === "card") {
+    return instance.closest(".o_kanban_record") || instance;
+  }
+  return instance;
 }
 
 /** The viewport rectangle of `contentElement`, or `null`. */
 export function contentRect(
-    token: Token,
-    root: Element | null,
-    nodes: NodeTable,
-    point: Point | null = null,
+  token: Token,
+  root: Element | null,
+  nodes: NodeTable,
+  point: Point | null = null
 ): PlainRect | null {
-    const el = contentElement(token, root, nodes, point);
-    if (!el) {
-        return null;
-    }
-    const rect = el.getBoundingClientRect();
-    return rect.width || rect.height ? plain(rect) : null;
+  const el = contentElement(token, root, nodes, point);
+  if (!el) {
+    return null;
+  }
+  const rect = el.getBoundingClientRect();
+  return rect.width || rect.height ? plain(rect) : null;
 }
 
 /**
@@ -138,31 +140,35 @@ export function contentRect(
  * card's own flex direction is what says so.
  */
 export function flowOf(el: Element | null): "row" | "column" | null {
-    if (!el || !el.isConnected) {
-        return null;
-    }
-    const style = window.getComputedStyle(el);
-    if (!["flex", "inline-flex"].includes(style.display)) {
-        return null;
-    }
-    return style.flexDirection.startsWith("column") ? "column" : "row";
+  if (!el || !el.isConnected) {
+    return null;
+  }
+  const style = window.getComputedStyle(el);
+  if (!["flex", "inline-flex"].includes(style.display)) {
+    return null;
+  }
+  return style.flexDirection.startsWith("column") ? "column" : "row";
 }
 
 /** Whether a page node is the one its notebook currently shows. */
-export function isActivePage(token: Token, root: Element | null, nodes: NodeTable): boolean {
-    const node = nodes[token];
-    if (!node || node.kind !== "page") {
-        return true;
-    }
-    const tab = tabFor(token, root);
-    return Boolean(tab && tab.classList.contains("active"));
+export function isActivePage(
+  token: Token,
+  root: Element | null,
+  nodes: NodeTable
+): boolean {
+  const node = nodes[token];
+  if (!node || node.kind !== "page") {
+    return true;
+  }
+  const tab = tabFor(token, root);
+  return Boolean(tab && tab.classList.contains("active"));
 }
 
 /** One rendered child of a container, as `childEntries` reports it. */
 export interface ChildEntry {
-    token: Token;
-    el: Element;
-    rect: PlainRect;
+  token: Token;
+  el: Element;
+  rect: PlainRect;
 }
 
 /**
@@ -178,38 +184,40 @@ export interface ChildEntry {
  * to show anyway *is* rendered, and counts.
  */
 export function childEntries(
-    token: Token,
-    root: Element | null,
-    nodes: NodeTable,
-    container: Element | null,
+  token: Token,
+  root: Element | null,
+  nodes: NodeTable,
+  container: Element | null
 ): ChildEntry[] {
-    const node = nodes[token];
-    if (!node || !container) {
-        return [];
+  const node = nodes[token];
+  if (!node || !container) {
+    return [];
+  }
+  const entries: ChildEntry[] = [];
+  for (const child of node.children) {
+    const childNode = nodes[child];
+    if (!childNode) {
+      continue;
     }
-    const entries: ChildEntry[] = [];
-    for (const child of node.children) {
-        const childNode = nodes[child];
-        if (!childNode) {
-            continue;
-        }
-        let el: Element | null | undefined = null;
-        if (childNode.kind === "page") {
-            el = tabFor(child, root);
-        } else {
-            el = elementsFor(child, root, nodes).find((candidate) => container.contains(candidate));
-        }
-        if (!el || !container.contains(el)) {
-            continue;
-        }
-        const rect = rectFor(childNode, el);
-        if (!rect || (!rect.width && !rect.height)) {
-            continue;
-        }
-        entries.push({ token: child, el, rect: plain(rect) });
+    let el: Element | null | undefined = null;
+    if (childNode.kind === "page") {
+      el = tabFor(child, root);
+    } else {
+      el = elementsFor(child, root, nodes).find((candidate) =>
+        container.contains(candidate)
+      );
     }
-    entries.sort((a, b) => domOrder(a.el, b.el));
-    return entries;
+    if (!el || !container.contains(el)) {
+      continue;
+    }
+    const rect = rectFor(childNode, el);
+    if (!rect || (!rect.width && !rect.height)) {
+      continue;
+    }
+    entries.push({token: child, el, rect: plain(rect)});
+  }
+  entries.sort((a, b) => domOrder(a.el, b.el));
+  return entries;
 }
 
 /**
@@ -220,45 +228,45 @@ export function childEntries(
  * when it is asked about.
  */
 export function tabsOf(root: Element | null): Element[] {
-    return root ? [...root.querySelectorAll(compat.TAB_SELECTOR)] : [];
+  return root ? [...root.querySelectorAll(compat.TAB_SELECTOR)] : [];
 }
 
 /** Viewport coordinates to coordinates inside the scroll container. */
 export function toContent(rect: PlainRect, scrollEl: Element): PlainRect {
-    const base = scrollEl.getBoundingClientRect();
-    return {
-        top: rect.top - base.top + scrollEl.scrollTop,
-        left: rect.left - base.left + scrollEl.scrollLeft,
-        width: rect.width,
-        height: rect.height,
-    };
+  const base = scrollEl.getBoundingClientRect();
+  return {
+    top: rect.top - base.top + scrollEl.scrollTop,
+    left: rect.left - base.left + scrollEl.scrollLeft,
+    width: rect.width,
+    height: rect.height,
+  };
 }
 
 /** Whether a viewport point is inside a rectangle, widened by `slack`. */
 export function contains(rect: PlainRect, point: Point, slack = 0): boolean {
-    return (
-        point.x >= rect.left - slack &&
-        point.x <= rect.left + rect.width + slack &&
-        point.y >= rect.top - slack &&
-        point.y <= rect.top + rect.height + slack
-    );
+  return (
+    point.x >= rect.left - slack &&
+    point.x <= rect.left + rect.width + slack &&
+    point.y >= rect.top - slack &&
+    point.y <= rect.top + rect.height + slack
+  );
 }
 
 /** A DOMRect-like as a plain `{top, left, width, height}`. */
 export function plain(rect: PlainRect): PlainRect {
-    return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+  return {top: rect.top, left: rect.left, width: rect.width, height: rect.height};
 }
 
 function domOrder(a: Element, b: Element): number {
-    if (a === b) {
-        return 0;
-    }
-    const position = a.compareDocumentPosition(b);
-    if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
-        return -1;
-    }
-    if (position & Node.DOCUMENT_POSITION_PRECEDING) {
-        return 1;
-    }
+  if (a === b) {
     return 0;
+  }
+  const position = a.compareDocumentPosition(b);
+  if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+    return -1;
+  }
+  if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+    return 1;
+  }
+  return 0;
 }

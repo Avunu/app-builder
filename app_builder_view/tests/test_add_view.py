@@ -18,25 +18,27 @@ from odoo import Command
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
+from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base.models.ir_actions import IrActionsActWindow
 from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
-from odoo.addons.app_builder_base.tools import typed
 
-from ..models.studio_view_edit import StudioViewEdit
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_edit import BuilderViewEdit
+from ..models.builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
     from odoo.addons.web.models.ir_ui_view import View as WebView
 
 
 @tagged("post_install", "-at_install")
-class TestAddView(StudioCase):
+class TestAddView(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         self.package = self.make_package(name="x_addview_pkg")
         # A model of our own rather than res.partner, which already ships a
         # kanban in 18 -- so "create a kanban" would be correctly refused and
@@ -133,7 +135,9 @@ class TestAddView(StudioCase):
     def test_the_new_view_belongs_to_the_package(self):
         result = self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
         view = typed.model(self.env, View).browse(result["view_id"])
-        self.assertEqual(cast("StudioOwnedMixin", view).studio_package_id, self.package)
+        self.assertEqual(
+            cast("BuilderOwnedMixin", view).builder_package_id, self.package
+        )
 
     def test_creating_a_type_that_exists_is_refused(self):
         self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
@@ -149,7 +153,7 @@ class TestAddView(StudioCase):
             "view_mode": "list,form",
         }
         action = typed.model(self.env, IrActionsActWindow).create(action_vals)  # pyright: ignore[reportArgumentType]
-        self.package.studio_capture(action)
+        self.package.builder_capture(action)
         self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
         view_mode = cast("str", action.view_mode)
         self.assertIn("kanban", view_mode)
@@ -160,7 +164,7 @@ class TestAddView(StudioCase):
         )
 
     def test_somebody_elses_action_is_left_alone(self):
-        """The studio's whole premise is that it does not rewrite what it does
+        """The builder's whole premise is that it does not rewrite what it does
         not own."""
         foreign_vals: dict[str, object] = {
             "name": "Theirs",
@@ -185,7 +189,7 @@ class TestAddView(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestAddAndRemove(StudioCase):
+class TestAddAndRemove(BuilderCase):
     """The gap that made the editor a viewer for anything it did not own.
 
     A field could be created on any model and then placed only into views the
@@ -197,13 +201,13 @@ class TestAddAndRemove(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         view = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
         return package, view
 
     def test_a_field_can_be_added_to_a_view_the_package_owns(self):
         package, view = self._package_and_view()
-        typed.model(self.env, StudioViewEditor).add_field_at(
+        typed.model(self.env, BuilderViewEditor).add_field_at(
             cast("int", view.id),
             cast("int", package.id),
             {"kind": "root"},
@@ -220,7 +224,7 @@ class TestAddAndRemove(StudioCase):
         self.build_demo_content(package)
         core = cast("View", typed.ref(self.env, "base.view_partner_form"))
         before = core.arch
-        typed.model(self.env, StudioViewEditor).add_field_at(
+        typed.model(self.env, BuilderViewEditor).add_field_at(
             cast("int", core.id), cast("int", package.id), {"kind": "root"}, "ref"
         )
         self.assertEqual(
@@ -229,14 +233,14 @@ class TestAddAndRemove(StudioCase):
             "a core view must never be rewritten in place",
         )
         extension = typed.model(self.env, View).search(
-            [("inherit_id", "=", core.id), ("studio_package_id", "=", package.id)]
+            [("inherit_id", "=", core.id), ("builder_package_id", "=", package.id)]
         )
         self.assertTrue(extension, "the edit must land in an inheriting view")
         self.assertIn('name="ref"', cast("str", extension.arch))
 
     def test_a_field_can_be_removed_again(self):
         package, view = self._package_and_view()
-        editor = typed.model(self.env, StudioViewEditor)
+        editor = typed.model(self.env, BuilderViewEditor)
         editor.remove_at(
             cast("int", view.id),
             cast("int", package.id),
@@ -249,7 +253,7 @@ class TestAddAndRemove(StudioCase):
 
     def test_a_tab_and_a_group_can_be_added(self):
         package, view = self._package_and_view()
-        editor = typed.model(self.env, StudioViewEditor)
+        editor = typed.model(self.env, BuilderViewEditor)
         editor.add_container_at(
             cast("int", view.id), cast("int", package.id), {"kind": "sheet"}, "group"
         )
@@ -265,7 +269,7 @@ class TestAddAndRemove(StudioCase):
         """A form has one <sheet> and it has nothing else to be named by."""
         _package, view = self._package_and_view()
         root = etree.fromstring(view.get_combined_arch().encode())
-        node = typed.model(self.env, StudioViewEditor)._find_descriptor(
+        node = typed.model(self.env, BuilderViewEditor)._find_descriptor(
             root, {"kind": "sheet"}
         )
         self.assertIsNotNone(node)
@@ -277,7 +281,7 @@ class TestAddAndRemove(StudioCase):
     def test_an_ambiguous_container_is_refused_rather_than_guessed(self):
         """Two groups and no name is a question, not an answer."""
         package, view = self._package_and_view()
-        typed.model(self.env, StudioViewEditor).add_container_at(
+        typed.model(self.env, BuilderViewEditor).add_container_at(
             cast("int", view.id), cast("int", package.id), {"kind": "sheet"}, "group"
         )
         root = etree.fromstring(
@@ -287,7 +291,7 @@ class TestAddAndRemove(StudioCase):
             .encode()
         )
         self.assertGreater(len(root.findall(".//group")), 1, "sanity: two groups now")
-        node = typed.model(self.env, StudioViewEditor)._find_descriptor(
+        node = typed.model(self.env, BuilderViewEditor)._find_descriptor(
             root, {"kind": "group"}
         )
         self.assertIsNone(node)
@@ -303,7 +307,7 @@ class TestAddAndRemove(StudioCase):
     def test_a_named_position_wins_over_the_guess(self):
         """A click can only guess "after"; a drop knows it was before."""
         package, view = self._package_and_view()
-        typed.model(self.env, StudioViewEditor).add_field_at(
+        typed.model(self.env, BuilderViewEditor).add_field_at(
             cast("int", view.id),
             cast("int", package.id),
             {"kind": "field", "name": "x_budget"},
@@ -317,7 +321,7 @@ class TestAddAndRemove(StudioCase):
         """A preset that comes with a widget is one thing to the user, so it
         is one history entry -- not "added" followed by "changed widget"."""
         package, view = self._package_and_view()
-        editor = typed.model(self.env, StudioViewEditor)
+        editor = typed.model(self.env, BuilderViewEditor)
         editor.add_field_at(
             cast("int", view.id),
             cast("int", package.id),
@@ -331,7 +335,7 @@ class TestAddAndRemove(StudioCase):
         self.assertIn('<field name="x_active_flag" widget="boolean_toggle"/>', arch)
         self.assertEqual(
             len(
-                typed.model(self.env, StudioViewEdit).history_for(cast("int", view.id))
+                typed.model(self.env, BuilderViewEdit).history_for(cast("int", view.id))
             ),
             1,
         )
@@ -339,7 +343,7 @@ class TestAddAndRemove(StudioCase):
     def test_a_position_that_is_not_a_place_is_refused(self):
         package, view = self._package_and_view()
         with raises(self, UserError):
-            typed.model(self.env, StudioViewEditor).add_field_at(
+            typed.model(self.env, BuilderViewEditor).add_field_at(
                 cast("int", view.id),
                 cast("int", package.id),
                 {"kind": "field", "name": "x_budget"},
@@ -349,7 +353,7 @@ class TestAddAndRemove(StudioCase):
 
     def test_a_tab_can_be_placed_beside_another_tab(self):
         package, view = self._package_and_view()
-        editor = typed.model(self.env, StudioViewEditor)
+        editor = typed.model(self.env, BuilderViewEditor)
         editor.add_container_at(
             cast("int", view.id),
             cast("int", package.id),
@@ -394,7 +398,7 @@ OWNED_FORM_WITH_A_TAB = """
 
 
 @tagged("post_install", "-at_install")
-class TestOwnedViewWithForeignExtension(StudioCase):
+class TestOwnedViewWithForeignExtension(BuilderCase):
     """The hole between the tree a locator is minted on and the one it edits.
 
     A locator is minted on the *combined* arch -- other modules' extensions
@@ -408,19 +412,19 @@ class TestOwnedViewWithForeignExtension(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         self.package = self.make_package()
         self.build_demo_content(self.package)
         self.view = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
         self.view.arch = OWNED_FORM_WITH_A_TAB
         # Another module's extension: no package, a name of its own, and it
         # puts a tab *before* ours, so every positional path into the
         # notebook is off by one between the two trees.
         other_module_vals: dict[str, object] = {
-            "name": "x_studio_project.form.other_module",
-            "model": "x_studio_project",
+            "name": "x_builder_project.form.other_module",
+            "model": "x_builder_project",
             "inherit_id": self.view.id,
             "mode": "extension",
             "arch": """
@@ -460,7 +464,7 @@ class TestOwnedViewWithForeignExtension(StudioCase):
         self.view.invalidate_recordset()
         self.assertEqual(self.view.arch, self.before)
         self.assertEqual(
-            typed.model(self.env, StudioViewEdit).history_for(
+            typed.model(self.env, BuilderViewEdit).history_for(
                 cast("int", self.view.id)
             ),
             [],
@@ -491,7 +495,7 @@ class TestOwnedViewWithForeignExtension(StudioCase):
             self.env["ir.ui.view"].search(
                 [
                     ("inherit_id", "=", self.view.id),
-                    ("studio_package_id", "=", self.package.id),
+                    ("builder_package_id", "=", self.package.id),
                 ]
             ),
             "an owned view is edited outright, not patched",
@@ -543,7 +547,7 @@ OWNED_FORM_WITH_WRAPPED_PAGES = """
 
 
 @tagged("post_install", "-at_install")
-class TestOwnedContainersWithoutNames(StudioCase):
+class TestOwnedContainersWithoutNames(BuilderCase):
     """What tells one unnamed container from another, once a foreign
     extension has shifted every positional path by one.
 
@@ -555,16 +559,16 @@ class TestOwnedContainersWithoutNames(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         self.package = self.make_package()
         self.build_demo_content(self.package)
         self.view = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
         self.view.arch = OWNED_FORM_WITH_BARE_GROUPS
         other_module_vals: dict[str, object] = {
-            "name": "x_studio_project.form.other_module",
-            "model": "x_studio_project",
+            "name": "x_builder_project.form.other_module",
+            "model": "x_builder_project",
             "inherit_id": self.view.id,
             "mode": "extension",
             "arch": """
@@ -622,7 +626,7 @@ class TestOwnedContainersWithoutNames(StudioCase):
             self.env["ir.ui.view"].search(
                 [
                     ("inherit_id", "=", self.view.id),
-                    ("studio_package_id", "=", self.package.id),
+                    ("builder_package_id", "=", self.package.id),
                 ]
             ),
             "an owned view is edited outright, not patched",
@@ -636,8 +640,8 @@ class TestOwnedContainersWithoutNames(StudioCase):
         "Budget" page would be edited when "Notes" was pointed at."""
         self.view.arch = OWNED_FORM_WITH_WRAPPED_PAGES
         other_tab_vals: dict[str, object] = {
-            "name": "x_studio_project.form.other_tab",
-            "model": "x_studio_project",
+            "name": "x_builder_project.form.other_tab",
+            "model": "x_builder_project",
             "inherit_id": self.view.id,
             "mode": "extension",
             "arch": """
@@ -691,7 +695,7 @@ class TestOwnedContainersWithoutNames(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestActionButtonPortability(StudioCase):
+class TestActionButtonPortability(BuilderCase):
     def test_a_button_action_is_written_as_an_xmlid(self):
         """convert.py resolves %(xmlid)d to an integer when loading an arch, so
         the database really does hold a raw id -- and writing it straight back
@@ -699,7 +703,7 @@ class TestActionButtonPortability(StudioCase):
         """
         package = self.make_package()
         self.build_demo_content(package)
-        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_builder_project")
         action_vals: dict[str, object] = {
             "name": "Do the thing",
             "model_id": model.id,
@@ -709,9 +713,9 @@ class TestActionButtonPortability(StudioCase):
         action = self.env["ir.actions.server"].create(action_vals)  # pyright: ignore[reportArgumentType]
         package._assign(action)
         view = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
-        typed.model(self.env, StudioViewEditor).add_button_at(
+        typed.model(self.env, BuilderViewEditor).add_button_at(
             cast("int", view.id),
             cast("int", package.id),
             {"kind": "sheet"},
@@ -724,7 +728,7 @@ class TestActionButtonPortability(StudioCase):
         arch = (
             typed.model(self.env, View).browse(cast("int", view.id)).get_combined_arch()
         )
-        self.assertIn("x_studio_demo.", arch)
+        self.assertIn("x_builder_demo.", arch)
         self.assertNotIn('name="%d"' % action.id, arch)
         emitted = "".join(package._render_files().values())
         self.assertNotIn('name="%d"' % action.id, emitted)
@@ -733,7 +737,7 @@ class TestActionButtonPortability(StudioCase):
         """An arch that arrived with a raw id still must not reach a file."""
         package = self.make_package()
         self.build_demo_content(package)
-        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_builder_project")
         action_vals: dict[str, object] = {
             "name": "Legacy",
             "model_id": model.id,
@@ -743,7 +747,7 @@ class TestActionButtonPortability(StudioCase):
         action = self.env["ir.actions.server"].create(action_vals)  # pyright: ignore[reportArgumentType]
         package._assign(action)
         view = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
         view.arch = cast("str", view.arch).replace(
             "</sheet>",
@@ -755,7 +759,7 @@ class TestActionButtonPortability(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestViewTypeDiscovery(StudioCase):
+class TestViewTypeDiscovery(BuilderCase):
     """The list of view types comes from Odoo, not from us.
 
     `ir.ui.view.get_view_info()` is the registry every module extends when it
@@ -770,8 +774,8 @@ class TestViewTypeDiscovery(StudioCase):
         self.build_demo_content(package)
         return {
             entry["type"]: entry
-            for entry in typed.model(self.env, StudioViewEditor).addable_view_types(
-                "x_studio_project"
+            for entry in typed.model(self.env, BuilderViewEditor).addable_view_types(
+                "x_builder_project"
             )
         }
 
@@ -779,16 +783,16 @@ class TestViewTypeDiscovery(StudioCase):
         offered = self._offered()
         # `get_view_info` is contributed by `web`, composed via `_inherit`
         # rather than a real Python base -- same `WebView` cast
-        # `studio_view_editor.py` itself uses for the identical call.
+        # `builder_view_editor.py` itself uses for the identical call.
         known = set(cast("WebView", typed.model(self.env, View)).get_view_info())
-        expected = known - set(typed.model(self.env, StudioViewEditor).NOT_ADDABLE)
+        expected = known - set(typed.model(self.env, BuilderViewEditor).NOT_ADDABLE)
         self.assertEqual(set(offered), expected)
 
     def test_a_type_without_a_scaffold_says_so_rather_than_vanishing(self):
         """The type is installed and Odoo can render it, so "the builder cannot
         make one yet" is the true answer and a different one from "no such
         thing"."""
-        editor = typed.model(self.env, StudioViewEditor)
+        editor = typed.model(self.env, BuilderViewEditor)
         unscaffolded = (
             set(cast("WebView", typed.model(self.env, View)).get_view_info())
             - set(editor.NOT_ADDABLE)
@@ -811,11 +815,11 @@ class TestViewTypeDiscovery(StudioCase):
         """An empty pivot is valid and useless: it opens on one Count cell."""
         package = self.make_package()
         self.build_demo_content(package)
-        typed.model(self.env, StudioViewEditor).add_view(
-            "x_studio_project", "pivot", cast("int", package.id)
+        typed.model(self.env, BuilderViewEditor).add_view(
+            "x_builder_project", "pivot", cast("int", package.id)
         )
         view = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "pivot")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "pivot")], limit=1
         )
         self.assertTrue(view)
         self.assertIn("type=", cast("str", view.arch))
@@ -823,11 +827,11 @@ class TestViewTypeDiscovery(StudioCase):
     def test_a_graph_can_be_created(self):
         package = self.make_package()
         self.build_demo_content(package)
-        typed.model(self.env, StudioViewEditor).add_view(
-            "x_studio_project", "graph", cast("int", package.id)
+        typed.model(self.env, BuilderViewEditor).add_view(
+            "x_builder_project", "graph", cast("int", package.id)
         )
         view = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project"), ("type", "=", "graph")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "graph")], limit=1
         )
         self.assertTrue(view)
 

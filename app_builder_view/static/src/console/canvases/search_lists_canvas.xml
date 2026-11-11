@@ -2,98 +2,147 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.SearchListsCanvas">
-    <div class="o_studio_search_canvas d-flex h-100 overflow-hidden">
-        <div class="o_studio_search_lists p-3 border-end overflow-auto">
-            <div class="text-muted small mb-2">
+        <div class="o_builder_search_canvas d-flex h-100 overflow-hidden">
+            <div class="o_builder_search_lists p-3 border-end overflow-auto">
+                <div class="text-muted small mb-2">
                 A search view has no display of its own — it fills the search
                 bar and menus of the list beside it. So it is edited as the
                 three lists it is.
             </div>
 
-            <div class="o_studio_section_title">Searchable fields</div>
-            <div t-foreach="search.fields" t-as="entry" t-key="entry.name"
-                 class="o_studio_search_entry d-flex align-items-center gap-2 mb-1"
-                 t-att-data-entry="entry.name">
-                <span class="flex-grow-1 text-truncate" t-esc="entry.name"/>
-                <button type="button" class="btn btn-link btn-sm text-danger p-0"
+                <div class="o_builder_section_title">Searchable fields</div>
+                <div
+                    t-foreach="search.fields"
+                    t-as="entry"
+                    t-key="entry.name"
+                    class="o_builder_search_entry d-flex align-items-center gap-2 mb-1"
+                    t-att-data-entry="entry.name"
+                >
+                    <span class="flex-grow-1 text-truncate" t-esc="entry.name" />
+                    <button
+                        type="button"
+                        class="btn btn-link btn-sm text-danger p-0"
                         t-att-disabled="model.busy"
-                        t-on-click="() => this.model.removeSearchElement('field', entry.name)">
-                    <i class="fa fa-times"/>
-                </button>
-            </div>
-            <select class="form-select form-select-sm mb-3" name="add_search_field"
+                        t-on-click="() => this.model.removeSearchElement('field', entry.name)"
+                    >
+                        <i class="fa fa-times" />
+                    </button>
+                </div>
+                <select
+                    class="form-select form-select-sm mb-3"
+                    name="add_search_field"
                     t-att-disabled="model.busy"
-                    t-on-change="(ev) => this.onAddSearchField(ev)">
-                <option value="">Add a searchable field…</option>
-                <option t-foreach="fieldChoices" t-as="field"
-                        t-key="field.name" t-att-value="field.name">
-                    <t t-esc="field.string"/> (<t t-esc="field.name"/>)
+                    t-on-change="(ev) => this.onAddSearchField(ev)"
+                >
+                    <option value="">Add a searchable field…</option>
+                    <option
+                        t-foreach="fieldChoices"
+                        t-as="field"
+                        t-key="field.name"
+                        t-att-value="field.name"
+                    >
+                    <t t-esc="field.string" /> (<t t-esc="field.name" />)
                 </option>
-            </select>
+                </select>
 
-            <div class="o_studio_section_title">Filters</div>
-            <div t-foreach="search.filters" t-as="entry" t-key="entry.name"
-                 class="d-flex align-items-center gap-2 mb-1">
-                <span class="flex-grow-1 text-truncate" t-esc="entry.string"/>
-                <button type="button" class="btn btn-link btn-sm text-danger p-0"
+                <div class="o_builder_section_title">Filters</div>
+                <div
+                    t-foreach="search.filters"
+                    t-as="entry"
+                    t-key="entry.name"
+                    class="d-flex align-items-center gap-2 mb-1"
+                >
+                    <span class="flex-grow-1 text-truncate" t-esc="entry.string" />
+                    <button
+                        type="button"
+                        class="btn btn-link btn-sm text-danger p-0"
                         t-att-disabled="model.busy"
-                        t-on-click="() => this.model.removeSearchElement('filter', entry.name)">
-                    <i class="fa fa-times"/>
-                </button>
-            </div>
-            <div class="d-flex gap-1 mb-3">
-                <select class="form-select form-select-sm" name="filter_field"
-                        t-on-change="(ev) => this.state.filterField = ev.target.value">
-                    <option value="">Field…</option>
-                    <option t-foreach="model.context.fields" t-as="field"
-                            t-key="field.name" t-att-value="field.name"
-                            t-esc="field.string"/>
-                </select>
-                <select class="form-select form-select-sm" name="filter_condition"
-                        t-on-change="(ev) => this.state.filterCondition = ev.target.value">
-                    <option value="set">is set</option>
-                    <option value="not_set">is not set</option>
-                    <option value="true">is true</option>
-                    <option value="false">is false</option>
-                </select>
-                <button type="button" class="btn btn-light btn-sm" name="add_filter"
+                        t-on-click="() => this.model.removeSearchElement('filter', entry.name)"
+                    >
+                        <i class="fa fa-times" />
+                    </button>
+                </div>
+                <div class="d-flex gap-1 mb-3">
+                    <select
+                        class="form-select form-select-sm"
+                        name="filter_field"
+                        t-on-change="(ev) => this.state.filterField = ev.target.value"
+                    >
+                        <option value="">Field…</option>
+                        <option
+                            t-foreach="model.context.fields"
+                            t-as="field"
+                            t-key="field.name"
+                            t-att-value="field.name"
+                            t-esc="field.string"
+                        />
+                    </select>
+                    <select
+                        class="form-select form-select-sm"
+                        name="filter_condition"
+                        t-on-change="(ev) => this.state.filterCondition = ev.target.value"
+                    >
+                        <option value="set">is set</option>
+                        <option value="not_set">is not set</option>
+                        <option value="true">is true</option>
+                        <option value="false">is false</option>
+                    </select>
+                    <button
+                        type="button"
+                        class="btn btn-light btn-sm"
+                        name="add_filter"
                         t-att-disabled="!state.filterField or model.busy"
-                        t-on-click="() => this.onAddFilter()">Add</button>
-            </div>
+                        t-on-click="() => this.onAddFilter()"
+                    >Add</button>
+                </div>
 
-            <div class="o_studio_section_title">Group by</div>
-            <div t-foreach="search.group_bys" t-as="entry" t-key="entry.name"
-                 class="d-flex align-items-center gap-2 mb-1">
-                <span class="flex-grow-1 text-truncate" t-esc="entry.string"/>
-                <button type="button" class="btn btn-link btn-sm text-danger p-0"
+                <div class="o_builder_section_title">Group by</div>
+                <div
+                    t-foreach="search.group_bys"
+                    t-as="entry"
+                    t-key="entry.name"
+                    class="d-flex align-items-center gap-2 mb-1"
+                >
+                    <span class="flex-grow-1 text-truncate" t-esc="entry.string" />
+                    <button
+                        type="button"
+                        class="btn btn-link btn-sm text-danger p-0"
                         t-att-disabled="model.busy"
-                        t-on-click="() => this.model.removeSearchElement('filter', entry.name)">
-                    <i class="fa fa-times"/>
-                </button>
-            </div>
-            <select class="form-select form-select-sm mb-2" name="add_group_by"
+                        t-on-click="() => this.model.removeSearchElement('filter', entry.name)"
+                    >
+                        <i class="fa fa-times" />
+                    </button>
+                </div>
+                <select
+                    class="form-select form-select-sm mb-2"
+                    name="add_group_by"
                     t-att-disabled="model.busy"
-                    t-on-change="(ev) => this.onAddGroupBy(ev)">
-                <option value="">Add a group-by…</option>
-                <option t-foreach="groupByChoices" t-as="field"
-                        t-key="field.name" t-att-value="field.name"
-                        t-esc="field.string"/>
-            </select>
+                    t-on-change="(ev) => this.onAddGroupBy(ev)"
+                >
+                    <option value="">Add a group-by…</option>
+                    <option
+                        t-foreach="groupByChoices"
+                        t-as="field"
+                        t-key="field.name"
+                        t-att-value="field.name"
+                        t-esc="field.string"
+                    />
+                </select>
 
-            <div class="text-muted small">
+                <div class="text-muted small">
                 Anything more intricate — a domain with several terms —
                 belongs in the source, where it can be read.
             </div>
-        </div>
+            </div>
 
-        <div class="o_studio_search_host flex-grow-1 overflow-auto" t-ref="host">
-            <View t-if="preview.view_id" t-key="previewKey" t-props="hostProps"/>
-            <div t-else="" class="alert alert-info m-3" role="alert">
+            <div class="o_builder_search_host flex-grow-1 overflow-auto" t-ref="host">
+                <View t-if="preview.view_id" t-key="previewKey" t-props="hostProps" />
+                <div t-else="" class="alert alert-info m-3" role="alert">
                 This search view has no list to show it in, so there is nothing
                 to preview — the lists on the left are still the editor for it.
             </div>
+            </div>
         </div>
-    </div>
-</t>
+    </t>
 
 </templates>

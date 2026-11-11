@@ -29,19 +29,21 @@ PYTHON="${PYTHON:-python}"
 # The probes import odoo as a script would, not through odoo-bin: with the
 # checkout's own directory first, so a namespace package rooted at the
 # workspace (the `odoo/` directory itself) does not shadow the real one.
-export PYTHONPATH="$PWD/odoo${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$PWD/.odoo-nix/odoo${PYTHONPATH:+:$PYTHONPATH}"
 PSQL="${PSQL:-psql}"
-PSQL_ARGS="-h 127.0.0.1 -p 5442 -U odoo"
+PSQL_ARGS="-h ${PGHOST:-127.0.0.1} -p ${PGPORT:-5432} -U ${PGUSER:-odoo}"
 
+# shellcheck disable=SC2329,SC2086  # called by the trap; PSQL_ARGS splits on purpose
 cleanup() { "$PSQL" $PSQL_ARGS -d postgres -c "DROP DATABASE IF EXISTS \"$DB\";" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 if [ -n "$TEMPLATE" ]; then
     echo "==> cloning $TEMPLATE -> $DB"
+    # shellcheck disable=SC2086  # PSQL_ARGS splits on purpose
     "$PSQL" $PSQL_ARGS -d postgres -c "CREATE DATABASE \"$DB\" TEMPLATE \"$TEMPLATE\";" >/dev/null
 else
     echo "==> building $DB from scratch (install app_builder)"
-    "$PYTHON" odoo/odoo-bin -c "$CONF" -d "$DB" -i app_builder --stop-after-init \
+    "$PYTHON" .odoo-nix/odoo/odoo-bin -c "$CONF" -d "$DB" -i app_builder --stop-after-init \
         --http-port 8298 --gevent-port 8297 >/dev/null
 fi
 

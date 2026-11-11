@@ -7,7 +7,7 @@ browser then has to say where the drop landed in the view's definition, and
 the DOM alone cannot say: a group has no name, a notebook page carries its
 identity on the tab and nothing else, and a kanban card renders once per
 record. So the server names the nodes before the arch is compiled -- one
-class token per element, ``o_studio_n_<ordinal>`` -- and the browser hands the
+class token per element, ``o_builder_n_<ordinal>`` -- and the browser hands the
 token back. The token is minted on the combined arch, the same tree every
 edit is applied to, so what the user pointed at and what the server edits
 are one node by construction.
@@ -35,7 +35,7 @@ from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
 #: A node's role in the arch. One tag can be several kinds (``div`` is
 #: ``label``, ``button_box`` or ``html``); ``_kind()`` is the single source.
 #: ``"pending"`` is never produced by this file's own ``_kind``/
-#: ``KIND_BY_TAG`` -- only by ``studio_view_canvas.py``'s ``_splice_ghost``,
+#: ``KIND_BY_TAG`` -- only by ``builder_view_canvas.py``'s ``_splice_ghost``,
 #: which builds a ``nodes[token]`` entry of this same shape directly for a
 #: field staged on a draft; named here anyway because it travels through the
 #: exact node table this file defines. Mirrors
@@ -63,11 +63,11 @@ NodeKind: TypeAlias = Literal[
     "pending",
 ]
 
-TOKEN_PREFIX = "o_studio_n_"
+TOKEN_PREFIX = "o_builder_n_"
 
 # The marker an invisible node carries when the canvas has been asked to show
 # it anyway: the node renders, and the overlay dims it.
-INVISIBLE_MARK = "o_studio_invisible"
+INVISIBLE_MARK = "o_builder_invisible"
 
 # Tags that put nothing of their own in the DOM. They are walked -- what is
 # inside them renders -- but not stamped, since there is no element to carry
@@ -211,7 +211,7 @@ COMPONENT_TAGS = {
     "button": "button",
 }
 
-#: A token naming one node of the arch (``o_studio_n_<ordinal>``), or the
+#: A token naming one node of the arch (``o_builder_n_<ordinal>``), or the
 #: ghost of a staged field (``p_<name>``). Opaque to every reader: never
 #: parsed, only minted here and looked up in the node table.
 Token: TypeAlias = str
@@ -220,7 +220,7 @@ Token: TypeAlias = str
 Orientation: TypeAlias = Literal["row", "column"]
 
 #: Why a node is hidden from a plain user, when it is -- filled in by
-#: ``studio_view_canvas.py``'s ``_fill_hidden``, never by this file's own
+#: ``builder_view_canvas.py``'s ``_fill_hidden``, never by this file's own
 #: ``stamp()`` (which always leaves it ``None``); named here because it is
 #: this file's own node-table entry that later carries the value.
 HiddenReason: TypeAlias = Literal["groups", "invisible"] | None
@@ -245,7 +245,7 @@ class PendingFieldInfo(TypedDict):
     """A field staged on a draft, not yet applied: what a ``kind: "pending"``
     ghost node's own ``pending`` key carries.
 
-    Built by ``studio_view_canvas.py``'s own ``_splice_ghost`` (verified
+    Built by ``builder_view_canvas.py``'s own ``_splice_ghost`` (verified
     directly against that construction), never by this file's own
     ``stamp()`` -- named here only because it travels through the exact
     ``nodes`` dict ``stamp()`` returns and defines the shape of. Mirrors
@@ -261,19 +261,19 @@ class PendingFieldInfo(TypedDict):
     resolved: bool
 
 
-class StudioNode(TypedDict):
+class BuilderNode(TypedDict):
     """One entry of the canvas's node table, as ``stamp()`` builds it below
-    and as ``studio_view_canvas.py``'s own ``_splice_ghost`` builds it a
+    and as ``builder_view_canvas.py``'s own ``_splice_ghost`` builds it a
     second time, identically, for a pending-field ghost (neither file is
     the sole producer; both were read directly to confirm this shape).
 
     Mirrors ``app_builder_view/static/src/console/types.ts``'s own
-    ``StudioNode``, which was transcribed from this exact construction in
+    ``BuilderNode``, which was transcribed from this exact construction in
     the other direction; kept in sync by hand until TYPING.md's Phase 2d
     generator exists. ``field``/``view_id`` are typed no more precisely
     than this file's own two producers guarantee (both always write
     ``None``) rather than invented -- the real shape of a non-``None``
-    ``field`` lives in ``studio_view_canvas.py:_canvas_field_info``, not
+    ``field`` lives in ``builder_view_canvas.py:_canvas_field_info``, not
     yet converted (TYPING.md Phase 1c); narrow when that file converts,
     per this migration's own rule against typing ahead of an unconverted
     producer.
@@ -304,7 +304,7 @@ class StudioNode(TypedDict):
     view_id: int | None
     label: FieldLabel | None
     #: Present only on a ``kind: "pending"`` ghost -- a field staged on a
-    #: draft, not yet applied (``studio_view_canvas.py``'s ``_splice_ghost``
+    #: draft, not yet applied (``builder_view_canvas.py``'s ``_splice_ghost``
     #: construction). Absent entirely on every node this file's own
     #: ``stamp()`` produces, which is exactly what ``NotRequired`` (rather
     #: than ``| None``) says.
@@ -327,7 +327,7 @@ class StampResult:
     # element type" inference pyright reconciles against the field's own
     # annotation, confirmed by running pyright directly against this file;
     # the parametrized generic alias as the callable is the fix.
-    nodes: dict[Token, StudioNode] = field(default_factory=dict[Token, StudioNode])
+    nodes: dict[Token, BuilderNode] = field(default_factory=dict[Token, BuilderNode])
     elements: dict[Token, LxmlElement] = field(default_factory=dict[Token, LxmlElement])
 
 
@@ -538,7 +538,7 @@ def stamp(root: LxmlElement, view_type: str | None = None) -> StampResult:
     listed_copy = _walk(arch)
     tokens = ["%s%d" % (TOKEN_PREFIX, ordinal) for ordinal in range(len(listed))]
 
-    nodes: dict[Token, StudioNode] = {}
+    nodes: dict[Token, BuilderNode] = {}
     elements: dict[Token, LxmlElement] = {}
     for ordinal, (element, parent_index, dom, hint) in enumerate(listed):
         token = tokens[ordinal]
@@ -601,7 +601,7 @@ def stamp(root: LxmlElement, view_type: str | None = None) -> StampResult:
     return StampResult(arch=arch, root=tokens[0], nodes=nodes, elements=elements)
 
 
-def descendants(nodes: dict[Token, StudioNode], token: Token) -> list[Token]:
+def descendants(nodes: dict[Token, BuilderNode], token: Token) -> list[Token]:
     """Every token listed under ``token``, in document order.
 
     What "the nodes in it" means for a container about to be removed: the

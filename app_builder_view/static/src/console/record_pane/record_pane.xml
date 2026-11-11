@@ -2,265 +2,587 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.RecordPane">
-    <div class="o_studio_pane o_studio_record_pane" t-att-data-pane="this.model.entry.key">
-        <div class="o_studio_pane_toolbar">
-            <h5 class="mb-0 me-2"><t t-esc="this.label"/> <small t-if="this.model.entry.scope !== 'package'" class="text-muted">of <t t-esc="this.modelLabel"/></small></h5>
-            <input type="search" class="form-control form-control-sm w-auto o_studio_pane_search" placeholder="search…"
-                   t-att-value="this.model.search" t-on-input="(ev) => this.model.search = ev.target.value"/>
-            <select class="form-select form-select-sm w-auto o_studio_pane_filter"
-                    t-on-change="(ev) => this.model.filter = ev.target.value">
-                <option value="all" t-att-selected="this.model.filter === 'all'">Everywhere</option>
-                <option value="mine" t-att-selected="this.model.filter === 'mine'">In this package</option>
-            </select>
-            <label class="small text-muted d-flex align-items-center gap-1 mb-0">
-                <input type="checkbox" class="form-check-input mt-0 o_studio_pane_inactive"
-                       t-att-checked="this.model.showInactive"
-                       t-on-change="(ev) => this.model.showInactive = ev.target.checked"/>
+        <div
+            class="o_builder_pane o_builder_record_pane"
+            t-att-data-pane="this.model.entry.key"
+        >
+            <div class="o_builder_pane_toolbar">
+                <h5 class="mb-0 me-2">
+                    <t t-esc="this.label" />
+                    <small
+                        t-if="this.model.entry.scope !== 'package'"
+                        class="text-muted"
+                    >of <t t-esc="this.modelLabel" /></small>
+                </h5>
+                <input
+                    type="search"
+                    class="form-control form-control-sm w-auto o_builder_pane_search"
+                    placeholder="search…"
+                    t-att-value="this.model.search"
+                    t-on-input="(ev) => this.model.search = ev.target.value"
+                />
+                <select
+                    class="form-select form-select-sm w-auto o_builder_pane_filter"
+                    t-on-change="(ev) => this.model.filter = ev.target.value"
+                >
+                    <option
+                        value="all"
+                        t-att-selected="this.model.filter === 'all'"
+                    >Everywhere</option>
+                    <option
+                        value="mine"
+                        t-att-selected="this.model.filter === 'mine'"
+                    >In this package</option>
+                </select>
+                <label class="small text-muted d-flex align-items-center gap-1 mb-0">
+                <input
+                    type="checkbox"
+                    class="form-check-input mt-0 o_builder_pane_inactive"
+                    t-att-checked="this.model.showInactive"
+                    t-on-change="(ev) => this.model.showInactive = ev.target.checked"
+                />
                 Inactive
             </label>
-            <span class="ms-auto"/>
-            <div t-if="this.canCreate and this.templates.length" class="btn-group">
-                <button type="button" class="btn btn-primary btn-sm o_studio_pane_new"
+                <span class="ms-auto" />
+                <div t-if="this.canCreate and this.templates.length" class="btn-group">
+                    <button
+                        type="button"
+                        class="btn btn-primary btn-sm o_builder_pane_new"
                         t-att-disabled="this.model.busy"
-                        t-on-click="() => this.model.startCreate(this.templates[0])">
-                    <i class="fa fa-plus me-1"/>New
+                        t-on-click="() => this.model.startCreate(this.templates[0])"
+                    >
+                    <i class="fa fa-plus me-1" />New
                 </button>
-                <button type="button" class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
-                        data-bs-toggle="dropdown" aria-expanded="false" t-att-disabled="this.model.busy"/>
-                <ul class="dropdown-menu dropdown-menu-end">
-                    <li t-foreach="this.templates" t-as="template" t-key="template.key">
-                        <a class="dropdown-item o_studio_pane_template" href="#" t-att-data-template="template.key"
-                           t-on-click.prevent="() => this.model.startCreate(template)">
-                            <div t-esc="template.label"/>
-                            <small t-if="template.help" class="text-muted" t-esc="template.help"/>
-                        </a>
-                    </li>
-                </ul>
+                    <button
+                        type="button"
+                        class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                        t-att-disabled="this.model.busy"
+                    />
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li
+                            t-foreach="this.templates"
+                            t-as="template"
+                            t-key="template.key"
+                        >
+                            <a
+                                class="dropdown-item o_builder_pane_template"
+                                href="#"
+                                t-att-data-template="template.key"
+                                t-on-click.prevent="() => this.model.startCreate(template)"
+                            >
+                                <div t-esc="template.label" />
+                                <small
+                                    t-if="template.help"
+                                    class="text-muted"
+                                    t-esc="template.help"
+                                />
+                            </a>
+                        </li>
+                    </ul>
+                </div>
             </div>
-        </div>
 
-        <!-- A gate the model has to carry before a record of this kind means
+            <!-- A gate the model has to carry before a record of this kind means
              anything (approvals): switched on from here, one reload. -->
-        <div t-if="this.gateClosed" class="o_studio_card o_studio_gate_card mb-3">
-            <div class="fw-bold mb-1" t-esc="this.gate.title"/>
-            <div class="small text-muted mb-2" t-esc="this.gate.help"/>
-            <t t-if="!this.gate.state_fields.length">
-                <div class="small text-muted o_studio_gate_none">
+            <div t-if="this.gateClosed" class="o_builder_card o_builder_gate_card mb-3">
+                <div class="fw-bold mb-1" t-esc="this.gate.title" />
+                <div class="small text-muted mb-2" t-esc="this.gate.help" />
+                <t t-if="!this.gate.state_fields.length">
+                    <div class="small text-muted o_builder_gate_none">
                     This model has no status field to gate on. Add a Selection field first, from the Views pane.
                 </div>
-            </t>
-            <t t-elif="this.shell.packageWritable">
-                <div class="o_studio_row" data-row="gate_field">
-                    <label class="o_studio_row_label">Status field</label>
-                    <div class="o_studio_row_content">
-                        <select class="form-select form-select-sm" t-on-change="(ev) => this.onGateField(ev)">
-                            <option t-foreach="this.gate.state_fields" t-as="field" t-key="field.name"
-                                    t-att-value="field.name" t-att-selected="this.gateField and field.name === this.gateField.name" t-esc="field.string"/>
-                        </select>
+                </t>
+                <t t-elif="this.shell.packageWritable">
+                    <div class="o_builder_row" data-row="gate_field">
+                        <label class="o_builder_row_label">Status field</label>
+                        <div class="o_builder_row_content">
+                            <select
+                                class="form-select form-select-sm"
+                                t-on-change="(ev) => this.onGateField(ev)"
+                            >
+                                <option
+                                    t-foreach="this.gate.state_fields"
+                                    t-as="field"
+                                    t-key="field.name"
+                                    t-att-value="field.name"
+                                    t-att-selected="this.gateField and field.name === this.gateField.name"
+                                    t-esc="field.string"
+                                />
+                            </select>
+                        </div>
                     </div>
-                </div>
-                <div class="o_studio_row" data-row="gate_from">
-                    <label class="o_studio_row_label">From</label>
-                    <div class="o_studio_row_content">
-                        <select class="form-select form-select-sm" multiple="multiple" size="4" t-on-change="(ev) => this.onGateStates('from', ev)">
-                            <option t-foreach="this.gateValues" t-as="value" t-key="value.value"
-                                    t-att-value="value.value" t-att-selected="this.state.gate.from.includes(value.value)" t-esc="value.label"/>
-                        </select>
-                        <small class="text-muted d-block o_studio_row_hint">Empty: from any state.</small>
+                    <div class="o_builder_row" data-row="gate_from">
+                        <label class="o_builder_row_label">From</label>
+                        <div class="o_builder_row_content">
+                            <select
+                                class="form-select form-select-sm"
+                                multiple="multiple"
+                                size="4"
+                                t-on-change="(ev) => this.onGateStates('from', ev)"
+                            >
+                                <option
+                                    t-foreach="this.gateValues"
+                                    t-as="value"
+                                    t-key="value.value"
+                                    t-att-value="value.value"
+                                    t-att-selected="this.state.gate.from.includes(value.value)"
+                                    t-esc="value.label"
+                                />
+                            </select>
+                            <small
+                                class="text-muted d-block o_builder_row_hint"
+                            >Empty: from any state.</small>
+                        </div>
                     </div>
-                </div>
-                <div class="o_studio_row" data-row="gate_to">
-                    <label class="o_studio_row_label">To</label>
-                    <div class="o_studio_row_content">
-                        <select class="form-select form-select-sm" multiple="multiple" size="4" t-on-change="(ev) => this.onGateStates('to', ev)">
-                            <option t-foreach="this.gateValues" t-as="value" t-key="value.value"
-                                    t-att-value="value.value" t-att-selected="this.state.gate.to.includes(value.value)" t-esc="value.label"/>
-                        </select>
+                    <div class="o_builder_row" data-row="gate_to">
+                        <label class="o_builder_row_label">To</label>
+                        <div class="o_builder_row_content">
+                            <select
+                                class="form-select form-select-sm"
+                                multiple="multiple"
+                                size="4"
+                                t-on-change="(ev) => this.onGateStates('to', ev)"
+                            >
+                                <option
+                                    t-foreach="this.gateValues"
+                                    t-as="value"
+                                    t-key="value.value"
+                                    t-att-value="value.value"
+                                    t-att-selected="this.state.gate.to.includes(value.value)"
+                                    t-esc="value.label"
+                                />
+                            </select>
+                        </div>
                     </div>
-                </div>
-                <div class="o_studio_row" data-row="gate_cancel">
-                    <label class="o_studio_row_label">Cancel state</label>
-                    <div class="o_studio_row_content">
-                        <select class="form-select form-select-sm" t-on-change="(ev) => this.state.gate.cancel = ev.target.value">
-                            <option value="">None</option>
-                            <option t-foreach="this.gateValues" t-as="value" t-key="value.value"
-                                    t-att-value="value.value" t-att-selected="this.state.gate.cancel === value.value" t-esc="value.label"/>
-                        </select>
-                        <small class="text-muted d-block o_studio_row_hint">Reaching it clears the approvals asked so far.</small>
+                    <div class="o_builder_row" data-row="gate_cancel">
+                        <label class="o_builder_row_label">Cancel state</label>
+                        <div class="o_builder_row_content">
+                            <select
+                                class="form-select form-select-sm"
+                                t-on-change="(ev) => this.state.gate.cancel = ev.target.value"
+                            >
+                                <option value="">None</option>
+                                <option
+                                    t-foreach="this.gateValues"
+                                    t-as="value"
+                                    t-key="value.value"
+                                    t-att-value="value.value"
+                                    t-att-selected="this.state.gate.cancel === value.value"
+                                    t-esc="value.label"
+                                />
+                            </select>
+                            <small
+                                class="text-muted d-block o_builder_row_hint"
+                            >Reaching it clears the approvals asked so far.</small>
+                        </div>
                     </div>
-                </div>
-                <div class="small mb-2 o_studio_gate_sentence" t-esc="this.gateSentence"/>
-                <button type="button" class="btn btn-primary btn-sm o_studio_gate_enable"
-                        t-att-disabled="!this.gateReady or this.model.busy" t-on-click="() => this.onEnableGate()">
-                    <i class="fa fa-check-square-o me-1"/>Turn on approvals
+                    <div
+                        class="small mb-2 o_builder_gate_sentence"
+                        t-esc="this.gateSentence"
+                    />
+                    <button
+                        type="button"
+                        class="btn btn-primary btn-sm o_builder_gate_enable"
+                        t-att-disabled="!this.gateReady or this.model.busy"
+                        t-on-click="() => this.onEnableGate()"
+                    >
+                    <i class="fa fa-check-square-o me-1" />Turn on approvals
                 </button>
-                <small class="text-muted d-block mt-1 o_studio_row_hint" t-esc="this.gate.consequence"/>
-            </t>
-            <div t-else="" class="small text-muted">The package is read-only, so the gate cannot be written.</div>
-        </div>
-
-        <!-- The inline New form: what a record cannot exist without. -->
-        <div t-if="this.creating" class="o_studio_card o_studio_create_card mb-3">
-            <div class="o_studio_section_title">New</div>
-            <RowEditor t-foreach="this.createRows" t-as="spec" t-key="spec.name"
-                       row="spec" value="this.creating.values[spec.name]" context="this.rowContext"
-                       disabled="this.model.busy"
-                       onChange="(value) => this.onCreateValue(spec, value)"/>
-            <div class="d-flex gap-2 mt-2">
-                <button type="button" class="btn btn-primary btn-sm o_studio_create_confirm"
-                        t-att-disabled="this.model.busy" t-on-click="() => this.onCreate()">Create</button>
-                <button type="button" class="btn btn-link btn-sm" t-on-click="() => this.model.cancelCreate()">Cancel</button>
+                    <small
+                        class="text-muted d-block mt-1 o_builder_row_hint"
+                        t-esc="this.gate.consequence"
+                    />
+                </t>
+                <div
+                    t-else=""
+                    class="small text-muted"
+                >The package is read-only, so the gate cannot be written.</div>
             </div>
-        </div>
 
-        <div t-if="this.model.loading" class="text-muted small"><i class="fa fa-circle-o-notch fa-spin me-1"/>Loading…</div>
-        <div t-elif="this.empty and !this.creating and !this.gateClosed" class="o_studio_empty o_studio_pane_empty">
-            <div class="fw-bold mb-1" t-esc="this.emptyState.title"/>
-            <div class="small text-muted mb-3 o_studio_pane_empty_help" t-esc="this.emptyState.help"/>
-            <div t-if="this.canCreate" class="o_studio_tiles justify-content-center">
-                <button t-foreach="this.templates" t-as="template" t-key="template.key" type="button"
-                        class="o_studio_tile o_studio_pane_template" t-att-data-template="template.key"
-                        t-on-click="() => this.model.startCreate(template)">
-                    <span class="o_studio_tile_label" t-esc="template.label"/>
-                    <small t-if="template.help" class="text-muted d-block" t-esc="template.help"/>
-                </button>
-            </div>
-        </div>
-        <div t-else="" class="o_studio_record_list">
-            <div class="o_studio_card o_studio_record_card" t-att-class="{ selected: row.id === this.model.selectedId, inactive: row.active === false, foreign: !row.owned, highlight: row.highlight }" t-foreach="this.rows"
-                 t-as="row" t-key="row.id" t-att-data-id="row.id"
-                 t-att-style="this.rowStyle(row)"
-                 t-on-click="() => this.onSelect(row)">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="o_studio_dot" t-attf-class="o_studio_dot_{{ row.active === false ? 'grey' : 'green' }}"/>
-                    <span class="fw-bold flex-grow-1 o_studio_record_title" t-esc="row.title"/>
-                    <span t-foreach="row.badges" t-as="badge" t-key="badge.key"
-                          class="badge text-bg-light text-muted o_studio_record_badge" t-att-data-badge="badge.key" t-esc="badge.label"/>
-                    <span class="o_studio_record_actions">
-                        <button class="btn btn-link btn-sm p-0 ms-2" t-att-class="{ 'text-danger': action.danger }" t-foreach="this.actionsFor(row)" t-as="action"
-                                t-key="action.key" type="button"
-                                t-att-data-action="action.key" t-att-title="action.label"
-                                t-on-click.stop="() => action.run()">
-                            <i t-att-class="action.icon"/>
-                        </button>
-                    </span>
+            <!-- The inline New form: what a record cannot exist without. -->
+            <div t-if="this.creating" class="o_builder_card o_builder_create_card mb-3">
+                <div class="o_builder_section_title">New</div>
+                <RowEditor
+                    t-foreach="this.createRows"
+                    t-as="spec"
+                    t-key="spec.name"
+                    row="spec"
+                    value="this.creating.values[spec.name]"
+                    context="this.rowContext"
+                    disabled="this.model.busy"
+                    onChange="(value) => this.onCreateValue(spec, value)"
+                />
+                <div class="d-flex gap-2 mt-2">
+                    <button
+                        type="button"
+                        class="btn btn-primary btn-sm o_builder_create_confirm"
+                        t-att-disabled="this.model.busy"
+                        t-on-click="() => this.onCreate()"
+                    >Create</button>
+                    <button
+                        type="button"
+                        class="btn btn-link btn-sm"
+                        t-on-click="() => this.model.cancelCreate()"
+                    >Cancel</button>
                 </div>
-                <div t-if="row.sentence" class="small text-muted o_studio_record_sentence" t-esc="row.sentence"/>
+            </div>
+
+            <div t-if="this.model.loading" class="text-muted small"><i
+                class="fa fa-circle-o-notch fa-spin me-1"
+            />Loading…</div>
+            <div
+                t-elif="this.empty and !this.creating and !this.gateClosed"
+                class="o_builder_empty o_builder_pane_empty"
+            >
+                <div class="fw-bold mb-1" t-esc="this.emptyState.title" />
+                <div
+                    class="small text-muted mb-3 o_builder_pane_empty_help"
+                    t-esc="this.emptyState.help"
+                />
+                <div
+                    t-if="this.canCreate"
+                    class="o_builder_tiles justify-content-center"
+                >
+                    <button
+                        t-foreach="this.templates"
+                        t-as="template"
+                        t-key="template.key"
+                        type="button"
+                        class="o_builder_tile o_builder_pane_template"
+                        t-att-data-template="template.key"
+                        t-on-click="() => this.model.startCreate(template)"
+                    >
+                        <span class="o_builder_tile_label" t-esc="template.label" />
+                        <small
+                            t-if="template.help"
+                            class="text-muted d-block"
+                            t-esc="template.help"
+                        />
+                    </button>
+                </div>
+            </div>
+            <div t-else="" class="o_builder_record_list">
+                <div
+                    class="o_builder_card o_builder_record_card"
+                    t-att-class="{ selected: row.id === this.model.selectedId, inactive: row.active === false, foreign: !row.owned, highlight: row.highlight }"
+                    t-foreach="this.rows"
+                    t-as="row"
+                    t-key="row.id"
+                    t-att-data-id="row.id"
+                    t-att-style="this.rowStyle(row)"
+                    t-on-click="() => this.onSelect(row)"
+                >
+                    <div class="d-flex align-items-center gap-2">
+                        <span
+                            class="o_builder_dot"
+                            t-attf-class="o_builder_dot_{{ row.active === false ? 'grey' : 'green' }}"
+                        />
+                        <span
+                            class="fw-bold flex-grow-1 o_builder_record_title"
+                            t-esc="row.title"
+                        />
+                        <span
+                            t-foreach="row.badges"
+                            t-as="badge"
+                            t-key="badge.key"
+                            class="badge text-bg-light text-muted o_builder_record_badge"
+                            t-att-data-badge="badge.key"
+                            t-esc="badge.label"
+                        />
+                        <span class="o_builder_record_actions">
+                            <button
+                                class="btn btn-link btn-sm p-0 ms-2"
+                                t-att-class="{ 'text-danger': action.danger }"
+                                t-foreach="this.actionsFor(row)"
+                                t-as="action"
+                                t-key="action.key"
+                                type="button"
+                                t-att-data-action="action.key"
+                                t-att-title="action.label"
+                                t-on-click.stop="() => action.run()"
+                            >
+                                <i t-att-class="action.icon" />
+                            </button>
+                        </span>
+                    </div>
+                    <div
+                        t-if="row.sentence"
+                        class="small text-muted o_builder_record_sentence"
+                        t-esc="row.sentence"
+                    />
+                </div>
             </div>
         </div>
-    </div>
-</t>
+    </t>
 
 <t t-name="app_builder_view.RecordSidebar">
-    <div class="o_studio_sidebar_pane o_studio_record_sidebar" data-pane="properties">
-        <div t-if="!this.record" class="text-muted small p-2">
-            <t t-if="this.model.describing"><i class="fa fa-circle-o-notch fa-spin me-1"/>Loading…</t>
-            <t t-else="">Click a card to see and change what it does; New to add one.</t>
-        </div>
-        <t t-else="">
-            <div class="d-flex align-items-center gap-2 mb-1">
-                <span class="fw-bold o_studio_record_name" t-esc="this.row.title"/>
-                <span t-foreach="this.row.badges" t-as="badge" t-key="badge.key"
-                      class="badge text-bg-light text-muted" t-esc="badge.label"/>
+        <div
+            class="o_builder_sidebar_pane o_builder_record_sidebar"
+            data-pane="properties"
+        >
+            <div t-if="!this.record" class="text-muted small p-2">
+                <t t-if="this.model.describing"><i
+                    class="fa fa-circle-o-notch fa-spin me-1"
+                />Loading…</t>
+                <t
+                    t-else=""
+                >Click a card to see and change what it does; New to add one.</t>
             </div>
-            <div t-if="!this.editable" class="alert alert-light small py-1 o_studio_record_reason" role="status" t-esc="this.row.reason"/>
+            <t t-else="">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span
+                        class="fw-bold o_builder_record_name"
+                        t-esc="this.row.title"
+                    />
+                    <span
+                        t-foreach="this.row.badges"
+                        t-as="badge"
+                        t-key="badge.key"
+                        class="badge text-bg-light text-muted"
+                        t-esc="badge.label"
+                    />
+                </div>
+                <div
+                    t-if="!this.editable"
+                    class="alert alert-light small py-1 o_builder_record_reason"
+                    role="status"
+                    t-esc="this.row.reason"
+                />
 
-            <t t-foreach="this.sections" t-as="section" t-key="section.id">
-                <div class="o_studio_section_title" t-esc="section.title"/>
-                <!-- `spec`, not `row`: a loop variable named like a getter of
+                <t t-foreach="this.sections" t-as="section" t-key="section.id">
+                    <div class="o_builder_section_title" t-esc="section.title" />
+                    <!-- `spec`, not `row`: a loop variable named like a getter of
                      the component (`this.row`) is silently not assigned. -->
-                <RowEditor t-foreach="section.rows" t-as="spec" t-key="spec.name"
-                           row="spec" value="this.record.values[spec.name]" context="this.rowContext"
-                           disabled="!this.editable or this.model.busy"
-                           onChange="(value) => this.onChange(spec, value)"/>
-            </t>
+                    <RowEditor
+                        t-foreach="section.rows"
+                        t-as="spec"
+                        t-key="spec.name"
+                        row="spec"
+                        value="this.record.values[spec.name]"
+                        context="this.rowContext"
+                        disabled="!this.editable or this.model.busy"
+                        onChange="(value) => this.onChange(spec, value)"
+                    />
+                </t>
 
-            <!-- The records that belong to this one: an automation's steps. -->
-            <div t-if="this.children" class="o_studio_children" t-att-data-surface="this.children.surface">
-                <div class="o_studio_section_title" t-esc="this.children.label"/>
-                <div t-if="!this.children.items.length" class="small text-muted mb-2 o_studio_children_empty" t-esc="this.children.empty"/>
-                <div class="o_studio_child" t-att-class="{ open: this.isOpen(child) }" t-foreach="this.children.items"
-                     t-as="child" t-key="child.row.id" t-att-data-id="child.row.id">
-                    <div class="o_studio_child_head" t-on-click="() => this.toggleChild(child)">
-                        <span class="o_studio_child_index" t-esc="child_index + 1"/>
-                        <span class="o_studio_child_title flex-grow-1">
-                            <span class="fw-bold" t-esc="this.childKindLabel(child)"/>
-                            <small t-if="child.sentence and child.sentence !== this.childKindLabel(child)" class="text-muted ms-1" t-esc="child.sentence"/>
-                        </span>
-                        <t t-if="this.editable">
-                            <button type="button" class="btn btn-link btn-sm p-0 ms-1 o_studio_child_up" title="Move up"
-                                    t-att-disabled="this.model.busy or child_first" t-on-click.stop="() => this.onMoveChild(child, -1)"><i class="fa fa-arrow-up"/></button>
-                            <button type="button" class="btn btn-link btn-sm p-0 ms-1 o_studio_child_down" title="Move down"
-                                    t-att-disabled="this.model.busy or child_last" t-on-click.stop="() => this.onMoveChild(child, 1)"><i class="fa fa-arrow-down"/></button>
-                            <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger o_studio_child_remove" title="Remove"
-                                    t-att-disabled="this.model.busy" t-on-click.stop="() => this.onRemoveChild(child)"><i class="fa fa-trash-o"/></button>
-                        </t>
-                    </div>
-                    <div t-if="this.isOpen(child)" class="o_studio_child_body">
-                        <t t-foreach="this.childSections(child)" t-as="section" t-key="section.id">
-                            <div t-if="section.id !== 'step'" class="o_studio_section_title small" t-esc="section.title"/>
-                            <RowEditor t-foreach="section.rows" t-as="spec" t-key="spec.name"
-                                       row="spec" value="child.values[spec.name]" context="this.rowContext"
-                                       disabled="!this.editable or this.model.busy"
-                                       onChange="(value) => this.onChildChange(child, spec, value)"/>
-                        </t>
-                        <small t-foreach="child.notes" t-as="note" t-key="note_index" class="text-muted d-block mb-2" t-esc="note"/>
-                        <div t-if="child.actions.length" class="d-flex flex-wrap gap-2 mt-1 mb-2">
-                            <button class="btn btn-sm" t-att-class="action.danger ? 'btn-outline-danger' : 'btn-secondary'" t-foreach="child.actions" t-as="action"
-                                    t-key="action.key" type="button"
+                <!-- The records that belong to this one: an automation's steps. -->
+                <div
+                    t-if="this.children"
+                    class="o_builder_children"
+                    t-att-data-surface="this.children.surface"
+                >
+                    <div class="o_builder_section_title" t-esc="this.children.label" />
+                    <div
+                        t-if="!this.children.items.length"
+                        class="small text-muted mb-2 o_builder_children_empty"
+                        t-esc="this.children.empty"
+                    />
+                    <div
+                        class="o_builder_child"
+                        t-att-class="{ open: this.isOpen(child) }"
+                        t-foreach="this.children.items"
+                        t-as="child"
+                        t-key="child.row.id"
+                        t-att-data-id="child.row.id"
+                    >
+                        <div
+                            class="o_builder_child_head"
+                            t-on-click="() => this.toggleChild(child)"
+                        >
+                            <span
+                                class="o_builder_child_index"
+                                t-esc="child_index + 1"
+                            />
+                            <span class="o_builder_child_title flex-grow-1">
+                                <span
+                                    class="fw-bold"
+                                    t-esc="this.childKindLabel(child)"
+                                />
+                                <small
+                                    t-if="child.sentence and child.sentence !== this.childKindLabel(child)"
+                                    class="text-muted ms-1"
+                                    t-esc="child.sentence"
+                                />
+                            </span>
+                            <t t-if="this.editable">
+                                <button
+                                    type="button"
+                                    class="btn btn-link btn-sm p-0 ms-1 o_builder_child_up"
+                                    title="Move up"
+                                    t-att-disabled="this.model.busy or child_first"
+                                    t-on-click.stop="() => this.onMoveChild(child, -1)"
+                                >
+                                    <i class="fa fa-arrow-up" />
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn btn-link btn-sm p-0 ms-1 o_builder_child_down"
+                                    title="Move down"
+                                    t-att-disabled="this.model.busy or child_last"
+                                    t-on-click.stop="() => this.onMoveChild(child, 1)"
+                                >
+                                    <i class="fa fa-arrow-down" />
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn btn-link btn-sm p-0 ms-1 text-danger o_builder_child_remove"
+                                    title="Remove"
+                                    t-att-disabled="this.model.busy"
+                                    t-on-click.stop="() => this.onRemoveChild(child)"
+                                >
+                                    <i class="fa fa-trash-o" />
+                                </button>
+                            </t>
+                        </div>
+                        <div t-if="this.isOpen(child)" class="o_builder_child_body">
+                            <t
+                                t-foreach="this.childSections(child)"
+                                t-as="section"
+                                t-key="section.id"
+                            >
+                                <div
+                                    t-if="section.id !== 'step'"
+                                    class="o_builder_section_title small"
+                                    t-esc="section.title"
+                                />
+                                <RowEditor
+                                    t-foreach="section.rows"
+                                    t-as="spec"
+                                    t-key="spec.name"
+                                    row="spec"
+                                    value="child.values[spec.name]"
+                                    context="this.rowContext"
+                                    disabled="!this.editable or this.model.busy"
+                                    onChange="(value) => this.onChildChange(child, spec, value)"
+                                />
+                            </t>
+                            <small
+                                t-foreach="child.notes"
+                                t-as="note"
+                                t-key="note_index"
+                                class="text-muted d-block mb-2"
+                                t-esc="note"
+                            />
+                            <div
+                                t-if="child.actions.length"
+                                class="d-flex flex-wrap gap-2 mt-1 mb-2"
+                            >
+                                <button
+                                    class="btn btn-sm"
+                                    t-att-class="action.danger ? 'btn-outline-danger' : 'btn-secondary'"
+                                    t-foreach="child.actions"
+                                    t-as="action"
+                                    t-key="action.key"
+                                    type="button"
                                     t-att-data-action="action.key"
                                     t-att-disabled="!action.enabled or this.model.busy"
                                     t-att-data-tooltip="action.enabled ? undefined : action.reason"
-                                    t-on-click="() => this.onChildAction(child, action)">
-                                <i t-if="action.icon" t-att-class="action.icon + ' me-1'"/><t t-esc="action.label"/>
-                            </button>
+                                    t-on-click="() => this.onChildAction(child, action)"
+                                >
+                                    <i
+                                        t-if="action.icon"
+                                        t-att-class="action.icon + ' me-1'"
+                                    />
+                                    <t t-esc="action.label" />
+                                </button>
+                            </div>
                         </div>
                     </div>
+                    <select
+                        t-if="this.editable"
+                        class="form-select form-select-sm o_builder_child_add mb-2"
+                        t-att-disabled="this.model.busy"
+                        t-on-change="(ev) => this.onAddChild(ev)"
+                    >
+                        <option value="">+ Add a <t
+                            t-esc="this.children.one"
+                        />…</option>
+                        <option
+                            t-foreach="this.childKinds"
+                            t-as="kind"
+                            t-key="kind.value"
+                            t-att-value="kind.value"
+                            t-esc="kind.label"
+                        />
+                    </select>
                 </div>
-                <select t-if="this.editable" class="form-select form-select-sm o_studio_child_add mb-2"
-                        t-att-disabled="this.model.busy" t-on-change="(ev) => this.onAddChild(ev)">
-                    <option value="">+ Add a <t t-esc="this.children.one"/>…</option>
-                    <option t-foreach="this.childKinds" t-as="kind" t-key="kind.value" t-att-value="kind.value" t-esc="kind.label"/>
-                </select>
-            </div>
 
-            <!-- What a condition lets through today: the one number that says
+                <!-- What a condition lets through today: the one number that says
                  whether it means what the person thinks it means. -->
-            <small t-if="this.matches" class="d-block mb-2 o_studio_record_matches" t-att-class="this.matches.valid ? 'text-muted' : 'text-danger'">
-                <t t-if="this.matches.valid">Matches <t t-esc="this.matches.count"/> of <t t-esc="this.matches.total"/> records today.</t>
-                <t t-else="">This condition does not search: <t t-esc="this.matches.reason"/></t>
-            </small>
-            <small t-foreach="this.notes" t-as="note" t-key="note_index" class="text-muted d-block mb-2 o_studio_record_note" t-esc="note"/>
+                <small
+                    t-if="this.matches"
+                    class="d-block mb-2 o_builder_record_matches"
+                    t-att-class="this.matches.valid ? 'text-muted' : 'text-danger'"
+                >
+                    <t t-if="this.matches.valid">Matches <t
+                        t-esc="this.matches.count"
+                    /> of <t t-esc="this.matches.total" /> records today.</t>
+                    <t t-else="">This condition does not search: <t
+                        t-esc="this.matches.reason"
+                    /></t>
+                </small>
+                <small
+                    t-foreach="this.notes"
+                    t-as="note"
+                    t-key="note_index"
+                    class="text-muted d-block mb-2 o_builder_record_note"
+                    t-esc="note"
+                />
 
-            <div t-if="this.actions.length" class="d-flex flex-wrap gap-2 mt-2">
-                <button class="btn btn-sm" t-att-class="action.danger ? 'btn-outline-danger' : 'btn-secondary'" t-foreach="this.actions" t-as="action"
-                        t-key="action.key" type="button"
+                <div t-if="this.actions.length" class="d-flex flex-wrap gap-2 mt-2">
+                    <button
+                        class="btn btn-sm"
+                        t-att-class="action.danger ? 'btn-outline-danger' : 'btn-secondary'"
+                        t-foreach="this.actions"
+                        t-as="action"
+                        t-key="action.key"
+                        type="button"
                         t-att-data-action="action.key"
                         t-att-disabled="!action.enabled or this.model.busy"
                         t-att-data-tooltip="action.enabled ? undefined : action.reason"
-                        t-on-click="() => this.onAction(action)">
-                    <i t-if="action.icon" t-att-class="action.icon + ' me-1'"/><t t-esc="action.label"/>
-                </button>
-            </div>
+                        t-on-click="() => this.onAction(action)"
+                    >
+                        <i t-if="action.icon" t-att-class="action.icon + ' me-1'" />
+                        <t t-esc="action.label" />
+                    </button>
+                </div>
 
-            <div class="mt-3">
-                <button t-if="this.editable" class="btn btn-secondary btn-sm w-100 mb-1 o_studio_record_advanced" type="button"
-                        t-att-disabled="this.model.busy" t-on-click="() => this.onAdvanced()">
-                    <i class="fa fa-cog me-1"/>Advanced…
+                <div class="mt-3">
+                    <button
+                        t-if="this.editable"
+                        class="btn btn-secondary btn-sm w-100 mb-1 o_builder_record_advanced"
+                        type="button"
+                        t-att-disabled="this.model.busy"
+                        t-on-click="() => this.onAdvanced()"
+                    >
+                    <i class="fa fa-cog me-1" />Advanced…
                 </button>
-                <small t-if="this.editable" class="text-muted d-block mb-3">
+                    <small t-if="this.editable" class="text-muted d-block mb-3">
                     Opens Odoo's own form. What it saves is written to the package too.
                 </small>
-                <button t-if="this.editable" class="btn btn-outline-danger btn-sm w-100 o_studio_record_remove" type="button"
-                        t-att-disabled="this.model.busy" t-on-click="() => this.onRemove()">Remove</button>
-                <button t-elif="this.row.in_source and this.shell.packageWritable" class="btn btn-secondary btn-sm w-100 o_studio_record_duplicate"
+                    <button
+                        t-if="this.editable"
+                        class="btn btn-outline-danger btn-sm w-100 o_builder_record_remove"
                         type="button"
-                        t-att-disabled="this.model.busy" t-on-click="() => this.onDuplicate()">
-                    <i class="fa fa-clone me-1"/>Duplicate into <t t-esc="this.shell.package ? this.shell.package.name : ''"/>
+                        t-att-disabled="this.model.busy"
+                        t-on-click="() => this.onRemove()"
+                    >Remove</button>
+                    <button
+                        t-elif="this.row.in_source and this.shell.packageWritable"
+                        class="btn btn-secondary btn-sm w-100 o_builder_record_duplicate"
+                        type="button"
+                        t-att-disabled="this.model.busy"
+                        t-on-click="() => this.onDuplicate()"
+                    >
+                    <i class="fa fa-clone me-1" />Duplicate into <t
+                        t-esc="this.shell.package ? this.shell.package.name : ''"
+                    />
                 </button>
-            </div>
-        </t>
-    </div>
-</t>
+                </div>
+            </t>
+        </div>
+    </t>
 
 </templates>

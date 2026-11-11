@@ -21,9 +21,9 @@
  * canvas asks for, by name.
  */
 
-import type { Component } from "@odoo/owl";
-import { registry } from "@web/core/registry";
-import type { ViewsRegistryItemShape } from "registries";
+import type {Component} from "@odoo/owl";
+import {registry} from "@web/core/registry";
+import type {ViewsRegistryItemShape} from "registries";
 
 const viewRegistry = registry.category("views");
 
@@ -34,30 +34,33 @@ export const CANVAS_PREFIX = "app_builder_canvas__";
  * `js_class`, registering it on first use. Returns `null` when nothing is
  * registered under either name, so the caller can fall back to the type.
  */
-export function canvasJsClass(type: string, origJsClass: string | null = null): string | null {
-    const base = origJsClass && viewRegistry.contains(origJsClass) ? origJsClass : type;
-    if (!viewRegistry.contains(base)) {
-        return null;
-    }
-    const name = CANVAS_PREFIX + base;
-    if (!viewRegistry.contains(name)) {
-        // `Registry.get`'s JSDoc leaves `defaultValue` undocumented (so TS
-        // infers it as required), but the real method reads
-        // `arguments.length` to decide whether a missing key throws --
-        // passing `undefined` explicitly to satisfy the inferred
-        // signature would suppress that throw instead. `base` is known
-        // to exist (just checked above), so this cast keeps the call at
-        // one argument rather than relying on a throw it should never
-        // reach anyway. `.call(viewRegistry, ...)`, not a bare reference:
-        // `get` reads `this.content` internally, and extracting an
-        // unbound method reference would call it with no `this` at all.
-        const found = (viewRegistry.get as (key: string) => ViewsRegistryItemShape).call(
-            viewRegistry,
-            base,
-        );
-        viewRegistry.add(name, deriveCanvasView(found));
-    }
-    return name;
+export function canvasJsClass(
+  type: string,
+  origJsClass: string | null = null
+): string | null {
+  const base = origJsClass && viewRegistry.contains(origJsClass) ? origJsClass : type;
+  if (!viewRegistry.contains(base)) {
+    return null;
+  }
+  const name = CANVAS_PREFIX + base;
+  if (!viewRegistry.contains(name)) {
+    // `Registry.get`'s JSDoc leaves `defaultValue` undocumented (so TS
+    // infers it as required), but the real method reads
+    // `arguments.length` to decide whether a missing key throws --
+    // passing `undefined` explicitly to satisfy the inferred
+    // signature would suppress that throw instead. `base` is known
+    // to exist (just checked above), so this cast keeps the call at
+    // one argument rather than relying on a throw it should never
+    // reach anyway. `.call(viewRegistry, ...)`, not a bare reference:
+    // `get` reads `this.content` internally, and extracting an
+    // unbound method reference would call it with no `this` at all.
+    const found = (viewRegistry.get as (key: string) => ViewsRegistryItemShape).call(
+      viewRegistry,
+      base
+    );
+    viewRegistry.add(name, deriveCanvasView(found));
+  }
+  return name;
 }
 
 /**
@@ -66,33 +69,35 @@ export function canvasJsClass(type: string, origJsClass: string | null = null): 
  * Exported on its own so a test can mount the derived descriptor without
  * touching the registry.
  */
-export function deriveCanvasView(descriptor: ViewsRegistryItemShape): ViewsRegistryItemShape {
-    const derived = { ...descriptor };
-    if (descriptor.Controller) {
-        derived.Controller = noSave(descriptor.Controller as typeof Component);
-    }
-    if (descriptor.Renderer) {
-        derived.Renderer = noResequence(descriptor.Renderer as typeof Component);
-    }
-    return derived;
+export function deriveCanvasView(
+  descriptor: ViewsRegistryItemShape
+): ViewsRegistryItemShape {
+  const derived = {...descriptor};
+  if (descriptor.Controller) {
+    derived.Controller = noSave(descriptor.Controller);
+  }
+  if (descriptor.Renderer) {
+    derived.Renderer = noResequence(descriptor.Renderer);
+  }
+  return derived;
 }
 
 /** The lifecycle hooks `noSave` silences, named so `Object.entries` can
  * walk them -- see `noSave`'s own docstring for why each returns what it
  * does. */
 const NO_SAVE_OVERRIDES = {
-    beforeVisibilityChange() {},
-    async beforeLeave() {},
-    async beforeUnload() {},
-    // `async` on purpose despite no `await`: the real hook this
-    // overrides is awaited by its caller (`useViewButtons`), which
-    // expects a Promise back, and `false` synchronously wrapped in one
-    // by `async` is exactly what "the action is not to run" means here
-    // -- see this file's own module docstring.
-    // eslint-disable-next-line @typescript-eslint/require-await
-    async beforeExecuteActionButton() {
-        return false;
-    },
+  beforeVisibilityChange() {},
+  async beforeLeave() {},
+  async beforeUnload() {},
+  // `async` on purpose despite no `await`: the real hook this
+  // overrides is awaited by its caller (`useViewButtons`), which
+  // expects a Promise back, and `false` synchronously wrapped in one
+  // by `async` is exactly what "the action is not to run" means here
+  // -- see this file's own module docstring.
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async beforeExecuteActionButton() {
+    return false;
+  },
 };
 
 /**
@@ -107,23 +112,27 @@ const NO_SAVE_OVERRIDES = {
  * a graph) is left as it is.
  */
 export function noSave(Controller: typeof Component): typeof Component {
-    class NoSaveController extends Controller {}
-    const prototype = Controller.prototype as unknown as Record<string, unknown>;
-    for (const [name, fn] of Object.entries(NO_SAVE_OVERRIDES)) {
-        if (typeof prototype[name] === "function") {
-            Object.defineProperty(NoSaveController.prototype, name, {
-                value: fn,
-                writable: true,
-                configurable: true,
-            });
-        }
+  class NoSaveController extends Controller {}
+  const prototype = Controller.prototype as unknown as Record<string, unknown>;
+  for (const [name, fn] of Object.entries(NO_SAVE_OVERRIDES)) {
+    if (typeof prototype[name] === "function") {
+      Object.defineProperty(NoSaveController.prototype, name, {
+        value: fn,
+        writable: true,
+        configurable: true,
+      });
     }
-    return NoSaveController;
+  }
+  return NoSaveController;
 }
 
 /** The resequencing getters `noResequence` neuters -- see its own
  * docstring for which renderer each belongs to. */
-const RESEQUENCE_GETTERS = ["canResequenceRows", "canResequenceRecords", "canResequenceGroups"];
+const RESEQUENCE_GETTERS = [
+  "canResequenceRows",
+  "canResequenceRecords",
+  "canResequenceGroups",
+];
 
 /**
  * A renderer whose rows, records and groups cannot be dragged about.
@@ -134,14 +143,14 @@ const RESEQUENCE_GETTERS = ["canResequenceRows", "canResequenceRecords", "canRes
  * answers `false` leaves those hooks inert without touching them.
  */
 export function noResequence(Renderer: typeof Component): typeof Component {
-    class NoResequenceRenderer extends Renderer {}
-    for (const name of RESEQUENCE_GETTERS) {
-        if (name in Renderer.prototype) {
-            Object.defineProperty(NoResequenceRenderer.prototype, name, {
-                get: () => false,
-                configurable: true,
-            });
-        }
+  class NoResequenceRenderer extends Renderer {}
+  for (const name of RESEQUENCE_GETTERS) {
+    if (name in Renderer.prototype) {
+      Object.defineProperty(NoResequenceRenderer.prototype, name, {
+        get: () => false,
+        configurable: true,
+      });
     }
-    return NoResequenceRenderer;
+  }
+  return NoResequenceRenderer;
 }

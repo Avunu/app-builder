@@ -11,21 +11,23 @@ from typing import TYPE_CHECKING, cast
 
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_model import IrModel
-from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
+from odoo.addons.app_builder_base.tests.common import BuilderHttpCase, join_groups
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_model import IrModel
 
-from ..models.studio_menu_surface import StudioMenu
+from ..models.builder_menu_surface import BuilderMenu
 
 if TYPE_CHECKING:
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
     from odoo.addons.base.models.ir_actions import IrActionsActWindow
     from odoo.addons.base.models.ir_ui_menu import IrUiMenu
     from odoo.addons.base.models.res_users import Users
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
 
 
 @tagged("post_install", "-at_install")
-class TestMenuPaneTour(StudioHttpCase):
+class TestMenuPaneTour(BuilderHttpCase):
     def setUp(self):
         super().setUp()
         console = self.env["ir.module.module"].search(
@@ -36,14 +38,14 @@ class TestMenuPaneTour(StudioHttpCase):
         self.addCleanup(self.env["base.automation"]._unregister_hook)
 
     def test_a_submenu_is_made_moved_and_renamed_from_the_pane(self):
-        root = tempfile.mkdtemp(prefix="studio-tour-")
+        root = tempfile.mkdtemp(prefix="builder-tour-")
         package_vals: dict[str, object] = {
             "name": "x_tour_menu_pkg",
             "display_name_": "Tour Menus",
             "root_path": root,
             "auto_commit": "off",
         }
-        package = self.env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
+        package = self.env["builder.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
         module_vals: dict[str, object] = {
             "name": "x_tour_menu_pkg",
             "state": "installed",
@@ -51,9 +53,9 @@ class TestMenuPaneTour(StudioHttpCase):
         self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
             cast("Users", typed.ref(self.env, "base.user_admin")),
-            ["app_builder_base.group_studio_manager"],
+            ["app_builder_base.group_builder_manager"],
         )
-        Surface = typed.model(self.env, StudioMenu)
+        Surface = typed.model(self.env, BuilderMenu)
         app = Surface.create_record(
             # `model_name` is declared `str`, but `_template_values` (the
             # only place a template-driven `create_record` reads it) never
@@ -93,7 +95,7 @@ class TestMenuPaneTour(StudioHttpCase):
         self.assertEqual(
             cast("IrActionsActWindow", menu.action).res_model, "res.partner"
         )
-        self.assertEqual(cast("StudioOwnedMixin", menu).studio_package_id, package)
+        self.assertEqual(cast("BuilderOwnedMixin", menu).builder_package_id, package)
         sub = cast(
             "IrUiMenu",
             self.env["ir.ui.menu"].search([("name", "=", "Tour Fixture Sub")]),

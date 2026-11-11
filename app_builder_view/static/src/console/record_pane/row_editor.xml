@@ -2,78 +2,176 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.RowEditor">
-    <div class="o_studio_row" t-att-data-row="this.row.name" t-att-data-type="this.type">
-        <label class="o_studio_row_label" t-esc="this.row.label" t-att-title="this.row.help"/>
-        <div class="o_studio_row_content">
-            <input t-if="this.type === 'toggle'" class="form-check-input mt-0" type="checkbox"
-                   t-att-checked="!!this.value" t-att-disabled="this.props.disabled"
-                   t-on-change="(ev) => this.onToggle(ev)"/>
+        <div
+            class="o_builder_row"
+            t-att-data-row="this.row.name"
+            t-att-data-type="this.type"
+        >
+            <label
+                class="o_builder_row_label"
+                t-esc="this.row.label"
+                t-att-title="this.row.help"
+            />
+            <div class="o_builder_row_content">
+                <input
+                    t-if="this.type === 'toggle'"
+                    class="form-check-input mt-0"
+                    type="checkbox"
+                    t-att-checked="!!this.value"
+                    t-att-disabled="this.props.disabled"
+                    t-on-change="(ev) => this.onToggle(ev)"
+                />
 
-            <input t-elif="this.type === 'integer'" class="form-control form-control-sm" type="number"
-                   t-att-value="this.text" t-att-disabled="this.props.disabled"
-                   t-on-change="(ev) => this.onText(ev)"/>
+                <input
+                    t-elif="this.type === 'integer'"
+                    class="form-control form-control-sm"
+                    type="number"
+                    t-att-value="this.text"
+                    t-att-disabled="this.props.disabled"
+                    t-on-change="(ev) => this.onText(ev)"
+                />
 
-            <select t-elif="this.type === 'select'" class="form-select form-select-sm"
-                    t-att-disabled="this.props.disabled" t-on-change="(ev) => this.onSelect(ev)">
-                <option t-if="this.row.allow_empty" value="" t-att-selected="!this.text" t-esc="this.row.empty_label || ''"/>
-                <option t-foreach="this.row.choices" t-as="choice" t-key="choice[0]"
-                        t-att-value="choice[0]" t-att-selected="choice[0] === this.text" t-esc="choice[1]"/>
-            </select>
+                <select
+                    t-elif="this.type === 'select'"
+                    class="form-select form-select-sm"
+                    t-att-disabled="this.props.disabled"
+                    t-on-change="(ev) => this.onSelect(ev)"
+                >
+                    <option
+                        t-if="this.row.allow_empty"
+                        value=""
+                        t-att-selected="!this.text"
+                        t-esc="this.row.empty_label || ''"
+                    />
+                    <option
+                        t-foreach="this.row.choices"
+                        t-as="choice"
+                        t-key="choice[0]"
+                        t-att-value="choice[0]"
+                        t-att-selected="choice[0] === this.text"
+                        t-esc="choice[1]"
+                    />
+                </select>
 
-            <select t-elif="this.type === 'groups'" class="form-select form-select-sm" multiple="multiple" size="5"
-                    t-att-disabled="this.props.disabled" t-on-change="(ev) => this.onGroups(ev)">
-                <option t-foreach="this.context.groups || []" t-as="group" t-key="group.id"
-                        t-att-value="group.id" t-att-selected="this.recordIds.includes(group.id)" t-esc="group.name"/>
-            </select>
+                <select
+                    t-elif="this.type === 'groups'"
+                    class="form-select form-select-sm"
+                    multiple="multiple"
+                    size="5"
+                    t-att-disabled="this.props.disabled"
+                    t-on-change="(ev) => this.onGroups(ev)"
+                >
+                    <option
+                        t-foreach="this.context.groups || []"
+                        t-as="group"
+                        t-key="group.id"
+                        t-att-value="group.id"
+                        t-att-selected="this.recordIds.includes(group.id)"
+                        t-esc="group.name"
+                    />
+                </select>
 
-            <textarea t-elif="this.type === 'textarea'" class="form-control form-control-sm" rows="3"
-                      t-att-disabled="this.props.disabled" t-att-value="this.text"
-                      t-on-change="(ev) => this.onText(ev)"/>
+                <textarea
+                    t-elif="this.type === 'textarea'"
+                    class="form-control form-control-sm"
+                    rows="3"
+                    t-att-disabled="this.props.disabled"
+                    t-att-value="this.text"
+                    t-on-change="(ev) => this.onText(ev)"
+                />
 
-            <!-- A Python expression over the record: evaluated, not matched. -->
-            <input t-elif="this.type === 'condition'" class="form-control form-control-sm font-monospace" type="text"
-                   t-att-value="this.text" placeholder="state == 'draft'" t-att-disabled="this.props.disabled"
-                   t-on-change="(ev) => this.onText(ev)"/>
+                <!-- A Python expression over the record: evaluated, not matched. -->
+                <input
+                    t-elif="this.type === 'condition'"
+                    class="form-control form-control-sm font-monospace"
+                    type="text"
+                    t-att-value="this.text"
+                    placeholder="state == 'draft'"
+                    t-att-disabled="this.props.disabled"
+                    t-on-change="(ev) => this.onText(ev)"
+                />
 
-            <t t-elif="this.type === 'domain'">
-                <div t-if="!this.state.source" class="o_studio_domain_editor">
-                    <DomainSelector resModel="this.context.resModel" domain="this.text || '[]'"
-                                    readonly="this.disabled" isDebugMode="false"
-                                    update="(domain) => this.props.onChange(domain)"/>
-                </div>
-                <textarea t-else="" class="form-control form-control-sm font-monospace" rows="3"
-                          t-att-disabled="this.props.disabled" t-att-value="this.text || '[]'"
-                          t-on-change="(ev) => this.onText(ev)"/>
-                <button type="button" class="btn btn-link btn-sm p-0 o_studio_domain_source"
-                        t-on-click="() => this.state.source = !this.state.source">
-                    <t t-if="this.state.source">Builder</t><t t-else="">Source</t>
-                </button>
-            </t>
-
-            <ModelFieldSelector t-elif="this.type === 'field_path'" t-props="this.fieldSelectorProps"/>
-
-            <div t-elif="this.type === 'code'" class="o_studio_code_editor">
-                <CodeEditor mode="this.row.language || 'python'" value="this.text" maxLines="24"
+                <t t-elif="this.type === 'domain'">
+                    <div t-if="!this.state.source" class="o_builder_domain_editor">
+                        <DomainSelector
+                            resModel="this.context.resModel"
+                            domain="this.text || '[]'"
                             readonly="this.disabled"
-                            onChange="(value) => this.props.onChange(value)"/>
+                            isDebugMode="false"
+                            update="(domain) => this.props.onChange(domain)"
+                        />
+                    </div>
+                    <textarea
+                        t-else=""
+                        class="form-control form-control-sm font-monospace"
+                        rows="3"
+                        t-att-disabled="this.props.disabled"
+                        t-att-value="this.text || '[]'"
+                        t-on-change="(ev) => this.onText(ev)"
+                    />
+                    <button
+                        type="button"
+                        class="btn btn-link btn-sm p-0 o_builder_domain_source"
+                        t-on-click="() => this.state.source = !this.state.source"
+                    >
+                        <t t-if="this.state.source">Builder</t>
+                        <t t-else="">Source</t>
+                    </button>
+                </t>
+
+                <ModelFieldSelector
+                    t-elif="this.type === 'field_path'"
+                    t-props="this.fieldSelectorProps"
+                />
+
+                <div t-elif="this.type === 'code'" class="o_builder_code_editor">
+                    <CodeEditor
+                        mode="this.row.language || 'python'"
+                        value="this.text"
+                        maxLines="24"
+                        readonly="this.disabled"
+                        onChange="(value) => this.props.onChange(value)"
+                    />
+                </div>
+
+                <RecordSelector
+                    t-elif="this.type === 'many2one'"
+                    resModel="this.row.comodel"
+                    resId="this.recordId"
+                    domain="this.comodelDomain"
+                    update="(id) => this.props.onChange(id || false)"
+                />
+
+                <MultiRecordSelector
+                    t-elif="this.type === 'many2many' or this.type === 'fields'"
+                    resModel="this.row.comodel"
+                    resIds="this.recordIds"
+                    domain="this.comodelDomain"
+                    update="(ids) => this.props.onChange(ids)"
+                />
+
+                <div
+                    t-elif="this.type === 'readonly'"
+                    class="small text-muted font-monospace o_builder_row_readonly"
+                    t-esc="this.text"
+                />
+
+                <input
+                    t-else=""
+                    class="form-control form-control-sm"
+                    type="text"
+                    t-att-value="this.text"
+                    t-att-disabled="this.props.disabled"
+                    t-on-change="(ev) => this.onText(ev)"
+                />
+
+                <small
+                    t-if="this.row.help"
+                    class="text-muted d-block o_builder_row_hint"
+                    t-esc="this.row.help"
+                />
             </div>
-
-            <RecordSelector t-elif="this.type === 'many2one'" resModel="this.row.comodel" resId="this.recordId"
-                            domain="this.comodelDomain" update="(id) => this.props.onChange(id || false)"/>
-
-            <MultiRecordSelector t-elif="this.type === 'many2many' or this.type === 'fields'" resModel="this.row.comodel"
-                                 resIds="this.recordIds" domain="this.comodelDomain"
-                                 update="(ids) => this.props.onChange(ids)"/>
-
-            <div t-elif="this.type === 'readonly'" class="small text-muted font-monospace o_studio_row_readonly" t-esc="this.text"/>
-
-            <input t-else="" class="form-control form-control-sm" type="text"
-                   t-att-value="this.text" t-att-disabled="this.props.disabled"
-                   t-on-change="(ev) => this.onText(ev)"/>
-
-            <small t-if="this.row.help" class="text-muted d-block o_studio_row_hint" t-esc="this.row.help"/>
         </div>
-    </div>
-</t>
+    </t>
 
 </templates>

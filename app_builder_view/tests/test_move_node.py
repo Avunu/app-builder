@@ -18,12 +18,12 @@ from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_ui_view import View
 
-from ..models.studio_view_edit import StudioViewEdit
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_edit import BuilderViewEdit
+from ..models.builder_view_editor import BuilderViewEditor
 
 LIST_ARCH = """
 <list string="Demo">
@@ -35,10 +35,10 @@ LIST_ARCH = """
 
 
 @tagged("post_install", "-at_install")
-class TestMoveNode(StudioCase):
+class TestMoveNode(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         self.package = self.make_package(name="x_move_pkg")
         model_vals: dict[str, object] = {
             "name": "Move Demo",
@@ -57,7 +57,7 @@ class TestMoveNode(StudioCase):
         }
         self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
         view_vals: dict[str, object] = {
-            "name": "studio.move.test",
+            "name": "builder.move.test",
             "model": "x_move_demo",
             "type": "list",
             "arch": LIST_ARCH,
@@ -80,20 +80,20 @@ class TestMoveNode(StudioCase):
     # -- owned views: rewritten in place -----------------------------------
 
     def test_a_column_moves_before_another(self):
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
         self.assertEqual(self._columns(), ["x_name", "x_when", "x_note"])
         self._move("x_note", "x_when")
         self.view.invalidate_recordset()
         self.assertEqual(self._columns(), ["x_name", "x_note", "x_when"])
 
     def test_a_column_moves_after_another(self):
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
         self._move("x_name", "x_note", position="after")
         self.view.invalidate_recordset()
         self.assertEqual(self._columns(), ["x_when", "x_note", "x_name"])
 
     def test_the_column_is_moved_not_duplicated(self):
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
         self._move("x_note", "x_name")
         self.view.invalidate_recordset()
         self.assertEqual(
@@ -105,7 +105,7 @@ class TestMoveNode(StudioCase):
     # -- foreign views: the move is expressed as a patch --------------------
 
     def test_moving_in_a_foreign_view_writes_a_patch(self):
-        self.make_package(name="x_move_owner").studio_capture(self.view)
+        self.make_package(name="x_move_owner").builder_capture(self.view)
         self._move("x_note", "x_name")
         patch = typed.model(self.env, View).search([("inherit_id", "=", self.view.id)])
         self.assertTrue(patch)
@@ -114,7 +114,7 @@ class TestMoveNode(StudioCase):
         self.assertEqual(self._columns()[0], "x_note")
 
     def test_the_base_view_is_untouched_by_a_move(self):
-        self.make_package(name="x_move_owner2").studio_capture(self.view)
+        self.make_package(name="x_move_owner2").builder_capture(self.view)
         before = self.view.arch
         self._move("x_note", "x_name")
         self.view.invalidate_recordset()
@@ -123,25 +123,25 @@ class TestMoveNode(StudioCase):
     # -- refusals ----------------------------------------------------------
 
     def test_moving_a_node_relative_to_itself_is_refused(self):
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
         with raises(self, UserError):
             self._move("x_name", "x_name")
 
     def test_an_unaddressable_end_is_refused(self):
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
         with raises(self, UserError) as caught:
             self._move("x_name", "x_nonexistent")
         self.assertIn("not a node the builder can address", str(caught.exception))
 
     def test_an_invalid_position_is_refused(self):
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
         with raises(self, UserError):
             self._move("x_name", "x_note", position="replace")
 
     def test_moving_inside_the_root_makes_it_the_last_column(self):
         """Core plants its sentinel at the end of the target, so `inside` is
         "append" -- the same in 18, 19 and master."""
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
         self.editor.move_node(
             cast("int", self.view.id),
             cast("int", self.package.id),
@@ -153,12 +153,12 @@ class TestMoveNode(StudioCase):
         self.assertEqual(self._columns(), ["x_when", "x_note", "x_name"])
 
     def test_a_move_is_undoable_like_any_other_edit(self):
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
         self._move("x_note", "x_name")
         self.view.invalidate_recordset()
         self.assertEqual(self._columns()[0], "x_note")
 
-        history = typed.model(self.env, StudioViewEdit)
+        history = typed.model(self.env, BuilderViewEdit)
         entry = history.browse(history.history_for(cast("int", self.view.id))[0]["id"])
         entry.action_undo()
 
@@ -184,7 +184,7 @@ FORM_ARCH = """
 
 
 @tagged("post_install", "-at_install")
-class TestMoveInside(StudioCase):
+class TestMoveInside(BuilderCase):
     """Moving *into* a container, which a drop on an empty group asks for.
 
     `inside` appends: there is no "inside, at index n" in core, so anything
@@ -196,7 +196,7 @@ class TestMoveInside(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         self.package = self.make_package(name="x_move_in_pkg")
         model_vals: dict[str, object] = {
             "name": "Move Inside Demo",
@@ -212,13 +212,13 @@ class TestMoveInside(StudioCase):
         }
         self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
         view_vals: dict[str, object] = {
-            "name": "studio.move.inside.test",
+            "name": "builder.move.inside.test",
             "model": "x_move_in_demo",
             "type": "form",
             "arch": FORM_ARCH,
         }
         self.view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
 
     def _group(self, name):
         root = etree.fromstring(self.view.get_combined_arch().encode())

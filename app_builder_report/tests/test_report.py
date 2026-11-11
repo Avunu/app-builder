@@ -18,26 +18,26 @@ from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.builder_view_editor import BuilderViewEditor
 from odoo.addons.base.models.ir_actions_report import IrActionsReport
 from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
-from odoo.addons.app_builder_base.tools import typed
-from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
 
-from ..models.studio_report import StudioReport
+from ..models.builder_report import BuilderReport
 
 if TYPE_CHECKING:
     # Only for the `cast()` below; unlike `IrActionsReport`/`View`/
-    # `StudioViewEditor` above, `IrActions` is never passed to `typed.model()`
+    # `BuilderViewEditor` above, `IrActions` is never passed to `typed.model()`
     # at runtime, only named inside a `cast("IrActions", ...)` string.
     from odoo.addons.base.models.ir_actions import IrActions
 
 
 @tagged("post_install", "-at_install")
-class TestCreateReport(StudioCase):
+class TestCreateReport(BuilderCase):
     def _make(self, package, **kwargs):
-        return typed.model(self.env, StudioReport).create_report(
-            package.id, "x_studio_project", kwargs.pop("name", "Job Sheet"), **kwargs
+        return typed.model(self.env, BuilderReport).create_report(
+            package.id, "x_builder_project", kwargs.pop("name", "Job Sheet"), **kwargs
         )
 
     def test_the_three_names_agree(self):
@@ -60,7 +60,7 @@ class TestCreateReport(StudioCase):
         self.build_demo_content(package)
         made = self._make(package)
         report = typed.model(self.env, IrActionsReport).browse(made["report_id"])
-        found = typed.model(self.env, StudioReport)._template_of(report)
+        found = typed.model(self.env, BuilderReport)._template_of(report)
         self.assertEqual(found.id, made["view_id"])
 
     def test_each_layout_produces_a_renderable_wrapper(self):
@@ -121,7 +121,7 @@ class TestCreateReport(StudioCase):
         self.build_demo_content(package)
         made = self._make(package)
         record_vals: dict[str, object] = {"x_name": "Bridge survey"}
-        record = self.env["x_studio_project"].create(record_vals)  # pyright: ignore[reportArgumentType]
+        record = self.env["x_builder_project"].create(record_vals)  # pyright: ignore[reportArgumentType]
         report = typed.model(self.env, IrActionsReport).browse(made["report_id"])
         html, kind = report._render_qweb_html(report.report_name, record.ids)
         self.assertEqual(kind, "html")
@@ -139,7 +139,7 @@ class TestCreateReport(StudioCase):
         template carries a model, `_get_inheriting_views` drops the extension on
         `coalesce(model,'') = coalesce(parent.model,'')` (`ir_ui_view.py:645`)
         -- no exception, no warning, the patch simply is not there. A report
-        nobody but this studio can extend is not source code.
+        nobody but this builder can extend is not source code.
         """
         package = self.make_package()
         self.build_demo_content(package)
@@ -179,7 +179,7 @@ class TestCreateReport(StudioCase):
         """
         package = self.make_package()
         self.build_demo_content(package)
-        records = self.env["x_studio_project"].create(
+        records = self.env["x_builder_project"].create(
             [{"x_name": "First"}, {"x_name": "Second"}]
         )
         for layout in ("external", "internal", "blank"):
@@ -214,7 +214,7 @@ class TestCreateReport(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestPatchAnExistingReport(StudioCase):
+class TestPatchAnExistingReport(BuilderCase):
     """The half Odoo Studio cannot do."""
 
     def _core_report(self):
@@ -223,7 +223,7 @@ class TestPatchAnExistingReport(StudioCase):
         )
         if not report:
             self.skipTest("no qweb report installed here")
-        view = typed.model(self.env, StudioReport)._template_of(report)
+        view = typed.model(self.env, BuilderReport)._template_of(report)
         if not view:
             self.skipTest("that report's template is not a view")
         return report, view
@@ -233,14 +233,14 @@ class TestPatchAnExistingReport(StudioCase):
         self.build_demo_content(package)
         _report, view = self._core_report()
         before = view.arch
-        typed.model(self.env, StudioViewEditor).apply_operation(
+        typed.model(self.env, BuilderViewEditor).apply_operation(
             cast("int", view.id),
             cast("int", package.id),
             {
                 "type": "set_attributes",
                 "xpath": "//t[@t-call='web.html_container']",
                 "position": "attributes",
-                "attrs": {"data-studio": "1"},
+                "attrs": {"data-builder": "1"},
             },
         )
         self.assertEqual(
@@ -249,7 +249,7 @@ class TestPatchAnExistingReport(StudioCase):
             "a report somebody else owns must never be rewritten in place",
         )
         extension = typed.model(self.env, View).search(
-            [("inherit_id", "=", view.id), ("studio_package_id", "=", package.id)]
+            [("inherit_id", "=", view.id), ("builder_package_id", "=", package.id)]
         )
         self.assertTrue(extension, "the edit must land in an inheriting view")
         self.assertEqual(extension.type, "qweb", "an extension inherits the type")
@@ -258,7 +258,9 @@ class TestPatchAnExistingReport(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         report, view = self._core_report()
-        action = typed.model(self.env, StudioReport).edit_action(cast("int", report.id))
+        action = typed.model(self.env, BuilderReport).edit_action(
+            cast("int", report.id)
+        )
         self.assertEqual(action["tag"], "app_builder_console")
         self.assertEqual(action["params"]["pane"], "views")
         self.assertEqual(action["params"]["view_id"], view.id)
@@ -269,12 +271,12 @@ class TestPatchAnExistingReport(StudioCase):
         self.build_demo_content(package)
         report_vals: dict[str, object] = {
             "name": "Built in Python",
-            "model": "x_studio_project",
+            "model": "x_builder_project",
             "report_type": "qweb-pdf",
             "report_name": "nothing.resolves_to_this",
         }
         report = self.env["ir.actions.report"].create(report_vals)  # pyright: ignore[reportArgumentType]
         package._assign(report)
         with raises(self, UserError) as caught:
-            typed.model(self.env, StudioReport).edit_action(cast("int", report.id))
+            typed.model(self.env, BuilderReport).edit_action(cast("int", report.id))
         self.assertIn("nothing to edit", str(caught.exception))

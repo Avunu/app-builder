@@ -18,8 +18,8 @@
     "external_dependencies": {"python": ["typing_extensions"]},
     "data": [
         "security/ir.model.access.csv",
-        "views/studio_view_editor_views.xml",
-        "views/studio_console_views.xml",
+        "views/builder_view_editor_views.xml",
+        "views/builder_console_views.xml",
     ],
     "assets": {
         "web.assets_backend": [

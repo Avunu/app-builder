@@ -1,0 +1,14 @@
+{
+  "name": "app-builder-ui",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "description": "Compiles this addon's TypeScript to the .js beside it, which Odoo's own transpiler then loads as an @odoo-module. esbuild only erases types: tsc type-checks (tsconfig.json at the repository root).",
+  "scripts": {
+    "build": "esbuild \"static/**/*.ts\" --outbase=. --outdir=. --format=esm --target=es2022 --charset=utf8 --legal-comments=inline --log-level=warning",
+    "watch": "esbuild \"static/**/*.ts\" --outbase=. --outdir=. --format=esm --target=es2022 --charset=utf8 --legal-comments=inline --log-level=warning --watch=forever"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

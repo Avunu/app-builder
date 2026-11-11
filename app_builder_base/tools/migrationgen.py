@@ -8,7 +8,7 @@ reflecting the field, ``_process_end`` unlinks the ``ir.model.fields`` row, and
 ``IrModelFields.unlink`` calls ``_drop_column`` -- which issues
 ``ALTER TABLE ... DROP COLUMN ... CASCADE``, taking the m2m relation table too.
 
-That is ordinary Odoo behaviour for any addon, and the studio cannot change it.
+That is ordinary Odoo behaviour for any addon, and the builder cannot change it.
 What it can do is get there first. ``migrate_module(package, 'pre')`` runs at
 ``loading.py`` well before ``_process_end``, so a pre-migration that renames the
 column aside leaves nothing for ``_drop_column`` to find: it drops no column,
@@ -37,7 +37,7 @@ HEADER = (
 
 def suffix_for(stamp: str) -> str:
     """A stable, sortable, obviously-not-a-real-field suffix."""
-    return "studio_removed_%s" % stamp
+    return "builder_removed_%s" % stamp
 
 
 def rename_column_sql(table: str, column: str, suffix: str) -> str:
@@ -88,4 +88,4 @@ def render_pre_migration(table: str, columns: Iterable[str], stamp: str) -> str 
 
 def migration_path(version: str, stamp: str) -> str:
     """Odoo looks for ``migrations/<version>/pre-*.py``."""
-    return "migrations/%s/pre-studio-%s.py" % (version, stamp)
+    return "migrations/%s/pre-builder-%s.py" % (version, stamp)

@@ -1,4 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_studio_view_edit_user,studio.view.edit user,model_studio_view_edit,app_builder_base.group_studio_user,1,0,0,0
-access_studio_view_edit_manager,studio.view.edit manager,model_studio_view_edit,app_builder_base.group_studio_manager,1,1,1,1
-access_studio_view_editor_user,studio.view.editor user,model_studio_view_editor,app_builder_base.group_studio_user,1,1,0,0
+access_builder_view_edit_user,builder.view.edit user,model_builder_view_edit,app_builder_base.group_builder_user,1,0,0,0
+access_builder_view_edit_manager,builder.view.edit manager,model_builder_view_edit,app_builder_base.group_builder_manager,1,1,1,1
+access_builder_view_editor_user,builder.view.editor user,model_builder_view_editor,app_builder_base.group_builder_user,1,1,0,0

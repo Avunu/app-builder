@@ -7,7 +7,7 @@ listed. It is the model somebody made by hand in Settings -> Technical, which
 belongs to no package at all: nothing in the product mentioned it, and
 ``action_adopt`` refuses a model its package does not own, so there was no
 path to adopting it whatsoever. The console's Adopt flow goes through
-``studio.app.builder.adoptable_models`` and ``adopt``, pinned here.
+``builder.app.adoptable_models`` and ``adopt``, pinned here.
 """
 
 from __future__ import annotations
@@ -18,26 +18,26 @@ from odoo import Command
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_model import IrModel
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_model import IrModel
 
-from ..models.studio_app_builder import StudioAppBuilder
+from ..models.builder_app import BuilderApp
 
 if TYPE_CHECKING:
     # Only for the cast() below; with `from __future__ import annotations`
     # nothing here needs this at runtime.
-    from odoo.addons.app_builder_base.models.studio_package_model import (
-        StudioPackageModel,
+    from odoo.addons.app_builder_base.models.builder_package_model import (
+        BuilderPackageModel,
     )
 
 
 @tagged("post_install", "-at_install")
-class TestAdoptFlow(StudioCase):
+class TestAdoptFlow(BuilderCase):
     def setUp(self):
         super().setUp()
         self.package = self.make_package(name="x_adopt_pkg")
-        self.builder = typed.model(self.env, StudioAppBuilder)
+        self.builder = typed.model(self.env, BuilderApp)
 
     def _manual_model(self, model_name, label="Loose"):
         vals: dict[str, object] = {
@@ -74,9 +74,9 @@ class TestAdoptFlow(StudioCase):
     def test_a_model_already_owned_in_python_is_not_offered(self):
         self.build_demo_content(self.package)
         self.package.action_write_files()
-        self.package.action_adopt(["x_studio_project"])
+        self.package.action_adopt(["x_builder_project"])
         self.assertNotIn(
-            "x_studio_project",
+            "x_builder_project",
             self._offered(),
             "adopting twice would regenerate a class over the developer's file",
         )
@@ -94,7 +94,7 @@ class TestAdoptFlow(StudioCase):
         self._manual_model("x_capture_me")
         self.builder.adopt(cast("int", self.package.id), ["x_capture_me"], apply=False)
         self.assertIn("x_capture_me", self.package._owned_model_names())
-        entry = cast("StudioPackageModel", self.package.model_ids).filtered(
+        entry = cast("BuilderPackageModel", self.package.model_ids).filtered(
             lambda m: m.model == "x_capture_me"
         )
         self.assertEqual(entry.source, "python")
@@ -104,7 +104,7 @@ class TestAdoptFlow(StudioCase):
         self.builder.adopt(
             cast("int", self.package.id), ["x_written_model"], apply=False
         )
-        entry = cast("StudioPackageModel", self.package.model_ids).filtered(
+        entry = cast("BuilderPackageModel", self.package.model_ids).filtered(
             lambda m: m.model == "x_written_model"
         )
         source = self.package._read_source(cast("str", entry.python_path))

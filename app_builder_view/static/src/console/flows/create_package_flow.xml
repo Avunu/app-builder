@@ -2,116 +2,188 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.CreatePackageName">
-    <div class="o_studio_flow_step">
-        <p class="text-muted">
-            A package is an Odoo addon directory the studio writes as you work:
+        <div class="o_builder_flow_step">
+            <p class="text-muted">
+            A package is an Odoo addon directory the builder writes as you work:
             models, views, menus and rules land in it as source you can review,
             commit and deploy.
         </p>
-        <div class="o_studio_row">
-            <label class="o_studio_row_label" for="o_studio_pkg_title">Title</label>
-            <div class="o_studio_row_content">
-                <input id="o_studio_pkg_title" class="form-control form-control-sm" type="text"
-                       t-att-value="this.flow.values.title || ''" placeholder="Acme customisations"
-                       t-on-input="(ev) => this.onTitle(ev)"/>
+            <div class="o_builder_row">
+                <label
+                    class="o_builder_row_label"
+                    for="o_builder_pkg_title"
+                >Title</label>
+                <div class="o_builder_row_content">
+                    <input
+                        id="o_builder_pkg_title"
+                        class="form-control form-control-sm"
+                        type="text"
+                        t-att-value="this.flow.values.title || ''"
+                        placeholder="Acme customisations"
+                        t-on-input="(ev) => this.onTitle(ev)"
+                    />
+                </div>
             </div>
-        </div>
-        <div class="o_studio_row">
-            <label class="o_studio_row_label" for="o_studio_pkg_name">Technical name</label>
-            <div class="o_studio_row_content">
-                <input id="o_studio_pkg_name" class="form-control form-control-sm font-monospace" type="text"
-                       t-att-value="this.flow.values.name || ''" placeholder="acme_custom"
-                       t-on-input="(ev) => this.onName(ev)"/>
-                <small class="text-muted d-block o_studio_row_hint">
+            <div class="o_builder_row">
+                <label
+                    class="o_builder_row_label"
+                    for="o_builder_pkg_name"
+                >Technical name</label>
+                <div class="o_builder_row_content">
+                    <input
+                        id="o_builder_pkg_name"
+                        class="form-control form-control-sm font-monospace"
+                        type="text"
+                        t-att-value="this.flow.values.name || ''"
+                        placeholder="acme_custom"
+                        t-on-input="(ev) => this.onName(ev)"
+                    />
+                    <small class="text-muted d-block o_builder_row_hint">
                     The name becomes the directory and the xmlid prefix of everything
                     the package owns. It cannot be changed later.
                 </small>
+                </div>
+            </div>
+            <div class="o_builder_row">
+                <label
+                    class="o_builder_row_label"
+                    for="o_builder_pkg_summary"
+                >Summary</label>
+                <div class="o_builder_row_content">
+                    <input
+                        id="o_builder_pkg_summary"
+                        class="form-control form-control-sm"
+                        type="text"
+                        t-att-value="this.flow.values.summary || ''"
+                        placeholder="optional"
+                        t-on-input="(ev) => this.flow.values.summary = ev.target.value"
+                    />
+                </div>
             </div>
         </div>
-        <div class="o_studio_row">
-            <label class="o_studio_row_label" for="o_studio_pkg_summary">Summary</label>
-            <div class="o_studio_row_content">
-                <input id="o_studio_pkg_summary" class="form-control form-control-sm" type="text"
-                       t-att-value="this.flow.values.summary || ''" placeholder="optional"
-                       t-on-input="(ev) => this.flow.values.summary = ev.target.value"/>
-            </div>
-        </div>
-    </div>
-</t>
+    </t>
 
 <t t-name="app_builder_view.CreatePackageWhere">
-    <div class="o_studio_flow_step">
-        <p class="text-muted">
+        <div class="o_builder_flow_step">
+            <p class="text-muted">
             Odoo only loads addons from directories that were on the addons path
             when the server started.
         </p>
-        <div t-if="this.none" class="alert alert-warning" role="alert">
+            <div t-if="this.none" class="alert alert-warning" role="alert">
             No entry on the addons path can be written to.
         </div>
-        <div t-foreach="this.offered" t-as="dir" t-key="dir.path" class="form-check mb-2">
-            <input t-att-id="'o_studio_dir_' + dir_index" class="form-check-input" type="radio"
-                   name="o_studio_pkg_dir" t-att-value="dir.path"
-                   t-att-disabled="!dir.writable"
-                   t-att-checked="this.flow.values.root_dir === dir.path"
-                   t-on-change="() => this.flow.values.root_dir = dir.path"/>
-            <label class="form-check-label font-monospace" t-att-for="'o_studio_dir_' + dir_index">
-                <t t-esc="dir.path"/>
-                <small t-if="!dir.writable" class="text-muted ms-2">cannot be written to</small>
-                <small t-elif="dir.kind === 'custom'" class="text-muted ms-2">this project's own</small>
-            </label>
-        </div>
-        <p t-if="this.flow.values.root_dir" class="small text-muted mt-2">
-            The package will be <code><t t-esc="this.flow.values.root_dir"/>/<t t-esc="this.flow.values.name"/></code>.
+            <div
+                t-foreach="this.offered"
+                t-as="dir"
+                t-key="dir.path"
+                class="form-check mb-2"
+            >
+                <input
+                    t-att-id="'o_builder_dir_' + dir_index"
+                    class="form-check-input"
+                    type="radio"
+                    name="o_builder_pkg_dir"
+                    t-att-value="dir.path"
+                    t-att-disabled="!dir.writable"
+                    t-att-checked="this.flow.values.root_dir === dir.path"
+                    t-on-change="() => this.flow.values.root_dir = dir.path"
+                />
+                <label
+                    class="form-check-label font-monospace"
+                    t-att-for="'o_builder_dir_' + dir_index"
+                >
+                    <t t-esc="dir.path" />
+                    <small
+                        t-if="!dir.writable"
+                        class="text-muted ms-2"
+                    >cannot be written to</small>
+                    <small
+                        t-elif="dir.kind === 'custom'"
+                        class="text-muted ms-2"
+                    >this project's own</small>
+                </label>
+            </div>
+            <p t-if="this.flow.values.root_dir" class="small text-muted mt-2">
+            The package will be <code><t t-esc="this.flow.values.root_dir" />/<t
+                t-esc="this.flow.values.name"
+            /></code>.
         </p>
-    </div>
-</t>
+        </div>
+    </t>
 
 <t t-name="app_builder_view.CreatePackageGit">
-    <div class="o_studio_flow_step">
-        <div class="form-check mb-3">
-            <input id="o_studio_pkg_git" class="form-check-input" type="checkbox"
-                   t-att-checked="this.flow.values.git_init"
-                   t-on-change="(ev) => this.flow.values.git_init = ev.target.checked"/>
-            <label class="form-check-label" for="o_studio_pkg_git">
+        <div class="o_builder_flow_step">
+            <div class="form-check mb-3">
+                <input
+                    id="o_builder_pkg_git"
+                    class="form-check-input"
+                    type="checkbox"
+                    t-att-checked="this.flow.values.git_init"
+                    t-on-change="(ev) => this.flow.values.git_init = ev.target.checked"
+                />
+                <label class="form-check-label" for="o_builder_pkg_git">
                 Initialise a git repository in the package directory
             </label>
-            <small class="text-muted d-block">
+                <small class="text-muted d-block">
                 Skip this when the directory is already inside a repository.
             </small>
-        </div>
-        <div class="o_studio_row">
-            <label class="o_studio_row_label" for="o_studio_pkg_auto">Auto-commit</label>
-            <div class="o_studio_row_content">
-                <select id="o_studio_pkg_auto" class="form-select form-select-sm"
-                        t-on-change="(ev) => this.flow.values.auto_commit = ev.target.value">
-                    <option value="off" t-att-selected="this.flow.values.auto_commit === 'off'">Off</option>
-                    <option value="stage" t-att-selected="this.flow.values.auto_commit === 'stage'">Stage only</option>
-                    <option value="commit" t-att-selected="this.flow.values.auto_commit === 'commit'">Commit each change</option>
-                </select>
-                <small class="text-muted d-block o_studio_row_hint" t-esc="this.autoCommitHint"/>
+            </div>
+            <div class="o_builder_row">
+                <label
+                    class="o_builder_row_label"
+                    for="o_builder_pkg_auto"
+                >Auto-commit</label>
+                <div class="o_builder_row_content">
+                    <select
+                        id="o_builder_pkg_auto"
+                        class="form-select form-select-sm"
+                        t-on-change="(ev) => this.flow.values.auto_commit = ev.target.value"
+                    >
+                        <option
+                            value="off"
+                            t-att-selected="this.flow.values.auto_commit === 'off'"
+                        >Off</option>
+                        <option
+                            value="stage"
+                            t-att-selected="this.flow.values.auto_commit === 'stage'"
+                        >Stage only</option>
+                        <option
+                            value="commit"
+                            t-att-selected="this.flow.values.auto_commit === 'commit'"
+                        >Commit each change</option>
+                    </select>
+                    <small
+                        class="text-muted d-block o_builder_row_hint"
+                        t-esc="this.autoCommitHint"
+                    />
+                </div>
             </div>
         </div>
-    </div>
-</t>
+    </t>
 
 <t t-name="app_builder_view.CreatePackageReview">
-    <div class="o_studio_flow_step">
-        <dl class="row mb-3">
-            <dt class="col-sm-3">Package</dt>
-            <dd class="col-sm-9"><t t-esc="this.flow.values.title || this.flow.values.name"/> <code t-esc="this.flow.values.name"/></dd>
-            <dt class="col-sm-3">Directory</dt>
-            <dd class="col-sm-9"><code t-esc="this.path"/></dd>
-            <dt class="col-sm-3">Git</dt>
-            <dd class="col-sm-9">
+        <div class="o_builder_flow_step">
+            <dl class="row mb-3">
+                <dt class="col-sm-3">Package</dt>
+                <dd class="col-sm-9">
+                    <t t-esc="this.flow.values.title || this.flow.values.name" />
+                    <code t-esc="this.flow.values.name" />
+                </dd>
+                <dt class="col-sm-3">Directory</dt>
+                <dd class="col-sm-9">
+                    <code t-esc="this.path" />
+                </dd>
+                <dt class="col-sm-3">Git</dt>
+                <dd class="col-sm-9">
                 <t t-if="this.flow.values.git_init">A repository is initialised; </t>
-                auto-commit <t t-esc="this.flow.values.auto_commit || 'stage'"/>
+                auto-commit <t t-esc="this.flow.values.auto_commit || 'stage'" />
             </dd>
-        </dl>
-        <p class="text-muted small">
+            </dl>
+            <p class="text-muted small">
             Writes <code>__manifest__.py</code> and <code>__init__.py</code>. Nothing is
             installed until the package has something in it.
         </p>
-    </div>
-</t>
+        </div>
+    </t>
 
 </templates>

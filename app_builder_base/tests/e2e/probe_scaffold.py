@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# pylint: disable=print-used,invalid-commit,sql-injection,odoo-addons-relative-import
 """The acceptance test: does one gesture produce an app somebody can use?
 
 Not a unit test, because every interesting step is one a TransactionCase
@@ -9,7 +10,7 @@ That last part is the point. ``IrModelAccess.check`` returns True immediately
 for ``env.su``, so an app with missing or wrong ACLs looks perfect to the
 administrator who built it and is invisible to everybody it was built for. The
 old wizard shipped exactly that bug -- it parented the generated menu under the
-studio root, which is gated on the studio group -- and nothing in the product
+builder root, which is gated on the builder group -- and nothing in the product
 would have told you.
 
 Run:  python app_builder_base/tests/e2e/probe_scaffold.py -c odoo.conf -d <db>
@@ -54,14 +55,14 @@ def writable_addons_dir():
 
 
 def staff_user(env):
-    """A plain internal user: no studio group, no settings access."""
-    existing = env["res.users"].search([("login", "=", "studio_probe_staff")], limit=1)
+    """A plain internal user: no builder group, no settings access."""
+    existing = env["res.users"].search([("login", "=", "builder_probe_staff")], limit=1)
     if existing:
         return existing
     return env["res.users"].create(
         {
             "name": "Probe Staff",
-            "login": "studio_probe_staff",
+            "login": "builder_probe_staff",
             "groups_id": [(6, 0, [env.ref("base.group_user").id])],
         }
     )
@@ -78,13 +79,13 @@ def main():
     # resolvable at all -- a module-level import of any of these would run
     # first and fail (the same trap probe_reimport.py's own conversion
     # documents).
+    from odoo.addons.app_builder_base.models.builder_package import BuilderPackage
+    from odoo.addons.app_builder_base.tools import typed
+    from odoo.addons.app_builder_model.models.builder_app import (
+        BuilderApp,
+    )
     from odoo.addons.base.models.ir_actions import IrActionsActWindow
     from odoo.addons.base.models.ir_ui_menu import IrUiMenu
-    from odoo.addons.app_builder_base.models.studio_package import StudioPackage
-    from odoo.addons.app_builder_base.tools import typed
-    from odoo.addons.app_builder_model.models.studio_app_builder import (
-        StudioAppBuilder,
-    )
 
     root = writable_addons_dir()
     pkg_path = os.path.join(root, PKG)
@@ -104,13 +105,13 @@ def main():
                 "root_path": pkg_path,
                 "auto_commit": "off",
             }
-            package = env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
+            package = env["builder.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
             # Through the RPC the console's Build-an-app flow calls: this is
             # the path a user actually takes, and it commits and rebuilds the
             # registry, so no TransactionCase can reach it. Tags and Lines
             # are the two features that build a second model; they cannot be
             # exercised from a TransactionCase for the same reason.
-            builder = typed.model(env, StudioAppBuilder)
+            builder = typed.model(env, BuilderApp)
             # The flow starts from the defaults and adds what is ticked.
             features = builder.features()["defaults"] + [
                 "chatter",
@@ -276,7 +277,7 @@ def main():
         # --- and is the source honest? -----------------------------------
         with Registry(dbname).cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            package = typed.model(env, StudioPackage).search(
+            package = typed.model(env, BuilderPackage).search(
                 [("name", "=", PKG)], limit=1
             )
             model_file = os.path.join(

@@ -29,15 +29,10 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-// TYPING.md: local dev uses tsconfig.json (the default tsc picks up on its
-// own); the OCA CI container's typecheck job sets this to point at
-// tsconfig.ci.json instead, whose `@web/*` etc. resolve to the
-// container's absolute /opt/odoo/addons rather than a relative ../../odoo.
-const project = process.env.TSC_PROJECT ?? "tsconfig.json";
 
 const result = spawnSync(
   process.platform === "win32" ? "npx.cmd" : "npx",
-  ["tsc", "-p", project, "--noEmit", "--pretty", "false"],
+  ["tsc", "-p", "tsconfig.json", "--noEmit", "--pretty", "false"],
   { cwd: repoRoot, encoding: "utf8" }
 );
 
@@ -66,7 +61,10 @@ for (const line of lines) {
 // repoRoot -- true whether tsc reported X as a relative "../../odoo/..."
 // (local dev) or an absolute "/opt/odoo/..." (CI): both resolve() to the
 // same real path either way, so one check covers both configs.
-const isOurs = (file) => !path.relative(repoRoot, path.resolve(repoRoot, file)).startsWith("..");
+const isOurs = (file) => {
+  const relative = path.relative(repoRoot, path.resolve(repoRoot, file));
+  return !relative.startsWith("..") && !relative.startsWith(".odoo-nix");
+};
 const vendored = blocks.filter((b) => !isOurs(b.file));
 const ours = blocks.filter((b) => isOurs(b.file));
 

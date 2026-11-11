@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!-- The technical lists: what the console shows as cards, as Odoo rows
+         with the package column. Under developer mode only (see the menus). -->
+    <record id="ir_model_view_list_builder" model="ir.ui.view">
+        <field name="name">ir.model.list.builder</field>
+        <field name="model">ir.model</field>
+        <field name="arch" type="xml">
+            <list string="Custom Models">
+                <field name="name" />
+                <field name="model" />
+                <field name="builder_package_id" />
+                <field name="count" optional="show" />
+            </list>
+        </field>
+    </record>
+
+    <record id="ir_model_action_builder" model="ir.actions.act_window">
+        <field name="name">Custom Models</field>
+        <field name="res_model">ir.model</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('state', '=', 'manual')]</field>
+        <field name="view_id" ref="ir_model_view_list_builder" />
+    </record>
+
+    <record id="ir_model_fields_view_list_builder" model="ir.ui.view">
+        <field name="name">ir.model.fields.list.builder</field>
+        <field name="model">ir.model.fields</field>
+        <field name="arch" type="xml">
+            <list string="Custom Fields">
+                <field name="model_id" />
+                <field name="name" />
+                <field name="field_description" />
+                <field name="ttype" />
+                <field name="builder_package_id" />
+            </list>
+        </field>
+    </record>
+
+    <record id="ir_model_fields_action_builder" model="ir.actions.act_window">
+        <field name="name">Custom Fields</field>
+        <field name="res_model">ir.model.fields</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('state', '=', 'manual')]</field>
+        <field name="view_id" ref="ir_model_fields_view_list_builder" />
+    </record>
+</odoo>

@@ -8,11 +8,11 @@
  * `force`.
  */
 
-import { _t } from "../l10n";
-import { ConfirmationDialog } from "../odoo";
-import type { DialogService } from "../odoo";
-import type { Token } from "../types";
-import type { OperationResult } from "../wire";
+import {_t} from "../l10n";
+import {ConfirmationDialog} from "../odoo";
+import type {DialogService} from "../odoo";
+import type {Token} from "../types";
+import type {OperationResult} from "../wire";
 
 /**
  * What `ConsoleModel.remove` answers back (`console_model.ts`'s own real
@@ -23,7 +23,7 @@ import type { OperationResult } from "../wire";
  * yet), or `undefined` when the view changed under the request and
  * nothing was applied.
  */
-type RemoveResult = OperationResult | { confirm: string; context: unknown } | undefined;
+type RemoveResult = OperationResult | {confirm: string; context: unknown} | undefined;
 
 /**
  * `removeWithConfirm` only ever calls `model.remove(token, force)` --
@@ -36,17 +36,17 @@ type RemoveResult = OperationResult | { confirm: string; context: unknown } | un
  * with no change on its own side.
  */
 interface RemoveFlowModel {
-    remove(token: Token, force: boolean): Promise<RemoveResult>;
+  remove(token: Token, force: boolean): Promise<RemoveResult>;
 }
 
 interface RemoveWithConfirmParams {
-    /** The model to ask, narrowed to `RemoveFlowModel` -- see its own
-     * doc comment for why not the full `ConsoleModel`. */
-    model: RemoveFlowModel;
-    /** The dialog service. */
-    dialog: DialogService;
-    /** The node to remove. */
-    token: Token;
+  /** The model to ask, narrowed to `RemoveFlowModel` -- see its own
+   * doc comment for why not the full `ConsoleModel`. */
+  model: RemoveFlowModel;
+  /** The dialog service. */
+  dialog: DialogService;
+  /** The node to remove. */
+  token: Token;
 }
 
 /**
@@ -56,30 +56,30 @@ interface RemoveWithConfirmParams {
  * not awaited here -- the dialog closes itself once `confirm` resolves.
  */
 export async function removeWithConfirm({
-    model,
-    dialog,
-    token,
+  model,
+  dialog,
+  token,
 }: RemoveWithConfirmParams): Promise<RemoveResult> {
-    const result = await model.remove(token, false);
-    if (result && "confirm" in result && result.confirm) {
-        // `ConfirmationDialog`'s props are typed against `odoo.ts`'s own
-        // `ConfirmationDialogProps` (see that file for why it is
-        // re-exported from there rather than imported straight from the
-        // vendor module). `close` is not supplied here: `dialog_service.js`'s
-        // own `add()` injects it itself at mount time (`subProps: markRaw({
-        // ...props, close })`). `title`/`confirmLabel` are handed `_t(...)`'s
-        // result unwrapped (no `String(...)`), matching the vendor
-        // component's own `title` validator, which explicitly accepts a
-        // lazy, not-yet-stringified value.
-        dialog.add(ConfirmationDialog, {
-            title: _t("Remove from view"),
-            body: result.confirm,
-            confirmLabel: _t("Remove"),
-            confirm: () => {
-                void model.remove(token, true);
-            },
-            cancel: () => {},
-        });
-    }
-    return result;
+  const result = await model.remove(token, false);
+  if (result && "confirm" in result && result.confirm) {
+    // `ConfirmationDialog`'s props are typed against `odoo.ts`'s own
+    // `ConfirmationDialogProps` (see that file for why it is
+    // re-exported from there rather than imported straight from the
+    // vendor module). `close` is not supplied here: `dialog_service.js`'s
+    // own `add()` injects it itself at mount time (`subProps: markRaw({
+    // ...props, close })`). `title`/`confirmLabel` are handed `_t(...)`'s
+    // result unwrapped (no `String(...)`), matching the vendor
+    // component's own `title` validator, which explicitly accepts a
+    // lazy, not-yet-stringified value.
+    dialog.add(ConfirmationDialog, {
+      title: _t("Remove from view"),
+      body: result.confirm,
+      confirmLabel: _t("Remove"),
+      confirm: () => {
+        void model.remove(token, true);
+      },
+      cancel: () => {},
+    });
+  }
+  return result;
 }

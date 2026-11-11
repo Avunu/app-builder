@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, cast
 
 from odoo import api, models
 
-from ..studio_serializer import SEQ_SEQUENCE
+from ..builder_serializer import SEQ_SEQUENCE
 
 if TYPE_CHECKING:
     # Only used inside annotations/casts below (`from __future__ import
@@ -29,25 +29,25 @@ if TYPE_CHECKING:
     # `ir.sequence` is core Odoo, reached only through the merged odoo-nix
     # tree -- the fully-qualified `odoo.addons....` form is correct here,
     # not same-addon (TYPING.md's "Known traps"/house conventions), the same
-    # as `studio_package.py`'s own `IrModel`/`IrModelData` imports.
+    # as `builder_package.py`'s own `IrModel`/`IrModelData` imports.
     from odoo.addons.base.models.ir_sequence import IrSequence
 
     # Same-addon cross-file import, so relative (house convention). Only
     # needed for the `super()` cast below -- see its own comment.
-    from ..studio_serializer import StudioSerializer
+    from ..builder_serializer import BuilderSerializer
 
 
 class IrSequenceSerializer(models.AbstractModel):
-    _name = "studio.serializer.ir.sequence"
-    _inherit = "studio.serializer"
-    _description = "Studio Serializer for ir.sequence"
+    _name = "builder.serializer.ir.sequence"
+    _inherit = "builder.serializer"
+    _description = "Builder Serializer for ir.sequence"
 
-    _studio_model = "ir.sequence"
-    _studio_sequence = SEQ_SEQUENCE
-    _studio_dir = "data"
-    _studio_suffix = "_data"
-    _studio_noupdate = True
-    _studio_fields = (
+    _builder_model = "ir.sequence"
+    _builder_sequence = SEQ_SEQUENCE
+    _builder_dir = "data"
+    _builder_suffix = "_data"
+    _builder_noupdate = True
+    _builder_fields = (
         "name",
         "code",
         "implementation",
@@ -59,7 +59,7 @@ class IrSequenceSerializer(models.AbstractModel):
         "company_id",
         "active",
     )
-    _studio_ignored = (
+    _builder_ignored = (
         # The counter itself, and the one place where emitting a real value
         # would be worse than dropping it. It moves every time a record is
         # created, so a package carrying it would report drifted -- and produce
@@ -87,13 +87,13 @@ class IrSequenceSerializer(models.AbstractModel):
             # happened to exist when it was built.
             return True
         # `IrSequenceSerializer`'s only real Python base is `models
-        # .AbstractModel` -- `StudioSerializer` is composed in only via
+        # .AbstractModel` -- `BuilderSerializer` is composed in only via
         # Odoo's registry-level `_inherit`, never a literal Python base
         # class, so it is absent from the MRO pyright can see and
         # `super()._should_skip` resolves against `object` alone. Same
         # underlying "_inherit-mixin-invisible-to-pyright" gap
         # `typed.security()` exists for, applied to `super()` instead of
         # `self` -- at runtime, Odoo's registry builds the real merged
-        # class with `StudioSerializer` genuinely in the MRO, so `super()`
+        # class with `BuilderSerializer` genuinely in the MRO, so `super()`
         # resolves this exactly as it always did.
-        return cast("StudioSerializer", super())._should_skip(record, fname)
+        return cast("BuilderSerializer", super())._should_skip(record, fname)

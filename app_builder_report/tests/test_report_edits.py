@@ -15,26 +15,26 @@ from typing import cast
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.builder_view_editor import BuilderViewEditor
 from odoo.addons.base.models.ir_actions_report import IrActionsReport
 from odoo.addons.base.models.ir_model import IrModel, IrModelFields
 from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
-from odoo.addons.app_builder_base.tools import typed
-from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
 
-from ..models.studio_report import StudioReport
+from ..models.builder_report import BuilderReport
 
 
 @tagged("post_install", "-at_install")
-class TestReportEdits(StudioCase):
+class TestReportEdits(BuilderCase):
     def _report(self, package):
-        made = typed.model(self.env, StudioReport).create_report(
-            package.id, "x_studio_project", "Job Sheet"
+        made = typed.model(self.env, BuilderReport).create_report(
+            package.id, "x_builder_project", "Job Sheet"
         )
         return typed.model(self.env, View).browse(made["view_id"])
 
     def _apply(self, view, package, **operation):
-        return typed.model(self.env, StudioViewEditor).apply_operation(
+        return typed.model(self.env, BuilderViewEditor).apply_operation(
             view.id, package.id, operation
         )
 
@@ -48,7 +48,7 @@ class TestReportEdits(StudioCase):
             type="add_report_field",
             xpath="//div[hasclass('page')]",
             position="inside",
-            model="x_studio_project",
+            model="x_builder_project",
             name="x_budget",
         )
         arch = cast(
@@ -66,7 +66,7 @@ class TestReportEdits(StudioCase):
             type="add_report_field",
             xpath="//div[hasclass('page')]",
             position="inside",
-            model="x_studio_project",
+            model="x_builder_project",
             name="x_budget",
             label="Budget",
         )
@@ -88,7 +88,7 @@ class TestReportEdits(StudioCase):
                 type="add_report_field",
                 xpath="//div[hasclass('page')]",
                 position="inside",
-                model="x_studio_project",
+                model="x_builder_project",
                 name="x_budget",
             )
         arch = cast(
@@ -104,8 +104,8 @@ class TestReportEdits(StudioCase):
             "name": "x_scan",
             "ttype": "binary",
             "field_description": "Scan",
-            "model_id": typed.model(self.env, IrModel)._get("x_studio_project").id,
-            "model": "x_studio_project",
+            "model_id": typed.model(self.env, IrModel)._get("x_builder_project").id,
+            "model": "x_builder_project",
         }
         typed.model(self.env, IrModelFields).create(field_vals)  # pyright: ignore[reportArgumentType]
         with raises(self, UserError) as caught:
@@ -115,7 +115,7 @@ class TestReportEdits(StudioCase):
                 type="add_report_field",
                 xpath="//div[hasclass('page')]",
                 position="inside",
-                model="x_studio_project",
+                model="x_builder_project",
                 name="x_scan",
             )
         self.assertIn("not text", str(caught.exception).replace("as text", "not text"))
@@ -124,13 +124,13 @@ class TestReportEdits(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         view = self._report(package)
-        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_builder_project")
         field_vals: dict[str, object] = {
             "name": "x_line_ids",
             "ttype": "one2many",
             "field_description": "Lines",
             "model_id": model.id,
-            "model": "x_studio_project",
+            "model": "x_builder_project",
             "relation": "res.partner",
             "relation_field": "parent_id",
         }
@@ -142,43 +142,43 @@ class TestReportEdits(StudioCase):
                 type="add_report_field",
                 xpath="//div[hasclass('page')]",
                 position="inside",
-                model="x_studio_project",
+                model="x_builder_project",
                 name="x_line_ids",
             )
         self.assertIn("Add table", str(caught.exception))
 
 
 @tagged("post_install", "-at_install")
-class TestReportTables(StudioCase):
+class TestReportTables(BuilderCase):
     def _setup(self):
         package = self.make_package()
         self.build_demo_content(package)
-        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_builder_project")
         field_vals: dict[str, object] = {
             "name": "x_line_ids",
             "ttype": "one2many",
             "field_description": "Lines",
             "model_id": model.id,
-            "model": "x_studio_project",
+            "model": "x_builder_project",
             "relation": "res.partner",
             "relation_field": "parent_id",
         }
         typed.model(self.env, IrModelFields).create(field_vals)  # pyright: ignore[reportArgumentType]
-        made = typed.model(self.env, StudioReport).create_report(
-            cast("int", package.id), "x_studio_project", "Job Sheet"
+        made = typed.model(self.env, BuilderReport).create_report(
+            cast("int", package.id), "x_builder_project", "Job Sheet"
         )
         return package, typed.model(self.env, View).browse(made["view_id"])
 
     def test_a_table_loops_the_child_records(self):
         package, view = self._setup()
-        typed.model(self.env, StudioViewEditor).apply_operation(
+        typed.model(self.env, BuilderViewEditor).apply_operation(
             cast("int", view.id),
             cast("int", package.id),
             {
                 "type": "add_report_table",
                 "xpath": "//div[hasclass('page')]",
                 "position": "inside",
-                "model": "x_studio_project",
+                "model": "x_builder_project",
                 "name": "x_line_ids",
                 "columns": ["name", "email"],
             },
@@ -193,14 +193,14 @@ class TestReportTables(StudioCase):
 
     def test_the_header_names_the_columns(self):
         package, view = self._setup()
-        typed.model(self.env, StudioViewEditor).apply_operation(
+        typed.model(self.env, BuilderViewEditor).apply_operation(
             cast("int", view.id),
             cast("int", package.id),
             {
                 "type": "add_report_table",
                 "xpath": "//div[hasclass('page')]",
                 "position": "inside",
-                "model": "x_studio_project",
+                "model": "x_builder_project",
                 "name": "x_line_ids",
                 "columns": ["name"],
             },
@@ -214,14 +214,14 @@ class TestReportTables(StudioCase):
     def test_a_table_needs_columns(self):
         package, view = self._setup()
         with raises(self, UserError):
-            typed.model(self.env, StudioViewEditor).apply_operation(
+            typed.model(self.env, BuilderViewEditor).apply_operation(
                 cast("int", view.id),
                 cast("int", package.id),
                 {
                     "type": "add_report_table",
                     "xpath": "//div[hasclass('page')]",
                     "position": "inside",
-                    "model": "x_studio_project",
+                    "model": "x_builder_project",
                     "name": "x_line_ids",
                     "columns": [],
                 },
@@ -230,14 +230,14 @@ class TestReportTables(StudioCase):
     def test_an_unknown_column_is_named(self):
         package, view = self._setup()
         with raises(self, UserError) as caught:
-            typed.model(self.env, StudioViewEditor).apply_operation(
+            typed.model(self.env, BuilderViewEditor).apply_operation(
                 cast("int", view.id),
                 cast("int", package.id),
                 {
                     "type": "add_report_table",
                     "xpath": "//div[hasclass('page')]",
                     "position": "inside",
-                    "model": "x_studio_project",
+                    "model": "x_builder_project",
                     "name": "x_line_ids",
                     "columns": ["nope"],
                 },
@@ -251,11 +251,11 @@ class TestReportTables(StudioCase):
         report = typed.model(self.env, IrActionsReport).search(
             [("report_type", "=", "qweb-pdf")], limit=1
         )
-        view = typed.model(self.env, StudioReport)._template_of(report)
+        view = typed.model(self.env, BuilderReport)._template_of(report)
         if not view:
             self.skipTest("no editable core report here")
         before = view.arch
-        typed.model(self.env, StudioViewEditor).apply_operation(
+        typed.model(self.env, BuilderViewEditor).apply_operation(
             cast("int", view.id),
             cast("int", package.id),
             {
@@ -270,7 +270,7 @@ class TestReportTables(StudioCase):
             typed.model(self.env, View).browse(cast("int", view.id)).arch, before
         )
         extension = typed.model(self.env, View).search(
-            [("inherit_id", "=", view.id), ("studio_package_id", "=", package.id)]
+            [("inherit_id", "=", view.id), ("builder_package_id", "=", package.id)]
         )
         self.assertTrue(extension)
         self.assertIn("t-field", cast("str", extension.arch))

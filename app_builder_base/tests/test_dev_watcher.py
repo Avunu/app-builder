@@ -1,13 +1,13 @@
 # Copyright 2026 Avunu LLC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
-"""The dev server's autoreload must not restart on the studio's own writes.
+"""The dev server's autoreload must not restart on the builder's own writes.
 
 ``--dev=reload`` restarts the process on any .py change under an addons
 path and gives in-flight requests one second before it closes the database
 connections. An apply writes .py files and reloads them in process in the
 same request, so that restart killed the apply half way -- a closed cursor
 inside ``update_list`` -- and the rollback after it the same way. These
-pin the fix: under ``--dev=reload`` the studio reloads in process, and the
+pin the fix: under ``--dev=reload`` the builder reloads in process, and the
 watcher looks away from a package for a few seconds around a write.
 """
 
@@ -23,12 +23,12 @@ from odoo.service import server as odoo_server
 from odoo.tests import tagged
 from odoo.tools import config
 
-from ..models import studio_package as package_module
-from .common import StudioCase
+from ..models import builder_package as package_module
+from .common import BuilderCase
 
 
 @tagged("post_install", "-at_install")
-class TestDevWatcher(StudioCase):
+class TestDevWatcher(BuilderCase):
     def setUp(self):
         super().setUp()
         self.package = self.make_package(name="x_watch_pkg")
@@ -51,19 +51,19 @@ class TestDevWatcher(StudioCase):
             self.package.invalidate_recordset(["reload_mode"])
             self.assertEqual(self.package.reload_mode, "manual")
 
-    def test_a_studio_write_does_not_restart_the_dev_server(self):
-        """The watcher's event for a file the studio just wrote is dropped,
+    def test_a_builder_write_does_not_restart_the_dev_server(self):
+        """The watcher's event for a file the builder just wrote is dropped,
         and a developer's own file elsewhere still restarts the server."""
         with patch.dict(config.options, {"dev_mode": ["reload"]}):
             self.package._write_files({"models/watched.py": "x = 1\n"})
             # `_write_files` just above raises if `root_path` were falsy --
-            # same invariant `studio_package.py`'s own `cast("str", ...)`
+            # same invariant `builder_package.py`'s own `cast("str", ...)`
             # call sites rely on for this field.
             written = os.path.join(
                 cast("str", self.package.root_path), "models", "watched.py"
             )
-            self.assertFalse(self._handle(written), "the studio's write: no restart")
-            elsewhere = tempfile.mkdtemp(prefix="studio-watch-")
+            self.assertFalse(self._handle(written), "the builder's write: no restart")
+            elsewhere = tempfile.mkdtemp(prefix="builder-watch-")
             self.addCleanup(shutil.rmtree, elsewhere, True)
             other = os.path.join(elsewhere, "theirs.py")
             with open(other, "w", encoding="utf-8") as handle:

@@ -2,10 +2,10 @@
 // filling the rest. Sizes are the ones the design fixed -- a 46px bar, a 360px
 // sidebar that will not go under 300 -- and everything else is flex.
 
-$o-studio-bar-height: 46px;
-$o-studio-brand: var(--o-color-primary, #714b67);
+$o-builder-bar-height: 46px;
+$o-builder-brand: var(--o-color-primary, #714b67);
 
-.o_studio_console {
+.o_builder_console {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -13,14 +13,14 @@ $o-studio-brand: var(--o-color-primary, #714b67);
     background: var(--o-webclient-background-color, #f8f9fa);
 }
 
-.o_studio_console_body {
+.o_builder_console_body {
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
 }
 
-.o_studio_console_canvas {
+.o_builder_console_canvas {
     display: flex;
     flex: 1 1 auto;
     min-width: 0;
@@ -34,18 +34,18 @@ $o-studio-brand: var(--o-color-primary, #714b67);
 
 // -- top bar ------------------------------------------------------------------
 
-.o_studio_top_bar {
+.o_builder_top_bar {
     display: flex;
     align-items: center;
     gap: 16px;
-    height: $o-studio-bar-height;
-    flex: 0 0 $o-studio-bar-height;
+    height: $o-builder-bar-height;
+    flex: 0 0 $o-builder-bar-height;
     padding: 0 12px;
     color: #fff;
     background: #2d2d3a;
     font-size: 13px;
 
-    .o_studio_crumb_bar {
+    .o_builder_crumb_bar {
         display: flex;
         align-items: center;
         white-space: nowrap;
@@ -53,12 +53,12 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         text-overflow: ellipsis;
         max-width: 28%;
 
-        .o_studio_crumb_model {
+        .o_builder_crumb_model {
             font-weight: 600;
         }
     }
 
-    .o_studio_tabs {
+    .o_builder_tabs {
         display: flex;
         align-items: stretch;
         align-self: stretch;
@@ -66,7 +66,7 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         overflow-x: auto;
     }
 
-    .o_studio_top_tab {
+    .o_builder_top_tab {
         border: 0;
         background: transparent;
         color: rgba(255, 255, 255, 0.7);
@@ -84,13 +84,13 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         }
     }
 
-    .o_studio_switcher {
+    .o_builder_switcher {
         display: flex;
         gap: 2px;
         margin-left: auto;
     }
 
-    .o_studio_switch {
+    .o_builder_switch {
         position: relative;
         width: 30px;
         height: 30px;
@@ -105,7 +105,7 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         }
 
         &.active {
-            background: $o-studio-brand;
+            background: $o-builder-brand;
             color: #fff;
         }
 
@@ -113,7 +113,7 @@ $o-studio-brand: var(--o-color-primary, #714b67);
             opacity: 0.7;
         }
 
-        .o_studio_switch_plus {
+        .o_builder_switch_plus {
             position: absolute;
             right: 1px;
             bottom: 1px;
@@ -121,13 +121,13 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         }
     }
 
-    .o_studio_top_actions {
+    .o_builder_top_actions {
         display: flex;
         align-items: center;
         gap: 6px;
     }
 
-    .o_studio_top_button {
+    .o_builder_top_button {
         border: 0;
         border-radius: 4px;
         padding: 4px 10px;
@@ -143,25 +143,25 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         }
     }
 
-    .o_studio_status {
+    .o_builder_status {
         padding: 3px 10px;
         border-radius: 12px;
         font-size: 12px;
         white-space: nowrap;
 
-        &.o_studio_status_saved {
+        &.o_builder_status_saved {
             background: rgba(40, 167, 69, 0.25);
         }
 
-        &.o_studio_status_saving {
+        &.o_builder_status_saving {
             background: rgba(255, 255, 255, 0.15);
         }
 
-        &.o_studio_status_error {
+        &.o_builder_status_error {
             background: rgba(220, 53, 69, 0.4);
         }
 
-        &.o_studio_status_pending {
+        &.o_builder_status_pending {
             background: rgba(255, 193, 7, 0.35);
             cursor: pointer;
 
@@ -170,7 +170,7 @@ $o-studio-brand: var(--o-color-primary, #714b67);
             }
         }
 
-        &.o_studio_status_dragging {
+        &.o_builder_status_dragging {
             background: rgba(255, 255, 255, 0.22);
         }
     }
@@ -183,7 +183,7 @@ $o-studio-brand: var(--o-color-primary, #714b67);
 // flex row whose other child is a wide list table the panel is compressed
 // below the width it just set. The resize handle is position-absolute and
 // anchors to the nearest positioned ancestor, which has to be the panel.
-.o_studio_sidebar {
+.o_builder_sidebar {
     flex: 0 0 auto;
     position: relative;
     display: flex;
@@ -193,19 +193,19 @@ $o-studio-brand: var(--o-color-primary, #714b67);
     min-height: 0;
 }
 
-.o_studio_sidebar_inner {
+.o_builder_sidebar_inner {
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
 }
 
-.o_studio_sidebar_tabs {
+.o_builder_sidebar_tabs {
     display: flex;
     flex: 0 0 auto;
     border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 
-    .o_studio_sidebar_tab {
+    .o_builder_sidebar_tab {
         flex: 1 1 0;
         border: 0;
         background: transparent;
@@ -219,20 +219,20 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         }
 
         &.active {
-            color: $o-studio-brand;
-            border-bottom-color: $o-studio-brand;
+            color: $o-builder-brand;
+            border-bottom-color: $o-builder-brand;
         }
     }
 }
 
-.o_studio_sidebar_pane {
+.o_builder_sidebar_pane {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     padding: 12px;
 }
 
-.o_studio_section_title {
+.o_builder_section_title {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -246,14 +246,14 @@ $o-studio-brand: var(--o-color-primary, #714b67);
 }
 
 // label | control rows, the shape every option takes.
-.o_studio_row {
+.o_builder_row {
     display: flex;
     align-items: center;
     gap: 8px;
     min-height: 30px;
     margin-bottom: 4px;
 
-    .o_studio_row_label {
+    .o_builder_row_label {
         flex: 0 0 40%;
         margin: 0;
         font-size: 12px;
@@ -263,20 +263,20 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         white-space: nowrap;
     }
 
-    .o_studio_row_content {
+    .o_builder_row_content {
         flex: 1 1 auto;
         min-width: 0;
     }
 }
 
 // Tiles: what can be put into the view. Wide enough to read and to grab.
-.o_studio_tiles {
+.o_builder_tiles {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 6px;
 }
 
-.o_studio_tile {
+.o_builder_tile {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -295,7 +295,7 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         flex: 0 0 auto;
         width: 16px;
         text-align: center;
-        color: $o-studio-brand;
+        color: $o-builder-brand;
     }
 
     > span {
@@ -306,12 +306,12 @@ $o-studio-brand: var(--o-color-primary, #714b67);
 
     &:hover:not(:disabled),
     &:focus-visible {
-        border-color: $o-studio-brand;
+        border-color: $o-builder-brand;
         background: rgba(113, 75, 103, 0.06);
     }
 
     &.active {
-        border-color: $o-studio-brand;
+        border-color: $o-builder-brand;
         background: rgba(113, 75, 103, 0.12);
     }
 
@@ -321,18 +321,18 @@ $o-studio-brand: var(--o-color-primary, #714b67);
     }
 }
 
-.o_studio_palette {
+.o_builder_palette {
     max-height: 40vh;
     overflow-y: auto;
 }
 
-.o_studio_inline_form {
+.o_builder_inline_form {
     padding: 8px;
     border: 1px dashed rgba(0, 0, 0, 0.2);
     border-radius: 4px;
 }
 
-.o_studio_source {
+.o_builder_source {
     max-height: 40vh;
     overflow: auto;
     padding: 8px;
@@ -341,7 +341,7 @@ $o-studio-brand: var(--o-color-primary, #714b67);
     white-space: pre;
 }
 
-.o_studio_crumb {
+.o_builder_crumb {
     color: inherit;
     text-decoration: underline dotted;
 }
@@ -349,7 +349,7 @@ $o-studio-brand: var(--o-color-primary, #714b67);
 // -- the search canvas --------------------------------------------------------
 // (The report canvas, and its stylesheet, live in `app_builder_report`.)
 
-.o_studio_search_lists {
+.o_builder_search_lists {
     flex: 0 0 320px;
     background: #fff;
 }
@@ -357,63 +357,63 @@ $o-studio-brand: var(--o-color-primary, #714b67);
 // The pending ghost: in the flow of the form, where the field will be.
 // Dashed, since it is a promise rather than a field; a grab cursor, since
 // dragging it is how its place is changed.
-.o_studio_pending {
+.o_builder_pending {
     display: flex;
     align-items: center;
     min-height: 30px;
     padding: 4px 10px;
-    border: 1px dashed $o-studio-brand;
+    border: 1px dashed $o-builder-brand;
     border-radius: 4px;
     background: rgba(113, 75, 103, 0.06);
     color: rgba(0, 0, 0, 0.75);
     cursor: grab;
 
-    .o_studio_pending_icon {
-        color: $o-studio-brand;
+    .o_builder_pending_icon {
+        color: $o-builder-brand;
     }
 
-    .o_studio_pending_label {
+    .o_builder_pending_label {
         font-weight: 500;
     }
 
-    .o_studio_pending_note {
+    .o_builder_pending_note {
         font-size: 11px;
         white-space: nowrap;
     }
 
-    &.o_studio_pending_unresolved {
+    &.o_builder_pending_unresolved {
         border-color: rgba(0, 0, 0, 0.3);
     }
 }
 
 // A ghost in a list column has no room for its note.
-.o_list_view .o_studio_pending {
-    .o_studio_pending_note {
+.o_list_view .o_builder_pending {
+    .o_builder_pending_note {
         display: none;
     }
 }
 
-.o_studio_pending_card {
+.o_builder_pending_card {
     padding: 8px;
-    border: 1px dashed $o-studio-brand;
+    border: 1px dashed $o-builder-brand;
     border-radius: 4px;
     background: rgba(113, 75, 103, 0.04);
 }
 
-.o_studio_staged_note {
-    color: $o-studio-brand !important;
+.o_builder_staged_note {
+    color: $o-builder-brand !important;
 }
 
 // The model's own field list: one row per class attribute, the buttons
 // only when the row is pointed at, a removal struck through until Apply.
-.o_studio_model_fields {
+.o_builder_model_fields {
     max-height: 18rem;
     overflow-y: auto;
     border: 1px solid var(--border-color, #dee2e6);
     border-radius: 4px;
 }
 
-.o_studio_model_field {
+.o_builder_model_field {
     padding: 3px 6px;
     font-size: 13px;
 
@@ -433,28 +433,28 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         }
     }
 
-    &.o_studio_model_field_removed > span {
+    &.o_builder_model_field_removed > span {
         text-decoration: line-through;
         opacity: 0.6;
     }
 }
 
-.o_studio_row_hint {
+.o_builder_row_hint {
     font-size: 11px;
     margin-top: 2px;
 }
 
 // -- the field editor and the Apply dialog ------------------------------------
 
-.o_studio_field_editor_popover {
+.o_builder_field_editor_popover {
     // Wide enough for a model picker row, short enough to stay beside the
     // tile it belongs to rather than covering the canvas.
     max-width: 420px;
     min-width: 340px;
 }
 
-.o_studio_apply_dialog {
-    .o_studio_diff {
+.o_builder_apply_dialog {
+    .o_builder_diff {
         max-height: 40vh;
         overflow: auto;
         padding: 8px;
@@ -464,7 +464,7 @@ $o-studio-brand: var(--o-color-primary, #714b67);
         word-break: break-word;
     }
 
-    .o_studio_change_destructive {
+    .o_builder_change_destructive {
         background: rgba(220, 53, 69, 0.06);
         border-radius: 4px;
     }

@@ -13,7 +13,7 @@
     "data": [
         "security/app_builder_security.xml",
         "security/ir.model.access.csv",
-        "views/studio_package_views.xml",
-        "views/studio_menus.xml",
+        "views/builder_package_views.xml",
+        "views/builder_menus.xml",
     ],
 }

@@ -1,6 +1,6 @@
 # Copyright 2026 Avunu LLC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
-"""The Studio menu's one entry: the console, on its Home.
+"""The Builder menu's one entry: the console, on its Home.
 
 The cog item and the systray know what the user is looking at; a menu does
 not. The entry opens the console's Home, which chooses the package the
@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_ui_menu import IrUiMenu
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.app_builder_base.tests.common import BuilderCase
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_ui_menu import IrUiMenu
 
 if TYPE_CHECKING:
     from odoo.api import IdType
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 @tagged("post_install", "-at_install")
-class TestConsoleMenu(StudioCase):
+class TestConsoleMenu(BuilderCase):
     def setUp(self):
         super().setUp()
         installed = self.env["ir.module.module"].search_count(
@@ -37,7 +37,7 @@ class TestConsoleMenu(StudioCase):
     def _run(self):
         action = cast(
             "IrActionsServer",
-            typed.ref(self.env, "app_builder_view.studio_console_action"),
+            typed.ref(self.env, "app_builder_view.builder_console_action"),
         )
         # `run()` is unannotated; its inferred type includes the `False`
         # "nothing to do" branch documented in its own docstring, never
@@ -56,15 +56,17 @@ class TestConsoleMenu(StudioCase):
         # No model is chosen for the user: Home is the place to choose one.
         self.assertNotIn("res_model", action["params"])
 
-    def test_the_studio_app_is_one_entry(self):
+    def test_the_builder_app_is_one_entry(self):
         """The root menu opens the console itself; every other entry under
         it is developer-mode only, so a builder sees exactly one."""
-        root = cast("IrUiMenu", typed.ref(self.env, "app_builder_base.menu_studio_root"))
+        root = cast(
+            "IrUiMenu", typed.ref(self.env, "app_builder_base.menu_builder_root")
+        )
         self.assertEqual(
-            root.action, typed.ref(self.env, "app_builder_view.studio_console_action")
+            root.action, typed.ref(self.env, "app_builder_view.builder_console_action")
         )
         # The menu bar's own filter (`_visible_menu_ids`) is what the person
-        # sees; as the administrator, who is in every studio group but is
+        # sees; as the administrator, who is in every builder group but is
         # not in developer mode.
         admin = self.env.ref("base.user_admin")
         # `_visible_menu_ids` is wrapped in `@tools.ormcache`, whose own

@@ -1,6 +1,6 @@
 # Copyright 2026 Avunu LLC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
-"""The single definition of a studio-built model.
+"""The single definition of a builder-built model.
 
 A ``ModelSpec`` is what the builder edits and what the code generator renders.
 The ``.py`` file on disk is its canonical serialization: ``render_model`` writes
@@ -107,7 +107,7 @@ MAGIC_COLUMNS: tuple[str, ...] = (
     "display_name",
 )
 
-# Field attributes that mixins bring with them. A studio field colliding with
+# Field attributes that mixins bring with them. A builder field colliding with
 # one of these does not fail loudly -- it shadows a mixin field and breaks
 # something far away -- so validate_spec refuses it up front.
 MIXIN_FIELDS: dict[str, tuple[str, ...]] = {
@@ -564,7 +564,7 @@ class SelectionSpec:
 # Methods the builder owns carry this prefix. Not decoration: the parser reads
 # the block back, and it needs to tell a method the builder wrote from one a
 # developer added -- the latter belongs outside the block and is never touched.
-STUDIO_METHOD_PREFIX = "_studio_"
+BUILDER_METHOD_PREFIX = "_builder_"
 
 # Methods the builder generates whose name is not its to choose, because they
 # override something a mixin declares. The prefix is the ownership marker
@@ -589,7 +589,7 @@ GENERATED_OVERRIDES = frozenset(
 
 
 def is_builder_method(name: str) -> bool:
-    return name.startswith(STUDIO_METHOD_PREFIX) or name in GENERATED_OVERRIDES
+    return name.startswith(BUILDER_METHOD_PREFIX) or name in GENERATED_OVERRIDES
 
 
 @dataclass(frozen=True, slots=True)
@@ -753,7 +753,7 @@ def spec_to_json(spec: ModelSpec | FieldSpec) -> dict[str, Any]:
 
     A whole model, or one field of it: ``asdict`` is generic over any
     dataclass, and the editor's draft sends a single ``FieldSpec`` this way
-    for every field row (``studio_model_draft.py``). The signature said
+    for every field row (``builder_model_draft.py``). The signature said
     ``ModelSpec`` only, which is why those two call sites carried a
     ``pyright: ignore`` -- and why running this module under typeguard
     (TYPING.md, Phase 1e) flagged it on the first test that reached one.

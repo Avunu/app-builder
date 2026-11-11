@@ -30,10 +30,10 @@
  * component reads the console model today.
  */
 
-import type { Component } from "@odoo/owl";
-import { _t } from "../l10n";
-import { registry } from "@web/core/registry";
-import type { PaneContext, PaneEntry, PaneModel, PaneRegistration } from "../types";
+import type {Component} from "@odoo/owl";
+import {_t} from "../l10n";
+import {registry} from "@web/core/registry";
+import type {PaneContext, PaneEntry, PaneModel, PaneRegistration} from "../types";
 
 // `registry.category()`'s own signature (`web/static/src/core/registry.js`)
 // is `category<K extends keyof GetRegistryCategories<T> & string>(subcategory:
@@ -60,18 +60,18 @@ const legacyTabs = registry.category("app_builder.console_tabs");
 let warnedLegacy = false;
 
 export function warnLegacyTabs(): void {
-    if (warnedLegacy) {
-        return;
-    }
-    warnedLegacy = true;
-    const keys = legacyTabs.getEntries().map(([key]) => key);
-    if (keys.length) {
-        console.warn(
-            "app_builder.console_tabs is no longer read by the console; register a pane in " +
-                "app_builder.panes instead: " +
-                keys.join(", "),
-        );
-    }
+  if (warnedLegacy) {
+    return;
+  }
+  warnedLegacy = true;
+  const keys = legacyTabs.getEntries().map(([key]) => key);
+  if (keys.length) {
+    console.warn(
+      "app_builder.console_tabs is no longer read by the console; register a pane in " +
+        "app_builder.panes instead: " +
+        keys.join(", ")
+    );
+  }
 }
 
 /**
@@ -84,11 +84,11 @@ export function warnLegacyTabs(): void {
  * on its own.
  */
 export interface PaneResolverResult {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Component: typeof Component<any, any>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sidebar: typeof Component<any, any> | null;
-    makeModel: (shell: unknown) => PaneModel;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Component: typeof Component<any, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sidebar: typeof Component<any, any> | null;
+  makeModel: (shell: unknown) => PaneModel;
 }
 
 /**
@@ -103,66 +103,68 @@ export type PaneResolverKind = "record" | "flow";
 
 /** The resolvers a data-only entry needs: set by the modules that own them. */
 const resolvers: Record<PaneResolverKind, PaneResolver | null> = {
-    record: null,
-    flow: null,
+  record: null,
+  flow: null,
 };
 
 export function setPaneResolver(kind: PaneResolverKind, resolve: PaneResolver): void {
-    resolvers[kind] = resolve;
+  resolvers[kind] = resolve;
 }
 
 /** The entry with its component, sidebar and model factory filled in. */
 export function resolvePane(key: string): PaneEntry {
-    if (!paneRegistry.contains(key)) {
-        throw new Error(`app_builder.panes has no "${key}"`);
+  if (!paneRegistry.contains(key)) {
+    throw new Error(`app_builder.panes has no "${key}"`);
+  }
+  // `Registry.get`'s JSDoc leaves `defaultValue` undocumented (so TS
+  // infers it as required) -- the same trap `canvas_views.ts`'s own
+  // `Registry.get` call hit first, and the same fix: `key` is already
+  // known to exist (`contains`, just above), so this keeps the call at
+  // one argument rather than passing an explicit `undefined` that
+  // would suppress the real "missing key" throw, and `.call(paneRegistry,
+  // key)` rather than a bare reference, since `get` reads
+  // `this.content` internally and an unbound reference would call it
+  // with no `this` at all.
+  const registered = (paneRegistry.get as (key: string) => PaneRegistration).call(
+    paneRegistry,
+    key
+  );
+  const entry: PaneEntry = {key, ...registered};
+  if (entry.Component) {
+    // A custom pane may have no sidebar or no model of its own; the
+    // pre-conversion JS filled both in with a single
+    // `{ sidebar: null, makeModel: null, ...entry }` spread. Written
+    // here as two `??` fills on a *single* source instead: spreading
+    // two objects that disagree on whether `null` belongs to a
+    // key's type (the literal default says yes, `entry`'s own
+    // optional `sidebar`/`makeModel` say "maybe, if present") would
+    // leave the result's type to however TS resolves that
+    // ambiguity, which could not be checked against a real compiler
+    // here (drafting is read-only). `entry.sidebar ?? null` and
+    // `entry.makeModel ?? null` are each a single, unambiguous
+    // expression instead, giving the exact same value on both keys
+    // for every real entry without depending on that inference.
+    return {
+      ...entry,
+      sidebar: entry.sidebar ?? null,
+      makeModel: entry.makeModel ?? null,
+    };
+  }
+  if (entry.surface) {
+    if (!resolvers.record) {
+      throw new Error(`no record pane to render "${key}"`);
     }
-    // `Registry.get`'s JSDoc leaves `defaultValue` undocumented (so TS
-    // infers it as required) -- the same trap `canvas_views.ts`'s own
-    // `Registry.get` call hit first, and the same fix: `key` is already
-    // known to exist (`contains`, just above), so this keeps the call at
-    // one argument rather than passing an explicit `undefined` that
-    // would suppress the real "missing key" throw, and `.call(paneRegistry,
-    // key)` rather than a bare reference, since `get` reads
-    // `this.content` internally and an unbound reference would call it
-    // with no `this` at all.
-    const registered = (paneRegistry.get as (key: string) => PaneRegistration).call(
-        paneRegistry,
-        key,
-    );
-    const entry: PaneEntry = { key, ...registered };
-    if (entry.Component) {
-        // A custom pane may have no sidebar or no model of its own; the
-        // pre-conversion JS filled both in with a single
-        // `{ sidebar: null, makeModel: null, ...entry }` spread. Written
-        // here as two `??` fills on a *single* source instead: spreading
-        // two objects that disagree on whether `null` belongs to a
-        // key's type (the literal default says yes, `entry`'s own
-        // optional `sidebar`/`makeModel` say "maybe, if present") would
-        // leave the result's type to however TS resolves that
-        // ambiguity, which could not be checked against a real compiler
-        // here (drafting is read-only). `entry.sidebar ?? null` and
-        // `entry.makeModel ?? null` are each a single, unambiguous
-        // expression instead, giving the exact same value on both keys
-        // for every real entry without depending on that inference.
-        return {
-            ...entry,
-            sidebar: entry.sidebar ?? null,
-            makeModel: entry.makeModel ?? null,
-        };
+    return {...entry, ...resolvers.record(entry)};
+  }
+  if (entry.flow) {
+    if (!resolvers.flow) {
+      throw new Error(`no flow host to render "${key}"`);
     }
-    if (entry.surface) {
-        if (!resolvers.record) {
-            throw new Error(`no record pane to render "${key}"`);
-        }
-        return { ...entry, ...resolvers.record(entry) };
-    }
-    if (entry.flow) {
-        if (!resolvers.flow) {
-            throw new Error(`no flow host to render "${key}"`);
-        }
-        return { ...entry, tab: false, ...resolvers.flow(entry) };
-    }
-    throw new Error(`app_builder.panes["${key}"] declares neither Component, surface nor flow`);
+    return {...entry, tab: false, ...resolvers.flow(entry)};
+  }
+  throw new Error(
+    `app_builder.panes["${key}"] declares neither Component, surface nor flow`
+  );
 }
 
 /**
@@ -171,16 +173,16 @@ export function resolvePane(key: string): PaneEntry {
  * rule is the default.
  */
 export function paneAvailable(entry: PaneEntry, ctx: PaneContext): boolean {
-    if (entry.isAvailable) {
-        return Boolean(entry.isAvailable(ctx));
-    }
-    if (entry.scope === "model" && !ctx.modelName) {
-        return false;
-    }
-    if (entry.scope === "view" && !(ctx.view && ctx.view.view_id)) {
-        return false;
-    }
-    return true;
+  if (entry.isAvailable) {
+    return Boolean(entry.isAvailable(ctx));
+  }
+  if (entry.scope === "model" && !ctx.modelName) {
+    return false;
+  }
+  if (entry.scope === "view" && !(ctx.view && ctx.view.view_id)) {
+    return false;
+  }
+  return true;
 }
 
 /** A tab the bar lists: a resolved entry plus whether it can be opened
@@ -188,8 +190,8 @@ export function paneAvailable(entry: PaneEntry, ctx: PaneContext): boolean {
  * own reads: `tab.key`, `tab.available`, `tab.active`, `tab.label`,
  * `tab.icon`). */
 export interface PaneTab extends PaneEntry {
-    available: boolean;
-    reason: string;
+  available: boolean;
+  reason: string;
 }
 
 /**
@@ -198,36 +200,36 @@ export interface PaneTab extends PaneEntry {
  * not hidden, so the bar reads the same on every pane.
  */
 export function paneTabs(ctx: PaneContext): PaneTab[] {
-    return paneRegistry
-        .getEntries()
-        .map(([key, entry]): PaneEntry => ({ key, ...entry }))
-        .filter((entry) => entry.tab !== false && !entry.flow)
-        .map((entry): PaneTab => {
-            const available = paneAvailable(entry, ctx);
-            let reason = "";
-            if (!available && entry.scope === "model" && !ctx.modelName) {
-                // `_t()` (`@web/core/l10n/translation.js`) returns
-                // `string | Markup | LazyTranslatedString`, never a bare
-                // `string` -- the same reason `outline_tree.ts`/
-                // `outline_zones.ts` wrap it in `String(...)` rather than
-                // assigning it straight into a `string`-typed variable.
-                reason = String(
-                    _t("Choose a model first — from the crumb, or open any view with Studio."),
-                );
-            } else if (!available && entry.scope === "view") {
-                reason = String(_t("Open a view first."));
-            } else if (!available) {
-                reason = String(_t("Not available here."));
-            }
-            return { ...entry, available, reason };
-        });
+  return paneRegistry
+    .getEntries()
+    .map(([key, entry]): PaneEntry => ({key, ...entry}))
+    .filter((entry) => entry.tab !== false && !entry.flow)
+    .map((entry): PaneTab => {
+      const available = paneAvailable(entry, ctx);
+      let reason = "";
+      if (!available && entry.scope === "model" && !ctx.modelName) {
+        // `_t()` (`@web/core/l10n/translation.js`) returns
+        // `string | Markup | LazyTranslatedString`, never a bare
+        // `string` -- the same reason `outline_tree.ts`/
+        // `outline_zones.ts` wrap it in `String(...)` rather than
+        // assigning it straight into a `string`-typed variable.
+        reason = String(
+          _t("Choose a model first — from the crumb, or open any view with Builder.")
+        );
+      } else if (!available && entry.scope === "view") {
+        reason = String(_t("Open a view first."));
+      } else if (!available) {
+        reason = String(_t("Not available here."));
+      }
+      return {...entry, available, reason};
+    });
 }
 
 /** The flows on offer as tiles: panes with no tab, that apply here. */
 export function paneFlows(ctx: PaneContext): PaneEntry[] {
-    return paneRegistry
-        .getEntries()
-        .map(([key, entry]): PaneEntry => ({ key, ...entry }))
-        .filter((entry) => entry.tab === false || entry.flow)
-        .filter((entry) => paneAvailable(entry, ctx));
+  return paneRegistry
+    .getEntries()
+    .map(([key, entry]): PaneEntry => ({key, ...entry}))
+    .filter((entry) => entry.tab === false || entry.flow)
+    .filter((entry) => paneAvailable(entry, ctx));
 }

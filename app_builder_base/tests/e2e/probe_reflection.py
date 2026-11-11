@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# pylint: disable=print-used,invalid-commit,sql-injection,odoo-addons-relative-import
 """I2 -- does the database agree with the source we wrote?
 
 For a Python-backed model the old round-trip invariant is false by
@@ -129,8 +130,8 @@ def actual_reflection(env, spec):
     # inside `main()`) is what makes `odoo.addons.<name>` resolvable at
     # all, and this is a module-level function `main()` calls only after
     # that -- a top-level import here would run first and fail.
-    from odoo.addons.base.models.ir_model import IrModel
     from odoo.addons.app_builder_base.tools import typed
+    from odoo.addons.base.models.ir_model import IrModel
 
     model = typed.model(env, IrModel).search([("model", "=", spec.name)], limit=1)
     rows = {}
@@ -157,13 +158,13 @@ def main():
 
     results = []
     try:
-        from odoo.addons.base.models.ir_module import Module
         from odoo.addons.app_builder_base.tools import pycodegen, typed
         from odoo.addons.app_builder_base.tools.modelspec import (
             FieldSpec,
             ModelSpec,
             SelectionSpec,
         )
+        from odoo.addons.base.models.ir_module import Module
 
         spec = ModelSpec(
             name=MODEL,

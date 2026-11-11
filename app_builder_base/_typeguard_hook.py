@@ -7,14 +7,14 @@ Off unless ``APP_BUILDER_TYPEGUARD`` is set to something truthy, in which
 case ``app_builder_base/__init__.py`` calls :func:`install` *before* it
 imports anything from ``tools/`` -- typeguard rewrites a module as it is
 imported, so there is no installing it afterwards. Never set in production;
-``typeguard`` is a test dependency (``test-requirements.txt``).
+``typeguard`` is a development dependency (``nix/pyproject.toml``).
 
 What it checks, and what it deliberately does not:
 
 * Only the ``tools/`` packages of this repo's addons. They are pure
   functions over dataclasses, dicts and strings -- the one place a runtime
   check is cheap and true. ORM code is the opposite: a recordset's static
-  type (``Users``, ``StudioPackage``) is a claim ``typed.model()`` makes with
+  type (``Users``, ``BuilderPackage``) is a claim ``typed.model()`` makes with
   a ``cast``, and a runtime check of it would only ever compare the cast with
   itself.
 * Not ``typed.py`` (its casts have nothing to check, and its ``TypeVar``

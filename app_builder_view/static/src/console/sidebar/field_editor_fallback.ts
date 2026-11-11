@@ -39,15 +39,15 @@
  * reasoning `PaneRegistration`/`PaneContext` already follow there.
  */
 
-import { Component, onMounted, useRef, useState } from "@odoo/owl";
-import { _t } from "../l10n";
-import { ModelFieldSelector } from "@web/core/model_field_selector/model_field_selector";
-import { ModelSelector } from "@web/core/model_selector/model_selector";
-import { usePopover } from "@web/core/popover/popover_hook";
-import { registry } from "@web/core/registry";
-import type { FieldEditorProps } from "../types";
-import type { InverseOptions, ResolveRelatedResult } from "../wire";
-import type { SelectionOption } from "../types";
+import {Component, onMounted, useRef, useState} from "@odoo/owl";
+import {_t} from "../l10n";
+import {ModelFieldSelector} from "@web/core/model_field_selector/model_field_selector";
+import {ModelSelector} from "@web/core/model_selector/model_selector";
+import {usePopover} from "@web/core/popover/popover_hook";
+import {registry} from "@web/core/registry";
+import type {FieldEditorProps} from "../types";
+import type {InverseOptions, ResolveRelatedResult} from "../wire";
+import type {SelectionOption} from "../types";
 
 // `registry.category()`'s own signature (`web/static/src/core/registry.js`)
 // only accepts a name that is a known key of `GlobalRegistryCategories`
@@ -61,28 +61,28 @@ const editorRegistry = registry.category("app_builder.field_editor");
 
 /** The props every editor takes; a registered one may accept more. */
 export const FIELD_EDITOR_PROPS = {
-    field: { type: [Object, { value: null }], optional: true },
-    initial: { type: Object, optional: true },
-    mode: { type: String, optional: true },
-    fieldTypes: Array,
-    existingNames: Array,
-    modelName: String,
-    inverseOptions: Function,
-    resolveRelated: Function,
-    onSave: Function,
-    onDelete: { type: [Function, { value: null }], optional: true },
-    close: Function,
+  field: {type: [Object, {value: null}], optional: true},
+  initial: {type: Object, optional: true},
+  mode: {type: String, optional: true},
+  fieldTypes: Array,
+  existingNames: Array,
+  modelName: String,
+  inverseOptions: Function,
+  resolveRelated: Function,
+  onSave: Function,
+  onDelete: {type: [Function, {value: null}], optional: true},
+  close: Function,
 };
 
 /** The editor to open: the first one registered, else the fallback. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function fieldEditorComponent(): typeof Component<any, any> {
-    const entries = editorRegistry.getEntries();
-    // `entries.length` being truthy does not, to `noUncheckedIndexedAccess`,
-    // prove `entries[0]` exists -- asserted the same way this migration
-    // already does for other length-guarded first/last-element reads
-    // (`console_model.ts`'s `lastStep`).
-    return entries.length ? entries[0]![1] : FieldEditorFallback;
+  const entries = editorRegistry.getEntries();
+  // `entries.length` being truthy does not, to `noUncheckedIndexedAccess`,
+  // prove `entries[0]` exists -- asserted the same way this migration
+  // already does for other length-guarded first/last-element reads
+  // (`console_model.ts`'s `lastStep`).
+  return entries.length ? entries[0]![1] : FieldEditorFallback;
 }
 
 /**
@@ -90,24 +90,24 @@ export function fieldEditorComponent(): typeof Component<any, any> {
  * them is not a click away. The same list the field editor keeps.
  */
 const KEEPS_OPEN = [
-    ".o_datetime_picker",
-    ".o_model_field_selector_popover",
-    ".o-autocomplete--dropdown-menu",
-    ".o_domain_selector_dialog",
-    ".o_select_menu_menu",
-    ".o_popover",
-    ".modal",
-    ".o_tag_popover",
+  ".o_datetime_picker",
+  ".o_model_field_selector_popover",
+  ".o-autocomplete--dropdown-menu",
+  ".o_domain_selector_dialog",
+  ".o_select_menu_menu",
+  ".o_popover",
+  ".modal",
+  ".o_tag_popover",
 ];
 
 /** `usePopover` on the registered editor, with the escape list. */
 export function useFieldEditor() {
-    return usePopover(fieldEditorComponent(), {
-        popoverClass: "o_studio_field_editor_popover",
-        position: "right",
-        closeOnClickAway: (target: HTMLElement) =>
-            !KEEPS_OPEN.some((selector) => target.closest && target.closest(selector)),
-    });
+  return usePopover(fieldEditorComponent(), {
+    popoverClass: "o_builder_field_editor_popover",
+    position: "right",
+    closeOnClickAway: (target: HTMLElement) =>
+      !KEEPS_OPEN.some((selector) => target.closest && target.closest(selector)),
+  });
 }
 
 /**
@@ -127,253 +127,266 @@ export function useFieldEditor() {
  * save without this file ever needing to name it.
  */
 interface FieldEditorState {
-    ttype: string;
-    string: string | null;
-    selection?: SelectionOption[];
-    error: string;
-    inverse: InverseOptions | null;
-    relatedInfo: ResolveRelatedResult | null;
-    /** `| undefined`, not just optional: `onSave`'s own `values.comodel =
-     * relatedInfo.comodel || undefined` writes a literal `undefined` when
-     * a resolved related path leads to a non-relational field, which
-     * `exactOptionalPropertyTypes` treats differently from the key being
-     * merely absent -- the same distinction `types.ts`'s own
-     * `DragPayload.component` already documents. */
-    comodel?: string | null | undefined;
-    inverse_name?: string | null;
-    related?: string | null;
-    create_inverse?: boolean;
-    currency_field?: string | null;
-    [key: string]: unknown;
+  ttype: string;
+  string: string | null;
+  selection?: SelectionOption[];
+  error: string;
+  inverse: InverseOptions | null;
+  relatedInfo: ResolveRelatedResult | null;
+  /** `| undefined`, not just optional: `onSave`'s own `values.comodel =
+   * relatedInfo.comodel || undefined` writes a literal `undefined` when
+   * a resolved related path leads to a non-relational field, which
+   * `exactOptionalPropertyTypes` treats differently from the key being
+   * merely absent -- the same distinction `types.ts`'s own
+   * `DragPayload.component` already documents. */
+  comodel?: string | null | undefined;
+  inverse_name?: string | null;
+  related?: string | null;
+  create_inverse?: boolean;
+  currency_field?: string | null;
+  [key: string]: unknown;
 }
 
 /** The values a new field starts from, as the editor's state. */
 function initialState(props: FieldEditorProps) {
-    if (props.field) {
-        return { ...props.field };
-    }
-    const initial = props.initial || {};
-    const entry = props.fieldTypes.find((t) => t.value === initial.ttype);
-    return {
-        ttype: initial.ttype || "char",
-        string: initial.string || String(entry ? _t("New %s", entry.label) : _t("New field")),
-        selection: [],
-    };
+  if (props.field) {
+    return {...props.field};
+  }
+  const initial = props.initial || {};
+  const entry = props.fieldTypes.find((t) => t.value === initial.ttype);
+  return {
+    ttype: initial.ttype || "char",
+    string:
+      initial.string || String(entry ? _t("New %s", entry.label) : _t("New field")),
+    selection: [],
+  };
 }
 
 export class FieldEditorFallback extends Component<FieldEditorProps> {
-    static override template = "app_builder_view.FieldEditorFallback";
-    static components = { ModelSelector, ModelFieldSelector };
-    static override props = FIELD_EDITOR_PROPS;
+  static override template = "app_builder_view.FieldEditorFallback";
+  static components = {ModelSelector, ModelFieldSelector};
+  static override props = FIELD_EDITOR_PROPS;
 
-    isNew!: boolean;
-    labelRef!: { el: HTMLInputElement | null };
-    state!: FieldEditorState;
+  isNew!: boolean;
+  labelRef!: {el: HTMLInputElement | null};
+  state!: FieldEditorState;
 
-    override setup(): void {
-        this.isNew = !this.props.field;
-        this.labelRef = useRef<HTMLInputElement>("label");
-        this.state = useState<FieldEditorState>({
-            ...initialState(this.props),
-            error: "",
-            inverse: null,
-            relatedInfo: null,
-        });
-        onMounted(() => {
-            if (this.state.ttype === "one2many" && this.state.comodel) {
-                void this.loadInverseOptions(this.state.comodel);
-            }
-            const input = this.labelRef.el;
-            if (input) {
-                input.focus();
-                if (this.isNew) {
-                    // Selected, not just focused: the placeholder label is
-                    // a starting point, and typing replaces it outright.
-                    input.select();
-                }
-            }
-        });
-    }
-
-    // -- what the type needs ------------------------------------------------
-
-    get currentType(): Partial<FieldEditorProps["fieldTypes"][number]> {
-        return this.props.fieldTypes.find((t) => t.value === this.state.ttype) || {};
-    }
-
-    /** The picker entries that can be chosen here. */
-    get typeChoices() {
-        return this.props.fieldTypes.filter(
-            (entry) => entry.enabled && (this.props.mode !== "live" || entry.live !== false),
-        );
-    }
-
-    shows(param: string): boolean {
-        return (this.currentType.params || []).includes(param);
-    }
-
-    onTypeChange(value: string): void {
-        const entry = this.props.fieldTypes.find((t) => t.value === value);
-        if (!entry || !entry.enabled) {
-            return;
+  override setup(): void {
+    this.isNew = !this.props.field;
+    this.labelRef = useRef<HTMLInputElement>("label");
+    this.state = useState<FieldEditorState>({
+      ...initialState(this.props),
+      error: "",
+      inverse: null,
+      relatedInfo: null,
+    });
+    onMounted(() => {
+      if (this.state.ttype === "one2many" && this.state.comodel) {
+        void this.loadInverseOptions(this.state.comodel);
+      }
+      const input = this.labelRef.el;
+      if (input) {
+        input.focus();
+        if (this.isNew) {
+          // Selected, not just focused: the placeholder label is
+          // a starting point, and typing replaces it outright.
+          input.select();
         }
-        this.state.ttype = value;
-        for (const param of ["comodel", "inverse_name", "related", "currency_field"] as const) {
-            if (!entry.params.includes(param)) {
-                delete this.state[param];
-            }
-        }
-        if (!entry.params.includes("selection")) {
-            this.state.selection = [];
-        }
+      }
+    });
+  }
+
+  // -- what the type needs ------------------------------------------------
+
+  get currentType(): Partial<FieldEditorProps["fieldTypes"][number]> {
+    return this.props.fieldTypes.find((t) => t.value === this.state.ttype) || {};
+  }
+
+  /** The picker entries that can be chosen here. */
+  get typeChoices() {
+    return this.props.fieldTypes.filter(
+      (entry) => entry.enabled && (this.props.mode !== "live" || entry.live !== false)
+    );
+  }
+
+  shows(param: string): boolean {
+    return (this.currentType.params || []).includes(param);
+  }
+
+  onTypeChange(value: string): void {
+    const entry = this.props.fieldTypes.find((t) => t.value === value);
+    if (!entry || !entry.enabled) {
+      return;
     }
-
-    // -- relations ----------------------------------------------------------
-
-    async onComodelSelected(model: { technical: string }): Promise<void> {
-        this.state.comodel = model.technical;
-        if (this.state.ttype === "one2many" || this.state.ttype === "lines") {
-            await this.loadInverseOptions(model.technical);
-        }
+    this.state.ttype = value;
+    for (const param of [
+      "comodel",
+      "inverse_name",
+      "related",
+      "currency_field",
+    ] as const) {
+      if (!entry.params.includes(param)) {
+        delete this.state[param];
+      }
     }
-
-    async loadInverseOptions(comodel: string): Promise<void> {
-        this.state.inverse = await this.props.inverseOptions(comodel);
-        const { candidates, can_create: canCreate, suggested } = this.state.inverse;
-        if (candidates.length) {
-            this.state.create_inverse = false;
-            // `candidates.length` just confirmed index 0 exists;
-            // `noUncheckedIndexedAccess` cannot see that from the length
-            // check alone.
-            this.state.inverse_name = candidates[0]!.name;
-        } else if (canCreate) {
-            this.state.create_inverse = true;
-            this.state.inverse_name = suggested;
-        }
+    if (!entry.params.includes("selection")) {
+      this.state.selection = [];
     }
+  }
 
-    get inverse(): InverseOptions {
-        return (
-            this.state.inverse || { candidates: [], can_create: false, suggested: "", reason: "" }
-        );
+  // -- relations ----------------------------------------------------------
+
+  async onComodelSelected(model: {technical: string}): Promise<void> {
+    this.state.comodel = model.technical;
+    if (this.state.ttype === "one2many" || this.state.ttype === "lines") {
+      await this.loadInverseOptions(model.technical);
     }
+  }
 
-    get needsInverse(): boolean {
-        return ["one2many", "lines"].includes(this.state.ttype) && Boolean(this.state.comodel);
+  async loadInverseOptions(comodel: string): Promise<void> {
+    this.state.inverse = await this.props.inverseOptions(comodel);
+    const {candidates, can_create: canCreate, suggested} = this.state.inverse;
+    if (candidates.length) {
+      this.state.create_inverse = false;
+      // `candidates.length` just confirmed index 0 exists;
+      // `noUncheckedIndexedAccess` cannot see that from the length
+      // check alone.
+      this.state.inverse_name = candidates[0]!.name;
+    } else if (canCreate) {
+      this.state.create_inverse = true;
+      this.state.inverse_name = suggested;
     }
+  }
 
-    onInverseChange(value: string): void {
-        if (value === "__new__") {
-            this.state.create_inverse = true;
-            this.state.inverse_name = this.inverse.suggested;
-        } else {
-            this.state.create_inverse = false;
-            this.state.inverse_name = value;
-        }
+  get inverse(): InverseOptions {
+    return (
+      this.state.inverse || {
+        candidates: [],
+        can_create: false,
+        suggested: "",
+        reason: "",
+      }
+    );
+  }
+
+  get needsInverse(): boolean {
+    return (
+      ["one2many", "lines"].includes(this.state.ttype) && Boolean(this.state.comodel)
+    );
+  }
+
+  onInverseChange(value: string): void {
+    if (value === "__new__") {
+      this.state.create_inverse = true;
+      this.state.inverse_name = this.inverse.suggested;
+    } else {
+      this.state.create_inverse = false;
+      this.state.inverse_name = value;
     }
+  }
 
-    // -- related ------------------------------------------------------------
+  // -- related ------------------------------------------------------------
 
-    async onRelatedChange(path: string): Promise<void> {
-        this.state.related = path;
-        this.state.relatedInfo = await this.props.resolveRelated(path);
-        if (this.state.relatedInfo.ok && this.isNew) {
-            this.state.string = this.state.relatedInfo.string;
-        }
+  async onRelatedChange(path: string): Promise<void> {
+    this.state.related = path;
+    this.state.relatedInfo = await this.props.resolveRelated(path);
+    if (this.state.relatedInfo.ok && this.isNew) {
+      this.state.string = this.state.relatedInfo.string;
     }
+  }
 
-    // -- selection values ---------------------------------------------------
+  // -- selection values ---------------------------------------------------
 
-    get selectionRows(): SelectionOption[] {
-        return this.state.selection || [];
+  get selectionRows(): SelectionOption[] {
+    return this.state.selection || [];
+  }
+
+  addSelectionRow(): void {
+    this.state.selection = [
+      ...this.selectionRows,
+      {value: "", label: "", sequence: (this.selectionRows.length + 1) * 10},
+    ];
+  }
+
+  updateSelectionRow(index: number, key: string, value: string): void {
+    const rows = [...this.selectionRows];
+    // `index` always names a row the template itself just rendered
+    // from `rows`, an invariant `noUncheckedIndexedAccess` cannot see
+    // from the signature alone -- asserted the same way
+    // `loadInverseOptions`'s `candidates[0]` is, just below.
+    rows[index] = {...rows[index]!, [key]: value};
+    const updatedRow = rows[index];
+    if (key === "label" && !updatedRow.value) {
+      updatedRow.value = (value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
     }
+    this.state.selection = rows;
+  }
 
-    addSelectionRow(): void {
-        this.state.selection = [
-            ...this.selectionRows,
-            { value: "", label: "", sequence: (this.selectionRows.length + 1) * 10 },
-        ];
+  removeSelectionRow(index: number): void {
+    this.state.selection = this.selectionRows.filter((_row, i) => i !== index);
+  }
+
+  // -- commit -------------------------------------------------------------
+
+  validate(): string {
+    if (!(this.state.string || "").trim()) {
+      return String(_t("Give the field a label."));
     }
-
-    updateSelectionRow(index: number, key: string, value: string): void {
-        const rows = [...this.selectionRows];
-        // `index` always names a row the template itself just rendered
-        // from `rows`, an invariant `noUncheckedIndexedAccess` cannot see
-        // from the signature alone -- asserted the same way
-        // `loadInverseOptions`'s `candidates[0]` is, just below.
-        rows[index] = { ...rows[index]!, [key]: value };
-        const updatedRow = rows[index];
-        if (key === "label" && !updatedRow.value) {
-            updatedRow.value = (value || "")
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, "_")
-                .replace(/^_+|_+$/g, "");
-        }
-        this.state.selection = rows;
+    if (this.shows("comodel") && !this.state.comodel) {
+      return String(_t("Choose the model this points at."));
     }
-
-    removeSelectionRow(index: number): void {
-        this.state.selection = this.selectionRows.filter((_row, i) => i !== index);
+    if (this.needsInverse && !this.state.inverse_name) {
+      return String(_t("Choose how %s links back to this model.", this.state.comodel));
     }
-
-    // -- commit -------------------------------------------------------------
-
-    validate(): string {
-        if (!(this.state.string || "").trim()) {
-            return String(_t("Give the field a label."));
-        }
-        if (this.shows("comodel") && !this.state.comodel) {
-            return String(_t("Choose the model this points at."));
-        }
-        if (this.needsInverse && !this.state.inverse_name) {
-            return String(_t("Choose how %s links back to this model.", this.state.comodel));
-        }
-        if (this.shows("selection") && !this.selectionRows.some((row) => row.value)) {
-            return String(_t("A selection needs at least one value."));
-        }
-        if (this.shows("related")) {
-            if (!this.state.related) {
-                return String(_t("Choose the field this one follows."));
-            }
-            if (this.state.relatedInfo && !this.state.relatedInfo.ok) {
-                return this.state.relatedInfo.reason;
-            }
-        }
-        return "";
+    if (this.shows("selection") && !this.selectionRows.some((row) => row.value)) {
+      return String(_t("A selection needs at least one value."));
     }
-
-    onSave(): void {
-        const problem = this.validate();
-        if (problem) {
-            this.state.error = problem;
-            return;
-        }
-        const { error, inverse, relatedInfo, ...values } = this.state;
-        if (relatedInfo && relatedInfo.ok) {
-            // The resolved chain, not the picker's placeholder: a related
-            // field is whatever the chain ends at.
-            values.ttype = relatedInfo.ttype;
-            values.comodel = relatedInfo.comodel || undefined;
-        }
-        values.selection = this.selectionRows.filter((row) => row.value);
-        if (!values.selection.length) {
-            delete values.selection;
-        }
-        this.props.onSave(values);
+    if (this.shows("related")) {
+      if (!this.state.related) {
+        return String(_t("Choose the field this one follows."));
+      }
+      if (this.state.relatedInfo && !this.state.relatedInfo.ok) {
+        return this.state.relatedInfo.reason;
+      }
     }
+    return "";
+  }
 
-    onKeydown(ev: KeyboardEvent): void {
-        if (
-            ev.key === "Enter" &&
-            !ev.shiftKey &&
-            (ev.target as HTMLElement).tagName !== "TEXTAREA"
-        ) {
-            ev.preventDefault();
-            this.onSave();
-        }
-        if (ev.key === "Escape") {
-            ev.preventDefault();
-            this.props.close();
-        }
+  onSave(): void {
+    const problem = this.validate();
+    if (problem) {
+      this.state.error = problem;
+      return;
     }
+    const {error, inverse, relatedInfo, ...values} = this.state;
+    if (relatedInfo && relatedInfo.ok) {
+      // The resolved chain, not the picker's placeholder: a related
+      // field is whatever the chain ends at.
+      values.ttype = relatedInfo.ttype;
+      values.comodel = relatedInfo.comodel || undefined;
+    }
+    values.selection = this.selectionRows.filter((row) => row.value);
+    if (!values.selection.length) {
+      delete values.selection;
+    }
+    this.props.onSave(values);
+  }
+
+  onKeydown(ev: KeyboardEvent): void {
+    if (
+      ev.key === "Enter" &&
+      !ev.shiftKey &&
+      (ev.target as HTMLElement).tagName !== "TEXTAREA"
+    ) {
+      ev.preventDefault();
+      this.onSave();
+    }
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      this.props.close();
+    }
+  }
 }

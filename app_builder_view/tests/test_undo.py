@@ -20,23 +20,23 @@ from odoo import Command
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
-from odoo.addons.app_builder_view.exceptions import StudioStaleView
+from odoo.addons.app_builder_view.exceptions import BuilderStaleView
+from odoo.addons.base.models.ir_ui_view import View
 
-from ..models.studio_view_edit import StudioViewEdit
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_edit import BuilderViewEdit
+from ..models.builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
     # Only for the cast below; with `from __future__ import annotations`
     # nothing here needs this at runtime, the same bargain every converted
-    # model file's own `TYPE_CHECKING` block makes. `studio_package_id` is a
-    # field from `studio.owned.mixin`, composed onto `ir.ui.view` only at the
+    # model file's own `TYPE_CHECKING` block makes. `builder_package_id` is a
+    # field from `builder.owned.mixin`, composed onto `ir.ui.view` only at the
     # registry level (`_inherit`), never as a real Python base of `View` --
-    # same reasoning as `studio_view_editor.py`'s own uses of this cast.
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import (
-        StudioOwnedMixin,
+    # same reasoning as `builder_view_editor.py`'s own uses of this cast.
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
     )
 
 LIST_ARCH = """
@@ -47,11 +47,11 @@ LIST_ARCH = """
 
 
 @tagged("post_install", "-at_install")
-class TestUndo(StudioCase):
+class TestUndo(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
-        self.history = typed.model(self.env, StudioViewEdit)
+        self.editor = typed.model(self.env, BuilderViewEditor)
+        self.history = typed.model(self.env, BuilderViewEdit)
         self.package = self.make_package(name="x_undo_pkg")
         model_vals: dict[str, object] = {
             "name": "Undo Demo",
@@ -68,7 +68,7 @@ class TestUndo(StudioCase):
         }
         self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
         view_vals: dict[str, object] = {
-            "name": "studio.undo.test",
+            "name": "builder.undo.test",
             "model": "x_undo_demo",
             "type": "list",
             "arch": LIST_ARCH,
@@ -76,12 +76,12 @@ class TestUndo(StudioCase):
         self.view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         # Owned by somebody else, so edits become patches -- the case where
         # undoing has to remove the patch rather than empty it.
-        self.make_package(name="x_undo_owner").studio_capture(self.view)
+        self.make_package(name="x_undo_owner").builder_capture(self.view)
 
     def _set(self, attrs):
         found = self.editor.locate_target(cast("int", self.view.id), {"kind": "root"})
         # `locate_target`'s own `LocateTargetJSON` is a `found`-discriminated
-        # union (`studio_view_editor.py`); the root of a freshly created list
+        # union (`builder_view_editor.py`); the root of a freshly created list
         # view always resolves, so this narrows rather than branches. `is
         # True`, not a bare truthy check: pyright only narrows a TypedDict
         # union on an explicit comparison against the discriminant's literal.
@@ -188,7 +188,7 @@ class TestUndo(StudioCase):
         # whatever the undo had done before refusing.
         try:
             entry.action_undo(expected_arch_version="not-what-the-server-has")
-        except StudioStaleView:
+        except BuilderStaleView:  # pylint: disable=except-pass
             pass
         else:
             self.fail("a stale version has to be refused")
@@ -255,7 +255,7 @@ class TestUndo(StudioCase):
         self.assertEqual(patch.arch, after)
         self.assertEqual(entry.view_id, patch)
         self.assertEqual(
-            cast("StudioOwnedMixin", patch).studio_package_id, self.package
+            cast("BuilderOwnedMixin", patch).builder_package_id, self.package
         )
         self.assertIn("editable", self.view.get_combined_arch())
 
@@ -305,7 +305,7 @@ class TestUndo(StudioCase):
         entry.action_undo()
         try:
             entry.action_redo(expected_arch_version="stale")
-        except StudioStaleView:
+        except BuilderStaleView:  # pylint: disable=except-pass
             pass
         else:
             self.fail("a stale version has to be refused")

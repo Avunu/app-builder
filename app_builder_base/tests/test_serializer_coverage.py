@@ -2,7 +2,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Every stored field of every serialized model has to be accounted for.
 
-``_studio_fields`` is an allowlist, and an allowlist is only honest if somebody
+``_builder_fields`` is an allowlist, and an allowlist is only honest if somebody
 has looked at what it leaves out. Before this, a field omitted from the list was
 dropped from the generated source silently and the package still reported clean
 -- so I3 (``load_from_files(serialize(db)) == db``) broke in the one way no test
@@ -32,13 +32,13 @@ from odoo.addons.base.models.ir_model import IrModel, IrModelAccess
 from odoo.addons.base.models.ir_ui_view import View
 from odoo.addons.base_automation.models.base_automation import BaseAutomation
 
-from ..models.studio_serializer import StudioSerializer
+from ..models.builder_serializer import BuilderSerializer
 from ..tools import typed
-from .common import StudioCase, raises
+from .common import BuilderCase, raises
 
 _logger = logging.getLogger(__name__)
 
-# Modules the studio declares a relationship with, and is therefore answerable
+# Modules the builder declares a relationship with, and is therefore answerable
 # for. A stored field one of these contributes and nobody has classified is a
 # gap in *our* work and fails the run.
 #
@@ -51,9 +51,9 @@ DECLARED_SCOPE = frozenset({"base", "mail", "sms", "base_automation"})
 
 
 @tagged("post_install", "-at_install")
-class TestSerializerCoverage(StudioCase):
+class TestSerializerCoverage(BuilderCase):
     def _serializers(self):
-        Serializer = typed.model(self.env, StudioSerializer)
+        Serializer = typed.model(self.env, BuilderSerializer)
         for model_name in Serializer._serializable_models():
             serializer = Serializer._for_model(model_name)
             if serializer is not None and model_name in self.env:
@@ -91,7 +91,7 @@ class TestSerializerCoverage(StudioCase):
             ours,
             "These stored fields come from a module App Builder depends on and "
             "have no decision recorded. Add each to the serializer's "
-            "_studio_fields, or to _studio_ignored with the reason it cannot "
+            "_builder_fields, or to _builder_ignored with the reason it cannot "
             "carry a user's intent:\n" + self._report(ours),
         )
 
@@ -130,7 +130,7 @@ class TestSerializerCoverage(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestCompletenessGuard(StudioCase):
+class TestCompletenessGuard(BuilderCase):
     """Both halves of the bargain.
 
     ``mock.patch`` rather than plain assignment: setting a class attribute on a
@@ -142,21 +142,21 @@ class TestCompletenessGuard(StudioCase):
 
     def _view_serializer(self, package):
         return typed.serializer(
-            self.env["studio.serializer.ir.ui.view"].with_context(
-                studio_package=package.name
+            self.env["builder.serializer.ir.ui.view"].with_context(
+                builder_package=package.name
             )
         )
 
     def _without_priority(self, serializer):
-        kept = tuple(f for f in serializer._studio_fields if f != "priority")
-        return patch.object(type(serializer), "_studio_fields", kept)
+        kept = tuple(f for f in serializer._builder_fields if f != "priority")
+        return patch.object(type(serializer), "_builder_fields", kept)
 
     def test_an_unclassified_value_refuses_to_serialize(self):
         """The guard is what turns silent data loss into a stopped write."""
         package = self.make_package()
         self.build_demo_content(package)
         view = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
         view.priority = 42
         serializer = self._view_serializer(package)
@@ -170,13 +170,13 @@ class TestCompletenessGuard(StudioCase):
     def test_an_unclassified_default_is_not_an_error(self):
         """A gap in bookkeeping is not data loss, and must not block a write.
 
-        Failing here would make every future Odoo release break the studio for
+        Failing here would make every future Odoo release break the builder for
         everyone the moment it added a field, whether or not anybody used it.
         """
         package = self.make_package()
         self.build_demo_content(package)
         view = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
         serializer = self._view_serializer(package)
         with self._without_priority(serializer):
@@ -187,15 +187,15 @@ class TestCompletenessGuard(StudioCase):
         self.assertIsNotNone(node)
 
     def test_demo_content_still_renders(self):
-        """The guard must not fire on anything the studio itself builds."""
+        """The guard must not fire on anything the builder itself builds."""
         package = self.make_package()
         self.build_demo_content(package)
         rendered = package._render_files()
-        self.assertIn("models/x_studio_project.xml", rendered)
+        self.assertIn("models/x_builder_project.xml", rendered)
 
 
 @tagged("post_install", "-at_install")
-class TestReferencePortability(StudioCase):
+class TestReferencePortability(BuilderCase):
     """A raw id in a file is a bug waiting for the next database.
 
     Odoo has two shapes of it. ``fields.Reference`` stores ``"model,id"`` and
@@ -208,7 +208,7 @@ class TestReferencePortability(StudioCase):
     def test_a_reference_field_is_emitted_as_an_xmlid(self):
         package = self.make_package()
         self.build_demo_content(package)
-        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_builder_project")
         vals = {
             "name": "Point at a partner",
             "model_id": model.id,
@@ -243,11 +243,11 @@ class TestReferencePortability(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         model = typed.model(self.env, IrModel)._get("res.partner")
-        category_vals = {"name": "Studio Tag"}
+        category_vals = {"name": "Builder Tag"}
         category = self.env["res.partner.category"].create(category_vals)  # pyright: ignore[reportArgumentType]
         data_vals = {
             "module": package.name,
-            "name": "category_studio_tag",
+            "name": "category_builder_tag",
             "model": "res.partner.category",
             "res_id": category.id,
         }
@@ -264,7 +264,7 @@ class TestReferencePortability(StudioCase):
             self.skipTest("res.partner exposes no tag field for this trigger")
         package._assign(automation)
         emitted = "".join(package._render_files().values())
-        self.assertIn("ref('category_studio_tag')", emitted)
+        self.assertIn("ref('category_builder_tag')", emitted)
 
     def test_an_act_window_res_id_is_emitted_as_an_xmlid(self):
         """A raw primary key means a different record in the next database."""
@@ -285,7 +285,7 @@ class TestReferencePortability(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestAccessCsvOptionalColumns(StudioCase):
+class TestAccessCsvOptionalColumns(BuilderCase):
     def test_the_active_column_appears_only_when_it_says_something(self):
         """An archived ACL must not come back granted, and an ordinary package
         must not carry a column of constant 1s in every diff."""
@@ -295,7 +295,7 @@ class TestAccessCsvOptionalColumns(StudioCase):
         self.assertNotIn("active", csv.splitlines()[0])
 
         access = typed.model(self.env, IrModelAccess).search(
-            [("model_id.model", "=", "x_studio_project")], limit=1
+            [("model_id.model", "=", "x_builder_project")], limit=1
         )
         access.active = False
         csv = package._render_files()["security/ir.model.access.csv"]
@@ -305,12 +305,12 @@ class TestAccessCsvOptionalColumns(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestServerActionCoverage(StudioCase):
+class TestServerActionCoverage(BuilderCase):
     def test_a_webhook_action_keeps_its_url(self):
         """Regression: state='webhook' serialized with no URL at all."""
         package = self.make_package()
         self.build_demo_content(package)
-        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_builder_project")
         vals = {
             "name": "Notify",
             "model_id": model.id,
@@ -327,7 +327,7 @@ class TestServerActionCoverage(StudioCase):
         turns an automation's action back into a standalone one."""
         package = self.make_package()
         self.build_demo_content(package)
-        model = typed.model(self.env, IrModel)._get("x_studio_project")
+        model = typed.model(self.env, IrModel)._get("x_builder_project")
         vals = {
             "name": "Owned by a rule",
             "model_id": model.id,
@@ -342,10 +342,10 @@ class TestServerActionCoverage(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestSkipOverridesDoNotHideFields(StudioCase):
+class TestSkipOverridesDoNotHideFields(BuilderCase):
     """The blind spot the completeness guard cannot cover.
 
-    A field in ``_studio_fields`` counts as accounted for, so
+    A field in ``_builder_fields`` counts as accounted for, so
     ``_unclassified_fields`` says nothing about it -- even when a
     ``_should_skip`` override suppresses it unconditionally and it is never
     written at all. That is how ``ir.ui.view.type`` came to be dropped from
@@ -359,7 +359,7 @@ class TestSkipOverridesDoNotHideFields(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         vals = {
-            "name": "studio.qweb.template",
+            "name": "builder.qweb.template",
             "type": "qweb",
             "key": "%s.some_template" % package.name,
             "arch": '<t t-name="something"><div>hello</div></t>',
@@ -367,8 +367,8 @@ class TestSkipOverridesDoNotHideFields(StudioCase):
         view = self.env["ir.ui.view"].create(vals)  # pyright: ignore[reportArgumentType]
         package._assign(view)
         serializer = typed.serializer(
-            self.env["studio.serializer.ir.ui.view"].with_context(
-                studio_package=package.name
+            self.env["builder.serializer.ir.ui.view"].with_context(
+                builder_package=package.name
             )
         )
         node = serializer._serialize(view, "%s.view_qweb" % package.name)
@@ -385,11 +385,11 @@ class TestSkipOverridesDoNotHideFields(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         view = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
         serializer = typed.serializer(
-            self.env["studio.serializer.ir.ui.view"].with_context(
-                studio_package=package.name
+            self.env["builder.serializer.ir.ui.view"].with_context(
+                builder_package=package.name
             )
         )
         node = serializer._serialize(view, "%s.view_form" % package.name)
@@ -401,12 +401,12 @@ class TestSkipOverridesDoNotHideFields(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         view = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
         view.key = "%s.carried_key" % package.name
         serializer = typed.serializer(
-            self.env["studio.serializer.ir.ui.view"].with_context(
-                studio_package=package.name
+            self.env["builder.serializer.ir.ui.view"].with_context(
+                builder_package=package.name
             )
         )
         node = serializer._serialize(view, "%s.view_form" % package.name)

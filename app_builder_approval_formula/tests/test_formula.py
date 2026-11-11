@@ -8,13 +8,13 @@ import ast
 
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_model import IrModel
-from odoo.addons.app_builder_base.tests.common import StudioCase
+from odoo.addons.app_builder_base.tests.common import BuilderCase
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_model import IrModel
 
 
 @tagged("post_install", "-at_install")
-class TestFormulaBridge(StudioCase):
+class TestFormulaBridge(BuilderCase):
     def _rule(self, package, **values):
         vals: dict[str, object] = {
             "name": "Conditioned",

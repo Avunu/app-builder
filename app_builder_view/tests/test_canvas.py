@@ -18,37 +18,40 @@ from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_ui_view import View
 
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
     # `get_view` (called on the manual demo model, which has no real Python
     # class of its own) is composed onto every model by `base`'s own `Model`
     # mixin (`ir_ui_view.py`, `_inherit = "base"`) -- invisible on a bare
     # `BaseModel` the same way `typed.security()`'s own mixin gap is, traced
-    # here the same way `studio_view_canvas.py` already aliased it.
-    from odoo.addons.base.models.ir_ui_view import Model as IrUiViewModelMixin
+    # here the same way `builder_view_canvas.py` already aliased it.
     from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
+    from odoo.addons.base.models.ir_ui_view import Model as IrUiViewModelMixin
 
-    # `canvas`/`_fill_hidden`/`describe_node` are composed onto `studio.view
-    # .editor` by `studio_view_canvas.py`'s own pure `_inherit` extension --
+    from ..models.builder_view_canvas import (
+        BuilderViewEditor as BuilderViewEditorCanvas,
+    )
+
+    # `canvas`/`_fill_hidden`/`describe_node` are composed onto `builder.view
+    # .editor` by `builder_view_canvas.py`'s own pure `_inherit` extension --
     # a different Python class than the real base imported above (same
-    # shape as that file's own `StudioViewEditorBase` alias). Its private
+    # shape as that file's own `BuilderViewEditorBase` alias). Its private
     # `describe_node()` TypedDict branch and `_canvas_source()`'s own
     # `CanvasSourceJSON` are cast targets only, same `found`-discriminated
     # shape as `test_report_preview.py`'s own `_LocateExpressionFoundJSON`.
-    from ..models.studio_view_canvas import (
+    from ..models.builder_view_canvas import (
         CanvasFieldInfoJSON,
         CanvasSourceJSON,
         FieldDefinitionJSON,
         _DescribeNodeFoundJSON,
     )
-    from ..models.studio_view_canvas import StudioViewEditor as StudioViewEditorCanvas
-    from ..models.studio_view_edit import StackForJSON
-    from ..models.studio_view_editor import CanvasPackageJSON
+    from ..models.builder_view_edit import StackForJSON
+    from ..models.builder_view_editor import CanvasPackageJSON
     from ..tools import canvas_stamp
 
 FORM_ARCH = """
@@ -129,10 +132,10 @@ def _named(nodes, name):
 
 
 @tagged("post_install", "-at_install")
-class TestCanvas(StudioCase):
+class TestCanvas(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         self.package = self.make_package(name="x_canvas_pkg")
         # `@api.model_create_multi`'s own stub gap (TYPING.md's "Known
         # traps"): each single-dict `.create(vals)` below needs its own
@@ -174,11 +177,11 @@ class TestCanvas(StudioCase):
         }
         self.env["ir.model.access"].create(access_vals)  # pyright: ignore[reportArgumentType]
         self.view = self._view(FORM_ARCH, "form")
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
 
     def _view(self, arch, view_type, model="x_canvas_demo"):
         vals: dict[str, object] = {
-            "name": "studio.canvas.test.%s" % view_type,
+            "name": "builder.canvas.test.%s" % view_type,
             "model": model,
             "type": view_type,
             "arch": arch,
@@ -203,23 +206,23 @@ class TestCanvas(StudioCase):
         real_before = Model.get_view(self.view.id)["arch"]
         combined_before = self.view.get_combined_arch()
         arch_before = self.view.arch
-        history = self.env["studio.view.edit"]
+        history = self.env["builder.view.edit"]
         # The read above filled the cache with the clean arch, and a cache
         # entry is never overwritten by a later miss -- so it has to go, or
         # a stamped arch reaching the cache during `canvas()` would sit
         # behind the clean entry and the read below could not see it.
         self.env.registry.clear_cache()
 
-        canvas_editor = cast("StudioViewEditorCanvas", self.editor)
+        canvas_editor = cast("BuilderViewEditorCanvas", self.editor)
         first = canvas_editor.canvas(cast("int", self.view.id))
         second = canvas_editor.canvas(cast("int", self.view.id))
 
         self.assertEqual(Model.get_view(self.view.id)["arch"], real_before)
-        self.assertNotIn("o_studio_", real_before)
+        self.assertNotIn("o_builder_", real_before)
         self.view.invalidate_recordset()
         self.assertEqual(self.view.get_combined_arch(), combined_before)
         self.assertEqual(self.view.arch, arch_before)
-        self.assertNotIn("o_studio_", cast("str", self.view.arch))
+        self.assertNotIn("o_builder_", cast("str", self.view.arch))
         self.assertFalse(history.search([("base_view_id", "=", self.view.id)]))
         self.assertEqual(first["arch"], second["arch"])
         self.assertEqual(first["nodes"], second["nodes"])
@@ -231,7 +234,7 @@ class TestCanvas(StudioCase):
     # -- identity ----------------------------------------------------------
 
     def test_every_token_resolves_to_the_node_it_was_minted_from(self):
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", self.view.id)
         )
         root = etree.fromstring(self.view.get_combined_arch().encode())
@@ -248,7 +251,7 @@ class TestCanvas(StudioCase):
             self.assertEqual(element.get("name"), node["name"])
 
     def test_the_stamped_arch_carries_the_tokens_the_table_lists(self):
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", self.view.id)
         )
         arch = etree.fromstring(cast("str", canvas["arch"]).encode())
@@ -256,13 +259,13 @@ class TestCanvas(StudioCase):
         for token, node in canvas["nodes"].items():
             if node["dom"] and not node["hidden"]:
                 self.assertIn(token, classes, token)
-        self.assertEqual(canvas["root"], "o_studio_n_0")
+        self.assertEqual(canvas["root"], "o_builder_n_0")
         root = cast("canvas_stamp.Token", canvas["root"])
         self.assertEqual(canvas["nodes"][root]["kind"], "root")
 
     def test_nothing_under_a_field_is_addressable(self):
         view = self._view(PARTNER_ARCH, "form", model="res.partner")
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", view.id)
         )
         names = [n["name"] for n in canvas["nodes"].values()]
@@ -270,12 +273,12 @@ class TestCanvas(StudioCase):
         self.assertNotIn("email", names)
         arch = etree.fromstring(cast("str", canvas["arch"]).encode())
         for sub in arch.xpath("//field[@name='child_ids']//*"):
-            self.assertNotIn("o_studio_", sub.get("class") or "")
+            self.assertNotIn("o_builder_", sub.get("class") or "")
 
     def test_a_node_hidden_by_groups_is_still_addressable(self):
         builder = self._builder()
         editor = self.editor.with_user(builder)
-        canvas = cast("StudioViewEditorCanvas", editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", editor).canvas(
             cast("int", self.view.id)
         )
         token = cast("canvas_stamp.Token", _named(canvas["nodes"], "restricted"))
@@ -303,7 +306,7 @@ class TestCanvas(StudioCase):
         self.assertEqual(element.get("name"), "restricted")
 
     def test_an_invisible_node_is_reported_and_shown_on_request(self):
-        canvas_editor = cast("StudioViewEditorCanvas", self.editor)
+        canvas_editor = cast("BuilderViewEditorCanvas", self.editor)
         view_id = cast("int", self.view.id)
         canvas = canvas_editor.canvas(view_id)
         token = cast("canvas_stamp.Token", _named(canvas["nodes"], "x_when"))
@@ -315,7 +318,7 @@ class TestCanvas(StudioCase):
         arch = etree.fromstring(cast("str", shown["arch"]).encode())
         when = arch.xpath("//field[@name='x_when']")[0]
         self.assertEqual(when.get("invisible"), "0")
-        self.assertIn("o_studio_invisible", when.get("class"))
+        self.assertIn("o_builder_invisible", when.get("class"))
         self.assertIn(token, when.get("class"))
         self.assertEqual(
             shown["nodes"][token]["hidden"], "invisible", "still reported as such"
@@ -328,14 +331,14 @@ class TestCanvas(StudioCase):
         """From 19 on `_postprocess_debug` hides a base.group_no_one node
         by writing invisible="1" onto it rather than removing it; the view
         itself never said so, and the node still does not render."""
-        canvas_editor = cast("StudioViewEditorCanvas", self.editor)
+        canvas_editor = cast("BuilderViewEditorCanvas", self.editor)
         canvas = canvas_editor.canvas(cast("int", self.view.id))
         token = cast("canvas_stamp.Token", _named(canvas["nodes"], "x_name"))
         arch = etree.fromstring(cast("str", canvas["arch"]).encode())
         arch.xpath("//field[@name='x_name']")[0].set("invisible", "1")
         nodes = {t: dict(n, hidden=None) for t, n in canvas["nodes"].items()}
         canvas_editor._fill_hidden(
-            cast("dict[canvas_stamp.Token, canvas_stamp.StudioNode]", nodes),
+            cast("dict[canvas_stamp.Token, canvas_stamp.BuilderNode]", nodes),
             etree.tostring(arch, encoding="unicode"),
         )
         self.assertEqual(nodes[token]["hidden"], "groups")
@@ -352,7 +355,7 @@ class TestCanvas(StudioCase):
 
     def test_kanban_card_fields_are_stamped_and_the_board_is_pinned(self):
         view = self._view(KANBAN_ARCH, "kanban")
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", view.id)
         )
         arch = etree.fromstring(cast("str", canvas["arch"]).encode())
@@ -376,7 +379,7 @@ class TestCanvas(StudioCase):
 
     def test_a_list_shows_its_hidden_optional_columns_on_the_canvas_only(self):
         view = self._view(LIST_ARCH, "list")
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", view.id)
         )
         arch = cast("str", canvas["arch"])
@@ -391,7 +394,7 @@ class TestCanvas(StudioCase):
 
     def test_models_cover_the_comodel_of_an_inline_subview(self):
         view = self._view(PARTNER_BANKS_ARCH, "form", model="res.partner")
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", view.id)
         )
         models = cast("dict[str, dict[str, dict[str, Any]]]", canvas["models"])
@@ -407,7 +410,7 @@ class TestCanvas(StudioCase):
     # -- the rest of the payload ---------------------------------------------
 
     def test_res_id_is_a_real_record_or_false(self):
-        canvas_editor = cast("StudioViewEditorCanvas", self.editor)
+        canvas_editor = cast("BuilderViewEditorCanvas", self.editor)
         view_id = cast("int", self.view.id)
         self.assertFalse(canvas_editor.canvas(view_id)["res_id"])
         record_vals: dict[str, object] = {"x_name": "one"}
@@ -429,7 +432,7 @@ class TestCanvas(StudioCase):
         self.assertEqual(canvas["record_count"], 2)
 
     def test_field_nodes_describe_their_field(self):
-        canvas_editor = cast("StudioViewEditorCanvas", self.editor)
+        canvas_editor = cast("BuilderViewEditorCanvas", self.editor)
         canvas = canvas_editor.canvas(cast("int", self.view.id))
         node = canvas["nodes"][
             cast("canvas_stamp.Token", _named(canvas["nodes"], "x_name"))
@@ -458,7 +461,7 @@ class TestCanvas(StudioCase):
         the form, on every drop, is weight the canvas does not need; the
         properties panel asks for the selected node."""
         view = self._view(PARTNER_ARCH, "form", model="res.partner")
-        canvas_editor = cast("StudioViewEditorCanvas", self.editor)
+        canvas_editor = cast("BuilderViewEditorCanvas", self.editor)
         view_id = cast("int", view.id)
         canvas = canvas_editor.canvas(view_id)
         token = cast("canvas_stamp.Token", _named(canvas["nodes"], "child_ids"))
@@ -479,7 +482,7 @@ class TestCanvas(StudioCase):
         self.assertIn("name", [f["name"] for f in comodel_fields or []])
 
     def test_the_payload_has_the_shape_the_console_reads(self):
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", self.view.id)
         )
         self.assertEqual(canvas["view"]["id"], self.view.id)
@@ -500,7 +503,7 @@ class TestCanvas(StudioCase):
 
     def test_a_search_view_is_edited_as_lists(self):
         view = self._view('<search><field name="x_name"/></search>', "search")
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", view.id)
         )
         self.assertEqual(canvas["editable_as"], "search_lists")
@@ -508,7 +511,7 @@ class TestCanvas(StudioCase):
 
     def test_a_report_template_is_previewed_elsewhere(self):
         layout = typed.ref(self.env, "web.layout")
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", layout.id)
         )
         self.assertEqual(canvas["editable_as"], "report")
@@ -541,7 +544,7 @@ class TestCanvas(StudioCase):
         listed = self.editor.editing_context(model="ir.ui.menu")
         self.assertIn(listed["view"]["type"], ("form", "list"))
         with raises(self, UserError):
-            self.editor.editing_context(model="studio.record.surface")
+            self.editor.editing_context(model="builder.record.surface")
 
     def test_an_amount_is_offered_when_the_live_model_has_a_currency(self):
         """The rule is "monetary only with a currency field", and a model no
@@ -560,7 +563,7 @@ class TestCanvas(StudioCase):
     # -- describe_node -------------------------------------------------------
 
     def test_describe_node_reads_a_token(self):
-        canvas_editor = cast("StudioViewEditorCanvas", self.editor)
+        canvas_editor = cast("BuilderViewEditorCanvas", self.editor)
         view_id = cast("int", self.view.id)
         canvas = canvas_editor.canvas(view_id)
         token = cast("canvas_stamp.Token", _named(canvas["nodes"], "x_name"))

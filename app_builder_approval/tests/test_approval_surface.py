@@ -10,32 +10,32 @@ from typing import TYPE_CHECKING, cast
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.base_tier_validation.models.tier_definition import TierDefinition
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base_tier_validation.models.tier_definition import TierDefinition
 
-from ..models.studio_approval_surface import StudioApproval
+from ..models.builder_approval_surface import BuilderApproval
 
 if TYPE_CHECKING:
     # Only for the cast below; with `from __future__ import annotations`
-    # nothing here needs it at runtime. `StudioRecordSurface` is `studio.
-    # approval`'s sibling mixin (`_inherit = ["studio.record.surface",
-    # "studio.approval"]`, registry-level, never a real Python base class of
-    # the imported `StudioApproval` above) -- the identical gap `typed.py`'s
+    # nothing here needs it at runtime. `BuilderRecordSurface` is `builder.
+    # approval`'s sibling mixin (`_inherit = ["builder.record.surface",
+    # "builder.approval"]`, registry-level, never a real Python base class of
+    # the imported `BuilderApproval` above) -- the identical gap `typed.py`'s
     # own `security()`/`serializer()` document, cast at each real call site
-    # the same way `studio_approval_surface.py` itself casts `super()` to
+    # the same way `builder_approval_surface.py` itself casts `super()` to
     # this same class.
-    from odoo.addons.app_builder_base.models.studio_record_surface import (
+    from odoo.addons.app_builder_base.models.builder_record_surface import (
+        BuilderRecordSurface,
         RecordCheckDomainJSON,
-        StudioRecordSurface,
     )
 
 
 @tagged("post_install", "-at_install")
-class TestApprovalSurface(StudioCase):
+class TestApprovalSurface(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.Surface = typed.model(self.env, StudioApproval)
+        self.Surface = typed.model(self.env, BuilderApproval)
         self.package = self.make_package()
         self.build_demo_content(self.package)
 
@@ -61,7 +61,7 @@ class TestApprovalSurface(StudioCase):
             self.assertEqual(self.Surface.catalogue(gated)["gate"]["state_fields"], [])
 
     def test_a_template_makes_a_rule_with_its_reviewer_in_the_file(self):
-        row = cast("StudioRecordSurface", self.Surface).create_record(
+        row = cast("BuilderRecordSurface", self.Surface).create_record(
             "res.partner",
             cast("int", self.package.id),
             {
@@ -86,7 +86,7 @@ class TestApprovalSurface(StudioCase):
         """A user with no xmlid cannot be pointed at from a file."""
         user = self.make_user("reviewer", ["base.group_user"])
         with raises(self, UserError):
-            cast("StudioRecordSurface", self.Surface).create_record(
+            cast("BuilderRecordSurface", self.Surface).create_record(
                 "res.partner",
                 cast("int", self.package.id),
                 {"name": "Nobody can find them", "reviewer_id": user.id},
@@ -94,7 +94,7 @@ class TestApprovalSurface(StudioCase):
             )
 
     def test_describe_says_what_the_condition_matches(self):
-        row = cast("StudioRecordSurface", self.Surface).create_record(
+        row = cast("BuilderRecordSurface", self.Surface).create_record(
             "res.partner",
             cast("int", self.package.id),
             {
@@ -104,7 +104,7 @@ class TestApprovalSurface(StudioCase):
             },
             template="approve_by_group",
         )
-        described = cast("StudioRecordSurface", self.Surface).describe(
+        described = cast("BuilderRecordSurface", self.Surface).describe(
             row["id"], cast("int", self.package.id)
         )
         matches = cast("RecordCheckDomainJSON", described["matches"])
@@ -115,14 +115,14 @@ class TestApprovalSurface(StudioCase):
         notes = cast("list[str]", described["notes"])
         self.assertTrue(any("approval.xml" in n for n in notes))
         with raises(self, UserError):
-            cast("StudioRecordSurface", self.Surface).write_record(
+            cast("BuilderRecordSurface", self.Surface).write_record(
                 row["id"],
                 {"definition_domain": "[('nope', '=', 1)]"},
                 cast("int", self.package.id),
             )
 
     def test_rows_are_the_models_rules_only(self):
-        mine = cast("StudioRecordSurface", self.Surface).create_record(
+        mine = cast("BuilderRecordSurface", self.Surface).create_record(
             "res.partner",
             cast("int", self.package.id),
             {
@@ -131,7 +131,7 @@ class TestApprovalSurface(StudioCase):
             },
             template="approve_by_user",
         )
-        cast("StudioRecordSurface", self.Surface).create_record(
+        cast("BuilderRecordSurface", self.Surface).create_record(
             "res.users",
             cast("int", self.package.id),
             {
@@ -140,11 +140,11 @@ class TestApprovalSurface(StudioCase):
             },
             template="approve_by_user",
         )
-        rows = cast("StudioRecordSurface", self.Surface).rows(
+        rows = cast("BuilderRecordSurface", self.Surface).rows(
             "res.partner", cast("int", self.package.id)
         )
         self.assertEqual([r["id"] for r in rows], [mine["id"]])
-        cast("StudioRecordSurface", self.Surface).remove_record(
+        cast("BuilderRecordSurface", self.Surface).remove_record(
             mine["id"], cast("int", self.package.id), force=True
         )
         self.assertNotIn("Partners", "".join(self.package._render_files().values()))

@@ -3,7 +3,7 @@
 """There has to be a way in.
 
 The composer shipped complete and unreachable: its menu used an xmlid that
-``studio_menus.xml`` already used for the technical model list, and that file
+``builder_menus.xml`` already used for the technical model list, and that file
 loads later, so the menu was quietly replaced and nothing pointed at the
 composer at all. Odoo does not warn when a data file redefines another's
 xmlid -- the record is simply overwritten -- so the only symptom was an absent
@@ -35,30 +35,30 @@ if TYPE_CHECKING:
 class TestComposerEntryPoint(TransactionCase):
     def test_the_composer_is_reachable_from_a_menu(self):
         menu = cast(
-            "IrUiMenu", typed.ref(self.env, "app_builder_model.menu_studio_composer")
+            "IrUiMenu", typed.ref(self.env, "app_builder_model.menu_builder_composer")
         )
         self.assertEqual(
             menu.action,
-            self.env.ref("app_builder_model.studio_package_model_action"),
+            self.env.ref("app_builder_model.builder_package_model_action"),
             "the menu must open the model list the Compose button lives on",
         )
-        self.assertTrue(menu.parent_id, "it belongs under the Studio root")
+        self.assertTrue(menu.parent_id, "it belongs under the Builder root")
 
     def test_the_technical_model_list_kept_its_own_menu(self):
         """The two are different surfaces and both should exist."""
         menu = cast(
-            "IrUiMenu", typed.ref(self.env, "app_builder_model.menu_studio_models")
+            "IrUiMenu", typed.ref(self.env, "app_builder_model.menu_builder_models")
         )
         self.assertEqual(menu.name, "Custom Models")
 
     def test_an_administrator_can_see_the_way_in(self):
         """The root menu is group-gated, so 'no menu anywhere' is also what a
         missing group implication looks like. base.group_system has to reach
-        it, or the person who installed the studio cannot open it. The
+        it, or the person who installed the builder cannot open it. The
         composer list itself is developer-mode only: the console is the
         way in, and this list is the rows behind its cards."""
-        root = typed.ref(self.env, "app_builder_base.menu_studio_root")
-        menu = typed.ref(self.env, "app_builder_model.menu_studio_composer")
+        root = typed.ref(self.env, "app_builder_base.menu_builder_root")
+        menu = typed.ref(self.env, "app_builder_model.menu_builder_composer")
         admin = self.env.ref("base.user_admin")
         visible = self.env["ir.ui.menu"].with_user(admin)
         self.assertIn(root.id, visible.search([]).ids)
@@ -80,7 +80,7 @@ class TestNoRedefinedXmlids(TransactionCase):
         """
         return get_module_path(module)
 
-    def test_no_studio_module_redefines_one_of_its_own_xmlids(self):
+    def test_no_builder_module_redefines_one_of_its_own_xmlids(self):
         checked = 0
         for module in (
             "app_builder_base",
@@ -97,7 +97,7 @@ class TestNoRedefinedXmlids(TransactionCase):
             ids = []
             # The assertTrue above raises if `root` is falsy -- same
             # "invariant guaranteed by the check just above, not provable
-            # from here" shape as `studio_package.py`'s own
+            # from here" shape as `builder_package.py`'s own
             # `cast("str", self.root_path)`.
             for dirpath, _dirs, names in os.walk(cast("str", root)):
                 if "tests" in dirpath.split(os.sep):
@@ -118,4 +118,4 @@ class TestNoRedefinedXmlids(TransactionCase):
                 "the earlier definition disappears without a warning"
                 % (module, ", ".join(sorted(repeated))),
             )
-        self.assertEqual(checked, 4, "every studio module must actually be scanned")
+        self.assertEqual(checked, 4, "every builder module must actually be scanned")

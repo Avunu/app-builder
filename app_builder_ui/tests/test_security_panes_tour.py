@@ -10,21 +10,23 @@ from typing import TYPE_CHECKING, cast
 
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.tests.common import BuilderHttpCase, join_groups
+from odoo.addons.app_builder_base.tools import compat, typed
 from odoo.addons.base.models.ir_model import IrModelAccess
 from odoo.addons.base.models.ir_rule import IrRule
-from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
-from odoo.addons.app_builder_base.tools import compat, typed
 
 if TYPE_CHECKING:
     # Only for the casts below; with `from __future__ import annotations`
     # nothing here needs these at runtime.
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
     from odoo.addons.base.models.ir_model import IrModel
     from odoo.addons.base.models.res_users import Users
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
 
 
 @tagged("post_install", "-at_install")
-class TestSecurityPanesTour(StudioHttpCase):
+class TestSecurityPanesTour(BuilderHttpCase):
     def setUp(self):
         super().setUp()
         console = self.env["ir.module.module"].search(
@@ -35,14 +37,14 @@ class TestSecurityPanesTour(StudioHttpCase):
         self.addCleanup(self.env["base.automation"]._unregister_hook)
 
     def test_a_line_and_a_rule_are_made_from_the_panes(self):
-        root = tempfile.mkdtemp(prefix="studio-tour-")
+        root = tempfile.mkdtemp(prefix="builder-tour-")
         package_vals: dict[str, object] = {
             "name": "x_tour_sec_pkg",
             "display_name_": "Tour Security",
             "root_path": root,
             "auto_commit": "off",
         }
-        package = self.env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
+        package = self.env["builder.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
         module_vals: dict[str, object] = {
             "name": "x_tour_sec_pkg",
             "state": "installed",
@@ -50,7 +52,7 @@ class TestSecurityPanesTour(StudioHttpCase):
         self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
             cast("Users", typed.ref(self.env, "base.user_admin")),
-            ["app_builder_base.group_studio_manager"],
+            ["app_builder_base.group_builder_manager"],
         )
         group_vals: dict[str, object] = {"name": "Tour Group"}
         group = self.env["res.groups"].create(group_vals)  # pyright: ignore[reportArgumentType]
@@ -79,7 +81,7 @@ class TestSecurityPanesTour(StudioHttpCase):
         self.assertEqual(cast("IrModel", access.model_id).model, "res.partner")
         self.assertTrue(access.perm_read and access.perm_write)
         self.assertFalse(access.perm_create or access.perm_unlink)
-        self.assertEqual(cast("StudioOwnedMixin", access).studio_package_id, package)
+        self.assertEqual(cast("BuilderOwnedMixin", access).builder_package_id, package)
         with open(
             os.path.join(root, "security", "ir.model.access.csv"), encoding="utf-8"
         ) as handle:
@@ -89,7 +91,7 @@ class TestSecurityPanesTour(StudioHttpCase):
         self.assertEqual(len(rule), 1)
         self.assertEqual(rule[compat.groups_field(self.env, "ir.rule")], group)
         self.assertIn("create_uid", cast("str", rule.domain_force))
-        self.assertEqual(cast("StudioOwnedMixin", rule).studio_package_id, package)
+        self.assertEqual(cast("BuilderOwnedMixin", rule).builder_package_id, package)
         with open(
             os.path.join(root, "security", "res_partner_security.xml"),
             encoding="utf-8",

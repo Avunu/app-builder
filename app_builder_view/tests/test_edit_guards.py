@@ -6,7 +6,7 @@ Three guards that make live editing safe to build a drag-and-drop console on:
 a version the client edits against, so a gesture minted on a stale tree is
 refused rather than applied to a different one; a gate on the disk write, so a
 gesture made of several operations puts one file on disk at the end and none
-when it fails; and a name on every container the studio creates, so the thing
+when it fails; and a name on every container the builder creates, so the thing
 just added can be pointed at again without counting its siblings.
 """
 
@@ -21,22 +21,24 @@ from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.tests.common import BuilderCase
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.exceptions import BuilderStaleView
 from odoo.addons.base.models.ir_ui_view import View
 from odoo.addons.base.models.res_lang import Lang
-from odoo.addons.app_builder_base.tests.common import StudioCase
-from odoo.addons.app_builder_base.tools import typed
-from odoo.addons.app_builder_view.exceptions import StudioStaleView
 
-from ..models.studio_view_edit import StudioViewEdit
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_edit import BuilderViewEdit
+from ..models.builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
     # Only for the casts below; with `from __future__ import annotations`
     # nothing here needs these at runtime, the same bargain every other
     # converted file's own `TYPE_CHECKING` block makes.
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
 
-    from ..models.studio_view_editor import _LocateTargetFoundJSON
+    from ..models.builder_view_editor import _LocateTargetFoundJSON
 
 FORM_ARCH = """
 <form string="Guard Demo">
@@ -61,11 +63,11 @@ def _snapshot(root):
 
 
 @tagged("post_install", "-at_install")
-class TestEditGuards(StudioCase):
+class TestEditGuards(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
-        self.history = typed.model(self.env, StudioViewEdit)
+        self.editor = typed.model(self.env, BuilderViewEditor)
+        self.history = typed.model(self.env, BuilderViewEdit)
         self.package = self.make_package(name="x_guard_pkg")
         model_vals: dict[str, object] = {
             "name": "Guard Demo",
@@ -81,7 +83,7 @@ class TestEditGuards(StudioCase):
         }
         self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
         view_vals: dict[str, object] = {
-            "name": "studio.guard.test",
+            "name": "builder.guard.test",
             "model": "x_guard_demo",
             "type": "form",
             "arch": FORM_ARCH,
@@ -89,7 +91,7 @@ class TestEditGuards(StudioCase):
         self.view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         # Owned by somebody else, so every edit here is a patch -- the path
         # that has a view to create as well as one to write.
-        self.make_package(name="x_guard_owner").studio_capture(self.view)
+        self.make_package(name="x_guard_owner").builder_capture(self.view)
 
     def _combined(self):
         return etree.fromstring(
@@ -165,7 +167,7 @@ class TestEditGuards(StudioCase):
                 "x_note",
                 expected_arch_version="something-older",
             )
-        except StudioStaleView:
+        except BuilderStaleView:  # pylint: disable=except-pass
             pass
         else:
             self.fail("a stale version has to be refused")
@@ -181,8 +183,8 @@ class TestEditGuards(StudioCase):
     def test_the_stale_refusal_is_a_user_error_the_client_can_tell_apart(self):
         """The client matches the class name; it has to be a UserError so the
         RPC layer serialises it with a message and no traceback."""
-        self.assertTrue(issubclass(StudioStaleView, UserError))
-        self.assertIn("try again", str(StudioStaleView()))
+        self.assertTrue(issubclass(BuilderStaleView, UserError))
+        self.assertIn("try again", str(BuilderStaleView()))
 
     def test_the_current_version_goes_through(self):
         version = self.editor.arch_version(cast("int", self.view.id))
@@ -237,7 +239,7 @@ class TestEditGuards(StudioCase):
         )
         patch = self.env["ir.ui.view"].search([("inherit_id", "=", self.view.id)])
         self.assertEqual(
-            cast("StudioOwnedMixin", patch).studio_package_id,
+            cast("BuilderOwnedMixin", patch).builder_package_id,
             self.package,
             "captured",
         )
@@ -287,7 +289,7 @@ class TestEditGuards(StudioCase):
             "group",
         )
         groups = [g.get("name") for g in self._combined().iter("group")]
-        added = [n for n in groups if n and n.startswith("studio_group_")]
+        added = [n for n in groups if n and n.startswith("builder_group_")]
         self.assertEqual(len(added), 1, groups)
         found = cast(
             "_LocateTargetFoundJSON",
@@ -312,8 +314,8 @@ class TestEditGuards(StudioCase):
         root = self._combined()
         notebook = root.find(".//notebook")
         page = notebook.find("page")
-        self.assertTrue(notebook.get("name", "").startswith("studio_notebook_"))
-        self.assertTrue(page.get("name", "").startswith("studio_page_"))
+        self.assertTrue(notebook.get("name", "").startswith("builder_notebook_"))
+        self.assertTrue(page.get("name", "").startswith("builder_page_"))
         self.assertEqual(page.get("string"), "Notes")
 
     def test_a_name_the_caller_gives_is_kept(self):
@@ -336,7 +338,7 @@ class TestEditGuards(StudioCase):
         names = [
             g.get("name")
             for g in self._combined().iter("group")
-            if (g.get("name") or "").startswith("studio_group_")
+            if (g.get("name") or "").startswith("builder_group_")
         ]
         self.assertEqual(len(names), 2)
         self.assertEqual(len(set(names)), 2)
@@ -352,4 +354,4 @@ class TestEditGuards(StudioCase):
             "Extra",
         )
         emitted = "".join(self.package._render_files().values())
-        self.assertIn('name="studio_group_', emitted)
+        self.assertIn('name="builder_group_', emitted)

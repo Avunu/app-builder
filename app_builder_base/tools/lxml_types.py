@@ -26,7 +26,7 @@ always-true as far as pyright can tell -- exactly what
 ``reportUnnecessaryIsInstance`` (this directory's strict settings) flags,
 when it is not always true; a ``str | Callable[..., object]`` union would
 keep that narrowing meaningful, but second, ``canvas_stamp.py``'s own
-``stamp()`` assigns ``element.tag`` straight into ``StudioNode["tag"]``
+``stamp()`` assigns ``element.tag`` straight into ``BuilderNode["tag"]``
 (declared ``str``) at a point where the value is already guaranteed to be a
 real tag by an invariant ``_walk`` established earlier (every element it
 lists already passed ``isinstance(child.tag, str)``) but that a plain list
@@ -50,7 +50,7 @@ class ElementTree(Protocol):
     """lxml's own ``_ElementTree`` -- only the one method
     ``LxmlElement.getroottree()`` below is for: minting an absolute,
     root-anchored path to a node that no attribute identifies uniquely
-    (``studio_view_editor.py:_locator_for``'s own positional fallback, the
+    (``builder_view_editor.py:_locator_for``'s own positional fallback, the
     same call core's own ``distribute_branding`` uses)."""
 
     def getpath(self, element: LxmlElement) -> str: ...
@@ -85,9 +85,9 @@ class LxmlElement(Protocol):
     #: than the fuller variadic signature nothing yet needs.
     def iter(self, tag: str | None = None) -> Iterator[LxmlElement]: ...
     def iterancestors(self) -> Iterator[LxmlElement]: ...
-    #: `studio_view_editor.py`'s own `_locator_for`, positional fallback.
+    #: `builder_view_editor.py`'s own `_locator_for`, positional fallback.
     def getroottree(self) -> ElementTree: ...
-    #: `studio_view_editor.py`'s own `_own_label`, walking back through
+    #: `builder_view_editor.py`'s own `_own_label`, walking back through
     #: unnamed siblings (a comment, a processing instruction).
     def getprevious(self) -> LxmlElement | None: ...
     def __len__(self) -> int: ...

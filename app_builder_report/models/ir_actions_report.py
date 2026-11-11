@@ -16,12 +16,12 @@ from odoo import models
 
 from odoo.addons.app_builder_base.tools import typed
 
-from .studio_report import OpenConsoleActionJSON, StudioReport
+from .builder_report import BuilderReport, OpenConsoleActionJSON
 
 
 class IrActionsReport(models.Model):
     _inherit = "ir.actions.report"
 
-    def action_studio_edit(self) -> OpenConsoleActionJSON:
+    def action_builder_edit(self) -> OpenConsoleActionJSON:
         self.ensure_one()
-        return typed.model(self.env, StudioReport).edit_action(cast("int", self.id))
+        return typed.model(self.env, BuilderReport).edit_action(cast("int", self.id))

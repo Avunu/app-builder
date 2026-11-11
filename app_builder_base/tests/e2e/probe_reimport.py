@@ -1,7 +1,8 @@
 #!/usr/bin/env python
+# pylint: disable=print-used,invalid-commit,sql-injection,odoo-addons-relative-import
 """Does an in-process re-import actually yield a clean registry?
 
-This is the load-bearing assumption behind the studio's "Apply" step: that a
+This is the load-bearing assumption behind the builder's "Apply" step: that a
 generated Python model file can be rewritten and re-imported inside a live
 process, without a server restart. It cannot be a TransactionCase --
 ``_button_immediate_function`` (ir_module.py) raises outright when
@@ -19,7 +20,7 @@ exists at all:
   without clearing it registers every class a second time.
 
 Run:  python app_builder_base/tests/e2e/probe_reimport.py -c odoo.conf -d <db>
-Exit: 0 if the in-process path is sound, 1 if the studio must fall back to a
+Exit: 0 if the in-process path is sound, 1 if the builder must fall back to a
       process restart.
 """
 
@@ -124,8 +125,8 @@ def main():
     # `initialize_sys_path`, and only that makes `odoo.addons.<name>`
     # resolvable at all -- a module-level import of either of these would
     # run first and fail.
-    from odoo.addons.base.models.ir_module import Module
     from odoo.addons.app_builder_base.tools import typed
+    from odoo.addons.base.models.ir_module import Module
 
     root = writable_addons_dir()
     print("addons dir: %s" % root)

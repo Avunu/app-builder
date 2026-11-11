@@ -56,8 +56,8 @@ _T = TypeVar("_T")
 Label: TypeAlias = "str | LazyGettext"
 
 #: What every ``to_json`` takes to resolve a label: ``env._`` in practice.
-#: Every real caller passes one explicitly (``studio_record_surface.py``,
-#: ``studio_view_editor.py``); nothing in this file's own tree calls
+#: Every real caller passes one explicitly (``builder_record_surface.py``,
+#: ``builder_view_editor.py``); nothing in this file's own tree calls
 #: ``to_json``/``catalogue_json`` without one, which is what makes
 #: ``_default_translate`` below a safe default rather than a silent trap.
 Translator = Callable[[Label], str]

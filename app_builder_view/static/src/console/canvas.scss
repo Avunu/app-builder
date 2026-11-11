@@ -1,7 +1,7 @@
 // The canvas: a neutral ground, the real view at its natural width, and the
 // overlay drawn on top of it -- never a change to the view itself.
 
-.o_studio_canvas {
+.o_builder_canvas {
     position: relative;
     flex: 1 1 auto;
     overflow: auto;
@@ -10,7 +10,7 @@
     // before the user finds out by clicking.
     cursor: pointer;
 
-    .o_studio_canvas_ground {
+    .o_builder_canvas_ground {
         min-height: 100%;
         min-width: fit-content;
     }
@@ -41,7 +41,7 @@
     }
 
     // A hidden node the canvas was asked to show anyway: there, and dimmed.
-    .o_studio_invisible {
+    .o_builder_invisible {
         opacity: 0.45;
     }
 
@@ -53,7 +53,7 @@
     // them would say it a second time, in the way. Under the ground, so
     // the rule outweighs the views' own, which name the view and the
     // renderer.
-    .o_studio_canvas_ground .o_view_sample_data {
+    .o_builder_canvas_ground .o_view_sample_data {
         .o_kanban_record,
         .o_data_row,
         .o_list_footer,
@@ -68,7 +68,7 @@
         }
     }
 
-    .o_studio_canvas_note {
+    .o_builder_canvas_note {
         position: sticky;
         top: 8px;
         float: right;
@@ -87,7 +87,7 @@
 
 // The layer the canvas owns. Nothing in it takes the pointer except the
 // selection frame's own controls, so a click through it still selects.
-.o_studio_overlay {
+.o_builder_overlay {
     position: absolute;
     top: 0;
     left: 0;
@@ -101,22 +101,22 @@
         box-sizing: border-box;
     }
 
-    .o_studio_hover {
+    .o_builder_hover {
         outline: 2px solid rgba(113, 75, 103, 0.55);
         outline-offset: -2px;
         border-radius: 2px;
     }
 
-    .o_studio_selection {
+    .o_builder_selection {
         outline: 2px solid var(--o-color-primary, #714b67);
         outline-offset: -1px;
         border-radius: 2px;
 
-        &.o_studio_invisible_node {
+        &.o_builder_invisible_node {
             outline-style: dashed;
         }
 
-        .o_studio_tag {
+        .o_builder_tag {
             position: absolute;
             top: -22px;
             left: -2px;
@@ -130,8 +130,8 @@
             pointer-events: auto;
         }
 
-        .o_studio_grip,
-        .o_studio_remove {
+        .o_builder_grip,
+        .o_builder_remove {
             position: absolute;
             top: -22px;
             width: 20px;
@@ -147,12 +147,12 @@
             cursor: pointer;
         }
 
-        .o_studio_grip {
+        .o_builder_grip {
             right: 22px;
             cursor: grab;
         }
 
-        .o_studio_remove {
+        .o_builder_remove {
             right: 0;
 
             &:hover {
@@ -164,7 +164,7 @@
     // The one kanban card a drag lays its zones out on, standing in for
     // the template: dashed, so the user knows which card to aim at, and
     // that every card will follow.
-    .o_studio_dz_template {
+    .o_builder_dz_template {
         outline: 2px dashed var(--o-color-primary, #714b67);
         outline-offset: 2px;
         border-radius: 3px;

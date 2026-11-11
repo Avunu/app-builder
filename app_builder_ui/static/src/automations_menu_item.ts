@@ -10,24 +10,24 @@
  *
  * The action itself is computed on the server, because "which package should a
  * rule created here be written into" is a question only the server can answer —
- * see `studio.automation.action_open`.
+ * see `builder.automation.action_open`.
  */
 
-import { Component } from "@odoo/owl";
-import { DropdownItem } from "@web/core/dropdown/dropdown_item";
-import { _t as _tUntyped } from "@web/core/l10n/translation";
-import { registry } from "@web/core/registry";
-import { user as userUntyped } from "@web/core/user";
-import { useService as useServiceUntyped } from "@web/core/utils/hooks";
-import type { TranslateFn } from "@app_builder_view/console/l10n";
+import {Component} from "@odoo/owl";
+import {DropdownItem} from "@web/core/dropdown/dropdown_item";
+import {_t as _tUntyped} from "@web/core/l10n/translation";
+import {registry} from "@web/core/registry";
+import {user as userUntyped} from "@web/core/user";
+import {useService as useServiceUntyped} from "@web/core/utils/hooks";
+import type {TranslateFn} from "@app_builder_view/console/l10n";
 import type {
-    ActionService,
-    CogMenuItem,
-    useService as UseService,
-    UserFacade,
-    ViewEnv,
+  ActionService,
+  CogMenuItem,
+  useService as UseService,
+  UserFacade,
+  ViewEnv,
 } from "@app_builder_view/console/odoo";
-import type { OrmService } from "@app_builder_view/console/types";
+import type {OrmService} from "@app_builder_view/console/types";
 
 // `app_builder_ui` does not depend on `app_builder_view` (its manifest), so
 // nothing from that addon may be imported here at runtime -- it would be
@@ -45,40 +45,43 @@ const user = userUntyped as UserFacade;
 // identical reason given there.
 type Props = Record<string, never>;
 
-export class StudioAutomations extends Component<Props, ViewEnv> {
-    static override template = "app_builder_ui.StudioAutomations";
-    static components = { DropdownItem };
-    static override props = {};
+export class BuilderAutomations extends Component<Props, ViewEnv> {
+  static override template = "app_builder_ui.BuilderAutomations";
+  static components = {DropdownItem};
+  static override props = {};
 
-    action!: ActionService;
-    orm!: OrmService;
+  action!: ActionService;
+  orm!: OrmService;
 
-    override setup(): void {
-        this.action = useService("action");
-        this.orm = useService("orm");
-    }
+  override setup(): void {
+    this.action = useService("action");
+    this.orm = useService("orm");
+  }
 
-    /** The console, on its Automations pane for the model on screen. */
-    onOpen(): void {
-        void this.action.doAction({
-            type: "ir.actions.client",
-            tag: "app_builder_console",
-            target: "fullscreen",
-            name: String(_t("Studio")),
-            params: {
-                pane: "automations",
-                res_model: this.env.config.resModel,
-                action_id: this.env.config.actionId || false,
-            },
-        });
-    }
+  /** The console, on its Automations pane for the model on screen. */
+  onOpen(): void {
+    void this.action.doAction({
+      type: "ir.actions.client",
+      tag: "app_builder_console",
+      target: "fullscreen",
+      name: String(_t("Builder")),
+      params: {
+        pane: "automations",
+        res_model: this.env.config.resModel,
+        action_id: this.env.config.actionId || false,
+      },
+    });
+  }
 }
 
-export const studioAutomationsItem: CogMenuItem = {
-    Component: StudioAutomations,
-    groupNumber: 40,
-    isDisplayed: async (env) =>
-        Boolean(env.config.resModel) && (await user.hasGroup("app_builder_base.group_studio_user")),
+export const builderAutomationsItem: CogMenuItem = {
+  Component: BuilderAutomations,
+  groupNumber: 40,
+  isDisplayed: async (env) =>
+    Boolean(env.config.resModel) &&
+    (await user.hasGroup("app_builder_base.group_builder_user")),
 };
 
-registry.category("cogMenu").add("app-builder-automations", studioAutomationsItem, { sequence: 41 });
+registry
+  .category("cogMenu")
+  .add("app-builder-automations", builderAutomationsItem, {sequence: 41});

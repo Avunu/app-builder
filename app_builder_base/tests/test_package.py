@@ -10,16 +10,16 @@ from typing import TYPE_CHECKING, cast
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import tagged
 
-from .common import StudioCase, raises
+from .common import BuilderCase, raises
 
 if TYPE_CHECKING:
     # Only for the cast below; with `from __future__ import annotations`
     # nothing here needs this at runtime.
-    from ..models.studio_package import StudioPackageFile
+    from ..models.builder_package import BuilderPackageFile
 
 
 @tagged("post_install", "-at_install")
-class TestPackage(StudioCase):
+class TestPackage(BuilderCase):
     def test_reserved_name_is_rejected(self):
         """graph.py hardcodes studio_customization out of the module graph."""
         with raises(self, ValidationError):
@@ -38,8 +38,8 @@ class TestPackage(StudioCase):
         for relative in (
             "__manifest__.py",
             "__init__.py",
-            "models/x_studio_project.xml",
-            "views/x_studio_project_views.xml",
+            "models/x_builder_project.xml",
+            "views/x_builder_project_views.xml",
             "security/ir.model.access.csv",
         ):
             self.assertTrue(
@@ -54,7 +54,7 @@ class TestPackage(StudioCase):
         self.build_demo_content(package)
         package.action_write_files()
         target = os.path.join(
-            cast("str", package.root_path), "models/x_studio_project.xml"
+            cast("str", package.root_path), "models/x_builder_project.xml"
         )
         before = os.stat(target).st_mtime_ns
 
@@ -75,7 +75,7 @@ class TestPackage(StudioCase):
         self.assertEqual(package.state, "synced")
 
         target = os.path.join(
-            cast("str", package.root_path), "models/x_studio_project.xml"
+            cast("str", package.root_path), "models/x_builder_project.xml"
         )
         with open(target, "a", encoding="utf-8") as handle:
             handle.write("<!-- hand edit -->\n")
@@ -83,11 +83,11 @@ class TestPackage(StudioCase):
         package.action_check_drift()
         self.assertEqual(package.state, "drifted")
         drifted = (
-            cast("StudioPackageFile", package.file_ids)
+            cast("BuilderPackageFile", package.file_ids)
             .filtered("drifted")
             .mapped("path")
         )
-        self.assertEqual(drifted, ["models/x_studio_project.xml"])
+        self.assertEqual(drifted, ["models/x_builder_project.xml"])
 
     def test_missing_directory_is_detected(self):
         import shutil
@@ -115,11 +115,11 @@ class TestPackage(StudioCase):
         model = self.build_demo_content(package)
         package.action_write_files()
 
-        view = self.env["ir.ui.view"].search([("model", "=", "x_studio_project")])
+        view = self.env["ir.ui.view"].search([("model", "=", "x_builder_project")])
         action = self.env["ir.actions.act_window"].search(
-            [("res_model", "=", "x_studio_project")]
+            [("res_model", "=", "x_builder_project")]
         )
-        menu = self.env["ir.ui.menu"].search([("name", "=", "Studio Demo Projects")])
+        menu = self.env["ir.ui.menu"].search([("name", "=", "Builder Demo Projects")])
         menu.unlink()
         action.unlink()
         view.unlink()
@@ -128,7 +128,7 @@ class TestPackage(StudioCase):
         self.assertFalse(
             os.path.isfile(
                 os.path.join(
-                    cast("str", package.root_path), "views/x_studio_project_views.xml"
+                    cast("str", package.root_path), "views/x_builder_project_views.xml"
                 )
             ),
             "a generated file with no remaining records should be removed",
@@ -142,16 +142,16 @@ class TestPackage(StudioCase):
         package.action_write_files()
 
         target = os.path.join(
-            cast("str", package.root_path), "views/x_studio_project_views.xml"
+            cast("str", package.root_path), "views/x_builder_project_views.xml"
         )
         with open(target, "a", encoding="utf-8") as handle:
             handle.write("<!-- mine -->\n")
 
-        menu = self.env["ir.ui.menu"].search([("name", "=", "Studio Demo Projects")])
+        menu = self.env["ir.ui.menu"].search([("name", "=", "Builder Demo Projects")])
         action = self.env["ir.actions.act_window"].search(
-            [("res_model", "=", "x_studio_project")]
+            [("res_model", "=", "x_builder_project")]
         )
-        view = self.env["ir.ui.view"].search([("model", "=", "x_studio_project")])
+        view = self.env["ir.ui.view"].search([("model", "=", "x_builder_project")])
         menu.unlink()
         action.unlink()
         view.unlink()
@@ -191,11 +191,11 @@ class TestPackage(StudioCase):
         package.action_write_files()
         # Same teardown as test_stale_generated_file_is_pruned: the next write
         # runs the prune pass over everything tracked.
-        self.env["ir.ui.menu"].search([("name", "=", "Studio Demo Projects")]).unlink()
+        self.env["ir.ui.menu"].search([("name", "=", "Builder Demo Projects")]).unlink()
         self.env["ir.actions.act_window"].search(
-            [("res_model", "=", "x_studio_project")]
+            [("res_model", "=", "x_builder_project")]
         ).unlink()
-        self.env["ir.ui.view"].search([("model", "=", "x_studio_project")]).unlink()
+        self.env["ir.ui.view"].search([("model", "=", "x_builder_project")]).unlink()
         package.action_write_files()
 
         with open(target, "rb") as handle:
@@ -205,14 +205,14 @@ class TestPackage(StudioCase):
         package = self.make_package()
         vals: dict[str, object] = {
             "name": "Thing",
-            "model": "x_studio_thing",
+            "model": "x_builder_thing",
             "field_id": [],
         }
         model = self.env["ir.model"].create(vals)  # pyright: ignore[reportArgumentType]
         first = package._assign(model)
         second = package._assign(model)
         self.assertEqual(first, second, "assigning twice must not mint a new xmlid")
-        self.assertEqual(first, ["%s.model_x_studio_thing" % package.name])
+        self.assertEqual(first, ["%s.model_x_builder_thing" % package.name])
 
     def test_assign_deduplicates_colliding_names(self):
         package = self.make_package()
@@ -236,13 +236,13 @@ class TestPackage(StudioCase):
         self.assertGreater(package.record_count, 5)
 
     def test_ownership_is_searchable(self):
-        """A domain on studio_package_id has to actually filter.
+        """A domain on builder_package_id has to actually filter.
 
         Regression, and a quiet one. A non-stored field with no search method
         does not make the domain fail -- the ORM logs an error and *drops the
-        leaf* (`expression.py:1179-1187`). So `[("studio_package_id", "=", id)]`
+        leaf* (`expression.py:1179-1187`). So `[("builder_package_id", "=", id)]`
         degraded from "records this package owns" to "every record", and
-        `studio.model.draft._owned_views` is built on exactly that domain: field
+        `builder.model.draft._owned_views` is built on exactly that domain: field
         placement would have edited a primary view belonging to another module
         in place, which is the one thing this project exists not to do.
         """
@@ -250,13 +250,16 @@ class TestPackage(StudioCase):
         self.build_demo_content(package)
         vals: dict[str, object] = {
             "name": "not ours",
-            "model": "x_studio_project",
+            "model": "x_builder_project",
             "arch": "<form><sheet><field name='x_name'/></sheet></form>",
         }
         foreign = self.env["ir.ui.view"].create(vals)  # pyright: ignore[reportArgumentType]
 
         ours = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project"), ("studio_package_id", "=", package.id)]
+            [
+                ("model", "=", "x_builder_project"),
+                ("builder_package_id", "=", package.id),
+            ]
         )
         self.assertTrue(ours, "the package's own views must be found")
         self.assertNotIn(
@@ -266,7 +269,7 @@ class TestPackage(StudioCase):
         )
 
         unowned = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project"), ("studio_package_id", "=", False)]
+            [("model", "=", "x_builder_project"), ("builder_package_id", "=", False)]
         )
         self.assertIn(foreign, unowned)
         self.assertFalse(ours & unowned, "owned and unowned must not overlap")

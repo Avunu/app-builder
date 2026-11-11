@@ -1,4 +1,4 @@
-# App Builder
+# App Builder for Odoo
 
 [![License: AGPL-3](https://img.shields.io/badge/license-AGPL--3-blue.png)](http://www.gnu.org/licenses/agpl-3.0-standalone.html)
 
@@ -50,27 +50,27 @@ A new model is a real `models.Model` class immediately — no `x_` prefix, no la
 
 ```python
 class WorkshopJob(models.Model):
-    # begin: studio-generated schema
+    # begin: builder-generated schema
     _name = "workshop.job"
     _inherit = ["mail.thread", "mail.activity.mixin"]
     _order = "sequence, id"
 
     name = fields.Char(string="Name", required=True, tracking=1)
     partner_id = fields.Many2one("res.partner", string="Customer")
-    # end: studio-generated schema
+    # end: builder-generated schema
 
     @api.constrains("name")           # anything at all out here
     def _check_name(self):
         ...
 ```
 
-Writing is a pure string splice between the markers — the same approach [Frappe's `TypeExporter`](https://github.com/frappe/frappe/blob/develop/frappe/types/exporter.py) uses — so the studio never parses, reads or rewrites the rest of the file. Add a metaclass, a `@property`, a decorator nobody has heard of: the builder keeps working. Reading parses only the block, which is text the studio generated, so a failure there is a loud error about our own region rather than a model that quietly locks itself out.
+Writing is a pure string splice between the markers — the same approach [Frappe's `TypeExporter`](https://github.com/frappe/frappe/blob/develop/frappe/types/exporter.py) uses — so the builder never parses, reads or rewrites the rest of the file. Add a metaclass, a `@property`, a decorator nobody has heard of: the builder keeps working. Reading parses only the block, which is text the builder generated, so a failure there is a loud error about our own region rather than a model that quietly locks itself out.
 
 **This is what makes it not an export.** Odoo Studio's "export to module" is one-way: touch the code and you can never go back to the visual tool. Here there is no door to close.
 
 Three things make the generated class lossless rather than a rewrite:
 
--   the xmlids Odoo's reflection assigns to a code-defined model are _identical_ to the ones the studio emitted (`model_xmlid` / `field_xmlid` / `selection_xmlid`), so nothing is orphaned and `_process_end` reaps nothing;
+-   the xmlids Odoo's reflection assigns to a code-defined model are _identical_ to the ones the builder emitted (`model_xmlid` / `field_xmlid` / `selection_xmlid`), so nothing is orphaned and `_process_end` reaps nothing;
 -   a sandboxed `compute` string is promoted to a real method with a real `@api.depends`;
 -   metadata rows are _reclassified_ (`state` manual → base), never deleted. Deleting would be doubly catastrophic: `ir.model.fields.unlink` calls `_drop_column` and would destroy user data, and every `model_id` in Odoo is `ondelete='cascade'`, so dropping the `ir.model` row silently takes the access rules and automations with it.
 
@@ -82,27 +82,39 @@ The editor gates on `os.access(root_path, W_OK)`. Against a Nix-store build or a
 
 ## Available addons
 
-| addon | version | maintainers | summary |
-| --- | --- | --- | --- |
-| app_builder | 18.0.1.0.0 |  | Open-source visual builder whose output is real source code |
-| app_builder_base | 18.0.1.2.0 |  | Engine for visually built Odoo modules that live in source control |
-| app_builder_mail | 18.0.1.0.0 |  | Write mail and SMS settings into source alongside the rest |
-| app_builder_model | 18.0.1.0.0 |  | Visually build models and fields that are written to source |
-| app_builder_ui | 18.0.1.1.0 |  | Build menus, actions, access rules and automations into source |
-| app_builder_view | 18.0.1.0.0 |  | Edit views visually; every change becomes an inheriting view in source |
+| addon | summary |
+| --- | --- |
+| [app_builder](app_builder) | Open-source visual builder whose output is real source code |
+| [app_builder_base](app_builder_base) | Engine for visually built Odoo modules that live in source control |
+| [app_builder_model](app_builder_model) | Visually build models and fields that are written to source |
+| [app_builder_view](app_builder_view) | Edit views visually; every change becomes an inheriting view in source |
+| [app_builder_ui](app_builder_ui) | Build menus, actions, access rules and automations into source |
+| [app_builder_report](app_builder_report) | Create PDF reports, and edit existing ones as inheriting views |
+| [app_builder_mail](app_builder_mail) | Write mail and SMS settings into source alongside the rest |
+| [app_builder_approval](app_builder_approval) | Turn on tier validation in the builder, and write the rules to source |
+| [app_builder_approval_formula](app_builder_approval_formula) | Write Python-conditioned approval rules to source |
 
 ## Development
 
-The addons are developed against [OCB](https://github.com/OCA/OCB) 18.0 in a [odoo-nix](https://github.com/Avunu/odoo-nix) workspace, which pins OCB and every OCA dependency as submodules and synthesizes `addons_path` from them.
+This is an [odoo-nix](https://github.com/Avunu/odoo-nix) repository of addons (addons mode) that follows [Avunu's Odoo standards profile](https://github.com/Avunu/odoo-standards-profile). OCB and OCA's `server-ux` are flake inputs, pinned in `flake.lock`.
 
 ```sh
-python odoo/odoo-bin -c odoo.conf -d studio_test -i app_builder \
-  --test-enable \
-  --test-tags /app_builder_base,/app_builder_model,/app_builder_view,/app_builder_ui \
-  --stop-after-init
+direnv allow                 # or: nix develop --no-pure-eval
+odoo db provision            # install this repository's addons
+devenv up                    # PostgreSQL, Odoo, Mailpit and the TypeScript watcher
+odoo-nix gate lint           # in `nix develop --no-pure-eval .#odoo-nix-lint`
+odoo-nix gate test           # every addon's tests, with coverage
 ```
 
-See [DESIGN.md](DESIGN.md) for the full architecture, the core machinery it drives, and the traps it works around — three Odoo caches that are never invalidated, two reserved module names, the `ir_cron` lock `button_immediate_upgrade` takes, and the findings from an adversarial review. See [TYPING.md](TYPING.md) for how the Python (pyright, plus typeguard on `tools/`) and TypeScript (`tsc`, eslint) are typed and checked, what was found doing it, and the traps that cost time.
+### TypeScript
+
+The console is written in TypeScript, and the compiled `.js` is not committed. Each addon with TypeScript has a `package.json` whose `build` script runs esbuild over `static/**/*.ts`, writing each `.js` beside its source. That output stays under `static/src` and `static/tests` on purpose, not `static/dist`: esbuild only erases types, and Odoo's own transpiler still has to load the result as an `@odoo-module`.
+
+- **Production:** `nix build .#default` runs those builds through [odoo-nix's addon frontends layer](https://github.com/Avunu/odoo-nix/blob/main/docs/development/frontend.md) and lays the output into the deployed tree and the addons' wheels.
+- **The shell:** entering it installs and builds, so a fresh clone serves a working console; `devenv up` keeps rebuilding through each addon's `watch` script; `odoo module build` builds by hand.
+- **Type checks:** esbuild checks nothing. `prek run -c .pre-commit-config.yaml --hook-stage manual -a` runs pyright, tsc and the type-aware eslint in the dev shell, as `typecheck.yml` does in CI.
+
+See [DESIGN.md](DESIGN.md) for the full architecture, the core machinery it drives, and the traps it works around — three Odoo caches that are never invalidated, two reserved module names, the `ir_cron` lock `button_immediate_upgrade` takes, and the findings from an adversarial review. See [TYPING.md](TYPING.md) for how the Python and TypeScript are typed and checked, what was found doing it, and the traps that cost time. That file is a history: its build and CI details predate the move to odoo-nix, which the note at its top describes.
 
 ## Licence
 
@@ -110,8 +122,8 @@ AGPL-3. See [LICENSE](LICENSE).
 
 ## Credits
 
-**Authors:** Avunu LLC
+**Copyright:** Avunu LLC
 
 **Contributors:** Kevin Shenk <[kevin@avu.nu](mailto:kevin@avu.nu)\>
 
-This project follows [OCA](https://odoo-community.org) conventions — AGPL-3, `readme/` fragments, whool packaging, the OCA pre-commit set — but is **not an official OCA project** and is not endorsed by the OCA.
+App Builder for Odoo is an independent project, not affiliated with or endorsed by Odoo S.A. Odoo is a trademark of Odoo S.A.

@@ -1,0 +1,28 @@
+# pyright, tsc and the type-aware eslint (TYPING.md). They need Odoo's sources and the
+# dev shell's Python, which the lint gate's shell does not have, so they run here, on the
+# manual stage of .pre-commit-config.yaml.
+name: typecheck
+on:
+  push:
+    branches: ["develop"]
+  pull_request:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: typecheck-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  typecheck:
+    runs-on: [self-hosted, nixos]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: pyright, tsc, eslint
+        env:
+          ODOO_NIX_CI: "1"
+        run: >-
+          nix develop --no-pure-eval -c tools/.venv/bin/prek run
+          -c .pre-commit-config.yaml --hook-stage manual --all-files

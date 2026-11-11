@@ -24,34 +24,40 @@ from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.models.builder_package_model import (
+    BuilderPackageModel,
+)
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
+from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base.models.ir_model import IrModelFields, IrModelSelection
 from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.models.studio_package_model import StudioPackageModel
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
-from odoo.addons.app_builder_base.tools import typed
 
-from ..models.studio_view_new_field import StudioViewEditor as StudioViewEditorNewField
+from ..models.builder_view_new_field import (
+    BuilderViewEditor as BuilderViewEditorNewField,
+)
 from .test_drop_at import _snapshot
 
 if TYPE_CHECKING:
     # `self.editor` is typed as the "new field" `_inherit` extension below
     # (most of this file's own calls), so the other two real, different
-    # Python classes the registry composes onto the same `studio.view.editor`
+    # Python classes the registry composes onto the same `builder.view.editor`
     # model -- the base (`drop_at`) and the canvas extension (`canvas`) --
     # need a cast at their own call sites, the same aliased-on-import
-    # workaround `studio_view_new_field.py`'s own `TYPE_CHECKING` block uses
+    # workaround `builder_view_new_field.py`'s own `TYPE_CHECKING` block uses
     # for the identical composition.
-    from odoo.addons.app_builder_base.models.studio_package import StudioPackage
+    from odoo.addons.app_builder_base.models.builder_package import BuilderPackage
 
-    from ..models.studio_view_canvas import StudioViewEditor as StudioViewEditorCanvas
-    from ..models.studio_view_editor import StudioViewEditor as StudioViewEditorBase
+    from ..models.builder_view_canvas import (
+        BuilderViewEditor as BuilderViewEditorCanvas,
+    )
+    from ..models.builder_view_editor import BuilderViewEditor as BuilderViewEditorBase
 
 
 @tagged("post_install", "-at_install")
-class TestNewFieldFromTheEditor(StudioCase):
+class TestNewFieldFromTheEditor(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditorNewField)
+        self.editor = typed.model(self.env, BuilderViewEditorNewField)
         self.package = self.make_package()
 
     def _core_form(self, model="res.partner"):
@@ -74,7 +80,7 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def _patch_of(self, view):
         return typed.model(self.env, View).search(
-            [("inherit_id", "=", view.id), ("studio_package_id", "=", self.package.id)]
+            [("inherit_id", "=", view.id), ("builder_package_id", "=", self.package.id)]
         )
 
     def _row(self, model, name):
@@ -94,7 +100,7 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_a_core_model_can_take_a_field_here(self):
         view = self._core_form()
-        plan = typed.model(self.env, StudioViewEditorNewField).new_field_plan(
+        plan = typed.model(self.env, BuilderViewEditorNewField).new_field_plan(
             cast("int", view.id)
         )
         self.assertTrue(plan["can_create"])
@@ -349,13 +355,13 @@ class TestNewFieldFromTheEditor(StudioCase):
     def test_a_python_model_stages_rather_than_creating_live(self):
         package = self.package
         self.build_demo_content(package)
-        typed.model(self.env, StudioPackageModel)._adopt(
-            package, "x_studio_project", source="python"
+        typed.model(self.env, BuilderPackageModel)._adopt(
+            package, "x_builder_project", source="python"
         )
         view = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
-        plan = typed.model(self.env, StudioViewEditorNewField).new_field_plan(
+        plan = typed.model(self.env, BuilderViewEditorNewField).new_field_plan(
             cast("int", view.id)
         )
         self.assertFalse(plan["can_create"])
@@ -369,20 +375,20 @@ class TestNewFieldFromTheEditor(StudioCase):
         to prevent, so the refusal is the point rather than a limitation."""
         package = self.package
         self.build_demo_content(package)
-        typed.model(self.env, StudioPackageModel)._adopt(
-            package, "x_studio_project", source="python"
+        typed.model(self.env, BuilderPackageModel)._adopt(
+            package, "x_builder_project", source="python"
         )
         view = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
         with raises(self, UserError):
-            typed.model(self.env, StudioViewEditorNewField).create_field_at(
+            typed.model(self.env, BuilderViewEditorNewField).create_field_at(
                 cast("int", view.id),
                 cast("int", package.id),
                 {"kind": "root"},
                 {"field_description": "Late", "ttype": "boolean"},
             )
-        self.assertNotIn("x_late", self.env["x_studio_project"]._fields)
+        self.assertNotIn("x_late", self.env["x_builder_project"]._fields)
 
     # -- atomicity ------------------------------------------------------------
 
@@ -394,7 +400,7 @@ class TestNewFieldFromTheEditor(StudioCase):
         ``assertRaises`` rolls a savepoint back the same way, so a row
         assertion here would hold whatever the method did."""
         disk = _snapshot(self.package.root_path)
-        Editor = self.env.registry["studio.view.editor"]
+        Editor = self.env.registry["builder.view.editor"]
         with (
             patch.object(
                 Editor, "_op_add_field", autospec=True, side_effect=UserError("boom")
@@ -417,7 +423,7 @@ class TestNewFieldFromTheEditor(StudioCase):
         self.assertEqual(_snapshot(self.package.root_path), disk)
 
     def test_the_disk_is_written_once(self):
-        Package = cast("type[StudioPackage]", self.env.registry["studio.package"])
+        Package = cast("type[BuilderPackage]", self.env.registry["builder.package"])
         original = Package.action_write_files
         with patch.object(
             Package, "action_write_files", autospec=True, side_effect=original
@@ -429,11 +435,11 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_dropping_a_new_field_lands_it_and_selects_it(self):
         view = self._core_form()
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", view.id)
         )
         email = next(t for t, n in canvas["nodes"].items() if n["name"] == "email")
-        result = cast("StudioViewEditorBase", self.editor).drop_at(
+        result = cast("BuilderViewEditorBase", self.editor).drop_at(
             cast("int", view.id),
             cast("int", self.package.id),
             {"token": email, "position": "after"},
@@ -457,7 +463,7 @@ class TestNewFieldFromTheEditor(StudioCase):
         self.assertIsNone(result["draft"])
         selected = result["canvas"]["nodes"][cast("str", result["select"])]
         self.assertEqual(selected["name"], "x_nick")
-        # Only `None` on a node with no field at all (`StudioNode`'s own
+        # Only `None` on a node with no field at all (`BuilderNode`'s own
         # docstring); this one was just created as a field.
         assert selected["field"] is not None
         self.assertEqual(selected["field"]["origin"], "manual")
@@ -474,7 +480,7 @@ class TestNewFieldFromTheEditor(StudioCase):
         assert selected["label"] is not None
         self.assertEqual(selected["label"]["by"], "label")
         # `history` stays `object` on `CanvasJSON` itself (declared that way
-        # deliberately -- `studio_view_editor.py`'s own docstring: nothing
+        # deliberately -- `builder_view_editor.py`'s own docstring: nothing
         # in production code reads past passing it on whole); this test is
         # the one real reader, so the honest shape is named here instead.
         history = cast("dict[str, Any]", result["history"])
@@ -507,10 +513,10 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_nothing_is_live_on_a_python_owned_model(self):
         self.build_demo_content(self.package)
-        typed.model(self.env, StudioPackageModel)._adopt(
-            self.package, "x_studio_project", source="python"
+        typed.model(self.env, BuilderPackageModel)._adopt(
+            self.package, "x_builder_project", source="python"
         )
-        entries = self.editor.field_types_for("x_studio_project")
+        entries = self.editor.field_types_for("x_builder_project")
         self.assertTrue(entries)
         self.assertFalse(any(e["live"] for e in entries))
 
@@ -518,7 +524,7 @@ class TestNewFieldFromTheEditor(StudioCase):
 
     def test_a_manual_field_definition_can_be_changed(self):
         self._create({"field_description": "Nick", "ttype": "char"})
-        Package = cast("type[StudioPackage]", self.env.registry["studio.package"])
+        Package = cast("type[BuilderPackage]", self.env.registry["builder.package"])
         original = Package.action_write_files
         with patch.object(
             Package, "action_write_files", autospec=True, side_effect=original

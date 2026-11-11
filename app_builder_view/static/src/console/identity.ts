@@ -3,7 +3,7 @@
  * Which node of the view is this element?
  *
  * The server names every node of the arch with a class token,
- * `o_studio_n_<ordinal>` (`tools/canvas_stamp.py`), and the view compiler
+ * `o_builder_n_<ordinal>` (`tools/canvas_stamp.py`), and the view compiler
  * carries `class` through to the rendered DOM for every tag that renders
  * one. So the question "what did the user click" is answered by walking up
  * to the nearest element carrying a token -- and never by inferring a
@@ -30,13 +30,13 @@
  */
 
 import * as compat from "./compat";
-import type { BoxRect, NodeTable, Point, StudioNode, Token } from "./types";
+import type {BoxRect, NodeTable, Point, BuilderNode, Token} from "./types";
 
 // An ordinal for a node of the arch, whose token is the whole class; or
 // `p_<name>` for the ghost of a field staged on a draft, which the server
 // splices into the canvas under that token and stamps as
-// `o_studio_n_p_<name>` -- the class carries the prefix, the table does not.
-const TOKEN_RE = /\bo_studio_n_(p_[A-Za-z0-9_]+|\d+)\b/;
+// `o_builder_n_p_<name>` -- the class carries the prefix, the table does not.
+const TOKEN_RE = /\bo_builder_n_(p_[A-Za-z0-9_]+|\d+)\b/;
 const HEADING = "th[data-name]";
 // A rendered kanban card. The renderer pads the last row of an ungrouped
 // board with empty `.o_kanban_ghost` records, which render no template
@@ -49,29 +49,29 @@ type MaybeElement = Element | null | undefined;
 
 /** The token an element carries in its class list, or `null`. */
 export function ownToken(el: MaybeElement): Token | null {
-    if (!el || !el.classList) {
-        return null;
-    }
-    const match = TOKEN_RE.exec(el.className || "");
-    if (!match) {
-        return null;
-    }
-    const captured = match[1];
-    if (captured === undefined) {
-        return null;
-    }
-    return captured.startsWith("p_") ? captured : `o_studio_n_${captured}`;
+  if (!el || !el.classList) {
+    return null;
+  }
+  const match = TOKEN_RE.exec(el.className || "");
+  if (!match) {
+    return null;
+  }
+  const captured = match[1];
+  if (captured === undefined) {
+    return null;
+  }
+  return captured.startsWith("p_") ? captured : `o_builder_n_${captured}`;
 }
 
 /** The class a token is stamped as. */
 export function classOf(token: Token): string {
-    return token.startsWith("p_") ? `o_studio_n_${token}` : token;
+  return token.startsWith("p_") ? `o_builder_n_${token}` : token;
 }
 
 /** What `tokenOf` resolves a click to. */
 export interface TokenHit {
-    token: Token;
-    el: Element;
+  token: Token;
+  el: Element;
 }
 
 /**
@@ -83,62 +83,70 @@ export interface TokenHit {
  * heading that names no column -- the child list of an x2many field in a
  * form -- is an ordinary click, resolved by walking up to that field.
  */
-export function tokenOf(el: MaybeElement, nodes: NodeTable | null | undefined): TokenHit | null {
-    if (!el || !el.closest) {
-        return null;
-    }
-    const heading = el.closest<HTMLElement>(HEADING);
-    if (heading && heading.dataset["name"]) {
-        const token = columnToken(heading.dataset["name"], nodes);
-        if (token) {
-            return { token, el: heading };
-        }
-    }
-    let cursor: Element | null = el.nodeType === Node.ELEMENT_NODE ? el : el.parentElement;
-    // A generated label is stamped with its group, not its field: the
-    // widget it labels is what was meant. Unless something between the
-    // click and the label cell is a node of its own -- an explicit
-    // `<label for>` -- in which case the walk below finds it first.
-    const wrap = cursor && cursor.closest<HTMLLabelElement>("label.o_form_label, .o_wrap_label");
-    if (wrap && !stampedBetween(cursor, wrap)) {
-        const widget = compat.labelWidget(wrap);
-        if (widget) {
-            cursor = widget;
-        }
-    }
-    while (cursor) {
-        const token = ownToken(cursor);
-        if (token) {
-            return { token, el: cursor };
-        }
-        cursor = cursor.parentElement;
-    }
+export function tokenOf(
+  el: MaybeElement,
+  nodes: NodeTable | null | undefined
+): TokenHit | null {
+  if (!el || !el.closest) {
     return null;
+  }
+  const heading = el.closest<HTMLElement>(HEADING);
+  if (heading && heading.dataset["name"]) {
+    const token = columnToken(heading.dataset["name"], nodes);
+    if (token) {
+      return {token, el: heading};
+    }
+  }
+  let cursor: Element | null =
+    el.nodeType === Node.ELEMENT_NODE ? el : el.parentElement;
+  // A generated label is stamped with its group, not its field: the
+  // widget it labels is what was meant. Unless something between the
+  // click and the label cell is a node of its own -- an explicit
+  // `<label for>` -- in which case the walk below finds it first.
+  const wrap =
+    cursor && cursor.closest<HTMLLabelElement>("label.o_form_label, .o_wrap_label");
+  if (wrap && !stampedBetween(cursor, wrap)) {
+    const widget = compat.labelWidget(wrap);
+    if (widget) {
+      cursor = widget;
+    }
+  }
+  while (cursor) {
+    const token = ownToken(cursor);
+    if (token) {
+      return {token, el: cursor};
+    }
+    cursor = cursor.parentElement;
+  }
+  return null;
 }
 
 /** Whether any element from `from` up to and including `until` is stamped. */
 function stampedBetween(from: MaybeElement, until: Element): boolean {
-    let cursor = from;
-    while (cursor) {
-        if (ownToken(cursor)) {
-            return true;
-        }
-        if (cursor === until) {
-            return false;
-        }
-        cursor = cursor.parentElement;
+  let cursor = from;
+  while (cursor) {
+    if (ownToken(cursor)) {
+      return true;
     }
-    return false;
+    if (cursor === until) {
+      return false;
+    }
+    cursor = cursor.parentElement;
+  }
+  return false;
 }
 
 /** The column node called `name`, for a list heading. */
-export function columnToken(name: string, nodes: NodeTable | null | undefined): Token | null {
-    for (const [token, node] of Object.entries(nodes ?? {})) {
-        if (node.kind === "column" && node.name === name) {
-            return token;
-        }
+export function columnToken(
+  name: string,
+  nodes: NodeTable | null | undefined
+): Token | null {
+  for (const [token, node] of Object.entries(nodes ?? {})) {
+    if (node.kind === "column" && node.name === name) {
+      return token;
     }
-    return null;
+  }
+  return null;
 }
 
 /**
@@ -148,19 +156,19 @@ export function columnToken(name: string, nodes: NodeTable | null | undefined): 
  * heading for a list column, whose class never reaches `th`.
  */
 export function elementsFor(
-    token: Token,
-    root: Element | null,
-    nodes: NodeTable | null | undefined,
+  token: Token,
+  root: Element | null,
+  nodes: NodeTable | null | undefined
 ): Element[] {
-    if (!root || !token) {
-        return [];
-    }
-    const node = nodes && nodes[token];
-    if (node && node.kind === "column" && node.name) {
-        const heading = root.querySelector(`th[data-name="${cssEscape(node.name)}"]`);
-        return heading ? [heading] : [];
-    }
-    return [...root.querySelectorAll(`.${classOf(token)}`)];
+  if (!root || !token) {
+    return [];
+  }
+  const node = nodes && nodes[token];
+  if (node && node.kind === "column" && node.name) {
+    const heading = root.querySelector(`th[data-name="${cssEscape(node.name)}"]`);
+    return heading ? [heading] : [];
+  }
+  return [...root.querySelectorAll(`.${classOf(token)}`)];
 }
 
 /**
@@ -173,28 +181,28 @@ export function elementsFor(
  * point at.
  */
 export function rectFor(
-    node: StudioNode | null | undefined,
-    instance: Element | null,
+  node: BuilderNode | null | undefined,
+  instance: Element | null
 ): BoxRect | null {
-    if (!instance) {
-        return null;
-    }
-    const kind = node ? node.kind : null;
-    if (kind === "field" && instance.matches(".o_field_widget, .o_form_label")) {
-        return compat.rowRect(instance);
-    }
-    if (kind === "label" && instance.matches(".o_form_label")) {
-        return compat.rowRect(instance);
-    }
-    if (kind === "sheet") {
-        const inner = instance.querySelector(":scope > .o_form_sheet");
-        return (inner || instance).getBoundingClientRect();
-    }
-    if (kind === "card") {
-        const card = instance.closest(".o_kanban_record");
-        return (card || instance).getBoundingClientRect();
-    }
-    return instance.getBoundingClientRect();
+  if (!instance) {
+    return null;
+  }
+  const kind = node ? node.kind : null;
+  if (kind === "field" && instance.matches(".o_field_widget, .o_form_label")) {
+    return compat.rowRect(instance);
+  }
+  if (kind === "label" && instance.matches(".o_form_label")) {
+    return compat.rowRect(instance);
+  }
+  if (kind === "sheet") {
+    const inner = instance.querySelector(":scope > .o_form_sheet");
+    return (inner || instance).getBoundingClientRect();
+  }
+  if (kind === "card") {
+    const card = instance.closest(".o_kanban_record");
+    return (card || instance).getBoundingClientRect();
+  }
+  return instance.getBoundingClientRect();
 }
 
 /**
@@ -208,45 +216,47 @@ export function rectFor(
  * first body on the board.
  */
 export function instanceAt(
-    token: Token,
-    root: Element | null,
-    nodes: NodeTable | null | undefined,
-    point: Point | null,
+  token: Token,
+  root: Element | null,
+  nodes: NodeTable | null | undefined,
+  point: Point | null
 ): Element | null {
-    const instances = elementsFor(token, root, nodes);
-    if (!point || instances.length <= 1) {
-        return instances[0] || null;
+  const instances = elementsFor(token, root, nodes);
+  if (!point || instances.length <= 1) {
+    return instances[0] || null;
+  }
+  const under = instances.find((el) => within(el.getBoundingClientRect(), point));
+  if (under) {
+    return under;
+  }
+  const card = cardAt(root, point);
+  if (card) {
+    const inCard = instances.find((el) => card.contains(el));
+    if (inCard) {
+      return inCard;
     }
-    const under = instances.find((el) => within(el.getBoundingClientRect(), point));
-    if (under) {
-        return under;
-    }
-    const card = cardAt(root, point);
-    if (card) {
-        const inCard = instances.find((el) => card.contains(el));
-        if (inCard) {
-            return inCard;
-        }
-    }
-    return instances[0] ?? null;
+  }
+  return instances[0] ?? null;
 }
 
 /** Every rendered kanban card under `root`, in document order. */
 export function cardsOf(root: Element | null): Element[] {
-    return root ? [...root.querySelectorAll(CARD)] : [];
+  return root ? [...root.querySelectorAll(CARD)] : [];
 }
 
 /** The rendered kanban card a viewport point is over, or `null`. */
 export function cardAt(root: Element | null, point: Point | null): Element | null {
-    if (!root || !point) {
-        return null;
-    }
-    return cardsOf(root).find((card) => within(card.getBoundingClientRect(), point)) || null;
+  if (!root || !point) {
+    return null;
+  }
+  return (
+    cardsOf(root).find((card) => within(card.getBoundingClientRect(), point)) || null
+  );
 }
 
 /** The card an element is part of, or `null` outside any. */
 export function cardOf(el: MaybeElement): Element | null {
-    return el && el.closest ? el.closest(CARD) : null;
+  return el && el.closest ? el.closest(CARD) : null;
 }
 
 /**
@@ -255,41 +265,43 @@ export function cardOf(el: MaybeElement): Element | null {
  * lays its zones out on, since the pointer has not been over any card.
  */
 export function firstVisibleCard(
-    root: Element | null,
-    scrollEl: Element | null = root,
+  root: Element | null,
+  scrollEl: Element | null = root
 ): Element | null {
-    const cards = cardsOf(root);
-    if (!cards.length) {
-        return null;
-    }
-    const view = scrollEl ? scrollEl.getBoundingClientRect() : null;
-    if (!view) {
-        return cards[0] ?? null;
-    }
-    return (
-        cards.find((card) => {
-            const r = card.getBoundingClientRect();
-            return (
-                (r.width || r.height) &&
-                r.bottom > view.top &&
-                r.top < view.bottom &&
-                r.right > view.left &&
-                r.left < view.right
-            );
-        }) ??
-        cards[0] ??
-        null
-    );
+  const cards = cardsOf(root);
+  if (!cards.length) {
+    return null;
+  }
+  const view = scrollEl ? scrollEl.getBoundingClientRect() : null;
+  if (!view) {
+    return cards[0] ?? null;
+  }
+  return (
+    cards.find((card) => {
+      const r = card.getBoundingClientRect();
+      return (
+        (r.width || r.height) &&
+        r.bottom > view.top &&
+        r.top < view.bottom &&
+        r.right > view.left &&
+        r.left < view.right
+      );
+    }) ??
+    cards[0] ??
+    null
+  );
 }
 
 /** The viewport centre of an element, a point every part of it answers to. */
 export function centreOf(el: Element): Point {
-    const r = el.getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  const r = el.getBoundingClientRect();
+  return {x: r.left + r.width / 2, y: r.top + r.height / 2};
 }
 
 function within(r: BoxRect, point: Point): boolean {
-    return point.x >= r.left && point.x <= r.right && point.y >= r.top && point.y <= r.bottom;
+  return (
+    point.x >= r.left && point.x <= r.right && point.y >= r.top && point.y <= r.bottom
+  );
 }
 
 /** The `.nav-link` of a notebook page node, if that page is rendered.
@@ -298,46 +310,49 @@ function within(r: BoxRect, point: Point): boolean {
  * never an `SVGElement` -- widened once `canvas.ts` needed `.click()` on
  * what this returns, `Element` having no such method of its own. */
 export function tabFor(token: Token, root: Element | null): HTMLElement | null {
-    if (!root || !token) {
-        return null;
-    }
-    return root.querySelector<HTMLElement>(`${compat.TAB_SELECTOR}.${token}`);
+  if (!root || !token) {
+    return null;
+  }
+  return root.querySelector<HTMLElement>(`${compat.TAB_SELECTOR}.${token}`);
 }
 
 /** What a tab click means for remembering the active page. */
 export interface TabMemory {
-    name: string | null;
-    index: number;
+  name: string | null;
+  index: number;
 }
 
 /** What a tab click means for remembering the active page. */
 export function describeTab(tab: Element): TabMemory {
-    const name = tab.getAttribute("name") || null;
-    const strip = tab.closest(".nav");
-    const tabs = strip ? [...strip.querySelectorAll(".nav-link")] : [tab];
-    return { name, index: tabs.indexOf(tab) };
+  const name = tab.getAttribute("name") || null;
+  const strip = tab.closest(".nav");
+  const tabs = strip ? [...strip.querySelectorAll(".nav-link")] : [tab];
+  return {name, index: tabs.indexOf(tab)};
 }
 
 /** The rendered tab a remembered page maps to now, or `null`. `HTMLElement`
  * for the same reason `tabFor` is -- `canvas.ts` calls `.click()` on it. */
-export function findTab(root: Element | null, page: TabMemory | null): HTMLElement | null {
-    if (!root || !page) {
-        return null;
+export function findTab(
+  root: Element | null,
+  page: TabMemory | null
+): HTMLElement | null {
+  if (!root || !page) {
+    return null;
+  }
+  if (page.name) {
+    const byName = root.querySelector<HTMLElement>(
+      `${compat.TAB_SELECTOR}[name="${cssEscape(page.name)}"]`
+    );
+    if (byName) {
+      return byName;
     }
-    if (page.name) {
-        const byName = root.querySelector<HTMLElement>(
-            `${compat.TAB_SELECTOR}[name="${cssEscape(page.name)}"]`,
-        );
-        if (byName) {
-            return byName;
-        }
-    }
-    const tabs = root.querySelectorAll<HTMLElement>(compat.TAB_SELECTOR);
-    return tabs[page.index] || null;
+  }
+  const tabs = root.querySelectorAll<HTMLElement>(compat.TAB_SELECTOR);
+  return tabs[page.index] || null;
 }
 
 function cssEscape(value: string): string {
-    return window.CSS && window.CSS.escape
-        ? window.CSS.escape(value)
-        : String(value).replace(/["\\]/g, "\\$&");
+  return window.CSS && window.CSS.escape
+    ? window.CSS.escape(value)
+    : String(value).replace(/["\\]/g, "\\$&");
 }

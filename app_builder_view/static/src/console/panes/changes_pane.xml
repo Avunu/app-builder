@@ -2,194 +2,399 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.ChangesPane">
-    <div class="o_studio_pane o_studio_changes" data-pane="changes">
-        <div t-if="this.model.error" class="alert alert-warning" role="alert" t-esc="this.model.error"/>
-        <div t-if="!this.changes" class="text-muted p-3">
-            <i class="fa fa-circle-o-notch fa-spin me-1"/>Reading the package…
+        <div class="o_builder_pane o_builder_changes" data-pane="changes">
+            <div
+                t-if="this.model.error"
+                class="alert alert-warning"
+                role="alert"
+                t-esc="this.model.error"
+            />
+            <div t-if="!this.changes" class="text-muted p-3">
+            <i class="fa fa-circle-o-notch fa-spin me-1" />Reading the package…
         </div>
-        <t t-else="">
-            <!-- Pending on models -->
-            <div class="o_studio_section_title">Pending on models</div>
-            <div t-if="!this.drafts.length" class="small text-muted mb-3 o_studio_changes_empty">
+            <t t-else="">
+                <!-- Pending on models -->
+                <div class="o_builder_section_title">Pending on models</div>
+                <div
+                    t-if="!this.drafts.length"
+                    class="small text-muted mb-3 o_builder_changes_empty"
+                >
                 Nothing pending.
             </div>
-            <div t-foreach="this.drafts" t-as="draft" t-key="draft.id" class="o_studio_card o_studio_draft_card mb-2"
-                 t-att-data-model="draft.model">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="fw-bold" t-esc="draft.model"/>
-                    <span class="badge text-bg-info" t-esc="draft.change_count"/>
-                    <small class="text-muted" t-esc="draft.user.name"/>
-                    <span class="ms-auto"/>
-                    <t t-if="draft.mine and this.shell.modelName === draft.model">
-                        <button type="button" class="btn btn-primary btn-sm o_studio_changes_apply"
+                <div
+                    t-foreach="this.drafts"
+                    t-as="draft"
+                    t-key="draft.id"
+                    class="o_builder_card o_builder_draft_card mb-2"
+                    t-att-data-model="draft.model"
+                >
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="fw-bold" t-esc="draft.model" />
+                        <span class="badge text-bg-info" t-esc="draft.change_count" />
+                        <small class="text-muted" t-esc="draft.user.name" />
+                        <span class="ms-auto" />
+                        <t t-if="draft.mine and this.shell.modelName === draft.model">
+                            <button
+                                type="button"
+                                class="btn btn-primary btn-sm o_builder_changes_apply"
                                 t-att-disabled="this.shell.draft.applying"
-                                t-on-click="() => this.openApply()">Apply…</button>
-                        <button type="button" class="btn btn-outline-danger btn-sm o_studio_changes_discard"
-                                t-on-click="() => this.onDiscardDraft(draft)">Discard</button>
-                    </t>
-                    <button t-elif="draft.mine" class="btn btn-link btn-sm" type="button"
-                            t-on-click="() => this.shell.openView({ model: draft.model })">Open the model ▸</button>
-                </div>
-                <div t-if="this.shell.modelName === draft.model" class="small mt-1">
-                    <div t-foreach="this.shell.draft.pendingChanges" t-as="change" t-key="change_index">
-                        <span class="font-monospace me-1">
-                            <t t-if="change.kind === 'added'">+</t>
-                            <t t-elif="change.kind === 'removed'">−</t>
-                            <t t-else="">~</t>
-                        </span>
-                        <span t-esc="change.name || change.kind"/>
-                        <small class="text-muted ms-1" t-esc="change.detail"/>
-                        <span t-if="change.destructive" class="badge text-bg-danger ms-1">drops data</span>
+                                t-on-click="() => this.openApply()"
+                            >Apply…</button>
+                            <button
+                                type="button"
+                                class="btn btn-outline-danger btn-sm o_builder_changes_discard"
+                                t-on-click="() => this.onDiscardDraft(draft)"
+                            >Discard</button>
+                        </t>
+                        <button
+                            t-elif="draft.mine"
+                            class="btn btn-link btn-sm"
+                            type="button"
+                            t-on-click="() => this.shell.openView({ model: draft.model })"
+                        >Open the model ▸</button>
+                    </div>
+                    <div t-if="this.shell.modelName === draft.model" class="small mt-1">
+                        <div
+                            t-foreach="this.shell.draft.pendingChanges"
+                            t-as="change"
+                            t-key="change_index"
+                        >
+                            <span class="font-monospace me-1">
+                                <t t-if="change.kind === 'added'">+</t>
+                                <t t-elif="change.kind === 'removed'">−</t>
+                                <t t-else="">~</t>
+                            </span>
+                            <span t-esc="change.name || change.kind" />
+                            <small class="text-muted ms-1" t-esc="change.detail" />
+                            <span
+                                t-if="change.destructive"
+                                class="badge text-bg-danger ms-1"
+                            >drops data</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div t-if="this.shell.restartRequired" class="alert alert-warning small py-2" role="status">
+                <div
+                    t-if="this.shell.restartRequired"
+                    class="alert alert-warning small py-2"
+                    role="status"
+                >
                 Files were written that only a restart of the server can load. After the restart,
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline o_studio_place_pending"
-                        t-on-click="() => this.onPlacePending()">finish placing the fields</button>.
+                <button
+                    type="button"
+                    class="btn btn-link btn-sm p-0 align-baseline o_builder_place_pending"
+                    t-on-click="() => this.onPlacePending()"
+                >finish placing the fields</button>.
             </div>
-            <div t-elif="this.drafts.length" class="small text-muted mb-3">
-                <t t-if="this.shell.draft.reloadMode === 'manual'">↻ This server runs workers: applying writes the files and marks the package for upgrade; restart to load it.</t>
-                <t t-else="">↻ Applying reloads the package in this process.</t>
-            </div>
+                <div t-elif="this.drafts.length" class="small text-muted mb-3">
+                    <t
+                        t-if="this.shell.draft.reloadMode === 'manual'"
+                    >↻ This server runs workers: applying writes the files and marks the package for upgrade; restart to load it.</t>
+                    <t t-else="">↻ Applying reloads the package in this process.</t>
+                </div>
 
-            <!-- Written files -->
-            <div class="d-flex align-items-center justify-content-between">
-                <div class="o_studio_section_title mb-0">Written files</div>
-                <div>
-                    <button type="button" class="btn btn-link btn-sm o_studio_check_drift"
-                            t-att-disabled="this.model.busy" t-on-click="() => this.onCheckDrift()">Check drift</button>
-                    <button t-if="this.changes.drift.length" class="btn btn-link btn-sm o_studio_reload_disk" type="button"
-                            t-att-disabled="this.model.busy or !this.shell.packageWritable" t-on-click="() => this.onReloadFile()">Reload from disk</button>
-                    <button t-if="this.changes.drift.length or this.changes.pending_write" class="btn btn-link btn-sm o_studio_write_disk" type="button"
-                            t-att-disabled="this.model.busy or !this.shell.packageWritable" t-on-click="() => this.onWriteFiles()">Write to disk</button>
-                </div>
-            </div>
-            <div t-if="this.changes.pending_write" class="small text-warning mb-1">Pending write: the database is ahead of the files.</div>
-            <div class="o_studio_file_list mb-3">
-                <div class="o_studio_file_row" t-att-class="{ drifted: file.status !== 'in_sync' }" t-foreach="this.files" t-as="file" t-key="file.path"
-                     t-att-data-path="file.path">
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="o_studio_dot" t-attf-class="o_studio_dot_{{ file.status === 'in_sync' ? 'green' : 'red' }}"/>
-                        <code class="flex-grow-1" t-esc="file.path"/>
-                        <small class="text-muted" t-esc="this.statusLabel(file.status)"/>
-                        <button t-if="file.status === 'edited'" class="btn btn-link btn-sm p-0 o_studio_drift_diff" type="button"
-                                t-on-click="() => this.model.toggleDiff('drift', file.path)">diff</button>
-                    </div>
-                    <pre t-if="this.model.openDiff === this.diffKey('drift', file.path)" class="o_studio_diff">
-                        <t t-if="this.model.diffs[this.diffKey('drift', file.path)] === null">…</t>
-                        <t t-foreach="this.diffLines(this.diffKey('drift', file.path))" t-as="line" t-key="line_index">
-                            <span t-att-class="'o_studio_diff_' + line.cls" t-esc="line.text"/>
-                        </t>
-                    </pre>
-                </div>
-                <div t-if="!this.files.length" class="small text-muted">Nothing written yet.</div>
-            </div>
-
-            <!-- Git -->
-            <div class="o_studio_section_title">
-                Git
-                <t t-if="this.git and this.git.is_git"> · ⎇ <t t-esc="this.git.branch"/> · <t t-esc="this.git.status.length"/> uncommitted</t>
-            </div>
-            <div t-if="!this.git or !this.git.is_git" class="small text-muted mb-3 o_studio_git_none">
-                Not a git repository.
-            </div>
-            <div t-else="" class="o_studio_file_list mb-3">
-                <div t-if="!this.git.status.length" class="small text-muted">Nothing to commit.</div>
-                <div t-foreach="this.git.status" t-as="entry" t-key="entry.path" class="o_studio_file_row" t-att-data-path="entry.path">
-                    <div class="d-flex align-items-center gap-2">
-                        <code class="o_studio_git_state" t-esc="entry.state"/>
-                        <code class="flex-grow-1" t-esc="entry.path"/>
-                        <button type="button" class="btn btn-link btn-sm p-0 o_studio_git_diff"
-                                t-on-click="() => this.model.toggleDiff('git', entry.path)">diff</button>
-                    </div>
-                    <pre t-if="this.model.openDiff === this.diffKey('git', entry.path)" class="o_studio_diff">
-                        <t t-if="this.model.diffs[this.diffKey('git', entry.path)] === null">…</t>
-                        <t t-foreach="this.diffLines(this.diffKey('git', entry.path))" t-as="line" t-key="line_index">
-                            <span t-att-class="'o_studio_diff_' + line.cls" t-esc="line.text"/>
-                        </t>
-                    </pre>
-                </div>
-                <div t-if="this.git.log.length" class="small text-muted mt-2">
-                    <div t-foreach="this.git.log.slice(0, 5)" t-as="commit" t-key="commit.sha">
-                        <code t-esc="commit.short"/> <t t-esc="commit.subject"/> <span class="opacity-75">· <t t-esc="commit.author"/></span>
+                <!-- Written files -->
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="o_builder_section_title mb-0">Written files</div>
+                    <div>
+                        <button
+                            type="button"
+                            class="btn btn-link btn-sm o_builder_check_drift"
+                            t-att-disabled="this.model.busy"
+                            t-on-click="() => this.onCheckDrift()"
+                        >Check drift</button>
+                        <button
+                            t-if="this.changes.drift.length"
+                            class="btn btn-link btn-sm o_builder_reload_disk"
+                            type="button"
+                            t-att-disabled="this.model.busy or !this.shell.packageWritable"
+                            t-on-click="() => this.onReloadFile()"
+                        >Reload from disk</button>
+                        <button
+                            t-if="this.changes.drift.length or this.changes.pending_write"
+                            class="btn btn-link btn-sm o_builder_write_disk"
+                            type="button"
+                            t-att-disabled="this.model.busy or !this.shell.packageWritable"
+                            t-on-click="() => this.onWriteFiles()"
+                        >Write to disk</button>
                     </div>
                 </div>
-            </div>
-
-            <!-- Apply history -->
-            <div class="o_studio_section_title">Apply history</div>
-            <div t-if="!this.applies.length" class="small text-muted">No apply yet.</div>
-            <div t-foreach="this.applies" t-as="apply" t-key="apply.id" class="o_studio_apply_row" t-att-data-state="apply.state">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="o_studio_dot" t-attf-class="o_studio_dot_{{ apply.state === 'failed' ? 'red' : (apply.state === 'applied' ? 'green' : 'amber') }}"/>
-                    <span class="fw-bold" t-esc="this.applyState(apply)"/>
-                    <span t-esc="apply.reason"/>
-                    <small class="text-muted"><t t-esc="apply.create_date"/> · <t t-esc="apply.user.name"/> · <t t-esc="apply.files.length"/> files</small>
-                    <span class="ms-auto"/>
-                    <button t-if="apply.can_rollback" class="btn btn-outline-danger btn-sm o_studio_rollback" type="button"
-                            t-att-disabled="this.model.busy" t-on-click="() => this.onRollback(apply)">Roll back…</button>
-                    <button t-if="apply.has_backup" class="btn btn-link btn-sm o_studio_discard_backup" type="button"
-                            t-att-disabled="this.model.busy" t-on-click="() => this.onDiscardBackup(apply)">Discard backup</button>
-                </div>
-                <pre t-if="apply.error" class="small text-danger mb-1 o_studio_apply_error" t-esc="apply.error"/>
-                <div class="small">
-                    <t t-foreach="apply.files" t-as="file" t-key="file.path">
-                        <button type="button" class="btn btn-link btn-sm p-0 me-2 font-monospace"
-                                t-on-click="() => this.model.toggleDiff('apply', file.path, apply.id)" t-esc="file.path"/>
-                        <pre t-if="this.model.openDiff === this.diffKey('apply', file.path, apply.id)" class="o_studio_diff">
-                            <t t-if="this.model.diffs[this.diffKey('apply', file.path, apply.id)] === null">…</t>
-                            <t t-foreach="this.diffLines(this.diffKey('apply', file.path, apply.id))" t-as="line" t-key="line_index">
-                                <span t-att-class="'o_studio_diff_' + line.cls" t-esc="line.text"/>
+                <div
+                    t-if="this.changes.pending_write"
+                    class="small text-warning mb-1"
+                >Pending write: the database is ahead of the files.</div>
+                <div class="o_builder_file_list mb-3">
+                    <div
+                        class="o_builder_file_row"
+                        t-att-class="{ drifted: file.status !== 'in_sync' }"
+                        t-foreach="this.files"
+                        t-as="file"
+                        t-key="file.path"
+                        t-att-data-path="file.path"
+                    >
+                        <div class="d-flex align-items-center gap-2">
+                            <span
+                                class="o_builder_dot"
+                                t-attf-class="o_builder_dot_{{ file.status === 'in_sync' ? 'green' : 'red' }}"
+                            />
+                            <code class="flex-grow-1" t-esc="file.path" />
+                            <small
+                                class="text-muted"
+                                t-esc="this.statusLabel(file.status)"
+                            />
+                            <button
+                                t-if="file.status === 'edited'"
+                                class="btn btn-link btn-sm p-0 o_builder_drift_diff"
+                                type="button"
+                                t-on-click="() => this.model.toggleDiff('drift', file.path)"
+                            >diff</button>
+                        </div>
+                        <pre
+                            t-if="this.model.openDiff === this.diffKey('drift', file.path)"
+                            class="o_builder_diff"
+                        >
+                            <t
+                                t-if="this.model.diffs[this.diffKey('drift', file.path)] === null"
+                            >…</t>
+                            <t
+                                t-foreach="this.diffLines(this.diffKey('drift', file.path))"
+                                t-as="line"
+                                t-key="line_index"
+                            >
+                                <span
+                                    t-att-class="'o_builder_diff_' + line.cls"
+                                    t-esc="line.text"
+                                />
                             </t>
                         </pre>
-                    </t>
+                    </div>
+                    <div
+                        t-if="!this.files.length"
+                        class="small text-muted"
+                    >Nothing written yet.</div>
                 </div>
+
+                <!-- Git -->
+                <div class="o_builder_section_title">
+                Git
+                <t t-if="this.git and this.git.is_git"> · ⎇ <t
+                    t-esc="this.git.branch"
+                /> · <t t-esc="this.git.status.length" /> uncommitted</t>
             </div>
-        </t>
-    </div>
-</t>
+                <div
+                    t-if="!this.git or !this.git.is_git"
+                    class="small text-muted mb-3 o_builder_git_none"
+                >
+                Not a git repository.
+            </div>
+                <div t-else="" class="o_builder_file_list mb-3">
+                    <div
+                        t-if="!this.git.status.length"
+                        class="small text-muted"
+                    >Nothing to commit.</div>
+                    <div
+                        t-foreach="this.git.status"
+                        t-as="entry"
+                        t-key="entry.path"
+                        class="o_builder_file_row"
+                        t-att-data-path="entry.path"
+                    >
+                        <div class="d-flex align-items-center gap-2">
+                            <code class="o_builder_git_state" t-esc="entry.state" />
+                            <code class="flex-grow-1" t-esc="entry.path" />
+                            <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 o_builder_git_diff"
+                                t-on-click="() => this.model.toggleDiff('git', entry.path)"
+                            >diff</button>
+                        </div>
+                        <pre
+                            t-if="this.model.openDiff === this.diffKey('git', entry.path)"
+                            class="o_builder_diff"
+                        >
+                            <t
+                                t-if="this.model.diffs[this.diffKey('git', entry.path)] === null"
+                            >…</t>
+                            <t
+                                t-foreach="this.diffLines(this.diffKey('git', entry.path))"
+                                t-as="line"
+                                t-key="line_index"
+                            >
+                                <span
+                                    t-att-class="'o_builder_diff_' + line.cls"
+                                    t-esc="line.text"
+                                />
+                            </t>
+                        </pre>
+                    </div>
+                    <div t-if="this.git.log.length" class="small text-muted mt-2">
+                        <div
+                            t-foreach="this.git.log.slice(0, 5)"
+                            t-as="commit"
+                            t-key="commit.sha"
+                        >
+                            <code t-esc="commit.short" />
+                            <t t-esc="commit.subject" />
+                            <span class="opacity-75">· <t
+                                t-esc="commit.author"
+                            /></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Apply history -->
+                <div class="o_builder_section_title">Apply history</div>
+                <div
+                    t-if="!this.applies.length"
+                    class="small text-muted"
+                >No apply yet.</div>
+                <div
+                    t-foreach="this.applies"
+                    t-as="apply"
+                    t-key="apply.id"
+                    class="o_builder_apply_row"
+                    t-att-data-state="apply.state"
+                >
+                    <div class="d-flex align-items-center gap-2">
+                        <span
+                            class="o_builder_dot"
+                            t-attf-class="o_builder_dot_{{ apply.state === 'failed' ? 'red' : (apply.state === 'applied' ? 'green' : 'amber') }}"
+                        />
+                        <span class="fw-bold" t-esc="this.applyState(apply)" />
+                        <span t-esc="apply.reason" />
+                        <small class="text-muted"><t t-esc="apply.create_date" /> · <t
+                            t-esc="apply.user.name"
+                        /> · <t t-esc="apply.files.length" /> files</small>
+                        <span class="ms-auto" />
+                        <button
+                            t-if="apply.can_rollback"
+                            class="btn btn-outline-danger btn-sm o_builder_rollback"
+                            type="button"
+                            t-att-disabled="this.model.busy"
+                            t-on-click="() => this.onRollback(apply)"
+                        >Roll back…</button>
+                        <button
+                            t-if="apply.has_backup"
+                            class="btn btn-link btn-sm o_builder_discard_backup"
+                            type="button"
+                            t-att-disabled="this.model.busy"
+                            t-on-click="() => this.onDiscardBackup(apply)"
+                        >Discard backup</button>
+                    </div>
+                    <pre
+                        t-if="apply.error"
+                        class="small text-danger mb-1 o_builder_apply_error"
+                        t-esc="apply.error"
+                    />
+                    <div class="small">
+                        <t t-foreach="apply.files" t-as="file" t-key="file.path">
+                            <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 me-2 font-monospace"
+                                t-on-click="() => this.model.toggleDiff('apply', file.path, apply.id)"
+                                t-esc="file.path"
+                            />
+                            <pre
+                                t-if="this.model.openDiff === this.diffKey('apply', file.path, apply.id)"
+                                class="o_builder_diff"
+                            >
+                                <t
+                                    t-if="this.model.diffs[this.diffKey('apply', file.path, apply.id)] === null"
+                                >…</t>
+                                <t
+                                    t-foreach="this.diffLines(this.diffKey('apply', file.path, apply.id))"
+                                    t-as="line"
+                                    t-key="line_index"
+                                >
+                                    <span
+                                        t-att-class="'o_builder_diff_' + line.cls"
+                                        t-esc="line.text"
+                                    />
+                                </t>
+                            </pre>
+                        </t>
+                    </div>
+                </div>
+            </t>
+        </div>
+    </t>
 
 <t t-name="app_builder_view.ChangesSidebar">
-    <div class="o_studio_sidebar_pane o_studio_commit" data-pane="commit">
-        <div class="o_studio_section_title">Commit</div>
-        <t t-if="!this.git or !this.git.is_git">
-            <div class="small text-muted mb-2">Not a git repository.</div>
-            <button type="button" class="btn btn-secondary btn-sm o_studio_git_init"
+        <div class="o_builder_sidebar_pane o_builder_commit" data-pane="commit">
+            <div class="o_builder_section_title">Commit</div>
+            <t t-if="!this.git or !this.git.is_git">
+                <div class="small text-muted mb-2">Not a git repository.</div>
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm o_builder_git_init"
                     t-att-disabled="this.model.busy or !this.shell.packageWritable"
-                    t-on-click="() => this.onGitInit()">Initialise git…</button>
-            <small class="text-muted d-block mt-1">Makes the package directory a repository of its own.</small>
-        </t>
-        <t t-else="">
-            <div class="small mb-2">⎇ <t t-esc="this.git.branch"/></div>
-            <div class="o_studio_row">
-                <label class="o_studio_row_label" for="o_studio_auto_commit">Auto-commit</label>
-                <div class="o_studio_row_content">
-                    <select id="o_studio_auto_commit" class="form-select form-select-sm"
-                            t-att-disabled="this.model.busy" t-on-change="(ev) => this.onAutoCommit(ev)">
-                        <option value="off" t-att-selected="this.git.auto_commit === 'off'">Off</option>
-                        <option value="stage" t-att-selected="this.git.auto_commit === 'stage'">Stage only</option>
-                        <option value="commit" t-att-selected="this.git.auto_commit === 'commit'">Commit each change</option>
-                    </select>
-                    <small class="text-muted d-block o_studio_row_hint" t-esc="this.autoCommitHint"/>
+                    t-on-click="() => this.onGitInit()"
+                >Initialise git…</button>
+                <small
+                    class="text-muted d-block mt-1"
+                >Makes the package directory a repository of its own.</small>
+            </t>
+            <t t-else="">
+                <div class="small mb-2">⎇ <t t-esc="this.git.branch" /></div>
+                <div class="o_builder_row">
+                    <label
+                        class="o_builder_row_label"
+                        for="o_builder_auto_commit"
+                    >Auto-commit</label>
+                    <div class="o_builder_row_content">
+                        <select
+                            id="o_builder_auto_commit"
+                            class="form-select form-select-sm"
+                            t-att-disabled="this.model.busy"
+                            t-on-change="(ev) => this.onAutoCommit(ev)"
+                        >
+                            <option
+                                value="off"
+                                t-att-selected="this.git.auto_commit === 'off'"
+                            >Off</option>
+                            <option
+                                value="stage"
+                                t-att-selected="this.git.auto_commit === 'stage'"
+                            >Stage only</option>
+                            <option
+                                value="commit"
+                                t-att-selected="this.git.auto_commit === 'commit'"
+                            >Commit each change</option>
+                        </select>
+                        <small
+                            class="text-muted d-block o_builder_row_hint"
+                            t-esc="this.autoCommitHint"
+                        />
+                    </div>
                 </div>
-            </div>
-            <div class="small text-muted mb-2" t-esc="this.summary"/>
-            <textarea class="form-control form-control-sm mb-2 o_studio_commit_message" rows="4"
-                      placeholder="What changed, in a sentence" t-att-value="this.state.message"
-                      t-on-input="(ev) => this.state.message = ev.target.value"/>
-            <button type="button" class="btn btn-primary btn-sm w-100 o_studio_commit_button"
+                <div class="small text-muted mb-2" t-esc="this.summary" />
+                <textarea
+                    class="form-control form-control-sm mb-2 o_builder_commit_message"
+                    rows="4"
+                    placeholder="What changed, in a sentence"
+                    t-att-value="this.state.message"
+                    t-on-input="(ev) => this.state.message = ev.target.value"
+                />
+                <button
+                    type="button"
+                    class="btn btn-primary btn-sm w-100 o_builder_commit_button"
                     t-att-disabled="this.model.busy or !this.dirtyCount or !this.state.message.trim()"
-                    t-on-click="() => this.onCommit()">
-                Commit <t t-esc="this.dirtyCount"/> file(s)
+                    t-on-click="() => this.onCommit()"
+                >
+                Commit <t t-esc="this.dirtyCount" /> file(s)
             </button>
-            <small class="text-muted d-block mt-1">
-                Stages every file the package owns and commits them on ⎇ <t t-esc="this.git.branch"/>.
+                <small class="text-muted d-block mt-1">
+                Stages every file the package owns and commits them on ⎇ <t
+                    t-esc="this.git.branch"
+                />.
                 Files you edited by hand under the package are included.
             </small>
-            <div t-if="this.state.result" class="small mt-2 o_studio_commit_result" t-esc="this.state.result"/>
-        </t>
-    </div>
-</t>
+                <div
+                    t-if="this.state.result"
+                    class="small mt-2 o_builder_commit_result"
+                    t-esc="this.state.result"
+                />
+            </t>
+        </div>
+    </t>
 
 </templates>

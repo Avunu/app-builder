@@ -10,44 +10,46 @@ from typing import TYPE_CHECKING, Any, cast
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
+from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.base.models.ir_ui_menu import IrUiMenu
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
-from odoo.addons.app_builder_base.tools import typed
 
-from ..models.studio_menu_surface import StudioMenu
+from ..models.builder_menu_surface import BuilderMenu
 
 if TYPE_CHECKING:
     # Only for the casts below; with `from __future__ import annotations`
     # nothing here needs these at runtime -- `IrModel`/`IrUiMenu`/
-    # `StudioMenu` are real, top-level imports instead (above), since
-    # `typed.model()` reads `cls._name` at *runtime*. `StudioOwnedMixin` and
-    # `StudioRecordSurface` are mixins `ir.ui.menu`/`ir.actions.act_window`
-    # and `studio.menu` itself compose only via `_inherit` (registry-level,
+    # `BuilderMenu` are real, top-level imports instead (above), since
+    # `typed.model()` reads `cls._name` at *runtime*. `BuilderOwnedMixin` and
+    # `BuilderRecordSurface` are mixins `ir.ui.menu`/`ir.actions.act_window`
+    # and `builder.menu` itself compose only via `_inherit` (registry-level,
     # never a real Python base class), the same gap `typed.py`'s own
-    # `security()`/`serializer()` document for the studio's other mixins.
-    from odoo.addons.base.models.ir_actions import IrActionsActWindow
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
-    from odoo.addons.app_builder_base.models.studio_record_surface import (
-        StudioRecordSurface,
+    # `security()`/`serializer()` document for the builder's other mixins.
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
     )
+    from odoo.addons.app_builder_base.models.builder_record_surface import (
+        BuilderRecordSurface,
+    )
+    from odoo.addons.base.models.ir_actions import IrActionsActWindow
 
 
 @tagged("post_install", "-at_install")
-class TestMenuSurface(StudioCase):
+class TestMenuSurface(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.Surface = typed.model(self.env, StudioMenu)
+        self.Surface = typed.model(self.env, BuilderMenu)
         self.package = self.make_package()
         self.build_demo_content(self.package)
-        self.model = typed.model(self.env, IrModel)._get("x_studio_project")
+        self.model = typed.model(self.env, IrModel)._get("x_builder_project")
 
     def _file(self):
         return self.package._render_files().get("views/menus.xml", "")
 
     def _titles(self):
         # `rows()`'s `model_name` is declared `str`, but its own body only
-        # does `bool(model_name)` (studio_menu_surface.py) -- `False` marks
+        # does `bool(model_name)` (builder_menu_surface.py) -- `False` marks
         # "no filter" on purpose, narrower than the declared type allows.
         return [
             (r["depth"], r["title"])
@@ -71,17 +73,20 @@ class TestMenuSurface(StudioCase):
             cast("IrActionsActWindow", menu.action)._name, "ir.actions.act_window"
         )
         self.assertEqual(
-            cast("IrActionsActWindow", menu.action).res_model, "x_studio_project"
+            cast("IrActionsActWindow", menu.action).res_model, "x_builder_project"
         )
-        self.assertEqual(cast("StudioOwnedMixin", menu).studio_package_id, self.package)
         self.assertEqual(
-            cast("StudioOwnedMixin", menu.action).studio_package_id, self.package
+            cast("BuilderOwnedMixin", menu).builder_package_id, self.package
+        )
+        self.assertEqual(
+            cast("BuilderOwnedMixin", menu.action).builder_package_id, self.package
         )
         self.assertIn("Tour App", self._file())
         self.assertIn(
-            "Tour App", self.package._render_files()["views/x_studio_project_views.xml"]
+            "Tour App",
+            self.package._render_files()["views/x_builder_project_views.xml"],
         )
-        self.assertIn("Opens x_studio_project", row["sentence"])
+        self.assertIn("Opens x_builder_project", row["sentence"])
 
     def test_a_submenu_needs_a_parent_and_sits_under_it(self):
         app = self.Surface.create_record(
@@ -103,7 +108,7 @@ class TestMenuSurface(StudioCase):
             {"name": "Projects", "parent_id": app["id"], "opens_model": self.model.id},
             template="submenu",
         )
-        rows = self.Surface.rows("x_studio_project", cast("int", self.package.id))
+        rows = self.Surface.rows("x_builder_project", cast("int", self.package.id))
         by_title = {r["title"]: r for r in rows}
         self.assertEqual(by_title["Projects"]["depth"], 1)
         self.assertEqual(by_title["Projects"]["parent_id"], app["id"])
@@ -131,7 +136,7 @@ class TestMenuSurface(StudioCase):
         }
         self.assertIn(parent.name, rows)
         # `name` is `required=True` on `ir.ui.menu`, the same true-by-
-        # construction idiom `studio_menu_surface.py`'s own `_row` uses.
+        # construction idiom `builder_menu_surface.py`'s own `_row` uses.
         self.assertFalse(rows[cast("str", parent.name)]["editable"])
         self.assertIn("base", rows[cast("str", parent.name)]["reason"])
         self.assertEqual(rows["Under Settings"]["depth"], 1)
@@ -186,7 +191,7 @@ class TestMenuSurface(StudioCase):
         # The foreign sibling is shown where it sits, greyed.
         self.assertEqual(
             [t for _d, t in self._titles()],
-            ["Studio Demo Projects", "Tour App", "Three", "One", "Theirs", "Two"],
+            ["Builder Demo Projects", "Tour App", "Three", "One", "Theirs", "Two"],
         )
         # Reparenting to a descendant is refused.
         with raises(self, UserError):
@@ -220,7 +225,7 @@ class TestMenuSurface(StudioCase):
         self.assertFalse(cast("IrActionsActWindow", old_action).exists())
         described = cast(
             "dict[str, Any]",
-            cast("StudioRecordSurface", self.Surface).describe(
+            cast("BuilderRecordSurface", self.Surface).describe(
                 sub["id"], cast("int", self.package.id)
             ),
         )
@@ -278,7 +283,7 @@ class TestMenuSurface(StudioCase):
         )
         files = self.package._render_files()
         menus = typed.model(self.env, IrUiMenu).search(
-            [("studio_package_id", "=", self.package.id)]
+            [("builder_package_id", "=", self.package.id)]
         )
         xmlids = [m.get_external_id()[m.id] for m in menus]
         actions = [cast("IrActionsActWindow", m.action) for m in menus if m.action]
@@ -293,6 +298,6 @@ class TestMenuSurface(StudioCase):
         self.assertEqual(by_name["Projects"].parent_id, by_name["Tour App"])
         self.assertEqual(
             cast("IrActionsActWindow", by_name["Projects"].action).res_model,
-            "x_studio_project",
+            "x_builder_project",
         )
         self.assertTrue(by_name["Tour App"].web_icon)

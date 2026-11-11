@@ -56,7 +56,7 @@ DomainLeaf: TypeAlias = tuple[str, str, object]
 
 class ConditionJSON(TypedDict):
     """What ``Condition.as_dict`` sends: the wire shape ``read_domain``
-    (``studio_domain.py``) returns a list of, one per row. ``value`` stays
+    (``builder_domain.py``) returns a list of, one per row. ``value`` stays
     ``object`` for the same reason ``DomainLeaf.value`` does -- it is
     whatever the field's own type and the chosen operator call for.
     """
@@ -119,7 +119,7 @@ def parse(domain: str | None) -> ParsedDomain | None:
         parsed_raw: Any = ast.literal_eval(text)
     except (ValueError, SyntaxError):
         return None
-    if not isinstance(parsed_raw, (list, tuple)):
+    if not isinstance(parsed_raw, list | tuple):
         return None
     # `isinstance` against a bare, unparameterized `(list, tuple)` narrows an
     # `Any` to `list[Unknown] | tuple[Unknown, ...]`, not `list[Any] |
@@ -135,7 +135,7 @@ def parse(domain: str | None) -> ParsedDomain | None:
 
     operators: list[str] = [t for t in parsed if isinstance(t, str)]
     leaves: list[list[Any] | tuple[Any, ...]] = [
-        t for t in parsed if isinstance(t, (list, tuple))
+        t for t in parsed if isinstance(t, list | tuple)
     ]
     if not leaves or len(leaves) + len(operators) != len(parsed):
         return None

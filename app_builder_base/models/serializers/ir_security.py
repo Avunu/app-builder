@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, cast
 
 from odoo import api, models
 
-from ..studio_serializer import SEQ_ACCESS, SEQ_RULE
+from ..builder_serializer import SEQ_ACCESS, SEQ_RULE
 
 if TYPE_CHECKING:
     # Only used inside annotations/casts below (`from __future__ import
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     # Same-addon cross-file import, so relative (house convention). Only
     # needed for the `self`/`super()` casts below -- see their own comments.
-    from ..studio_serializer import StudioSerializer
+    from ..builder_serializer import BuilderSerializer
 
 # Odoo's conventional column order for ir.model.access.csv. Annotated (rather
 # than left for pyright to infer the precise Literal-tuple type) so that
@@ -48,23 +48,23 @@ ACCESS_OPTIONAL_COLUMNS: tuple[str, ...] = ("active",)
 
 
 class IrModelAccessSerializer(models.AbstractModel):
-    _name = "studio.serializer.ir.model.access"
-    _inherit = "studio.serializer"
-    _description = "Studio Serializer for ir.model.access"
+    _name = "builder.serializer.ir.model.access"
+    _inherit = "builder.serializer"
+    _description = "Builder Serializer for ir.model.access"
 
-    _studio_model = "ir.model.access"
-    _studio_sequence = SEQ_ACCESS
-    _studio_format = "csv"
-    _studio_dir = "security"
+    _builder_model = "ir.model.access"
+    _builder_sequence = SEQ_ACCESS
+    _builder_format = "csv"
+    _builder_dir = "security"
 
     @api.model
     def _group_model(self, record: BaseModel) -> str | None:
         # `record` is genuinely `ir.model.access` at runtime, but the
-        # overridden base method declares it `BaseModel` (StudioSerializer's
+        # overridden base method declares it `BaseModel` (BuilderSerializer's
         # own already-typed contract), which has no `.model_id` of its own --
         # subscript access reads the same field through `BaseModel.__getitem__`
         # instead (`self._fields[key].__get__(self)`, the identical descriptor
-        # `.model_id` would call), the same idiom `studio_serializer.py`'s own
+        # `.model_id` would call), the same idiom `builder_serializer.py`'s own
         # `_should_skip`/`_field_node` already use for a field name known only
         # at runtime. Recurs at every other literal-attribute read below.
         return record["model_id"].model
@@ -77,7 +77,7 @@ class IrModelAccessSerializer(models.AbstractModel):
 
     @api.model
     def _emitted_field_names(self) -> tuple[str, ...]:
-        """Derived from the CSV columns rather than from ``_studio_fields``.
+        """Derived from the CSV columns rather than from ``_builder_fields``.
 
         A CSV serializer emits by column, so ACCESS_COLUMNS is the allowlist
         here. Deriving it keeps one declaration of what gets written, which is
@@ -92,34 +92,34 @@ class IrModelAccessSerializer(models.AbstractModel):
 
     @api.model
     def _csv_row(self, record: BaseModel, xmlid: str) -> dict[str, str]:
-        # Not part of `StudioSerializer`'s own declared contract -- only the
-        # one real `_studio_format == "csv"` subclass (this one) needs it, a
-        # real, pre-existing design gap `studio_package.py`'s own conversion
+        # Not part of `BuilderSerializer`'s own declared contract -- only the
+        # one real `_builder_format == "csv"` subclass (this one) needs it, a
+        # real, pre-existing design gap `builder_package.py`'s own conversion
         # already flagged and left unfixed. Typed from this method's own real
         # body instead of a base-class signature.
         #
         # `IrModelAccessSerializer`'s only real Python base is `models
-        # .AbstractModel` -- `StudioSerializer` is composed in only via
+        # .AbstractModel` -- `BuilderSerializer` is composed in only via
         # Odoo's registry-level `_inherit`, never a literal Python base
         # class, so `_assert_complete`/`_record_id`/`_ref_of` (all declared
-        # on `StudioSerializer` alone) are absent from the MRO pyright can
+        # on `BuilderSerializer` alone) are absent from the MRO pyright can
         # see on `self`. Same underlying "_inherit-mixin-invisible-to-pyright"
-        # gap `typed.security()` exists for (`studio_security.py`'s own
-        # guard methods on `self`), applied here to `StudioSerializer`'s own
+        # gap `typed.security()` exists for (`builder_security.py`'s own
+        # guard methods on `self`), applied here to `BuilderSerializer`'s own
         # methods instead -- at runtime, Odoo's registry builds the real
-        # merged class with `StudioSerializer` genuinely in the MRO, so every
+        # merged class with `BuilderSerializer` genuinely in the MRO, so every
         # one of these calls resolves exactly as it always did.
-        serializer = cast("StudioSerializer", self)
+        serializer = cast("BuilderSerializer", self)
         serializer._assert_complete(record)
         return {
             "active": "1" if record["active"] else "0",
             "id": serializer._record_id(record, xmlid),
             "name": record["name"],
             "model_id:id": serializer._ref_of(
-                record["model_id"], source=self._studio_model
+                record["model_id"], source=self._builder_model
             ),
             "group_id:id": (
-                serializer._ref_of(record["group_id"], source=self._studio_model)
+                serializer._ref_of(record["group_id"], source=self._builder_model)
                 if record["group_id"]
                 else ""
             ),
@@ -154,15 +154,15 @@ class IrModelAccessSerializer(models.AbstractModel):
 
 
 class IrRuleSerializer(models.AbstractModel):
-    _name = "studio.serializer.ir.rule"
-    _inherit = "studio.serializer"
-    _description = "Studio Serializer for ir.rule"
+    _name = "builder.serializer.ir.rule"
+    _inherit = "builder.serializer"
+    _description = "Builder Serializer for ir.rule"
 
-    _studio_model = "ir.rule"
-    _studio_sequence = SEQ_RULE
-    _studio_dir = "security"
-    _studio_suffix = "_security"
-    _studio_fields = (
+    _builder_model = "ir.rule"
+    _builder_sequence = SEQ_RULE
+    _builder_dir = "security"
+    _builder_suffix = "_security"
+    _builder_fields = (
         "name",
         "model_id",
         "domain_force",
@@ -173,7 +173,7 @@ class IrRuleSerializer(models.AbstractModel):
         "perm_create",
         "perm_unlink",
     )
-    _studio_ignored = (
+    _builder_ignored = (
         # Computed from `groups`: a rule with no group is global. Emitting it
         # would state a conclusion the groups already carry.
         "global",
@@ -195,12 +195,12 @@ class IrRuleSerializer(models.AbstractModel):
             # `IrModelAccessSerializer._group_model` above.
             return bool(record["active"])
         # `IrRuleSerializer`'s only real Python base is `models.AbstractModel`
-        # -- `StudioSerializer` is composed in only via Odoo's registry-level
+        # -- `BuilderSerializer` is composed in only via Odoo's registry-level
         # `_inherit`, never a literal Python base class, so it is absent from
         # the MRO pyright can see and `super()._should_skip` resolves against
         # `object` alone. Same underlying "_inherit-mixin-invisible-to-pyright"
         # gap `typed.security()` exists for, applied to `super()` instead of
         # `self` -- at runtime, Odoo's registry builds the real merged class
-        # with `StudioSerializer` genuinely in the MRO, so `super()` resolves
+        # with `BuilderSerializer` genuinely in the MRO, so `super()` resolves
         # this exactly as it always did.
-        return cast("StudioSerializer", super())._should_skip(record, fname)
+        return cast("BuilderSerializer", super())._should_skip(record, fname)

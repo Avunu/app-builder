@@ -16,25 +16,25 @@ from typing import TYPE_CHECKING, cast
 from odoo import Command
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_model import IrModel
-from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
+from odoo.addons.app_builder_base.tests.common import BuilderHttpCase, join_groups
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_model import IrModel
 
 if TYPE_CHECKING:
     from odoo.addons.base.models.res_users import Users
 
 
 @tagged("post_install", "-at_install")
-class TestBuildAppTour(StudioHttpCase):
+class TestBuildAppTour(BuilderHttpCase):
     def test_the_flows_ask_and_review_without_writing(self):
-        root = tempfile.mkdtemp(prefix="studio-tour-")
+        root = tempfile.mkdtemp(prefix="builder-tour-")
         package_vals: dict[str, object] = {
             "name": "tour_build_pkg",
             "display_name_": "Tour Build",
             "root_path": root,
             "auto_commit": "off",
         }
-        self.env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
+        self.env["builder.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
         module_vals: dict[str, object] = {
             "name": "tour_build_pkg",
             "state": "installed",
@@ -42,7 +42,7 @@ class TestBuildAppTour(StudioHttpCase):
         self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
             cast("Users", typed.ref(self.env, "base.user_admin")),
-            ["app_builder_base.group_studio_manager"],
+            ["app_builder_base.group_builder_manager"],
         )
         model_vals: dict[str, object] = {
             "name": "Tour Loose",
@@ -58,7 +58,7 @@ class TestBuildAppTour(StudioHttpCase):
             ],
         }
         self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
-        action = typed.ref(self.env, "app_builder_view.studio_console_action")
+        action = typed.ref(self.env, "app_builder_view.builder_console_action")
         self.start_tour(
             "/odoo/action-%s" % action.id, "app_builder_build_app_tour", login="admin"
         )

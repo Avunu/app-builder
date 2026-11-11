@@ -2,9 +2,9 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Every shipped .js survives Odoo's own module transpiler.
 
-TYPING.md moves the console to TypeScript, emitted to a committed .js by
-esbuild (`scripts/build_ts.mjs`) rather than tsc, because tsc will not emit
-in place next to JS sources still in the same program. The one thing that
+The console is TypeScript, emitted to a .js beside each source by each addon's
+`build` script (esbuild, rather than tsc, because tsc will not emit in place
+next to JS sources still in the same program). The one thing that
 purchases is worth re-checking on every run: a bare `export {}` from a
 type-only module (the trap a `.d.ts`-shaped file falls into) does not match
 `js_transpiler.EXPORT_OBJECT_RE`, which requires at least one name inside
@@ -53,7 +53,7 @@ _RUNTIME_IMPORT = re.compile(
 )
 
 
-def _studio_depends():
+def _builder_depends():
     """Each addon of this repo -> every addon of this repo it depends on,
     transitively."""
     direct = {}
@@ -77,7 +77,7 @@ def _studio_depends():
 def undeclared_runtime_imports():
     """`(file, imported addon)` for every shipped .js that imports, at
     runtime, an addon of this repo its own addon does not depend on."""
-    closure = _studio_depends()
+    closure = _builder_depends()
     found = []
     for path in _shipped_js_files():
         addon = path.relative_to(_REPO_ROOT).parts[0]

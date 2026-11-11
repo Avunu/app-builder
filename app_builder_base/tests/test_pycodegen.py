@@ -12,14 +12,14 @@ from odoo.tests import tagged
 from odoo.addons.base.models.ir_model import IrModel
 
 from ..tools import pycodegen, typed
-from .common import StudioCase
+from .common import BuilderCase
 
 if TYPE_CHECKING:
     from odoo.addons.base.models.ir_model import IrModelFields
 
 
 @tagged("post_install", "-at_install")
-class TestPyCodegen(StudioCase):
+class TestPyCodegen(BuilderCase):
     def _render(self, package=None):
         package = package or self.make_package()
         model = self.build_demo_content(package)
@@ -33,7 +33,9 @@ class TestPyCodegen(StudioCase):
         return pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned))
 
     def test_class_name_conversion(self):
-        self.assertEqual(pycodegen.class_name_for("x_studio_project"), "XStudioProject")
+        self.assertEqual(
+            pycodegen.class_name_for("x_builder_project"), "XBuilderProject"
+        )
         self.assertEqual(pycodegen.class_name_for("x.foo.bar"), "XFooBar")
 
     def test_module_file_name(self):
@@ -45,9 +47,9 @@ class TestPyCodegen(StudioCase):
 
     def test_generated_source_declares_the_model(self):
         _model, source = self._render()
-        self.assertIn("class XStudioProject(models.Model):", source)
-        self.assertIn('_name = "x_studio_project"', source)
-        self.assertIn('_description = "Studio Demo Project"', source)
+        self.assertIn("class XBuilderProject(models.Model):", source)
+        self.assertIn('_name = "x_builder_project"', source)
+        self.assertIn('_description = "Builder Demo Project"', source)
 
     def test_rec_name_is_pinned(self):
         """_custom gives x_name for free; a real class does not (models.py:3700)."""

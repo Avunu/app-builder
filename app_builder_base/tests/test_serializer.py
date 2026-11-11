@@ -13,9 +13,9 @@ from odoo.tests import tagged
 
 from odoo.addons.base.models.ir_model import IrModel
 
-from ..models.studio_serializer import StudioSerializer
+from ..models.builder_serializer import BuilderSerializer
 from ..tools import typed
-from .common import StudioCase, raises
+from .common import BuilderCase, raises
 
 if TYPE_CHECKING:
     # Only for the cast below; with `from __future__ import annotations`
@@ -26,19 +26,19 @@ if TYPE_CHECKING:
 
 
 @tagged("post_install", "-at_install")
-class TestSerializer(StudioCase):
+class TestSerializer(BuilderCase):
     def test_dispatch_by_naming_convention(self):
-        serializers = typed.model(self.env, StudioSerializer)
+        serializers = typed.model(self.env, BuilderSerializer)
         self.assertEqual(
             cast(
-                "StudioSerializer", serializers._for_model("ir.ui.view")
-            )._studio_model,
+                "BuilderSerializer", serializers._for_model("ir.ui.view")
+            )._builder_model,
             "ir.ui.view",
         )
         self.assertIsNone(serializers._for_model("res.partner"))
 
     def test_known_models_are_registered(self):
-        known = set(typed.model(self.env, StudioSerializer)._serializable_models())
+        known = set(typed.model(self.env, BuilderSerializer)._serializable_models())
         for expected in (
             "ir.model",
             "ir.model.fields",
@@ -57,7 +57,7 @@ class TestSerializer(StudioCase):
         package = self.make_package()
         model_vals = {
             "name": "Orphan",
-            "model": "x_studio_orphan",
+            "model": "x_builder_orphan",
             "field_id": [],
         }
         model = self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
@@ -69,8 +69,8 @@ class TestSerializer(StudioCase):
             "model_id": model.id,
         }
         field = self.env["ir.model.fields"].create(field_vals)  # pyright: ignore[reportArgumentType]
-        serializer = self.env["studio.serializer.ir.model.fields"].with_context(
-            studio_package=package.name
+        serializer = self.env["builder.serializer.ir.model.fields"].with_context(
+            builder_package=package.name
         )
         with raises(self, UserError):
             typed.serializer(serializer)._serialize(field, "%s.field_x" % package.name)
@@ -79,10 +79,10 @@ class TestSerializer(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         rendered = package._render_files()
-        models_xml = rendered["models/x_studio_project.xml"]
+        models_xml = rendered["models/x_builder_project.xml"]
         # Our own model: bare name. A foreign group: fully qualified.
-        self.assertIn('ref="model_x_studio_project"', models_xml)
-        self.assertNotIn('ref="%s.model_x_studio_project"' % package.name, models_xml)
+        self.assertIn('ref="model_x_builder_project"', models_xml)
+        self.assertNotIn('ref="%s.model_x_builder_project"' % package.name, models_xml)
         access_csv = rendered["security/ir.model.access.csv"]
         self.assertIn("base.group_user", access_csv)
 
@@ -92,21 +92,21 @@ class TestSerializer(StudioCase):
         self.build_demo_content(package)
         rule_vals = {
             "name": "demo rule",
-            "model_id": typed.model(self.env, IrModel)._get("x_studio_project").id,
+            "model_id": typed.model(self.env, IrModel)._get("x_builder_project").id,
             "domain_force": "[(1, '=', 1)]",
             "perm_unlink": False,
         }
         rule = self.env["ir.rule"].create(rule_vals)  # pyright: ignore[reportArgumentType]
         package._assign(rule)
         rendered = package._render_files()
-        security = rendered["security/x_studio_project_security.xml"]
+        security = rendered["security/x_builder_project_security.xml"]
         self.assertIn('name="perm_unlink"', security)
         self.assertNotIn('name="perm_read"', security)
 
     def test_manifest_depends_are_derived_from_refs(self):
         """A generated module must declare whatever its refs point at.
 
-        Regression: a menu referencing app_builder_base.menu_studio_root shipped
+        Regression: a menu referencing app_builder_base.menu_builder_root shipped
         with depends=['base'] and could not be installed into a fresh database.
         """
         import ast
@@ -115,7 +115,7 @@ class TestSerializer(StudioCase):
         self.build_demo_content(package)
         # An ACL referencing base.group_user, and a view inheriting a core view.
         ext_vals = {
-            "name": "res.partner.form.studio.dep",
+            "name": "res.partner.form.builder.dep",
             "model": "res.partner",
             "inherit_id": typed.ref(self.env, "base.view_partner_form").id,
             "priority": 99,
@@ -135,11 +135,11 @@ class TestSerializer(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         action = self.env["ir.actions.act_window"].search(
-            [("res_model", "=", "x_studio_project")], limit=1
+            [("res_model", "=", "x_builder_project")], limit=1
         )
         menu_vals = {
-            "name": "Nested Studio Menu",
-            "parent_id": typed.ref(self.env, "app_builder_base.menu_studio_root").id,
+            "name": "Nested Builder Menu",
+            "parent_id": typed.ref(self.env, "app_builder_base.menu_builder_root").id,
             "action": "ir.actions.act_window,%d" % action.id,
         }
         menu = self.env["ir.ui.menu"].create(menu_vals)  # pyright: ignore[reportArgumentType]
@@ -159,7 +159,7 @@ class TestSerializer(StudioCase):
         """Emitting every default would bury real changes in diff noise."""
         package = self.make_package()
         self.build_demo_content(package)
-        models_xml = package._render_files()["models/x_studio_project.xml"]
+        models_xml = package._render_files()["models/x_builder_project.xml"]
         for noise in (
             '<field name="domain">[]</field>',
             '<field name="store" eval="True"/>',
@@ -175,7 +175,7 @@ class TestSerializer(StudioCase):
         """_reflect_model_params fills 'info' from the class MRO docstring."""
         package = self.make_package()
         self.build_demo_content(package)
-        models_xml = package._render_files()["models/x_studio_project.xml"]
+        models_xml = package._render_files()["models/x_builder_project.xml"]
         self.assertNotIn("Main super-class", models_xml)
         self.assertNotIn('<field name="info">', models_xml)
 
@@ -183,7 +183,7 @@ class TestSerializer(StudioCase):
         package = self.make_package()
         model = self.build_demo_content(package)
         model.info = "A genuinely documented model."
-        models_xml = package._render_files()["models/x_studio_project.xml"]
+        models_xml = package._render_files()["models/x_builder_project.xml"]
         self.assertIn("A genuinely documented model.", models_xml)
 
     def test_magic_columns_are_never_owned(self):
@@ -208,7 +208,7 @@ class TestSerializer(StudioCase):
         )
         self.assertFalse(owned, "base fields must not receive a package xmlid")
 
-        models_xml = package._render_files()["models/x_studio_project.xml"]
+        models_xml = package._render_files()["models/x_builder_project.xml"]
         for name in ("create_uid", "create_date", "write_uid", "__last_update"):
             self.assertNotIn('">%s<' % name, models_xml)
 
@@ -217,15 +217,15 @@ class TestSerializer(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         rendered = package._render_files()
-        models_xml = rendered["models/x_studio_project.xml"]
+        models_xml = rendered["models/x_builder_project.xml"]
         self.assertNotIn("sanitize", models_xml)
 
     def test_file_placement_groups_by_subject_model(self):
         package = self.make_package()
         self.build_demo_content(package)
         rendered = package._render_files()
-        self.assertIn("models/x_studio_project.xml", rendered)
-        self.assertIn("views/x_studio_project_views.xml", rendered)
+        self.assertIn("models/x_builder_project.xml", rendered)
+        self.assertIn("views/x_builder_project_views.xml", rendered)
         self.assertIn("security/ir.model.access.csv", rendered)
         self.assertIn("__manifest__.py", rendered)
         self.assertIn("__init__.py", rendered)
@@ -234,7 +234,7 @@ class TestSerializer(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         rendered = package._render_files()
-        views = rendered["views/x_studio_project_views.xml"]
+        views = rendered["views/x_builder_project_views.xml"]
         self.assertIn('<field name="arch" type="xml">', views)
         # It must parse, and contain the real form body.
         root = etree.fromstring(views.encode())
@@ -244,11 +244,11 @@ class TestSerializer(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         base_view = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project")], limit=1
+            [("model", "=", "x_builder_project")], limit=1
         )
         ext_vals = {
-            "name": "x_studio_project.form.ext",
-            "model": "x_studio_project",
+            "name": "x_builder_project.form.ext",
+            "model": "x_builder_project",
             "inherit_id": base_view.id,
             "priority": 99,
             "arch": '<xpath expr="//sheet" position="inside">'
@@ -256,7 +256,7 @@ class TestSerializer(StudioCase):
         }
         ext = self.env["ir.ui.view"].create(ext_vals)  # pyright: ignore[reportArgumentType]
         package._assign(ext)
-        views = package._render_files()["views/x_studio_project_views.xml"]
+        views = package._render_files()["views/x_builder_project_views.xml"]
         self.assertLess(
             views.index('model="ir.ui.view"'),
             views.index("inherit_id"),
@@ -271,11 +271,11 @@ class TestSerializer(StudioCase):
 
         data = ast.literal_eval(rendered["__manifest__.py"])["data"]
         self.assertLess(
-            data.index("models/x_studio_project.xml"),
-            data.index("views/x_studio_project_views.xml"),
+            data.index("models/x_builder_project.xml"),
+            data.index("views/x_builder_project_views.xml"),
         )
         self.assertLess(
-            data.index("models/x_studio_project.xml"),
+            data.index("models/x_builder_project.xml"),
             data.index("security/ir.model.access.csv"),
             "ACLs reference models, so they must load after them",
         )

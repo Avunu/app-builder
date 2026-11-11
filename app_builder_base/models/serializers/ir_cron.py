@@ -4,12 +4,12 @@
 
 ``ir.cron`` delegates to ``ir.actions.server`` (``delegate=True`` on
 ``ir_actions_server_id``, ``ir_cron.py:68``), which is why it carries
-``studio_package_id`` without anyone adding it: the studio put that field on the
+``builder_package_id`` without anyone adding it: the builder put that field on the
 server action. The consequence was that a captured cron looked owned, its server
 action serialised, and its *scheduling* -- the half that makes it a cron -- was
 dropped with nothing to say so.
 
-Nothing in the studio creates a cron today. It is written now because the hole
+Nothing in the builder creates a cron today. It is written now because the hole
 is cheap to close and expensive to notice: a scheduled action that silently
 loses its interval on reload runs at Odoo's default, not the author's.
 
@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, cast
 
 from odoo import api, models
 
-from ..studio_serializer import SEQ_CRON
+from ..builder_serializer import SEQ_CRON
 
 if TYPE_CHECKING:
     # Only used inside annotations/cast() forward-refs (`from __future__
@@ -36,16 +36,16 @@ if TYPE_CHECKING:
 
 
 class IrCronSerializer(models.AbstractModel):
-    _name = "studio.serializer.ir.cron"
-    _inherit = "studio.serializer"
-    _description = "Studio Serializer for ir.cron"
+    _name = "builder.serializer.ir.cron"
+    _inherit = "builder.serializer"
+    _description = "Builder Serializer for ir.cron"
 
-    _studio_model = "ir.cron"
-    _studio_sequence = SEQ_CRON
-    _studio_dir = "data"
-    _studio_suffix = "_cron"
-    _studio_noupdate = True
-    _studio_fields = (
+    _builder_model = "ir.cron"
+    _builder_sequence = SEQ_CRON
+    _builder_dir = "data"
+    _builder_suffix = "_cron"
+    _builder_noupdate = True
+    _builder_fields = (
         "ir_actions_server_id",
         "active",
         "interval_number",
@@ -54,7 +54,7 @@ class IrCronSerializer(models.AbstractModel):
         "priority",
         "user_id",
     )
-    _studio_ignored = (
+    _builder_ignored = (
         # Delegated from ir.actions.server, which emits them itself. Emitting
         # them here would write the same values into two records and let them
         # disagree on reload.

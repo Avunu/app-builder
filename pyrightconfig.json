@@ -12,11 +12,7 @@
   ],
   "exclude": ["**/static", "**/migrations", "**/__pycache__"],
 
-  // Relative to this file's directory, which is always `modules/odoo-studio`
-  // in an odoo-nix workspace (TYPING.md) -- no path-generation step, same
-  // reasoning as tsconfig.json's `paths`.
-  //
-  // `../../.devenv/state/pythonpath` is odoo-nix's own merged `odoo` tree
+  // `.devenv/state/pythonpath` is odoo-nix's own merged `odoo` tree
   // (modules/devenv.nix `ide.enable`): every OCA repo checked out as a
   // sibling directory here is a *different* physical location than OCB's
   // `odoo.addons` namespace package, so `odoo.addons.web` (the OCA `web`
@@ -24,12 +20,12 @@
   // `odoo.addons.app_builder_base` (this repo, physically under `odoo/addons`
   // via the same mirror) can. One path root resolves core, OCA and this
   // repo's own addons alike, the same tree odoo-nix seeds for VS Code.
-  "extraPaths": ["../../.devenv/state/pythonpath"],
+  "extraPaths": [".devenv/state/pythonpath"],
 
-  "venvPath": "../..",
+  "venvPath": ".",
   "venv": ".venv",
 
-  "pythonVersion": "3.10",
+  "pythonVersion": "3.11",
   "typeCheckingMode": "standard",
   "reportMissingModuleSource": false,
 
@@ -400,6 +396,6 @@
       "reportUntypedFunctionDecorator": "error",
       "reportUntypedNamedTuple": "error"
     },
-    { "root": "." }
+    {"root": "."}
   ]
 }

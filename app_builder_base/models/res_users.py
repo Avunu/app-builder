@@ -9,7 +9,7 @@ class ResUsers(models.Model):
     # What the console remembers about this user: the package last opened,
     # the models opened lately, whether the getting-started list was
     # dismissed. A small JSON blob rather than a column per preference;
-    # ``studio.workspace.user_prefs`` is the only reader and writer.
-    studio_prefs = fields.Char(
-        "Studio preferences", default="{}", groups="base.group_system"
+    # ``builder.workspace.user_prefs`` is the only reader and writer.
+    builder_prefs = fields.Char(
+        "Builder preferences", default="{}", groups="base.group_system"
     )

@@ -17,20 +17,22 @@ from typing import TYPE_CHECKING, cast
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_model import IrModel, IrModelFields
-from odoo.addons.app_builder_base.models.studio_package_apply import StudioPackageApply
-from odoo.addons.app_builder_base.models.studio_workspace import StudioWorkspace
+from odoo.addons.app_builder_base.models.builder_package_apply import (
+    BuilderPackageApply,
+)
+from odoo.addons.app_builder_base.models.builder_workspace import BuilderWorkspace
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_model import IrModel, IrModelFields
 
-# `studio_package_apply` (the module, for `PROCESS_BOOT_ID`) stays a plain
+# `builder_package_apply` (the module, for `PROCESS_BOOT_ID`) stays a plain
 # relative import -- only the class itself needs the fully-qualified form
-# above, to share its `StudioPackage` parameter's identity with
+# above, to share its `BuilderPackage` parameter's identity with
 # `common.py`'s own fully-qualified `make_package()` (TYPING.md's "Known
 # traps": the same file is reachable under two pyright module identities,
 # and a class from one is not assignable where the other is expected).
-from ..models import studio_package_apply
+from ..models import builder_package_apply
 from ..tools import gitrepo
-from .common import StudioCase, raises
+from .common import BuilderCase, raises
 
 if TYPE_CHECKING:
     # Only for the cast below; with `from __future__ import annotations`
@@ -49,16 +51,16 @@ def _git(root, *args):
 
 
 @tagged("post_install", "-at_install")
-class TestWorkspace(StudioCase):
+class TestWorkspace(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.workspace = typed.model(self.env, StudioWorkspace)
+        self.workspace = typed.model(self.env, BuilderWorkspace)
 
     def _git_package(self, name="x_ws_git"):
         package = self.make_package(name=name)
         _git(package.root_path, "init", "-q")
-        _git(package.root_path, "config", "user.email", "studio@example.com")
-        _git(package.root_path, "config", "user.name", "Studio")
+        _git(package.root_path, "config", "user.email", "builder@example.com")
+        _git(package.root_path, "config", "user.name", "Builder")
         package.invalidate_recordset(["is_git", "git_branch"])
         return package
 
@@ -94,11 +96,11 @@ class TestWorkspace(StudioCase):
 
     def test_listing_reaps_an_abandoned_apply(self):
         package = self.make_package(name="x_ws_reap")
-        Apply = typed.model(self.env, StudioPackageApply)
+        Apply = typed.model(self.env, BuilderPackageApply)
         apply = Apply._snapshot(package, {"__manifest__.py": "{}"}, stamp="1")
         apply.write({"boot_id": "gone"})
         cast("Cursor", self.env.cr).execute(
-            "UPDATE studio_package_apply SET create_date = now() - interval '1 hour'"
+            "UPDATE builder_package_apply SET create_date = now() - interval '1 hour'"
             " WHERE id = %s",
             (apply.id,),
         )
@@ -176,7 +178,7 @@ class TestWorkspace(StudioCase):
         # A second one with the same name is refused, and a non-empty dir too.
         with raises(self, UserError):
             self.workspace.create_package({"name": name, "root_dir": root_dir})
-        self.env["studio.package"].browse(entry["id"]).unlink()
+        self.env["builder.package"].browse(entry["id"]).unlink()
         with raises(self, UserError) as caught:
             self.workspace.create_package({"name": name, "root_dir": root_dir})
         self.assertIn("not empty", str(caught.exception))
@@ -189,18 +191,18 @@ class TestWorkspace(StudioCase):
         package.action_write_files()
         inventory = self.workspace.inventory(cast("int", package.id))
         models = {m["model"]: m for m in inventory["models"]}
-        self.assertIn("x_studio_project", models)
-        self.assertEqual(models["x_studio_project"]["source"], "xml")
-        self.assertTrue(models["x_studio_project"]["in_registry"])
-        self.assertIn("form", models["x_studio_project"]["views"])
+        self.assertIn("x_builder_project", models)
+        self.assertEqual(models["x_builder_project"]["source"], "xml")
+        self.assertTrue(models["x_builder_project"]["in_registry"])
+        self.assertIn("form", models["x_builder_project"]["views"])
         self.assertTrue(inventory["views"])
         self.assertTrue(inventory["actions"])
         self.assertEqual(inventory["menus"][0]["file"], "views/menus.xml")
         self.assertTrue(inventory["access"])
         for entry in inventory["views"]:
-            self.assertEqual(entry["subject"], "x_studio_project")
+            self.assertEqual(entry["subject"], "x_builder_project")
         self.assertEqual(
-            models["x_studio_project"]["counts"]["views"], len(inventory["views"])
+            models["x_builder_project"]["counts"]["views"], len(inventory["views"])
         )
 
     def test_the_picker_separates_defined_from_extended(self):
@@ -215,11 +217,11 @@ class TestWorkspace(StudioCase):
             "name": "x_ws_pick_extra",
             "ttype": "char",
             "field_description": "Pick extra",
-            "studio_package_id": package.id,
+            "builder_package_id": package.id,
         }
         typed.model(self.env, IrModelFields).create(field_vals)  # pyright: ignore[reportArgumentType]
         picker = self.workspace.models_for_picker(cast("int", package.id))
-        self.assertIn("x_studio_project", [m["model"] for m in picker["defined"]])
+        self.assertIn("x_builder_project", [m["model"] for m in picker["defined"]])
         self.assertIn("res.partner", [m["model"] for m in picker["extended"]])
         self.workspace.remember_model("res.partner")
         self.assertEqual(
@@ -258,7 +260,7 @@ class TestWorkspace(StudioCase):
         self.assertIn("by hand", drift)
 
     def test_git_status_is_package_relative_in_a_larger_repository(self):
-        top = tempfile.mkdtemp(prefix="studio-test-repo-")
+        top = tempfile.mkdtemp(prefix="builder-test-repo-")
         _git(top, "init", "-q")
         root = os.path.join(top, "custom", "x_ws_nested")
         os.makedirs(root)
@@ -292,7 +294,7 @@ class TestWorkspace(StudioCase):
         self.assertEqual(self.workspace.user_prefs()["last_package_id"], 42)
         with raises(self, UserError):
             self.workspace.set_user_pref("anything", 1)
-        other = self.make_user("ws_other", ["app_builder_base.group_studio_user"])
+        other = self.make_user("ws_other", ["app_builder_base.group_builder_user"])
         self.assertIsNone(
             self.workspace.with_user(other).user_prefs()["last_package_id"]
         )
@@ -315,7 +317,7 @@ class TestWorkspace(StudioCase):
 
     def test_reads_need_a_builder_and_writes_a_manager(self):
         package = self.make_package(name="x_ws_guard")
-        builder = self.make_user("ws_builder", ["app_builder_base.group_studio_user"])
+        builder = self.make_user("ws_builder", ["app_builder_base.group_builder_user"])
         nobody = self.make_user("ws_nobody", ["base.group_user"])
         as_builder = self.workspace.with_user(builder)
         self.assertTrue(as_builder.packages())
@@ -333,7 +335,7 @@ class TestWorkspace(StudioCase):
 
     def test_the_boot_id_is_stamped_on_a_snapshot(self):
         package = self.make_package(name="x_ws_boot")
-        apply = typed.model(self.env, StudioPackageApply)._snapshot(
+        apply = typed.model(self.env, BuilderPackageApply)._snapshot(
             package, {"__manifest__.py": "{}"}, stamp="2"
         )
-        self.assertEqual(apply.boot_id, studio_package_apply.PROCESS_BOOT_ID)
+        self.assertEqual(apply.boot_id, builder_package_apply.PROCESS_BOOT_ID)

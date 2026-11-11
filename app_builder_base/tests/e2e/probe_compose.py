@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# pylint: disable=print-used,invalid-commit,sql-injection,odoo-addons-relative-import
 """Composing on an existing app: does an edit reach the database *and* the screen?
 
 The staging half of the composer is covered by unit tests. The half that
@@ -73,7 +74,7 @@ def arch_of(env, model_name, view_type):
 
 def build_app(env, package, label):
     # The console's flow calls the same RPC.
-    built = env["studio.app.builder"].create_app_rpc(
+    built = env["builder.app"].create_app_rpc(
         package.id, {"label": label, "features": ["chatter"]}
     )
     return built["model"]
@@ -81,7 +82,7 @@ def build_app(env, package, label):
 
 def draft_for(env, package, model_name):
     package_model = package.model_ids.filtered(lambda m: m.model == model_name)
-    return env["studio.model.draft"].open_for(package_model)
+    return env["builder.model.draft"].open_for(package_model)
 
 
 def main():
@@ -107,7 +108,7 @@ def main():
                 "root_path": pkg_path,
                 "auto_commit": "off",
             }
-            package = env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
+            package = env["builder.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
             parent = build_app(env, package, LABEL)
             child = build_app(env, package, CHILD)
             package_id = cast("int", package.id)
@@ -118,7 +119,7 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            draft = draft_for(env, env["studio.package"].browse(package_id), parent)
+            draft = draft_for(env, env["builder.package"].browse(package_id), parent)
             draft.add_field(
                 {
                     "name": "due_date",
@@ -163,7 +164,7 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            draft = draft_for(env, env["studio.package"].browse(package_id), parent)
+            draft = draft_for(env, env["builder.package"].browse(package_id), parent)
             draft.remove_field("due_date")
             draft.action_apply(allow_destructive=True)
             cr.commit()
@@ -195,7 +196,7 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            package = env["studio.package"].browse(package_id)
+            package = env["builder.package"].browse(package_id)
             draft = draft_for(env, package, parent)
             options = draft.inverse_options(child)
             results.append(
@@ -275,7 +276,7 @@ def main():
                     # `parent`/`child` are runtime model names, not literal
                     # strings -- no real Python class exists to cast to, so
                     # this reads the field the same way `record[fname]` does
-                    # in `studio_serializer.py` (an already-established
+                    # in `builder_serializer.py` (an already-established
                     # idiom for exactly this "dynamic field name" shape).
                     len(record["line_ids"]) == 1,
                 )

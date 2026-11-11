@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <record id="ir_ui_view_view_list_builder" model="ir.ui.view">
+        <field name="name">ir.ui.view.list.builder</field>
+        <field name="model">ir.ui.view</field>
+        <field name="arch" type="xml">
+            <list string="Builder Views">
+                <field name="name" />
+                <field name="model" />
+                <field name="type" />
+                <field name="inherit_id" />
+                <field name="priority" />
+                <field name="builder_package_id" />
+            </list>
+        </field>
+    </record>
+
+    <record id="ir_ui_view_action_builder" model="ir.actions.act_window">
+        <field name="name">Builder Views</field>
+        <field name="res_model">ir.ui.view</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="ir_ui_view_view_list_builder" />
+    </record>
+
+    <!-- Developer mode only: the rows behind what the console draws. -->
+    <menuitem
+        id="menu_builder_views"
+        name="Builder Views"
+        parent="app_builder_base.menu_builder_packages"
+        action="ir_ui_view_action_builder"
+        groups="base.group_no_one"
+        sequence="60"
+    />
+</odoo>

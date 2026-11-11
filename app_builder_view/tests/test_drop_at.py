@@ -14,7 +14,7 @@ import os
 from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
-# lxml ships no type stubs in this environment -- `studio_view_editor.py`'s
+# lxml ships no type stubs in this environment -- `builder_view_editor.py`'s
 # own top-of-file comment documents the same gap; `reportMissingTypeStubs`
 # does not escalate to `error` at this (tests) level, so the one real hit
 # (the unresolvable `etree` import symbol itself) is the only one to silence.
@@ -24,35 +24,39 @@ from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_model import IrModel
-from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.app_builder_view.exceptions import (
-    StudioConfirmRequired,
-    StudioStaleView,
+    BuilderConfirmRequired,
+    BuilderStaleView,
 )
+from odoo.addons.base.models.ir_model import IrModel
+from odoo.addons.base.models.ir_ui_view import View
 
-from ..models.studio_view_edit import StudioViewEdit
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_edit import BuilderViewEdit
+from ..models.builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
     # Only for the casts below; with `from __future__ import annotations`
     # nothing here needs these at runtime.
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
+    from odoo.addons.app_builder_base.models.builder_package import BuilderPackage
     from odoo.addons.base.models.ir_model import IrModelFields
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
-    from odoo.addons.app_builder_base.models.studio_package import StudioPackage
 
-    # `studio_view_canvas.py` is a pure `_inherit = "studio.view.editor"`
+    # `builder_view_canvas.py` is a pure `_inherit = "builder.view.editor"`
     # extension -- a real, *different* Python class the registry merges
-    # with `studio_view_editor.py`'s own `StudioViewEditor` at runtime, the
-    # same collision that file's own `StudioViewEditorBase` alias resolves
+    # with `builder_view_editor.py`'s own `BuilderViewEditor` at runtime, the
+    # same collision that file's own `BuilderViewEditorBase` alias resolves
     # from the other side. `canvas()` lives only there; every other
     # `self.editor.*` call in this file resolves on the real base import
     # above.
-    from ..models.studio_view_canvas import StudioViewEditor as StudioViewEditorCanvas
-    from ..models.studio_view_edit import StackForJSON
-    from ..models.studio_view_editor import DropSuccessJSON, _LocateTargetFoundJSON
+    from ..models.builder_view_canvas import (
+        BuilderViewEditor as BuilderViewEditorCanvas,
+    )
+    from ..models.builder_view_edit import StackForJSON
+    from ..models.builder_view_editor import DropSuccessJSON, _LocateTargetFoundJSON
     from ..tools import canvas_stamp
 
 FORM_ARCH = """
@@ -102,11 +106,11 @@ def _snapshot(root):
 
 
 @tagged("post_install", "-at_install")
-class TestDropAt(StudioCase):
+class TestDropAt(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
-        self.history = typed.model(self.env, StudioViewEdit)
+        self.editor = typed.model(self.env, BuilderViewEditor)
+        self.history = typed.model(self.env, BuilderViewEdit)
         self.package = self.make_package(name="x_drop_pkg")
         # `@api.model_create_multi`'s own stub gap (TYPING.md's "Known
         # traps"): a single-dict `.create(vals)` needs the local-then-ignore
@@ -131,13 +135,13 @@ class TestDropAt(StudioCase):
         }
         self.model = typed.model(self.env, IrModel).create(model_vals)  # pyright: ignore[reportArgumentType]
         view_vals: dict[str, object] = {
-            "name": "studio.drop.test",
+            "name": "builder.drop.test",
             "model": "x_drop_demo",
             "type": "form",
             "arch": FORM_ARCH,
         }
         self.view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
-        self.package.studio_capture(self.view)
+        self.package.builder_capture(self.view)
 
     # -- helpers -------------------------------------------------------------
 
@@ -160,9 +164,9 @@ class TestDropAt(StudioCase):
         return cast("int", package.id)
 
     def _canvas(self):
-        # `canvas()` lives only on `studio_view_canvas.py`'s own
+        # `canvas()` lives only on `builder_view_canvas.py`'s own
         # `_inherit`-composed extension (see the top-of-file comment).
-        return cast("StudioViewEditorCanvas", self.editor).canvas(self._vid)
+        return cast("BuilderViewEditorCanvas", self.editor).canvas(self._vid)
 
     def _token(self, name, canvas=None):
         canvas = canvas or self._canvas()
@@ -201,9 +205,9 @@ class TestDropAt(StudioCase):
 
     def _node(self, canvas, token):
         """A canvas node by a possibly-nullable token -- a node's own
-        ``parent`` (``canvas_stamp.StudioNode``) is ``Token | None``; every
+        ``parent`` (``canvas_stamp.BuilderNode``) is ``Token | None``; every
         real caller here already knows the node it names is really there,
-        the same fixture-level cast `studio_view_editor.py`'s own
+        the same fixture-level cast `builder_view_editor.py`'s own
         `_token_named` makes for the identical field."""
         return canvas["nodes"][cast("canvas_stamp.Token", token)]
 
@@ -268,10 +272,10 @@ class TestDropAt(StudioCase):
         tags = [(c.tag, c.get("name")) for c in sheet if isinstance(c.tag, str)]
         outer = tags[1]
         self.assertEqual(outer[0], "group")
-        self.assertTrue(outer[1].startswith("studio_group_"))
+        self.assertTrue(outer[1].startswith("builder_group_"))
         columns = self._children(outer[1])
         self.assertEqual(len(columns), 2)
-        self.assertTrue(all(c.startswith("studio_group_") for c in columns))
+        self.assertTrue(all(c.startswith("builder_group_") for c in columns))
         self.assertEqual(len(self._history(result)["undo"]), 1)
         self.assertEqual(self._selected(result)["name"], outer[1])
         self.assertEqual(self._selected(result)["orientation"], "row")
@@ -281,10 +285,10 @@ class TestDropAt(StudioCase):
         notebooks = self._combined().findall(".//notebook")
         self.assertEqual(len(notebooks), 2)
         new = notebooks[0]
-        self.assertTrue(new.get("name").startswith("studio_notebook_"))
+        self.assertTrue(new.get("name").startswith("builder_notebook_"))
         self.assertEqual(len(new), 1)
         self.assertEqual(new[0].tag, "page")
-        self.assertTrue(new[0].get("name").startswith("studio_page_"))
+        self.assertTrue(new[0].get("name").startswith("builder_page_"))
         selected = self._selected(result)
         self.assertEqual(selected["kind"], "notebook")
 
@@ -356,19 +360,19 @@ class TestDropAt(StudioCase):
         words, and a block of markup is simply "here"."""
         refusal = self.editor._drop_refusal
         # `_drop_refusal` only ever reads `container`/`kind` off its
-        # `container` argument; the real `StudioNode` TypedDict has many
+        # `container` argument; the real `BuilderNode` TypedDict has many
         # more required keys this fixture has no reason to carry.
         self.assertEqual(
             refusal(
                 "field",
-                cast("canvas_stamp.StudioNode", {"container": False, "kind": "html"}),
+                cast("canvas_stamp.BuilderNode", {"container": False, "kind": "html"}),
             ),
             "A field cannot be dropped here.",
         )
         self.assertEqual(
             refusal(
                 "field",
-                cast("canvas_stamp.StudioNode", {"container": False, "kind": "field"}),
+                cast("canvas_stamp.BuilderNode", {"container": False, "kind": "field"}),
             ),
             "A field cannot be dropped into a field.",
         )
@@ -376,7 +380,7 @@ class TestDropAt(StudioCase):
             refusal(
                 "group",
                 cast(
-                    "canvas_stamp.StudioNode",
+                    "canvas_stamp.BuilderNode",
                     {"container": False, "kind": "button_box"},
                 ),
             ),
@@ -385,7 +389,7 @@ class TestDropAt(StudioCase):
         self.assertEqual(
             refusal(
                 "separator",
-                cast("canvas_stamp.StudioNode", {"container": True, "kind": "root"}),
+                cast("canvas_stamp.BuilderNode", {"container": True, "kind": "root"}),
             ),
             "A separator cannot be dropped here.",
         )
@@ -483,15 +487,15 @@ class TestDropAt(StudioCase):
 
     def test_a_field_a_kanban_declares_at_its_root_is_not_movable(self):
         view_vals: dict[str, object] = {
-            "name": "studio.drop.kanban",
+            "name": "builder.drop.kanban",
             "model": "x_drop_demo",
             "type": "kanban",
             "arch": KANBAN_ARCH,
         }
         view = self.env["ir.ui.view"].create(view_vals)  # pyright: ignore[reportArgumentType]
         vid = cast("int", view.id)
-        self.package.studio_capture(view)
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(vid)
+        self.package.builder_capture(view)
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(vid)
         declared = self._token("x_when", canvas)
         self.assertFalse(canvas["nodes"][declared]["dom"])
         main = next(t for t, n in canvas["nodes"].items() if n["tag"] == "main")
@@ -570,7 +574,7 @@ class TestDropAt(StudioCase):
             (self.editor.move_node, current, stale, "after"),
         ]
         for call, *args in calls:
-            self._refused(StudioStaleView, call, self._vid, self._pid, *args)
+            self._refused(BuilderStaleView, call, self._vid, self._pid, *args)
         self.view.invalidate_recordset()
         self.assertEqual(self.view.arch, arch)
         self.assertEqual(self.history.history_for(self._vid), [])
@@ -596,7 +600,7 @@ class TestDropAt(StudioCase):
         self.assertEqual(when.get("string"), "Later")
 
     def test_the_disk_is_written_once_at_the_end(self):
-        Package = cast("type[StudioPackage]", self.env.registry["studio.package"])
+        Package = cast("type[BuilderPackage]", self.env.registry["builder.package"])
         original = Package.action_write_files
         with patch.object(
             Package, "action_write_files", autospec=True, side_effect=original
@@ -609,27 +613,27 @@ class TestDropAt(StudioCase):
         self._drop("right", "inside", self._field("x_extra"))
         self._drop("nb", "before", self._component("columns"))
         self.view.invalidate_recordset()
-        self.assertNotIn("o_studio_", cast("str", self.view.arch))
-        self.assertNotIn("o_studio_", self.view.get_combined_arch())
+        self.assertNotIn("o_builder_", cast("str", self.view.arch))
+        self.assertNotIn("o_builder_", self.view.get_combined_arch())
         for content in _snapshot(self.package.root_path).values():
-            self.assertNotIn("o_studio_", content)
+            self.assertNotIn("o_builder_", content)
         for content in self.package._render_files().values():
-            self.assertNotIn("o_studio_", content)
+            self.assertNotIn("o_builder_", content)
 
     def test_the_selected_token_is_the_node_the_drop_produced(self):
         """The kanban declares x_when at its root, where it has no DOM to
         outline; dropped into the card it becomes a second node of that
         name, and that is the one to select."""
         view_vals: dict[str, object] = {
-            "name": "studio.drop.kanban",
+            "name": "builder.drop.kanban",
             "model": "x_drop_demo",
             "type": "kanban",
             "arch": KANBAN_ARCH,
         }
         view = self.env["ir.ui.view"].create(view_vals)  # pyright: ignore[reportArgumentType]
         vid = cast("int", view.id)
-        self.package.studio_capture(view)
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(vid)
+        self.package.builder_capture(view)
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(vid)
         main = next(t for t, n in canvas["nodes"].items() if n["tag"] == "main")
         result = self.editor.drop_at(
             vid,
@@ -647,10 +651,10 @@ class TestDropAt(StudioCase):
 
     def test_the_selected_token_prefers_the_container_dropped_into(self):
         # `_token_named` only reads `name`/`tag`/`parent`/`selectable` off
-        # each node; the real `StudioNode` TypedDict has many more required
+        # each node; the real `BuilderNode` TypedDict has many more required
         # keys this fixture has no reason to carry.
         nodes = cast(
-            "dict[canvas_stamp.Token, canvas_stamp.StudioNode]",
+            "dict[canvas_stamp.Token, canvas_stamp.BuilderNode]",
             {
                 "n0": {"name": None, "tag": "form", "parent": None, "selectable": True},
                 "n1": {
@@ -682,16 +686,16 @@ class TestDropAt(StudioCase):
         checks a positional locator against what it expected to find; the
         template name is the card's identity, so the check has one."""
         view_vals: dict[str, object] = {
-            "name": "studio.drop.kanban",
+            "name": "builder.drop.kanban",
             "model": "x_drop_demo",
             "type": "kanban",
             "arch": KANBAN_ARCH,
         }
         view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         vid = cast("int", view.id)
-        self.package.studio_capture(view)
+        self.package.builder_capture(view)
         extension_vals: dict[str, object] = {
-            "name": "studio.drop.kanban.other",
+            "name": "builder.drop.kanban.other",
             "model": "x_drop_demo",
             "inherit_id": vid,
             "mode": "extension",
@@ -699,7 +703,7 @@ class TestDropAt(StudioCase):
                 <field name="x_note"/></xpath>""",
         }
         self.env["ir.ui.view"].create(extension_vals)  # pyright: ignore[reportArgumentType]
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(vid)
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(vid)
         card = next(t for t, n in canvas["nodes"].items() if n["kind"] == "card")
         result = self.editor.drop_at(
             vid,
@@ -717,15 +721,15 @@ class TestDropAt(StudioCase):
 
     def test_a_foreign_view_gets_a_patch_without_tokens(self):
         view_vals: dict[str, object] = {
-            "name": "studio.drop.foreign",
+            "name": "builder.drop.foreign",
             "model": "x_drop_demo",
             "type": "form",
             "arch": FORM_ARCH,
         }
         view = self.env["ir.ui.view"].create(view_vals)  # pyright: ignore[reportArgumentType]
         vid = cast("int", view.id)
-        self.make_package(name="x_drop_owner").studio_capture(view)
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(vid)
+        self.make_package(name="x_drop_owner").builder_capture(view)
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(vid)
         token = next(t for t, n in canvas["nodes"].items() if n["name"] == "right")
         result = self.editor.drop_at(
             vid,
@@ -735,14 +739,14 @@ class TestDropAt(StudioCase):
             expected_arch_version=canvas["arch_version"],
         )
         patch_view = typed.model(self.env, View).search([("inherit_id", "=", vid)])
-        # `studio_package_id` is a field from `studio.owned.mixin`,
+        # `builder_package_id` is a field from `builder.owned.mixin`,
         # `_inherit`-composed onto `ir.ui.view` -- invisible to pyright on
-        # `View` itself, same idiom as `studio_view_editor.py`'s own
+        # `View` itself, same idiom as `builder_view_editor.py`'s own
         # `_find_extension`.
         self.assertEqual(
-            cast("StudioOwnedMixin", patch_view).studio_package_id, self.package
+            cast("BuilderOwnedMixin", patch_view).builder_package_id, self.package
         )
-        self.assertNotIn("o_studio_", cast("str", patch_view.arch))
+        self.assertNotIn("o_builder_", cast("str", patch_view.arch))
         self.assertIn("x_extra", cast("str", patch_view.arch))
         # `source` stays `object` on `CanvasJSON` (nothing else in this
         # file's own production code reads inside it either).
@@ -763,13 +767,13 @@ class TestDropAt(StudioCase):
         }
         disk = _snapshot(self.package.root_path)
         err = self._refused(
-            StudioConfirmRequired,
+            BuilderConfirmRequired,
             self.editor.remove_at,
             self._vid,
             self._pid,
             anchor,
         )
-        self.assertTrue(issubclass(StudioConfirmRequired, UserError))
+        self.assertTrue(issubclass(BuilderConfirmRequired, UserError))
         self.assertEqual(
             str(err), "Remove this group and the 2 fields in it? Confirm to proceed."
         )
@@ -792,7 +796,7 @@ class TestDropAt(StudioCase):
         )
         canvas = self._canvas()
         err = self._refused(
-            StudioConfirmRequired,
+            BuilderConfirmRequired,
             self.editor.remove_at,
             self._vid,
             self._pid,
@@ -820,7 +824,7 @@ class TestDropAt(StudioCase):
         }
         self.env["ir.model.fields"].create(field_vals)  # pyright: ignore[reportArgumentType]
         view_vals: dict[str, object] = {
-            "name": "studio.drop.sub",
+            "name": "builder.drop.sub",
             "model": "x_drop_demo",
             "type": "form",
             "arch": """<form><sheet><group name="g">
@@ -830,8 +834,8 @@ class TestDropAt(StudioCase):
         }
         view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         vid = cast("int", view.id)
-        self.package.studio_capture(view)
-        canvas = cast("StudioViewEditorCanvas", self.editor).canvas(vid)
+        self.package.builder_capture(view)
+        canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(vid)
         token = self._token("x_tags", canvas)
         self.editor.remove_at(vid, self._pid, {"kind": "node", "token": token})
         view.invalidate_recordset()
@@ -866,7 +870,7 @@ class TestDropAt(StudioCase):
         )
         names = [c.get("name") for c in self._combined().find("sheet")]
         self.assertEqual(names[:2], ["outer", "nb"])
-        self.assertTrue(names[2].startswith("studio_group_"))
+        self.assertTrue(names[2].startswith("builder_group_"))
 
         canvas = self._canvas()
         self.editor.add_field_at(

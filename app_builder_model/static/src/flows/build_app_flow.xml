@@ -2,124 +2,182 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_model.BuildAppName">
-    <div class="o_studio_flow_step">
-        <p class="text-muted">
+        <div class="o_builder_flow_step">
+            <p class="text-muted">
             An app is a model with its list and form, a menu to reach it and the
             access lines that let people in. It is written to the package as
             Python and XML, and it is live when this flow ends.
         </p>
-        <div class="o_studio_row">
-            <label class="o_studio_row_label" for="o_studio_app_label">Name</label>
-            <div class="o_studio_row_content">
-                <input id="o_studio_app_label" class="form-control form-control-sm" type="text"
-                       t-att-value="this.flow.values.label || ''" placeholder="Workshop Job"
-                       t-on-input="(ev) => this.onLabel(ev)"/>
+            <div class="o_builder_row">
+                <label
+                    class="o_builder_row_label"
+                    for="o_builder_app_label"
+                >Name</label>
+                <div class="o_builder_row_content">
+                    <input
+                        id="o_builder_app_label"
+                        class="form-control form-control-sm"
+                        type="text"
+                        t-att-value="this.flow.values.label || ''"
+                        placeholder="Workshop Job"
+                        t-on-input="(ev) => this.onLabel(ev)"
+                    />
+                </div>
+            </div>
+            <div class="o_builder_row">
+                <label
+                    class="o_builder_row_label"
+                    for="o_builder_app_model"
+                >Technical name</label>
+                <div class="o_builder_row_content">
+                    <input
+                        id="o_builder_app_model"
+                        class="form-control form-control-sm font-monospace"
+                        type="text"
+                        t-att-value="this.modelName"
+                        t-att-placeholder="this.state.suggested || 'workshop.job'"
+                        t-on-input="(ev) => this.onName(ev)"
+                    />
+                    <small
+                        t-if="this.state.taken and !this.flow.values.nameTouched"
+                        class="text-danger d-block o_builder_row_hint o_builder_app_taken"
+                    >
+                    A model called <code
+                        t-esc="this.state.suggested"
+                    /> already exists — open it instead, or change the name.
+                </small>
+                    <small t-else="" class="text-muted d-block o_builder_row_hint">
+                    The class and its file take this name. No <code
+                    >x_</code> prefix: the model is Python, not a manual record.
+                </small>
+                </div>
             </div>
         </div>
-        <div class="o_studio_row">
-            <label class="o_studio_row_label" for="o_studio_app_model">Technical name</label>
-            <div class="o_studio_row_content">
-                <input id="o_studio_app_model" class="form-control form-control-sm font-monospace" type="text"
-                       t-att-value="this.modelName" t-att-placeholder="this.state.suggested || 'workshop.job'"
-                       t-on-input="(ev) => this.onName(ev)"/>
-                <small t-if="this.state.taken and !this.flow.values.nameTouched" class="text-danger d-block o_studio_row_hint o_studio_app_taken">
-                    A model called <code t-esc="this.state.suggested"/> already exists — open it instead, or change the name.
-                </small>
-                <small t-else="" class="text-muted d-block o_studio_row_hint">
-                    The class and its file take this name. No <code>x_</code> prefix: the model is Python, not a manual record.
-                </small>
-            </div>
-        </div>
-    </div>
-</t>
+    </t>
 
 <t t-name="app_builder_model.BuildAppFeatures">
-    <div class="o_studio_flow_step">
-        <p class="text-muted">
+        <div class="o_builder_flow_step">
+            <p class="text-muted">
             What the model carries from the start. Each tile is a field or two and
             the view that shows them; the ones on by default are what most apps want.
         </p>
-        <div class="o_studio_tiles o_studio_feature_tiles">
-            <button class="o_studio_tile o_studio_feature_tile text-start" t-att-class="{ selected: this.isOn(feature.key) }" t-foreach="this.offered" t-as="feature"
-                    t-key="feature.key" type="button"
-                    t-att-data-feature="feature.key" t-on-click="() => this.toggle(feature.key)">
-                <span class="o_studio_tile_label">
-                    <i t-att-class="this.isOn(feature.key) ? 'fa fa-check-square-o me-1' : 'fa fa-square-o me-1'"/>
-                    <t t-esc="feature.label"/>
-                </span>
-                <small class="text-muted d-block" t-esc="this.consequence(feature)"/>
-            </button>
+            <div class="o_builder_tiles o_builder_feature_tiles">
+                <button
+                    class="o_builder_tile o_builder_feature_tile text-start"
+                    t-att-class="{ selected: this.isOn(feature.key) }"
+                    t-foreach="this.offered"
+                    t-as="feature"
+                    t-key="feature.key"
+                    type="button"
+                    t-att-data-feature="feature.key"
+                    t-on-click="() => this.toggle(feature.key)"
+                >
+                    <span class="o_builder_tile_label">
+                        <i
+                            t-att-class="this.isOn(feature.key) ? 'fa fa-check-square-o me-1' : 'fa fa-square-o me-1'"
+                        />
+                        <t t-esc="feature.label" />
+                    </span>
+                    <small
+                        class="text-muted d-block"
+                        t-esc="this.consequence(feature)"
+                    />
+                </button>
+            </div>
         </div>
-    </div>
-</t>
+    </t>
 
 <t t-name="app_builder_model.BuildAppWho">
-    <div class="o_studio_flow_step">
-        <p class="text-muted">
+        <div class="o_builder_flow_step">
+            <p class="text-muted">
             The groups whose users can see, make and change records. One access line
             per group is written to <code>security/ir.model.access.csv</code>; more can
             be added later from Access Control.
         </p>
-        <div class="o_studio_row">
-            <label class="o_studio_row_label">Groups</label>
-            <div class="o_studio_row_content o_studio_app_groups">
-                <MultiRecordSelector resModel="'res.groups'" resIds="this.groupIds" update="(ids) => this.onGroups(ids)"/>
+            <div class="o_builder_row">
+                <label class="o_builder_row_label">Groups</label>
+                <div class="o_builder_row_content o_builder_app_groups">
+                    <MultiRecordSelector
+                        resModel="'res.groups'"
+                        resIds="this.groupIds"
+                        update="(ids) => this.onGroups(ids)"
+                    />
+                </div>
             </div>
         </div>
-    </div>
-</t>
+    </t>
 
 <t t-name="app_builder_model.BuildAppMenu">
-    <div class="o_studio_flow_step">
-        <p class="text-muted">Where the app is reached from.</p>
-        <div class="form-check mb-2">
-            <input id="o_studio_menu_new" class="form-check-input" type="radio" name="o_studio_menu_kind" value="new_root"
-                   t-att-checked="this.flow.values.menu_kind === 'new_root'"
-                   t-on-change="() => this.flow.values.menu_kind = 'new_root'"/>
-            <label class="form-check-label" for="o_studio_menu_new">
+        <div class="o_builder_flow_step">
+            <p class="text-muted">Where the app is reached from.</p>
+            <div class="form-check mb-2">
+                <input
+                    id="o_builder_menu_new"
+                    class="form-check-input"
+                    type="radio"
+                    name="o_builder_menu_kind"
+                    value="new_root"
+                    t-att-checked="this.flow.values.menu_kind === 'new_root'"
+                    t-on-change="() => this.flow.values.menu_kind = 'new_root'"
+                />
+                <label class="form-check-label" for="o_builder_menu_new">
                 An app of its own
-                <small class="text-muted d-block">A root menu with an icon in the apps menu, and the model's list under it.</small>
+                <small
+                    class="text-muted d-block"
+                >A root menu with an icon in the apps menu, and the model's list under it.</small>
             </label>
-        </div>
-        <div class="form-check mb-2">
-            <input id="o_studio_menu_under" class="form-check-input" type="radio" name="o_studio_menu_kind" value="under"
-                   t-att-checked="this.flow.values.menu_kind === 'under'"
-                   t-on-change="() => this.flow.values.menu_kind = 'under'"/>
-            <label class="form-check-label" for="o_studio_menu_under">
+            </div>
+            <div class="form-check mb-2">
+                <input
+                    id="o_builder_menu_under"
+                    class="form-check-input"
+                    type="radio"
+                    name="o_builder_menu_kind"
+                    value="under"
+                    t-att-checked="this.flow.values.menu_kind === 'under'"
+                    t-on-change="() => this.flow.values.menu_kind = 'under'"
+                />
+                <label class="form-check-label" for="o_builder_menu_under">
                 Under an existing app
-                <small class="text-muted d-block">A menu entry in another app, which has to come from a module so the file can point at it.</small>
+                <small
+                    class="text-muted d-block"
+                >A menu entry in another app, which has to come from a module so the file can point at it.</small>
             </label>
-        </div>
-        <div t-if="this.flow.values.menu_kind === 'under'" class="o_studio_row">
-            <label class="o_studio_row_label">Under</label>
-            <div class="o_studio_row_content o_studio_app_parent">
-                <RecordSelector resModel="'ir.ui.menu'" resId="this.parentId" update="(id) => this.onParent(id)"/>
+            </div>
+            <div t-if="this.flow.values.menu_kind === 'under'" class="o_builder_row">
+                <label class="o_builder_row_label">Under</label>
+                <div class="o_builder_row_content o_builder_app_parent">
+                    <RecordSelector
+                        resModel="'ir.ui.menu'"
+                        resId="this.parentId"
+                        update="(id) => this.onParent(id)"
+                    />
+                </div>
             </div>
         </div>
-    </div>
-</t>
+    </t>
 
 <t t-name="app_builder_model.BuildAppReview">
-    <div class="o_studio_flow_step o_studio_flow_review">
-        <div class="o_studio_section_title">What is written</div>
-        <ul class="font-monospace small o_studio_review_files">
-            <li t-foreach="this.files" t-as="file" t-key="file" t-esc="file"/>
-        </ul>
-        <div class="o_studio_section_title">What happens</div>
-        <p t-if="!this.manual" class="small">
+        <div class="o_builder_flow_step o_builder_flow_review">
+            <div class="o_builder_section_title">What is written</div>
+            <ul class="font-monospace small o_builder_review_files">
+                <li t-foreach="this.files" t-as="file" t-key="file" t-esc="file" />
+            </ul>
+            <div class="o_builder_section_title">What happens</div>
+            <p t-if="!this.manual" class="small">
             The model's class is written and the package reloads; the views, menu
             and access lines are built on the live model and the package reloads
             once more. Two reloads, a few seconds each; the console waits.
         </p>
-        <p t-else="" class="small">
+            <p t-else="" class="small">
             This server runs several workers, so it cannot reload in place. The
             files are written and the package is marked for upgrade; restart the
             server and Odoo loads the app on the way up.
         </p>
-        <p class="small text-muted">
+            <p class="small text-muted">
             Nothing is written before <b>Build it</b>.
         </p>
-    </div>
-</t>
+        </div>
+    </t>
 
 </templates>

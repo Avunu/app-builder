@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# pylint: disable=print-used,invalid-commit,sql-injection,odoo-addons-relative-import
 """A field dropped on the console lands where it was dropped, after the reload.
 
 The unit tests cover both halves of the gesture on a manual model, where no
@@ -43,16 +44,16 @@ if TYPE_CHECKING:
     # not need `initialize_sys_path` the way the REAL imports inside
     # `form_view()`/`main()` do (see there for why those are deferred).
     #
-    # `canvas()` is composed onto `studio.view.editor` by `studio_view_canvas
-    # .py`'s own pure `_inherit = "studio.view.editor"` -- a different
-    # Python class than `StudioViewEditor` below (same shape as that file's
-    # own `_ComposedViewEditor`/`StudioViewEditorBase` split), so the one
+    # `canvas()` is composed onto `builder.view.editor` by `builder_view_canvas
+    # .py`'s own pure `_inherit = "builder.view.editor"` -- a different
+    # Python class than `BuilderViewEditor` below (same shape as that file's
+    # own `_ComposedViewEditor`/`BuilderViewEditorBase` split), so the one
     # call below casts to this one specifically rather than to the RPC
     # base's own class, which does not declare it.
-    from odoo.addons.app_builder_view.models.studio_view_canvas import (
-        StudioViewEditor as StudioViewEditorCanvas,
+    from odoo.addons.app_builder_view.models.builder_view_canvas import (
+        BuilderViewEditor as BuilderViewEditorCanvas,
     )
-    from odoo.addons.app_builder_view.models.studio_view_editor import (
+    from odoo.addons.app_builder_view.models.builder_view_editor import (
         DropStagedFieldJSON,
         DropSuccessJSON,
     )
@@ -84,8 +85,8 @@ def form_view(env, model_name):
     # is what makes `odoo.addons.<name>` resolvable at all, and this is a
     # module-level function `main()` calls only after that -- a top-level
     # import here would run first and fail.
-    from odoo.addons.base.models.ir_ui_view import View as IrUiView
     from odoo.addons.app_builder_base.tools import typed
+    from odoo.addons.base.models.ir_ui_view import View as IrUiView
 
     View = typed.model(env, IrUiView)
     return View.browse(cast("int", View.default_view(model_name, "form")))
@@ -103,7 +104,7 @@ def next_after(arch, name):
 def form_arch_on_disk(pkg_path, model_name):
     """The form arch as the package wrote it, parsed out of its view file.
 
-    ``.studio/backup`` holds the files as they were *before* the apply and
+    ``.builder/backup`` holds the files as they were *before* the apply and
     is skipped, or the check would read the old form and call it drift.
     """
     for folder, dirs, names in os.walk(pkg_path):
@@ -130,16 +131,18 @@ def main():
     if not dbname:
         raise SystemExit("pass -d <database>")
     # Only importable once the config has set the addons path.
-    from odoo.addons.base.models.ir_ui_view import View as IrUiView
-    from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
+    from odoo.addons.app_builder_base.models.builder_model_draft import (
+        BuilderModelDraft,
+    )
     from odoo.addons.app_builder_base.tools import modelspec, typed
-    from odoo.addons.app_builder_model.models.studio_app_builder import (
-        StudioAppBuilder,
+    from odoo.addons.app_builder_model.models.builder_app import (
+        BuilderApp,
     )
-    from odoo.addons.app_builder_view.models.studio_view_edit import StudioViewEdit
-    from odoo.addons.app_builder_view.models.studio_view_editor import (
-        StudioViewEditor,
+    from odoo.addons.app_builder_view.models.builder_view_edit import BuilderViewEdit
+    from odoo.addons.app_builder_view.models.builder_view_editor import (
+        BuilderViewEditor,
     )
+    from odoo.addons.base.models.ir_ui_view import View as IrUiView
 
     root = writable_addons_dir()
     pkg_path = os.path.join(root, PKG)
@@ -158,9 +161,9 @@ def main():
                 "root_path": pkg_path,
                 "auto_commit": "off",
             }
-            package = env["studio.package"].create(vals)  # pyright: ignore[reportArgumentType]
+            package = env["builder.package"].create(vals)  # pyright: ignore[reportArgumentType]
             # The console's Build-an-app flow calls the same RPC.
-            built = typed.model(env, StudioAppBuilder).create_app_rpc(
+            built = typed.model(env, BuilderApp).create_app_rpc(
                 cast("int", package.id),
                 {"label": LABEL, "features": ["chatter", "user"]},
             )
@@ -173,9 +176,11 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            editor = typed.model(env, StudioViewEditor)
+            editor = typed.model(env, BuilderViewEditor)
             view = form_view(env, model_name)
-            canvas = cast("StudioViewEditorCanvas", editor).canvas(cast("int", view.id))
+            canvas = cast("BuilderViewEditorCanvas", editor).canvas(
+                cast("int", view.id)
+            )
             token = next(
                 t for t, n in canvas["nodes"].items() if n["name"] == NEIGHBOUR
             )
@@ -256,7 +261,7 @@ def main():
         registry = Registry(dbname)
         with registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            draft = typed.model(env, StudioModelDraft).browse(draft_id)
+            draft = typed.model(env, BuilderModelDraft).browse(draft_id)
             results.append(
                 check(
                     "the draft survived the round trip with its anchor",
@@ -298,12 +303,12 @@ def main():
                 check(
                     "the anchor is forgotten once the field is placed",
                     FIELD
-                    not in typed.model(env, StudioModelDraft)
+                    not in typed.model(env, BuilderModelDraft)
                     .browse(draft_id)
                     ._anchors(),
                 )
             )
-            history = typed.model(env, StudioViewEdit).stack_for(view_id)
+            history = typed.model(env, BuilderViewEdit).stack_for(view_id)
             results.append(
                 check(
                     "the placement is in the view's history",
@@ -312,7 +317,7 @@ def main():
             )
 
             # --- 3. restart mode: placement runs again --------------------------
-            draft = typed.model(env, StudioModelDraft).browse(draft_id)
+            draft = typed.model(env, BuilderModelDraft).browse(draft_id)
             spec = draft._spec()
             diff = modelspec.diff_specs(modelspec.without_field(spec, FIELD), spec)
             again = draft._place_in_views(spec, diff)

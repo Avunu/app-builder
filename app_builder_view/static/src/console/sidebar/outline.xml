@@ -2,90 +2,148 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.Outline">
-    <div class="o_studio_outline" t-att-class="{ o_studio_outline_closed: !this.state.open }"
-         t-ref="root"
-         t-att-style="this.state.open ? 'height:' + this.state.height + 'px' : ''">
-        <div class="o_studio_outline_head">
-            <button type="button" class="o_studio_outline_toggle"
+        <div
+            class="o_builder_outline"
+            t-att-class="{ o_builder_outline_closed: !this.state.open }"
+            t-ref="root"
+            t-att-style="this.state.open ? 'height:' + this.state.height + 'px' : ''"
+        >
+            <div class="o_builder_outline_head">
+                <button
+                    type="button"
+                    class="o_builder_outline_toggle"
                     t-att-aria-expanded="this.state.open ? 'true' : 'false'"
                     t-att-title="this.toggleTitle"
-                    t-on-click="() => this.toggleOpen()">
-                <i t-att-class="this.state.open ? 'fa fa-caret-down' : 'fa fa-caret-right'"/>
-                <span>Outline</span>
-            </button>
-            <input t-if="this.state.open" class="form-control form-control-sm o_studio_outline_filter"
-                   type="search"
-                   name="outline_filter" placeholder="Filter…" t-ref="filter"
-                   t-att-value="this.state.filter"
-                   t-on-input="(ev) => this.state.filter = ev.target.value"
-                   t-on-keydown="(ev) => this.onFilterKeyDown(ev)"/>
-        </div>
-        <ul t-if="this.state.open" class="o_studio_outline_list" role="tree"
-            aria-label="View outline" t-ref="list"
-            t-on-keydown="(ev) => this.onKeyDown(ev)">
-            <li class="o_studio_outline_row" t-att-class="{
-                    o_studio_outline_selected: entry.token === this.selectedToken,
-                    o_studio_outline_hover: entry.token === this.hoverToken,
-                    o_studio_outline_hidden: entry.badges.hidden,
-                    o_studio_outline_pending: entry.badges.pending,
-                    o_studio_outline_fixed: entry.fixed,
-                    o_studio_outline_collapsed: entry.hasChildren and !entry.expanded,
-                }" t-foreach="this.rows"
-                t-as="entry" t-key="entry.token"
-                role="treeitem"
-                t-att-data-token="entry.token"
-                t-att-data-depth="entry.depth"
-                t-att-data-path="entry.key"
-                t-att-data-kind="entry.node.kind"
-                t-att-data-name="entry.node.name || ''"
-                t-att-aria-level="entry.depth + 1"
-                t-att-aria-expanded="entry.hasChildren ? (entry.expanded ? 'true' : 'false') : undefined"
-                t-att-aria-selected="entry.token === this.selectedToken ? 'true' : 'false'"
-                t-att-tabindex="entry.key === this.focusKey ? 0 : -1"
-                t-att-title="this.model.tagFor(entry.token)"
-                t-att-style="'--o-outline-depth: ' + entry.depth"
-                t-on-click="(ev) => this.onRowClick(entry, ev)"
-                t-on-dblclick="() => this.onRowDblClick(entry)"
-                t-on-mouseenter="() => this.onRowEnter(entry)"
-                t-on-mouseleave="() => this.onRowLeave()"
-                t-on-contextmenu="(ev) => this.onContextMenu(entry, ev)">
-                <button t-if="entry.hasChildren" class="o_studio_outline_caret" type="button"
-                        tabindex="-1" t-att-aria-label="this.caretLabel(entry)"
-                        t-on-click="(ev) => this.onToggle(entry, ev)">
-                    <i t-att-class="entry.expanded ? 'fa fa-caret-down' : 'fa fa-caret-right'"/>
+                    t-on-click="() => this.toggleOpen()"
+                >
+                    <i
+                        t-att-class="this.state.open ? 'fa fa-caret-down' : 'fa fa-caret-right'"
+                    />
+                    <span>Outline</span>
                 </button>
-                <span t-else="" class="o_studio_outline_caret o_studio_outline_leaf"/>
-                <i class="o_studio_outline_icon" t-att-class="entry.icon"/>
-                <span class="o_studio_outline_label" t-esc="entry.label"/>
-                <i t-if="entry.badges.required" class="o_studio_outline_badge fa fa-asterisk"
-                   title="Required"/>
-                <i t-if="entry.badges.hidden" class="o_studio_outline_badge fa fa-eye-slash"
-                   t-att-title="this.hiddenTitle(entry)"/>
-                <i t-if="entry.badges.pending" class="o_studio_outline_badge fa fa-clock-o"
-                   title="Pending until Apply"/>
-            </li>
-            <li t-if="!this.rows.length" class="o_studio_outline_empty text-muted small" role="none">
-                <t t-if="this.state.filter">Nothing matches.</t>
-                <t t-else="">Nothing to show.</t>
-            </li>
-        </ul>
-        <div t-if="this.state.open" class="o_studio_outline_divider" t-ref="divider"
-             title="Drag to resize" role="separator" aria-orientation="horizontal"/>
-    </div>
-</t>
+                <input
+                    t-if="this.state.open"
+                    class="form-control form-control-sm o_builder_outline_filter"
+                    type="search"
+                    name="outline_filter"
+                    placeholder="Filter…"
+                    t-ref="filter"
+                    t-att-value="this.state.filter"
+                    t-on-input="(ev) => this.state.filter = ev.target.value"
+                    t-on-keydown="(ev) => this.onFilterKeyDown(ev)"
+                />
+            </div>
+            <ul
+                t-if="this.state.open"
+                class="o_builder_outline_list"
+                role="tree"
+                aria-label="View outline"
+                t-ref="list"
+                t-on-keydown="(ev) => this.onKeyDown(ev)"
+            >
+                <li
+                    class="o_builder_outline_row"
+                    t-att-class="{
+                    o_builder_outline_selected: entry.token === this.selectedToken,
+                    o_builder_outline_hover: entry.token === this.hoverToken,
+                    o_builder_outline_hidden: entry.badges.hidden,
+                    o_builder_outline_pending: entry.badges.pending,
+                    o_builder_outline_fixed: entry.fixed,
+                    o_builder_outline_collapsed: entry.hasChildren and !entry.expanded,
+                }"
+                    t-foreach="this.rows"
+                    t-as="entry"
+                    t-key="entry.token"
+                    role="treeitem"
+                    t-att-data-token="entry.token"
+                    t-att-data-depth="entry.depth"
+                    t-att-data-path="entry.key"
+                    t-att-data-kind="entry.node.kind"
+                    t-att-data-name="entry.node.name || ''"
+                    t-att-aria-level="entry.depth + 1"
+                    t-att-aria-expanded="entry.hasChildren ? (entry.expanded ? 'true' : 'false') : undefined"
+                    t-att-aria-selected="entry.token === this.selectedToken ? 'true' : 'false'"
+                    t-att-tabindex="entry.key === this.focusKey ? 0 : -1"
+                    t-att-title="this.model.tagFor(entry.token)"
+                    t-att-style="'--o-outline-depth: ' + entry.depth"
+                    t-on-click="(ev) => this.onRowClick(entry, ev)"
+                    t-on-dblclick="() => this.onRowDblClick(entry)"
+                    t-on-mouseenter="() => this.onRowEnter(entry)"
+                    t-on-mouseleave="() => this.onRowLeave()"
+                    t-on-contextmenu="(ev) => this.onContextMenu(entry, ev)"
+                >
+                    <button
+                        t-if="entry.hasChildren"
+                        class="o_builder_outline_caret"
+                        type="button"
+                        tabindex="-1"
+                        t-att-aria-label="this.caretLabel(entry)"
+                        t-on-click="(ev) => this.onToggle(entry, ev)"
+                    >
+                        <i
+                            t-att-class="entry.expanded ? 'fa fa-caret-down' : 'fa fa-caret-right'"
+                        />
+                    </button>
+                    <span
+                        t-else=""
+                        class="o_builder_outline_caret o_builder_outline_leaf"
+                    />
+                    <i class="o_builder_outline_icon" t-att-class="entry.icon" />
+                    <span class="o_builder_outline_label" t-esc="entry.label" />
+                    <i
+                        t-if="entry.badges.required"
+                        class="o_builder_outline_badge fa fa-asterisk"
+                        title="Required"
+                    />
+                    <i
+                        t-if="entry.badges.hidden"
+                        class="o_builder_outline_badge fa fa-eye-slash"
+                        t-att-title="this.hiddenTitle(entry)"
+                    />
+                    <i
+                        t-if="entry.badges.pending"
+                        class="o_builder_outline_badge fa fa-clock-o"
+                        title="Pending until Apply"
+                    />
+                </li>
+                <li
+                    t-if="!this.rows.length"
+                    class="o_builder_outline_empty text-muted small"
+                    role="none"
+                >
+                    <t t-if="this.state.filter">Nothing matches.</t>
+                    <t t-else="">Nothing to show.</t>
+                </li>
+            </ul>
+            <div
+                t-if="this.state.open"
+                class="o_builder_outline_divider"
+                t-ref="divider"
+                title="Drag to resize"
+                role="separator"
+                aria-orientation="horizontal"
+            />
+        </div>
+    </t>
 
 <t t-name="app_builder_view.OutlineMenu">
-    <div class="o_studio_outline_menu" role="menu">
-        <button class="dropdown-item" t-att-class="{ disabled: item.disabled }" t-foreach="this.props.items"
-                t-as="item" t-key="item.key" type="button"
+        <div class="o_builder_outline_menu" role="menu">
+            <button
+                class="dropdown-item"
+                t-att-class="{ disabled: item.disabled }"
+                t-foreach="this.props.items"
+                t-as="item"
+                t-key="item.key"
+                type="button"
                 role="menuitem"
                 t-att-disabled="item.disabled"
                 t-att-data-item="item.key"
-                t-on-click="() => this.pick(item)">
-            <i t-if="item.icon" t-att-class="item.icon + ' me-2'"/>
-            <t t-esc="item.label"/>
-        </button>
-    </div>
-</t>
+                t-on-click="() => this.pick(item)"
+            >
+                <i t-if="item.icon" t-att-class="item.icon + ' me-2'" />
+                <t t-esc="item.label" />
+            </button>
+        </div>
+    </t>
 
 </templates>

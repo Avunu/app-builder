@@ -124,9 +124,9 @@ class TestCanvasStamp(TransactionCase):
         be recomputed from the arch by anybody."""
         _root, result = self._stamp(FORM, "form")
         tokens = list(result.nodes)
-        self.assertEqual(result.root, "o_studio_n_0")
+        self.assertEqual(result.root, "o_builder_n_0")
         self.assertEqual(
-            tokens, ["o_studio_n_%d" % i for i in range(len(tokens))], tokens
+            tokens, ["o_builder_n_%d" % i for i in range(len(tokens))], tokens
         )
         self.assertEqual(
             [result.nodes[t]["tag"] for t in tokens[:6]],
@@ -146,8 +146,8 @@ class TestCanvasStamp(TransactionCase):
         before = etree.tostring(root)
         result = canvas_stamp.stamp(root, "form")
         self.assertEqual(etree.tostring(root), before)
-        self.assertNotIn(b"o_studio_n_", before)
-        self.assertIn(b"o_studio_n_", etree.tostring(result.arch))
+        self.assertNotIn(b"o_builder_n_", before)
+        self.assertIn(b"o_builder_n_", etree.tostring(result.arch))
 
     def test_elements_point_into_the_original_tree(self):
         """A token has to resolve to the very node the editor will edit,
@@ -203,7 +203,7 @@ class TestCanvasStamp(TransactionCase):
             [result.nodes[t]["name"] for t in columns], ["name", "partner_id", "email"]
         )
 
-    def test_the_label_the_studio_emits_is_not_a_container(self):
+    def test_the_label_the_builder_emits_is_not_a_container(self):
         """`_op_add_label` writes `<div class="o_form_label">text</div>`; a
         field dropped "inside" it would be glued to the text."""
         arch = '<form><div class="o_form_label" name="hint">Hint</div></form>'
@@ -320,7 +320,7 @@ class TestCanvasStamp(TransactionCase):
             result.nodes[label_tokens["off_but_labelled"]]["string"], "off_but_labelled"
         )
         self.assertEqual(result.nodes[label_tokens["on_sheet"]]["string"], "Named")
-        # `StudioNode["label"]` is `FieldLabel | None`; only a `field` node
+        # `BuilderNode["label"]` is `FieldLabel | None`; only a `field` node
         # ever carries one, and both fields read here do (asserted above via
         # `label_tokens`), so the cast just names what the test already
         # relies on.
@@ -399,7 +399,7 @@ class TestCanvasStamp(TransactionCase):
         self.assertIsNone(
             result.arch.xpath("//t[@t-name='kanban-box']")[0].get("class")
         )
-        self.assertIn("o_studio_n_", result.arch.xpath("//div")[0].get("class"))
+        self.assertIn("o_builder_n_", result.arch.xpath("//div")[0].get("class"))
 
     def test_card_fields_are_stamped_directly(self):
         _root, result = self._stamp(KANBAN, "kanban")

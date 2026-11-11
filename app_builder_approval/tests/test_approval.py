@@ -15,19 +15,19 @@ from typing import cast
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_model import IrModel
-from odoo.addons.app_builder_base.models.studio_package_model import (
-    StudioPackageModel,
+from odoo.addons.app_builder_base.models.builder_package_model import (
+    BuilderPackageModel,
 )
-from odoo.addons.app_builder_base.models.studio_serializer import StudioSerializer
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.models.builder_serializer import BuilderSerializer
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_model import IrModel
 
-from ..models.studio_approval import StudioApproval
+from ..models.builder_approval import BuilderApproval
 
 
 @tagged("post_install", "-at_install")
-class TestEnableApprovals(StudioCase):
+class TestEnableApprovals(BuilderCase):
     def _package(self):
         package = self.make_package()
         self.build_demo_content(package)
@@ -35,7 +35,7 @@ class TestEnableApprovals(StudioCase):
 
     def test_enabling_writes_the_mixin_and_its_configuration(self):
         package = self._package()
-        typed.model(self.env, StudioApproval).enable(
+        typed.model(self.env, BuilderApproval).enable(
             cast("int", package.id),
             "res.partner",
             state_field="type",
@@ -43,11 +43,11 @@ class TestEnableApprovals(StudioCase):
             state_to=["invoice"],
             apply=False,
         )
-        entry = typed.model(self.env, StudioPackageModel).search(
+        entry = typed.model(self.env, BuilderPackageModel).search(
             [("package_id", "=", package.id), ("model", "=", "res.partner")], limit=1
         )
         # `python_path` is compute-only and declared `str | Literal[False]`
-        # like any Char (same invariant cast as `studio_package_model.py`'s
+        # like any Char (same invariant cast as `builder_package_model.py`'s
         # own real read sites); `_read_source` returns `str | None` but this
         # source was just written above, so it is never `None` here.
         source = cast("str", package._read_source(cast("str", entry.python_path)))
@@ -64,7 +64,7 @@ class TestEnableApprovals(StudioCase):
         """base returns [] from _get_tier_validation_model_names, so without
         this the mixin works and the rule cannot be created."""
         package = self._package()
-        typed.model(self.env, StudioApproval).enable(
+        typed.model(self.env, BuilderApproval).enable(
             cast("int", package.id),
             "res.partner",
             state_field="type",
@@ -72,7 +72,7 @@ class TestEnableApprovals(StudioCase):
             state_to=["invoice"],
             apply=False,
         )
-        entry = typed.model(self.env, StudioPackageModel).search(
+        entry = typed.model(self.env, BuilderPackageModel).search(
             [("package_id", "=", package.id), ("model", "=", "tier.definition")],
             limit=1,
         )
@@ -86,7 +86,7 @@ class TestEnableApprovals(StudioCase):
         """The engine gates a transition; without one there is nothing to gate."""
         package = self._package()
         with raises(self, UserError) as caught:
-            typed.model(self.env, StudioApproval).enable(
+            typed.model(self.env, BuilderApproval).enable(
                 cast("int", package.id),
                 "res.partner",
                 state_field="type",
@@ -98,7 +98,7 @@ class TestEnableApprovals(StudioCase):
     def test_a_model_with_no_such_field_is_refused(self):
         package = self._package()
         with raises(self, UserError) as caught:
-            typed.model(self.env, StudioApproval).enable(
+            typed.model(self.env, BuilderApproval).enable(
                 cast("int", package.id),
                 "res.partner",
                 state_field="no_such_field",
@@ -112,7 +112,7 @@ class TestEnableApprovals(StudioCase):
         exactly like approvals being switched off."""
         package = self._package()
         with raises(self, UserError) as caught:
-            typed.model(self.env, StudioApproval).enable(
+            typed.model(self.env, BuilderApproval).enable(
                 cast("int", package.id),
                 "res.partner",
                 state_field="type",
@@ -125,7 +125,7 @@ class TestEnableApprovals(StudioCase):
     def test_a_transition_to_itself_is_refused(self):
         package = self._package()
         with raises(self, UserError) as caught:
-            typed.model(self.env, StudioApproval).enable(
+            typed.model(self.env, BuilderApproval).enable(
                 cast("int", package.id),
                 "res.partner",
                 state_field="type",
@@ -138,7 +138,7 @@ class TestEnableApprovals(StudioCase):
     def test_enabling_twice_is_refused(self):
         package = self._package()
         for _i in range(1):
-            typed.model(self.env, StudioApproval).enable(
+            typed.model(self.env, BuilderApproval).enable(
                 cast("int", package.id),
                 "res.partner",
                 state_field="type",
@@ -147,7 +147,7 @@ class TestEnableApprovals(StudioCase):
                 apply=False,
             )
         with raises(self, UserError) as caught:
-            typed.model(self.env, StudioApproval).enable(
+            typed.model(self.env, BuilderApproval).enable(
                 cast("int", package.id),
                 "res.partner",
                 state_field="type",
@@ -159,7 +159,7 @@ class TestEnableApprovals(StudioCase):
 
     def test_candidate_state_fields_offers_selections_with_values(self):
         self.make_package()
-        found = typed.model(self.env, StudioApproval).candidate_state_fields(
+        found = typed.model(self.env, BuilderApproval).candidate_state_fields(
             "res.partner"
         )
         by_name = {entry["name"]: entry for entry in found}
@@ -168,7 +168,7 @@ class TestEnableApprovals(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestRuleSerialization(StudioCase):
+class TestRuleSerialization(BuilderCase):
     def test_a_rule_is_written_to_source(self):
         package = self.make_package()
         self.build_demo_content(package)
@@ -188,23 +188,23 @@ class TestRuleSerialization(StudioCase):
     def test_the_matching_column_is_not_emitted(self):
         """`model` is a stored related of model_id.model with no inverse: a data
         file cannot set it, and setting model_id fills it."""
-        serializer = typed.serializer(self.env["studio.serializer.tier.definition"])
+        serializer = typed.serializer(self.env["builder.serializer.tier.definition"])
         self.assertIn("model", serializer._ignored_fields())
         self.assertNotIn("model", serializer._emitted_fields())
 
     def test_reviews_are_never_serialized(self):
         """tier.review is one database's in-flight approvals, holding integer
         res_ids and user ids. Nothing in it survives a fresh install."""
-        known = typed.model(self.env, StudioSerializer)._serializable_models()
+        known = typed.model(self.env, BuilderSerializer)._serializable_models()
         self.assertNotIn("tier.review", known)
 
 
 @tagged("post_install", "-at_install")
-class TestApprovalSurface(StudioCase):
+class TestApprovalSurface(BuilderCase):
     """The console's Approvals tab: scope, ownership and findability.
 
     Not a form of our own -- the engine's form knows which reviewer kinds
-    exist and which fields can name one -- so the studio's part is the list
+    exist and which fields can name one -- so the builder's part is the list
     being the model's and a rule made from it being the package's.
     """
 
@@ -212,36 +212,36 @@ class TestApprovalSurface(StudioCase):
         """The domain names the model, on the stored column the engine itself
         matches on, and the picker defaults to it."""
         package = self.make_package()
-        action = typed.model(self.env, StudioApproval).action_open(
+        action = typed.model(self.env, BuilderApproval).action_open(
             model_name="res.partner"
         )
         model = typed.model(self.env, IrModel)._get("res.partner")
         self.assertEqual(action["res_model"], "tier.definition")
         self.assertIn(("model", "=", "res.partner"), action["domain"])
         self.assertEqual(action["context"]["default_model_id"], model.id)
-        self.assertEqual(action["context"]["studio_package_id"], package.id)
+        self.assertEqual(action["context"]["builder_package_id"], package.id)
 
     def test_no_model_means_every_rule(self):
         self.make_package()
-        action = typed.model(self.env, StudioApproval).action_open()
+        action = typed.model(self.env, BuilderApproval).action_open()
         self.assertEqual(action["domain"], [])
         self.assertNotIn("default_model_id", action["context"])
 
     def test_the_consoles_package_is_the_one_a_rule_lands_in(self):
         """Two writable packages: nothing to guess, but the console has
         chosen already, and a rule made from its tab goes into that one."""
-        self.make_package(name="x_studio_one")
-        two = self.make_package(name="x_studio_two")
+        self.make_package(name="x_builder_one")
+        two = self.make_package(name="x_builder_two")
         self.build_demo_content(two)
         self.assertFalse(
-            typed.model(self.env, StudioApproval).action_open()["context"][
-                "studio_package_id"
+            typed.model(self.env, BuilderApproval).action_open()["context"][
+                "builder_package_id"
             ]
         )
-        action = typed.model(self.env, StudioApproval).action_open(
+        action = typed.model(self.env, BuilderApproval).action_open(
             model_name="res.partner", package_id=cast("int", two.id)
         )
-        self.assertEqual(action["context"]["studio_package_id"], two.id)
+        self.assertEqual(action["context"]["builder_package_id"], two.id)
         vals: dict[str, object] = {
             "name": "Console eyes",
             "model_id": action["context"]["default_model_id"],
@@ -256,13 +256,13 @@ class TestApprovalSurface(StudioCase):
     def test_an_unknown_model_is_refused(self):
         self.make_package()
         with raises(self, UserError):
-            typed.model(self.env, StudioApproval).action_open(model_name="x_no_such")
+            typed.model(self.env, BuilderApproval).action_open(model_name="x_no_such")
 
     def test_an_ungated_model_is_told_the_gate_comes_first(self):
         """A rule on a model without the mixin never fires, which looks
         exactly like approvals being switched off; the empty list says so."""
         self.make_package()
-        action = typed.model(self.env, StudioApproval).action_open(
+        action = typed.model(self.env, BuilderApproval).action_open(
             model_name="res.partner"
         )
         self.assertIn("not switched on", action["help"])
@@ -272,7 +272,7 @@ class TestApprovalSurface(StudioCase):
         captured the moment it exists."""
         package = self.make_package()
         self.build_demo_content(package)
-        action = typed.model(self.env, StudioApproval).action_open(
+        action = typed.model(self.env, BuilderApproval).action_open(
             model_name="res.partner"
         )
         vals: dict[str, object] = {

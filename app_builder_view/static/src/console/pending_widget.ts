@@ -12,7 +12,7 @@
  * alike; a `<div>` would not.
  *
  * Only the drawing lives here. The ghost is stamped like any node -- its
- * class carries `o_studio_n_p_<name>` -- so the canvas selects it, the
+ * class carries `o_builder_n_p_<name>` -- so the canvas selects it, the
  * properties show its staged definition and a drag re-anchors it, all
  * without this component knowing: it draws a box, and the console's
  * overlay and drag do the rest by the token. A ghost whose anchor no
@@ -20,10 +20,10 @@
  * drawn here always has a place, and says so.
  */
 
-import { Component } from "@odoo/owl";
-import { registry } from "@web/core/registry";
-import { standardWidgetProps } from "@web/views/widgets/standard_widget_props";
-import type { StaticWidgetInfo, ViewWidgetsRegistryItemShape } from "./odoo";
+import {Component} from "@odoo/owl";
+import {registry} from "@web/core/registry";
+import {standardWidgetProps} from "@web/views/widgets/standard_widget_props";
+import type {StaticWidgetInfo, ViewWidgetsRegistryItemShape} from "./odoo";
 
 /**
  * What `this.props.xxx` this component's own getters actually read.
@@ -35,33 +35,33 @@ import type { StaticWidgetInfo, ViewWidgetsRegistryItemShape } from "./odoo";
  * same rule this migration has applied to every wire shape so far. All
  * four fields below are optional to match the component's own (defensive)
  * `static props` schema, even though the one real producer of this
- * widget -- `_splice_ghost` in `studio_view_canvas.py` -- always sets
+ * widget -- `_splice_ghost` in `builder_view_canvas.py` -- always sets
  * every one of them (see `PendingWidgetOptions` below).
  */
 interface Props {
-    name?: string;
-    label?: string;
-    ttype?: string;
-    resolved?: boolean;
+  name?: string;
+  label?: string;
+  ttype?: string;
+  resolved?: boolean;
 }
 
 export class PendingFieldWidget extends Component<Props> {
-    static override template = "app_builder_view.PendingFieldWidget";
-    static override props = {
-        ...standardWidgetProps,
-        name: { type: String, optional: true },
-        label: { type: String, optional: true },
-        ttype: { type: String, optional: true },
-        resolved: { type: Boolean, optional: true },
-    };
+  static override template = "app_builder_view.PendingFieldWidget";
+  static override props = {
+    ...standardWidgetProps,
+    name: {type: String, optional: true},
+    label: {type: String, optional: true},
+    ttype: {type: String, optional: true},
+    resolved: {type: Boolean, optional: true},
+  };
 
-    get label() {
-        return this.props.label || this.props.name || "";
-    }
+  get label() {
+    return this.props.label || this.props.name || "";
+  }
 
-    get icon() {
-        return iconForType(this.props.ttype, this.props.ttype);
-    }
+  get icon() {
+    return iconForType(this.props.ttype, this.props.ttype);
+  }
 }
 
 /**
@@ -79,28 +79,28 @@ export class PendingFieldWidget extends Component<Props> {
  * there (not changed here -- see findings).
  */
 export const TYPE_ICONS: Record<string, string> = {
-    char: "fa fa-font",
-    text: "fa fa-align-left",
-    html: "fa fa-file-text-o",
-    boolean: "fa fa-check-square-o",
-    integer: "fa fa-hashtag",
-    float: "fa fa-superscript",
-    monetary: "fa fa-money",
-    date: "fa fa-calendar",
-    datetime: "fa fa-clock-o",
-    selection: "fa fa-list-ul",
-    binary: "fa fa-file-o",
-    many2one: "fa fa-link",
-    one2many: "fa fa-list",
-    many2many: "fa fa-tags",
-    reference: "fa fa-external-link",
-    priority: "fa fa-star-o",
-    image: "fa fa-picture-o",
-    sign: "fa fa-pencil-square-o",
-    daterange: "fa fa-calendar-o",
-    tags: "fa fa-tags",
-    lines: "fa fa-table",
-    related: "fa fa-share",
+  char: "fa fa-font",
+  text: "fa fa-align-left",
+  html: "fa fa-file-text-o",
+  boolean: "fa fa-check-square-o",
+  integer: "fa fa-hashtag",
+  float: "fa fa-superscript",
+  monetary: "fa fa-money",
+  date: "fa fa-calendar",
+  datetime: "fa fa-clock-o",
+  selection: "fa fa-list-ul",
+  binary: "fa fa-file-o",
+  many2one: "fa fa-link",
+  one2many: "fa fa-list",
+  many2many: "fa fa-tags",
+  reference: "fa fa-external-link",
+  priority: "fa fa-star-o",
+  image: "fa fa-picture-o",
+  sign: "fa fa-pencil-square-o",
+  daterange: "fa fa-calendar-o",
+  tags: "fa fa-tags",
+  lines: "fa fa-table",
+  related: "fa fa-share",
 };
 
 /**
@@ -119,17 +119,20 @@ export const TYPE_ICONS: Record<string, string> = {
  * so `||` and `??` agree here) but relies on subtler truthy-narrowing of a
  * plain `string | undefined` that is easy to get wrong under strict mode.
  */
-export function iconForType(key: string | undefined, ttype: string | undefined): string {
-    return (
-        (key !== undefined ? TYPE_ICONS[key] : undefined) ??
-        (ttype !== undefined ? TYPE_ICONS[ttype] : undefined) ??
-        "fa fa-square-o"
-    );
+export function iconForType(
+  key: string | undefined,
+  ttype: string | undefined
+): string {
+  return (
+    (key !== undefined ? TYPE_ICONS[key] : undefined) ??
+    (ttype !== undefined ? TYPE_ICONS[ttype] : undefined) ??
+    "fa fa-square-o"
+  );
 }
 
 /**
  * `options="{...}"` on the spliced `<widget>` node, exactly as
- * `_splice_ghost` (`studio_view_canvas.py`) always builds it --
+ * `_splice_ghost` (`builder_view_canvas.py`) always builds it --
  * `repr()`'d from a plain dict literal with exactly these four keys, every
  * one of them always set (`resolved` via `bool(info.get("resolved",
  * True))`, never omitted). Narrower than `StaticWidgetInfo.options`'s own
@@ -138,10 +141,10 @@ export function iconForType(key: string | undefined, ttype: string | undefined):
  * as this shape rather than the vendor's generic one.
  */
 interface PendingWidgetOptions {
-    name: string;
-    label: string;
-    ttype: string;
-    resolved: boolean;
+  name: string;
+  label: string;
+  ttype: string;
+  resolved: boolean;
 }
 
 /**
@@ -151,17 +154,17 @@ interface PendingWidgetOptions {
  * overrides, and any object shape is narrower than bare `object`).
  */
 interface PendingWidgetInfo extends StaticWidgetInfo {
-    options: PendingWidgetOptions;
+  options: PendingWidgetOptions;
 }
 
 export const pendingFieldWidget: ViewWidgetsRegistryItemShape = {
-    component: PendingFieldWidget,
-    extractProps: ({ options }: PendingWidgetInfo) => ({
-        name: options.name,
-        label: options.label,
-        ttype: options.ttype,
-        resolved: options.resolved !== false,
-    }),
+  component: PendingFieldWidget,
+  extractProps: ({options}: PendingWidgetInfo) => ({
+    name: options.name,
+    label: options.label,
+    ttype: options.ttype,
+    resolved: options.resolved !== false,
+  }),
 };
 
 registry.category("view_widgets").add("app_builder_pending", pendingFieldWidget);

@@ -28,8 +28,8 @@
         ],
     },
     "data": [
-        "views/studio_model_views.xml",
-        "views/studio_composer_views.xml",
-        "views/studio_menus.xml",
+        "views/builder_model_views.xml",
+        "views/builder_composer_views.xml",
+        "views/builder_menus.xml",
     ],
 }

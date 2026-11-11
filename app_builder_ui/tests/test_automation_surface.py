@@ -17,34 +17,36 @@ from typing import TYPE_CHECKING, Any, cast
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
+from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.base_automation.models.base_automation import BaseAutomation
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
-from odoo.addons.app_builder_base.tools import typed
 
-from ..models.studio_automation_surface import StudioAutomation, StudioAutomationStep
+from ..models.builder_automation_surface import BuilderAutomation, BuilderAutomationStep
 
 if TYPE_CHECKING:
-    from odoo.addons.base.models.ir_actions import IrActionsServer
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
-    from odoo.addons.app_builder_base.models.studio_record_surface import (
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
+    from odoo.addons.app_builder_base.models.builder_record_surface import (
+        BuilderRecordSurface,
         RecordActionJSON,
         RecordRowJSON,
-        StudioRecordSurface,
     )
+    from odoo.addons.base.models.ir_actions import IrActionsServer
 
-    from ..models.studio_automation_surface import TriggerRowJSON
+    from ..models.builder_automation_surface import TriggerRowJSON
 
-MODEL = "x_studio_project"
+MODEL = "x_builder_project"
 
 
 @tagged("post_install", "-at_install")
-class TestAutomationSurface(StudioCase):
+class TestAutomationSurface(BuilderCase):
     def setUp(self):
         super().setUp()
         self.addCleanup(self.env["base.automation"]._unregister_hook)
-        self.Surface = typed.model(self.env, StudioAutomation)
-        self.Step = typed.model(self.env, StudioAutomationStep)
+        self.Surface = typed.model(self.env, BuilderAutomation)
+        self.Step = typed.model(self.env, BuilderAutomationStep)
 
     def _package(self):
         package = self.make_package()
@@ -60,8 +62,8 @@ class TestAutomationSurface(StudioCase):
         """The Trigger row reads the live selection, so a trigger Odoo adds
         shows up; and each one has a group in the picker, so none is lost
         at the bottom of an ungrouped list."""
-        catalogue = cast("StudioRecordSurface", self.Surface).catalogue(MODEL)
-        # `_section_json` (`studio_automation_surface.py`) sends the
+        catalogue = cast("BuilderRecordSurface", self.Surface).catalogue(MODEL)
+        # `_section_json` (`builder_automation_surface.py`) sends the
         # "trigger" row as a `TriggerRowJSON` (`groups`/`advanced_only`
         # besides the base `RowJSON` keys) at runtime, but `catalogue()`'s
         # own declared return only promises the base shape for every row.
@@ -88,7 +90,9 @@ class TestAutomationSurface(StudioCase):
         database has no ``template_id`` on server actions."""
         sections = {
             s["id"]
-            for s in cast("StudioRecordSurface", self.Step).catalogue(MODEL)["sections"]
+            for s in cast("BuilderRecordSurface", self.Step).catalogue(MODEL)[
+                "sections"
+            ]
         }
         has_mail = "template_id" in self.env["ir.actions.server"]._fields
         self.assertEqual("mail" in sections, has_mail)
@@ -120,7 +124,7 @@ class TestAutomationSurface(StudioCase):
         model = typed.model(self.env, IrModel)._get(MODEL)
         other = typed.model(self.env, IrModel)._get("res.users")
         Automation = self.env["base.automation"].with_context(
-            studio_package_id=package.id
+            builder_package_id=package.id
         )
         # `@api.model_create_multi`'s own stub gap (TYPING.md's "Known
         # traps"): every single-dict `.create(vals)` below needs the local
@@ -144,13 +148,13 @@ class TestAutomationSurface(StudioCase):
             "trigger": "on_create",
         }
         Automation.create(other_vals)  # pyright: ignore[reportArgumentType]
-        rows = cast("StudioRecordSurface", self.Surface).rows(
+        rows = cast("BuilderRecordSurface", self.Surface).rows(
             MODEL, cast("int", package.id)
         )
         self.assertEqual([r["id"] for r in rows], [rule.id])
         self.assertTrue(rows[0]["owned"])
         self.assertTrue(rows[0]["editable"])
-        hooks = cast("StudioRecordSurface", self.Surface).rows(
+        hooks = cast("BuilderRecordSurface", self.Surface).rows(
             MODEL, cast("int", package.id), webhooks=True
         )
         self.assertEqual([r["id"] for r in hooks], [hook.id])
@@ -184,9 +188,9 @@ class TestAutomationSurface(StudioCase):
         self.assertEqual(
             cast("IrActionsServer", rule.action_server_ids).usage, "base_automation"
         )
-        self.assertEqual(cast("StudioOwnedMixin", rule).studio_package_id, package)
+        self.assertEqual(cast("BuilderOwnedMixin", rule).builder_package_id, package)
         self.assertEqual(
-            cast("StudioOwnedMixin", rule.action_server_ids).studio_package_id,
+            cast("BuilderOwnedMixin", rule.action_server_ids).builder_package_id,
             package,
         )
         rendered = self._file(package)
@@ -244,12 +248,12 @@ class TestAutomationSurface(StudioCase):
         row = self.Surface.create_record(
             MODEL, cast("int", package.id), {"name": "Set it"}, template="set_field"
         )
-        described = cast("StudioRecordSurface", self.Surface).describe(
+        described = cast("BuilderRecordSurface", self.Surface).describe(
             row["id"], cast("int", package.id)
         )
         # `describe()`'s own declared return is `dict[str, object]` -- every
         # real subclass override widens it with keys of its own no base
-        # TypedDict enumerates (`studio_record_surface.py`'s own comment on
+        # TypedDict enumerates (`builder_record_surface.py`'s own comment on
         # `describe`), so each further key read here is its own cast at the
         # real read site, the same way `test_report_surface.py` already
         # reads a nested `described["values"]`.
@@ -258,7 +262,7 @@ class TestAutomationSurface(StudioCase):
             "on_create_or_write",
         )
         steps = cast("dict[str, object]", described["children"])
-        self.assertEqual(steps["surface"], "studio.automation.step")
+        self.assertEqual(steps["surface"], "builder.automation.step")
         items = cast("list[dict[str, object]]", steps["items"])
         self.assertEqual(len(items), 1)
         self.assertEqual(
@@ -270,7 +274,7 @@ class TestAutomationSurface(StudioCase):
             cast(
                 "dict[str, object]",
                 cast("dict[str, object]", described["advanced"])["context"],
-            )["studio_package_id"],
+            )["builder_package_id"],
             package.id,
         )
 
@@ -279,14 +283,14 @@ class TestAutomationSurface(StudioCase):
         row = self.Surface.create_record(
             MODEL, cast("int", package.id), {"name": "Set it"}, template="set_field"
         )
-        cast("StudioRecordSurface", self.Surface).write_record(
+        cast("BuilderRecordSurface", self.Surface).write_record(
             row["id"],
             {"filter_domain": "[('x_name', '=', 'a')]"},
             cast("int", package.id),
         )
         self.assertIn("x_name", self._file(package))
         with raises(self, UserError):
-            cast("StudioRecordSurface", self.Surface).write_record(
+            cast("BuilderRecordSurface", self.Surface).write_record(
                 row["id"],
                 {"trigger": "on_time", "trg_date_id": False},
                 cast("int", package.id),
@@ -312,7 +316,7 @@ class TestAutomationSurface(StudioCase):
         self.env["ir.model.data"].create(data_vals)  # pyright: ignore[reportArgumentType]
         row = next(
             r
-            for r in cast("StudioRecordSurface", self.Surface).rows(
+            for r in cast("BuilderRecordSurface", self.Surface).rows(
                 MODEL, cast("int", package.id)
             )
             if r["id"] == theirs.id
@@ -320,15 +324,15 @@ class TestAutomationSurface(StudioCase):
         self.assertFalse(row["editable"])
         self.assertIn("some_module", row["reason"])
         with raises(self, UserError):
-            cast("StudioRecordSurface", self.Surface).write_record(
+            cast("BuilderRecordSurface", self.Surface).write_record(
                 cast("int", theirs.id), {"name": "Mine"}, cast("int", package.id)
             )
-        copy = cast("StudioRecordSurface", self.Surface).duplicate_record(
+        copy = cast("BuilderRecordSurface", self.Surface).duplicate_record(
             cast("int", theirs.id), cast("int", package.id)
         )
         copied = typed.model(self.env, BaseAutomation).browse(copy["id"])
         self.assertFalse(copied.active)
-        self.assertEqual(cast("StudioOwnedMixin", copied).studio_package_id, package)
+        self.assertEqual(cast("BuilderOwnedMixin", copied).builder_package_id, package)
         self.assertTrue(theirs.active)
 
     def test_rotating_the_secret_never_touches_the_file(self):
@@ -338,7 +342,7 @@ class TestAutomationSurface(StudioCase):
         )
         rule = typed.model(self.env, BaseAutomation).browse(row["id"])
         before_url, before_file = rule.url, self._file(package)
-        cast("StudioRecordSurface", self.Surface).run(
+        cast("BuilderRecordSurface", self.Surface).run(
             row["id"], "rotate_secret", cast("int", package.id)
         )
         self.assertNotEqual(rule.url, before_url)
@@ -357,7 +361,7 @@ class TestAutomationSurface(StudioCase):
             "IrActionsServer",
             typed.model(self.env, BaseAutomation).browse(row["id"]).action_server_ids,
         ).ids
-        cast("StudioRecordSurface", self.Surface).remove_record(
+        cast("BuilderRecordSurface", self.Surface).remove_record(
             row["id"], cast("int", package.id), force=True
         )
         self.assertFalse(self.env["ir.actions.server"].browse(step_ids).exists())
@@ -408,7 +412,7 @@ class TestAutomationSurface(StudioCase):
         )
 
     def test_a_step_of_every_kind_round_trips(self):
-        """The surfaces are the first thing in the studio that writes an
+        """The surfaces are the first thing in the builder that writes an
         update, a webhook, an email and an activity step: each must come
         back from the file it was written to with its configuration.
 
@@ -512,7 +516,7 @@ class TestAutomationSurface(StudioCase):
             # by the `mail` addon's own extension of `ir.actions.server`,
             # not by the base `IrActionsServer` this method otherwise casts
             # to -- the same `cast("Any", ...)` fix `_step_label`
-            # (`studio_automation_surface.py`) already uses for the
+            # (`builder_automation_surface.py`) already uses for the
             # identical shape.
             self.assertEqual(cast("Any", by_state["mail_post"]).template_id.name, "T")
             self.assertEqual(
@@ -529,7 +533,7 @@ class TestAutomationSurface(StudioCase):
             MODEL, cast("int", package.id), {"name": "Code"}, template="set_field"
         )
         rule = typed.model(self.env, BaseAutomation).browse(row["id"])
-        described = cast("StudioRecordSurface", self.Step).describe(
+        described = cast("BuilderRecordSurface", self.Step).describe(
             cast("int", cast("IrActionsServer", rule.action_server_ids).id),
             cast("int", package.id),
         )
@@ -543,23 +547,23 @@ class TestAutomationSurface(StudioCase):
             [a["key"] for a in cast("list[RecordActionJSON]", code["actions"])],
         )
 
-    def test_reads_need_a_studio_user_and_writes_a_manager(self):
+    def test_reads_need_a_builder_user_and_writes_a_manager(self):
         package = self._package()
         row = self.Surface.create_record(
             MODEL, cast("int", package.id), {"name": "Guarded"}, template="run_code"
         )
-        builder = self.make_user("builder", ["app_builder_base.group_studio_user"])
+        builder = self.make_user("builder", ["app_builder_base.group_builder_user"])
         self.assertTrue(
-            cast("StudioRecordSurface", self.Surface.with_user(builder)).rows(
+            cast("BuilderRecordSurface", self.Surface.with_user(builder)).rows(
                 MODEL, cast("int", package.id)
             )
         )
         with raises(self, AccessError):
-            cast("StudioRecordSurface", self.Surface.with_user(builder)).write_record(
+            cast("BuilderRecordSurface", self.Surface.with_user(builder)).write_record(
                 row["id"], {"name": "Renamed"}, cast("int", package.id)
             )
         nobody = self.make_user("nobody", ["base.group_user"])
         with raises(self, AccessError):
-            cast("StudioRecordSurface", self.Surface.with_user(nobody)).rows(
+            cast("BuilderRecordSurface", self.Surface.with_user(nobody)).rows(
                 MODEL, cast("int", package.id)
             )

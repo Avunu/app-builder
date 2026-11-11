@@ -2,9 +2,9 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Render a ``ModelSpec`` into the machine-owned block of a model file.
 
-This is the *primary* output of the studio, not a one-time export, and the
+This is the *primary* output of the builder, not a one-time export, and the
 block convention is what makes that safe. Only the region between the markers
-is ever written; the rest of the file is bytes the studio never reads. So a
+is ever written; the rest of the file is bytes the builder never reads. So a
 developer can add a metaclass, a property, a decorator we have never heard of,
 and the builder keeps working -- which is the difference between a tool you can
 keep using and an export you leave behind. Frappe's ``TypeExporter`` splices
@@ -57,8 +57,8 @@ MAX_LINE = 88
 # The machine-owned region, delimited exactly as Frappe's TypeExporter does it.
 # Everything between these two lines is regenerated on every save; everything
 # outside them is never read.
-BEGIN_MARKER = "    # begin: studio-generated schema"
-END_MARKER = "    # end: studio-generated schema"
+BEGIN_MARKER = "    # begin: builder-generated schema"
+END_MARKER = "    # end: builder-generated schema"
 MARKER_NOTE = (
     "    # Kept in sync with the builder. Edits here are read back; edits\n"
     "    # anywhere else in this file are yours and are never touched."
@@ -139,13 +139,13 @@ _BOOL_KWARGS: tuple[tuple[str, str], ...] = (
 
 
 def class_name_for(model_name: str) -> str:
-    """``x.studio.project`` -> ``XStudioProject``."""
+    """``x.builder.project`` -> ``XBuilderProject``."""
     parts = re.split(r"[._]+", model_name)
     return "".join(p[:1].upper() + p[1:] for p in parts if p)
 
 
 def module_file_for(model_name: str) -> str:
-    """``x.studio.project`` -> ``x_studio_project.py``."""
+    """``x.builder.project`` -> ``x_builder_project.py``."""
     return "%s.py" % model_name.replace(".", "_")
 
 
@@ -259,7 +259,7 @@ def method_name_for(slug: str | None) -> str:
     """The name a graduated method gets, from whatever it was called."""
     cleaned = "".join(c if c.isalnum() else "_" for c in (slug or "").lower())
     cleaned = "_".join(part for part in cleaned.split("_") if part)
-    return "%s%s" % (modelspec.STUDIO_METHOD_PREFIX, cleaned or "action")
+    return "%s%s" % (modelspec.BUILDER_METHOD_PREFIX, cleaned or "action")
 
 
 # -- model ---------------------------------------------------------------
@@ -389,8 +389,8 @@ def render_block(spec: ModelSpec) -> str:
 
     Everything the builder knows how to change lives between the markers.
     Everything else in the file is the developer's and is never read, parsed or
-    rewritten -- which is the whole point. A studio that has to understand the
-    entire file in order to touch any of it is a studio a developer can lock
+    rewritten -- which is the whole point. A builder that has to understand the
+    entire file in order to touch any of it is a builder a developer can lock
     themselves out of, which is the failure this project exists to avoid.
     """
     lines = [BEGIN_MARKER, MARKER_NOTE]
@@ -484,7 +484,7 @@ def splice_block(source: str, block: str, spec: ModelSpec) -> str:
     )
     if not match:
         raise ValueError(
-            "no studio block and no 'class %s(...)' to put one after" % spec.class_name
+            "no builder block and no 'class %s(...)' to put one after" % spec.class_name
         )
     at = match.end()
     return "%s\n%s%s" % (source[:at], block, source[at:])
@@ -493,7 +493,7 @@ def splice_block(source: str, block: str, spec: ModelSpec) -> str:
 def ensure_imports(source: str, spec: ModelSpec) -> str:
     """Widen ``from odoo import ...`` if the block now needs more than it has.
 
-    The one edit the studio makes outside the block, and it is unavoidable:
+    The one edit the builder makes outside the block, and it is unavoidable:
     the block lives inside the class body while imports are module-level, so a
     field that introduces a compute needs ``api`` on a line the block cannot
     reach. Idempotent, and it only ever adds.

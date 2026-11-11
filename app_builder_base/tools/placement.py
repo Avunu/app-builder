@@ -9,7 +9,7 @@ separate chore.
 
 This edits the arch of views the package **owns outright**. Patching our own
 primary view with an ``<xpath>`` extension would produce source no developer
-would have written; ``studio.view.editor`` exists for the other case, editing
+would have written; ``builder.view.editor`` exists for the other case, editing
 views belonging to somebody else, and stays the tool for that.
 
 Removal matters as much as insertion and is easier to forget: a ``<field>``

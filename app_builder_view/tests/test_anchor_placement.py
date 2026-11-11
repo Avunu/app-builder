@@ -35,50 +35,52 @@ from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.models.studio_model_draft import StudioModelDraft
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.models.builder_model_draft import BuilderModelDraft
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import modelspec, typed
-from odoo.addons.app_builder_view.models.studio_view_edit import StudioViewEdit
-from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
+from odoo.addons.app_builder_view.models.builder_view_edit import BuilderViewEdit
+from odoo.addons.app_builder_view.models.builder_view_editor import BuilderViewEditor
+from odoo.addons.base.models.ir_ui_view import View
 
 if TYPE_CHECKING:
     # Only for the cast() calls and annotations below; with `from __future__
     # import annotations` nothing here needs these at runtime, the same
     # bargain every Phase 1c file's own `TYPE_CHECKING` block makes.
-    from odoo.addons.app_builder_base.models.studio_model_draft import (
+    from odoo.addons.app_builder_base.models.builder_model_draft import (
         DraftPayloadJSON,
     )
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
-    from odoo.addons.app_builder_base.models.studio_package_model import (
-        StudioPackageModel,
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
+    from odoo.addons.app_builder_base.models.builder_package_model import (
+        BuilderPackageModel,
     )
 
-    # `app_builder_view`'s own pure `_inherit = "studio.model.draft"`
+    # `app_builder_view`'s own pure `_inherit = "builder.model.draft"`
     # extension declares the anchor store (`_anchors`/`set_anchor`/
     # `_added_names`/`place_pending`/...) -- a real, different Python class
-    # than the base `StudioModelDraft` imported above, the same split
-    # `studio_view_new_field.py`'s own `_DraftHandle` Protocol worked
+    # than the base `BuilderModelDraft` imported above, the same split
+    # `builder_view_new_field.py`'s own `_DraftHandle` Protocol worked
     # around before this file was converted (its docstring: "replace it
     # with a real aliased import, once those two convert"). `_place_anchored`/
     # `_place_in_views`/`remove_field`/`action_discard`/`open_for_model` are
     # declared on *both* classes (the base's own no-op fallback, overridden
     # here); this alias is used for all of them, since it is the one that
     # matches what actually runs.
-    from odoo.addons.app_builder_view.models.studio_model_draft import AnchorJSON
-    from odoo.addons.app_builder_view.models.studio_model_draft import (
-        StudioModelDraft as StudioModelDraftView,
+    from ..models.builder_model_draft import AnchorJSON
+    from ..models.builder_model_draft import (
+        BuilderModelDraft as BuilderModelDraftView,
     )
 
-    # `canvas()` is composed onto `studio.view.editor` by
-    # `studio_view_canvas.py`'s own pure `_inherit` extension -- a different
-    # Python class than the real base `StudioViewEditor` imported above, the
-    # same split `test_console_tour.py`'s own `StudioViewEditorCanvas` alias
+    # `canvas()` is composed onto `builder.view.editor` by
+    # `builder_view_canvas.py`'s own pure `_inherit` extension -- a different
+    # Python class than the real base `BuilderViewEditor` imported above, the
+    # same split `test_console_tour.py`'s own `BuilderViewEditorCanvas` alias
     # already works around.
-    from odoo.addons.app_builder_view.models.studio_view_canvas import (
-        StudioViewEditor as StudioViewEditorCanvas,
+    from ..models.builder_view_canvas import (
+        BuilderViewEditor as BuilderViewEditorCanvas,
     )
-    from odoo.addons.app_builder_view.models.studio_view_editor import (
+    from ..models.builder_view_editor import (
         DropStagedFieldJSON,
         DropSuccessJSON,
     )
@@ -115,49 +117,49 @@ def _staged_of(result: DropSuccessJSON) -> DropStagedFieldJSON:
 
 def _pending_of(canvas) -> list[dict[str, object]]:
     """``canvas["pending"]``: one dict per field the draft is adding, kept
-    as ``object`` on ``CanvasJSON`` itself since ``studio_view_editor.py``
+    as ``object`` on ``CanvasJSON`` itself since ``builder_view_editor.py``
     never looks inside it -- only this file's own assertions do."""
     return cast("list[dict[str, object]]", canvas["pending"])
 
 
 @tagged("post_install", "-at_install")
-class TestAnchorPlacement(StudioCase):
+class TestAnchorPlacement(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         self.package = self.make_package(name="x_anchor_pkg")
         self.build_demo_content(self.package)
         self.package.action_write_files()
-        self.package.action_adopt(["x_studio_project"])
+        self.package.action_adopt(["x_builder_project"])
         self.package_model = cast(
-            "StudioPackageModel", self.package.model_ids
-        ).filtered(lambda m: m.model == "x_studio_project")
+            "BuilderPackageModel", self.package.model_ids
+        ).filtered(lambda m: m.model == "x_builder_project")
         self.form = typed.model(self.env, View).search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
 
     # -- helpers ---------------------------------------------------------------
 
-    def _draft(self) -> StudioModelDraftView:
-        Draft = typed.model(self.env, StudioModelDraft)
+    def _draft(self) -> BuilderModelDraftView:
+        Draft = typed.model(self.env, BuilderModelDraft)
         return cast(
-            "StudioModelDraftView",
-            Draft.browse(Draft.open_for_model("x_studio_project")["id"]),
+            "BuilderModelDraftView",
+            Draft.browse(Draft.open_for_model("x_builder_project")["id"]),
         )
 
-    def _draft_by_id(self, draft_id) -> StudioModelDraftView:
+    def _draft_by_id(self, draft_id) -> BuilderModelDraftView:
         return cast(
-            "StudioModelDraftView",
-            typed.model(self.env, StudioModelDraft).browse(draft_id),
+            "BuilderModelDraftView",
+            typed.model(self.env, BuilderModelDraft).browse(draft_id),
         )
 
     def _canvas(self, view_id, options=None):
         """``self.editor.canvas(...)``, cast to the extension that declares
-        it (``StudioViewEditorCanvas``, see the ``TYPE_CHECKING`` block).
+        it (``BuilderViewEditorCanvas``, see the ``TYPE_CHECKING`` block).
         ``view_id`` stays unannotated: it is sometimes a real ``View.id``
         (``IdType | Literal[False]``) and sometimes a plain ``int`` already,
         and ``canvas()`` itself only ever wants the latter."""
-        return cast("StudioViewEditorCanvas", self.editor).canvas(view_id, options)
+        return cast("BuilderViewEditorCanvas", self.editor).canvas(view_id, options)
 
     def _added(self, draft, *names):
         """A spec/diff pair claiming ``names`` were just added; the fields
@@ -207,7 +209,7 @@ class TestAnchorPlacement(StudioCase):
                 continue
             if child.tag == "widget":
                 out.append(
-                    "~" + child.get("class").split("o_studio_n_p_")[1].split()[0]
+                    "~" + child.get("class").split("o_builder_n_p_")[1].split()[0]
                 )
             else:
                 out.append(child.get("name"))
@@ -236,7 +238,7 @@ class TestAnchorPlacement(StudioCase):
         reload a real Apply needs.
         """
         draft = self._draft()
-        base_draft = cast("StudioModelDraft", draft)
+        base_draft = cast("BuilderModelDraft", draft)
         base = base_draft._spec()
         for name in names:
             base = modelspec.without_field(base, name)
@@ -275,7 +277,7 @@ class TestAnchorPlacement(StudioCase):
             ".//field[@name='x_active_flag']"
         )
         self.assertEqual(placed.get("widget"), "boolean_toggle")
-        history = typed.model(self.env, StudioViewEdit).stack_for(
+        history = typed.model(self.env, BuilderViewEdit).stack_for(
             cast("int", self.form.id)
         )
         self.assertEqual(history["undo"][0]["summary"], "added x_active_flag")
@@ -310,7 +312,7 @@ class TestAnchorPlacement(StudioCase):
             [(c.tag, c.get("name") or c.get("for")) for c in sheet],
             [("group", None), ("label", "x_active_flag"), ("field", "x_active_flag")],
         )
-        history = typed.model(self.env, StudioViewEdit).stack_for(
+        history = typed.model(self.env, BuilderViewEdit).stack_for(
             cast("int", self.form.id)
         )
         self.assertEqual(len(history["undo"]), 1)
@@ -362,7 +364,7 @@ class TestAnchorPlacement(StudioCase):
         here would roll back the database half of it. The refusal is logged
         and the balanced fallback takes over."""
         draft = self._draft()
-        Editor = self.env.registry["studio.view.editor"]
+        Editor = self.env.registry["builder.view.editor"]
         anchor = self._anchor(self.form, "x_budget")
         with (
             patch.object(
@@ -372,7 +374,7 @@ class TestAnchorPlacement(StudioCase):
                 side_effect=UserError("comes from another module's extension"),
             ),
             self.assertLogs(
-                "odoo.addons.app_builder_view.models.studio_model_draft",
+                "odoo.addons.app_builder_view.models.builder_model_draft",
                 level="WARNING",
             ),
         ):
@@ -402,7 +404,7 @@ class TestAnchorPlacement(StudioCase):
         arch travels with the locator, so the owned path can refuse a
         positional path that lands on another node of the primary arch."""
         draft = self._draft()
-        Editor = self.env.registry["studio.view.editor"]
+        Editor = self.env.registry["builder.view.editor"]
         anchor = self._anchor(self.form, "x_budget", xpath="/form/sheet/group/field[2]")
         with patch.object(Editor, "apply_operation", autospec=True) as spy:
             draft._place_anchored(
@@ -415,7 +417,7 @@ class TestAnchorPlacement(StudioCase):
 
     def test_the_hook_writes_nothing_to_disk_by_itself(self):
         draft = self._draft()
-        Package = self.env.registry["studio.package"]
+        Package = self.env.registry["builder.package"]
         with patch.object(Package, "action_write_files", autospec=True) as spy:
             draft._place_anchored(
                 self.form,
@@ -432,15 +434,15 @@ class TestAnchorPlacement(StudioCase):
         xmlid, since a patch has to name what it inherits, and it is not
         the package's to rewrite."""
         view_vals: dict[str, object] = {
-            "name": "x_studio_project.other",
-            "model": "x_studio_project",
+            "name": "x_builder_project.other",
+            "model": "x_builder_project",
             "type": "form",
             "arch": arch,
         }
         view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         data_vals: dict[str, object] = {
             "module": "base",
-            "name": "x_studio_project_other_form",
+            "name": "x_builder_project_other_form",
             "model": "ir.ui.view",
             "res_id": view.id,
         }
@@ -461,7 +463,7 @@ class TestAnchorPlacement(StudioCase):
         extension = typed.model(self.env, View).search([("inherit_id", "=", other.id)])
         self.assertEqual(len(extension), 1)
         self.assertEqual(
-            cast("StudioOwnedMixin", extension).studio_package_id, self.package
+            cast("BuilderOwnedMixin", extension).builder_package_id, self.package
         )
         self.assertIn("//field[@name='x_name']", cast("str", extension.arch))
         self.assertEqual(
@@ -498,7 +500,7 @@ class TestAnchorPlacement(StudioCase):
         ghost = arch.find(".//widget[@name='app_builder_pending']")
         self.assertIsNotNone(ghost)
         self.assertEqual(ghost.getprevious().get("name"), "x_budget")
-        self.assertIn("o_studio_n_p_colour", ghost.get("class"))
+        self.assertIn("o_builder_n_p_colour", ghost.get("class"))
         self.assertIn("'label': 'Colour'", ghost.get("options"))
         node = canvas["nodes"]["p_colour"]
         self.assertEqual(node["kind"], "pending")
@@ -581,7 +583,7 @@ class TestAnchorPlacement(StudioCase):
     def test_a_field_anchored_on_another_view_is_listed_not_drawn(self):
         other = self._foreign_form()
         draft = self._draft()
-        cast("StudioModelDraft", draft).add_field(
+        cast("BuilderModelDraft", draft).add_field(
             {"name": "colour", "ttype": "char", "string": "Colour"}
         )
         draft.set_anchor("colour", self._anchor(other, "x_name"))
@@ -597,9 +599,10 @@ class TestAnchorPlacement(StudioCase):
         their ghosts show, and the caller gets their own draft instead."""
         draft = self._staged(self._draft())
         builder = self.make_user(
-            "anchor_builder", ["base.group_system", "app_builder_base.group_studio_user"]
+            "anchor_builder",
+            ["base.group_system", "app_builder_base.group_builder_user"],
         )
-        canvas = cast("StudioViewEditorCanvas", self.editor.with_user(builder)).canvas(
+        canvas = cast("BuilderViewEditorCanvas", self.editor.with_user(builder)).canvas(
             cast("int", self.form.id), {"draft_id": draft.id}
         )
         self.assertNotEqual(canvas["draft_id"], draft.id)
@@ -608,15 +611,15 @@ class TestAnchorPlacement(StudioCase):
 
     def test_a_ghost_on_a_list_is_a_column(self):
         view_vals: dict[str, object] = {
-            "name": "x_studio_project.list",
-            "model": "x_studio_project",
+            "name": "x_builder_project.list",
+            "model": "x_builder_project",
             "type": "list",
             "arch": LIST_ARCH,
         }
         view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
-        self.package.studio_capture(view)
+        self.package.builder_capture(view)
         draft = self._draft()
-        cast("StudioModelDraft", draft).add_field(
+        cast("BuilderModelDraft", draft).add_field(
             {"name": "colour", "ttype": "char", "string": "Colour"}
         )
         draft.set_anchor("colour", self._anchor(view, "x_name"))
@@ -637,7 +640,7 @@ class TestAnchorPlacement(StudioCase):
         """Resolved on the original tree, all of them, before any is
         spliced: the first ghost must not shift the second's locator."""
         draft = self._staged(self._draft(), "first")
-        cast("StudioModelDraft", draft).add_field(
+        cast("BuilderModelDraft", draft).add_field(
             {"name": "second", "ttype": "char", "string": "Second"}
         )
         draft.set_anchor(
@@ -717,11 +720,11 @@ class TestAnchorPlacement(StudioCase):
         self.assertEqual(result["canvas"]["draft_id"], draft.id)
         self.assertFalse(
             self.env["ir.model.fields"].search(
-                [("model", "=", "x_studio_project"), ("name", "=", "urgency")]
+                [("model", "=", "x_builder_project"), ("name", "=", "urgency")]
             ),
             "staged, not written",
         )
-        self.assertNotIn("urgency", self.env["x_studio_project"]._fields)
+        self.assertNotIn("urgency", self.env["x_builder_project"]._fields)
 
     def test_a_second_drop_reuses_the_same_draft(self):
         first = self._drop(
@@ -1028,7 +1031,7 @@ class TestAnchorPlacement(StudioCase):
         )
         order = self._ghost_order(result["canvas"])
         separator = order[3]
-        self.assertTrue(separator.startswith("studio_separator_"), order)
+        self.assertTrue(separator.startswith("builder_separator_"), order)
         self.assertEqual(
             order,
             [
@@ -1416,7 +1419,7 @@ class TestAnchorPlacement(StudioCase):
         draft = self._staged(self._draft())
         draft.action_discard()
         self.assertEqual(draft._anchors(), {})
-        self.assertEqual(cast("StudioModelDraft", draft).load()["anchors"], {})
+        self.assertEqual(cast("BuilderModelDraft", draft).load()["anchors"], {})
 
     def test_an_anchor_needs_a_pending_field(self):
         draft = self._draft()
@@ -1426,7 +1429,7 @@ class TestAnchorPlacement(StudioCase):
     def test_load_reports_the_anchors(self):
         draft = self._staged(self._draft())
         self.assertEqual(
-            cast("StudioModelDraft", draft).load()["anchors"]["colour"]["view_id"],
+            cast("BuilderModelDraft", draft).load()["anchors"]["colour"]["view_id"],
             self.form.id,
         )
 
@@ -1513,7 +1516,7 @@ class TestAnchorPlacement(StudioCase):
         the rest of the Apply is the placement and the baseline."""
         draft = self._draft()
         Draft = type(draft)
-        base_draft = cast("StudioModelDraft", draft)
+        base_draft = cast("BuilderModelDraft", draft)
         spec = base_draft._spec()
         base = modelspec.without_field(spec, "x_active_flag")
         base_draft.base_spec_json = json.dumps(
@@ -1537,4 +1540,4 @@ class TestAnchorPlacement(StudioCase):
         self.assertFalse(result["placed"])
         self.assertIn("colour", result["reason"])
         self.assertEqual(self.form.arch, before)
-        self.assertTrue(cast("StudioModelDraft", draft).dirty)
+        self.assertTrue(cast("BuilderModelDraft", draft).dirty)

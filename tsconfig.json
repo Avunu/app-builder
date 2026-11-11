@@ -23,25 +23,24 @@
 
     "baseUrl": ".",
     "paths": {
-      "@odoo_studio_base/*": ["app_builder_base/static/src/*"],
+      "@app_builder_base/*": ["app_builder_base/static/src/*"],
       "@app_builder_model/*": ["app_builder_model/static/src/*"],
       "@app_builder_view/*": ["app_builder_view/static/src/*"],
       "@app_builder_ui/*": ["app_builder_ui/static/src/*"],
       "@app_builder_report/*": ["app_builder_report/static/src/*"],
       "@app_builder_approval/*": ["app_builder_approval/static/src/*"],
-      "@web/*": ["../../odoo/addons/web/static/src/*"],
-      "@html_editor/*": ["../../odoo/addons/html_editor/static/src/*"],
-      "@web_tour/*": ["../../odoo/addons/web_tour/static/src/*"],
-      "@mail/*": ["../../odoo/addons/mail/static/src/*"]
+      "@web/*": ["./.odoo-nix/odoo/addons/web/static/src/*"],
+      "@html_editor/*": ["./.odoo-nix/odoo/addons/html_editor/static/src/*"],
+      "@web_tour/*": ["./.odoo-nix/odoo/addons/web_tour/static/src/*"],
+      "@mail/*": ["./.odoo-nix/odoo/addons/mail/static/src/*"]
     }
   },
-  // Relative to the addon repo (this file's directory), which is always
-  // checked out at `modules/odoo-studio` in an odoo-nix workspace — see
-  // TYPING.md. No path-generation step needed: OCB's `addons/*/static/src`
-  // layout and this repo's own position are both fixed by that convention.
+  // `.odoo-nix/odoo` is OCB, the store path the addons-mode dev shell links
+  // there (flake.nix), so tsc needs the shell. See TYPING.md.
   "include": [
     "*/static/src/**/*",
     "*/static/tests/**/*",
+    "*/types/**/*.d.ts",
     // Cherry-picked, not a blanket `@types/**/*.d.ts` glob. No owl.d.ts:
     // @odoo/owl is a real npm dependency (package.json: types ->
     // dist/types/owl.d.ts) that resolves on its own, and OCB's own
@@ -67,15 +66,20 @@
     // facade instead (Phase 2c, console/odoo.ts) rather than pulling in
     // `services.d.ts` itself -- that one's cascade is the webclient's
     // entire service registry, not one view-descriptor shape.
-    "../../odoo/addons/web/static/src/@types/odoo.d.ts",
-    "../../odoo/addons/web/static/src/@types/hoot.d.ts",
-    "../../odoo/addons/web/static/src/@types/libs.d.ts",
-    "../../odoo/addons/web/static/src/@types/qunit.d.ts",
-    "../../odoo/addons/web/static/src/@types/fields.d.ts",
-    "../../odoo/addons/web/static/src/@types/registry.d.ts",
-    "../../odoo/addons/web/static/src/@types/registries/services_registry.d.ts",
-    "../../odoo/addons/web/static/src/@types/registries/views_registry.d.ts",
-    "../../odoo/addons/web/static/src/@types/registries/fields_registry.d.ts"
+    "./.odoo-nix/odoo/addons/web/static/src/@types/odoo.d.ts",
+    "./.odoo-nix/odoo/addons/web/static/src/@types/hoot.d.ts",
+    "./.odoo-nix/odoo/addons/web/static/src/@types/libs.d.ts",
+    "./.odoo-nix/odoo/addons/web/static/src/@types/qunit.d.ts",
+    "./.odoo-nix/odoo/addons/web/static/src/@types/fields.d.ts",
+    "./.odoo-nix/odoo/addons/web/static/src/@types/registry.d.ts",
+    "./.odoo-nix/odoo/addons/web/static/src/@types/registries/services_registry.d.ts",
+    "./.odoo-nix/odoo/addons/web/static/src/@types/registries/views_registry.d.ts",
+    "./.odoo-nix/odoo/addons/web/static/src/@types/registries/fields_registry.d.ts"
   ],
-  "exclude": ["node_modules", "**/static/lib/**", "**/static/description/**"]
+  "exclude": [
+    "node_modules",
+    "**/node_modules/**",
+    "**/static/lib/**",
+    "**/static/description/**"
+  ]
 }

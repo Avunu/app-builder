@@ -1,6 +1,6 @@
 # Copyright 2026 Avunu LLC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
-"""Shared fixtures for the studio test suite."""
+"""Shared fixtures for the builder test suite."""
 
 from __future__ import annotations
 
@@ -16,6 +16,15 @@ from odoo.tests import HttpCase, TransactionCase
 from odoo.tools.convert import convert_csv_import, convert_xml_import
 from odoo.tools.translate import TranslationImporter
 
+# The one the package itself uses. A second copy here had already drifted:
+# it predated base.automation and ir.cron, and a wipe that deletes a server
+# action while a cron still references it fails on the foreign key.
+from odoo.addons.app_builder_base.models.builder_package import (
+    UNLINK_ORDER,
+    BuilderPackage,
+)
+from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_base.tools.compat import groups_field
 from odoo.addons.base.models.ir_actions import IrActionsActWindow
 from odoo.addons.base.models.ir_model import (
     IrModel,
@@ -28,16 +37,6 @@ from odoo.addons.base.models.ir_module import Module
 from odoo.addons.base.models.ir_ui_menu import IrUiMenu
 from odoo.addons.base.models.ir_ui_view import View
 from odoo.addons.base.models.res_users import Users
-
-# The one the package itself uses. A second copy here had already drifted:
-# it predated base.automation and ir.cron, and a wipe that deletes a server
-# action while a cron still references it fails on the foreign key.
-from odoo.addons.app_builder_base.models.studio_package import (
-    UNLINK_ORDER,
-    StudioPackage,
-)
-from odoo.addons.app_builder_base.tools import typed
-from odoo.addons.app_builder_base.tools.compat import groups_field
 
 if TYPE_CHECKING:
     # Only for the annotations/casts below; with `from __future__ import
@@ -77,7 +76,7 @@ def raises(case: unittest.TestCase, exception: type[_E]) -> _AssertRaisesContext
     shape in typeshed: called with only an exception (no callable), it
     returns ``_AssertRaisesContext[_E]``, never ``None``. Typing this
     function's own ``case`` parameter as the ANCESTOR rather than
-    ``StudioCase``/``TransactionCase`` changes nothing about which method
+    ``BuilderCase``/``TransactionCase`` changes nothing about which method
     actually runs at runtime (Python always dispatches through ``case``'s
     real class, i.e. Odoo's own override, identical behavior for this
     call shape) -- only which stub pyright reads to type the result.
@@ -152,7 +151,7 @@ def prime_memoized_class_attributes() -> None:
                 setattr(model, name, getattr(BaseModel, name))
 
 
-class StudioHttpCase(HttpCase):
+class BuilderHttpCase(HttpCase):
     """``HttpCase`` for the console's tours, with the snapshot primed."""
 
     @classmethod
@@ -161,7 +160,7 @@ class StudioHttpCase(HttpCase):
         super().setUpClass()
 
 
-class StudioCase(TransactionCase):
+class BuilderCase(TransactionCase):
     """Base case for tests that create manual models.
 
     Test mode is required because ``registry.reset_changes()`` opens its own
@@ -185,17 +184,17 @@ class StudioCase(TransactionCase):
     # -- fixtures ---------------------------------------------------------
 
     def make_package(
-        self, name: str = "x_studio_demo", installed: bool = True, **overrides: object
-    ) -> StudioPackage:
-        tmp = tempfile.mkdtemp(prefix="studio-test-")
+        self, name: str = "x_builder_demo", installed: bool = True, **overrides: object
+    ) -> BuilderPackage:
+        tmp = tempfile.mkdtemp(prefix="builder-test-")
         values: dict[str, object] = {
             "name": name,
-            "display_name_": "Studio Demo",
+            "display_name_": "Builder Demo",
             "root_path": tmp,
             "auto_commit": "off",
         }
         values.update(overrides)
-        package = typed.model(self.env, StudioPackage).create(values)  # pyright: ignore[reportArgumentType]
+        package = typed.model(self.env, BuilderPackage).create(values)  # pyright: ignore[reportArgumentType]
         if installed:
             self.register_module(cast("str", package.name))
         return package
@@ -230,7 +229,7 @@ class StudioCase(TransactionCase):
         developers, and stayed red in CI for days. A parent that is a regular
         file is refused for everybody, root included.
         """
-        blocker = os.path.join(tempfile.mkdtemp(prefix="studio-test-ro-"), "blocker")
+        blocker = os.path.join(tempfile.mkdtemp(prefix="builder-test-ro-"), "blocker")
         with open(blocker, "w"):
             pass
         return os.path.join(blocker, "package")
@@ -250,8 +249,8 @@ class StudioCase(TransactionCase):
             return existing
         return Module_.create({"name": name, "state": "installed"})  # pyright: ignore[reportArgumentType]
 
-    def build_demo_content(self, package: StudioPackage) -> IrModel:
-        """Create a representative slice of everything the studio can emit."""
+    def build_demo_content(self, package: BuilderPackage) -> IrModel:
+        """Create a representative slice of everything the builder can emit."""
         # `@api.model_create_multi`'s own stub gap (TYPING.md's "Known
         # traps"): every single-dict `.create(vals)` below needs the
         # `# pyright: ignore[reportArgumentType]` that idiom already
@@ -260,8 +259,8 @@ class StudioCase(TransactionCase):
         # line rather than somewhere inside a multi-line dict literal
         # pyright would not attribute the diagnostic to.
         model_vals: dict[str, object] = {
-            "name": "Studio Demo Project",
-            "model": "x_studio_project",
+            "name": "Builder Demo Project",
+            "model": "x_builder_project",
             "field_id": [
                 Command.create(
                     {
@@ -334,8 +333,8 @@ class StudioCase(TransactionCase):
             ]
         )
         view_vals: dict[str, object] = {
-            "name": "x_studio_project.form",
-            "model": "x_studio_project",
+            "name": "x_builder_project.form",
+            "model": "x_builder_project",
             "arch": """
                     <form>
                         <sheet>
@@ -351,18 +350,18 @@ class StudioCase(TransactionCase):
         }
         view = typed.model(self.env, View).create(view_vals)  # pyright: ignore[reportArgumentType]
         action_vals: dict[str, object] = {
-            "name": "Studio Demo Projects",
-            "res_model": "x_studio_project",
+            "name": "Builder Demo Projects",
+            "res_model": "x_builder_project",
             "view_mode": "list,form",
         }
         action = typed.model(self.env, IrActionsActWindow).create(action_vals)  # pyright: ignore[reportArgumentType]
         menu_vals: dict[str, object] = {
-            "name": "Studio Demo Projects",
+            "name": "Builder Demo Projects",
             "action": "ir.actions.act_window,%d" % action.id,
         }
         menu = typed.model(self.env, IrUiMenu).create(menu_vals)  # pyright: ignore[reportArgumentType]
         access_vals: dict[str, object] = {
-            "name": "x_studio_project all",
+            "name": "x_builder_project all",
             "model_id": model.id,
             "group_id": cast("int", typed.ref(self.env, "base.group_user").id),
             "perm_read": True,
@@ -383,7 +382,7 @@ class StudioCase(TransactionCase):
 
     # -- round-trip helpers ----------------------------------------------
 
-    def wipe_package_records(self, package: StudioPackage) -> None:
+    def wipe_package_records(self, package: BuilderPackage) -> None:
         """Remove every record the package owns, plus its xmlids."""
         data = typed.model(self.env, IrModelData).search(
             [("module", "=", package.name)]
@@ -407,7 +406,7 @@ class StudioCase(TransactionCase):
         self.env.flush_all()
 
     def load_translations(
-        self, package: StudioPackage, files: dict[str, str]
+        self, package: BuilderPackage, files: dict[str, str]
     ) -> list[str]:
         """Load the generated PO files the way a module install would.
 
@@ -437,7 +436,7 @@ class StudioCase(TransactionCase):
             self.env.flush_all()
         return loaded
 
-    def load_rendered(self, package: StudioPackage, files: dict[str, str]) -> None:
+    def load_rendered(self, package: BuilderPackage, files: dict[str, str]) -> None:
         """Feed rendered content back through Odoo's own XML/CSV importer.
 
         Going through ``convert_xml_import`` rather than a bespoke loader is the

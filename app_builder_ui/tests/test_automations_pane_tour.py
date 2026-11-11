@@ -11,18 +11,20 @@ from typing import TYPE_CHECKING, cast
 
 from odoo.tests import tagged
 
-from odoo.addons.base_automation.models.base_automation import BaseAutomation
-from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
+from odoo.addons.app_builder_base.tests.common import BuilderHttpCase, join_groups
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base_automation.models.base_automation import BaseAutomation
 
 if TYPE_CHECKING:
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
     from odoo.addons.base.models.ir_actions import IrActionsServer
     from odoo.addons.base.models.res_users import Users
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
 
 
 @tagged("post_install", "-at_install")
-class TestAutomationsPaneTour(StudioHttpCase):
+class TestAutomationsPaneTour(BuilderHttpCase):
     def setUp(self):
         super().setUp()
         console = self.env["ir.module.module"].search(
@@ -33,14 +35,14 @@ class TestAutomationsPaneTour(StudioHttpCase):
         self.addCleanup(self.env["base.automation"]._unregister_hook)
 
     def test_an_automation_is_made_and_edited_from_the_pane(self):
-        root = tempfile.mkdtemp(prefix="studio-tour-")
+        root = tempfile.mkdtemp(prefix="builder-tour-")
         package_vals: dict[str, object] = {
             "name": "x_tour_auto_pkg",
             "display_name_": "Tour Automations",
             "root_path": root,
             "auto_commit": "off",
         }
-        package = self.env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
+        package = self.env["builder.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
         module_vals: dict[str, object] = {
             "name": "x_tour_auto_pkg",
             "state": "installed",
@@ -48,7 +50,7 @@ class TestAutomationsPaneTour(StudioHttpCase):
         self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
             cast("Users", typed.ref(self.env, "base.user_admin")),
-            ["app_builder_base.group_studio_manager"],
+            ["app_builder_base.group_builder_manager"],
         )
         # The tour starts from an empty pane: no partner automations may exist.
         self.env["base.automation"].search(
@@ -72,9 +74,9 @@ class TestAutomationsPaneTour(StudioHttpCase):
         )
         self.assertEqual(len(rule), 1)
         self.assertFalse(rule.active)
-        # studio_package_id lives on studio.owned.mixin, _inherit-composed
+        # builder_package_id lives on builder.owned.mixin, _inherit-composed
         # into base.automation -- invisible to pyright on the real class.
-        self.assertEqual(cast("StudioOwnedMixin", rule).studio_package_id, package)
+        self.assertEqual(cast("BuilderOwnedMixin", rule).builder_package_id, package)
         self.assertEqual(rule.filter_domain, "[('is_company', '=', True)]")
         self.assertEqual(
             cast("IrActionsServer", rule.action_server_ids).mapped("state"), ["code"]

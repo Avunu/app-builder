@@ -281,7 +281,7 @@ class ScaffoldOptions:
 
 
 def inverse_name_for(model_name: str) -> str:
-    """``studio_demo.workshop_job`` -> ``workshop_job_id``.
+    """``builder_demo.workshop_job`` -> ``workshop_job_id``.
 
     Kept beside the companions because both sides -- the child's many2one and
     the parent's one2many ``inverse_name`` -- have to produce the same string,
@@ -316,7 +316,7 @@ def _companion_fields(model_name: str, options: ScaffoldOptions) -> list[FieldSp
 
 
 def companion_name(model_name: str, kind: str) -> str:
-    """``x_studio_job`` + ``tag`` -> ``x_studio_job_tag``."""
+    """``x_builder_job`` + ``tag`` -> ``x_builder_job_tag``."""
     return "%s_%s" % (model_name, kind)
 
 
@@ -367,7 +367,7 @@ def companion_specs(
         )
     if options.lines:
         # On the dot, not the underscore. A generated model is named
-        # `<package>.<slug>` (`studio_app_builder.technical_name`), so splitting
+        # `<package>.<slug>` (`builder_app.technical_name`), so splitting
         # on "_" gives `pkg.job_id` for `alpha_pkg.job` -- a field name with a
         # dot in it, which validate_spec refuses. The composer's
         # `_suggest_inverse_name` already splits this way; the two have to agree

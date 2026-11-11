@@ -12,24 +12,26 @@ from typing import TYPE_CHECKING, cast
 
 from odoo import api, models
 
-from odoo.addons.app_builder_base.models.studio_serializer import SEQ_AUTOMATION
+from odoo.addons.app_builder_base.models.builder_serializer import SEQ_AUTOMATION
 
 if TYPE_CHECKING:
     from odoo.models import BaseModel
 
-    from odoo.addons.app_builder_base.models.studio_serializer import StudioSerializer
+    from odoo.addons.app_builder_base.models.builder_serializer import (
+        BuilderSerializer,
+    )
 
 
 class BaseAutomationSerializer(models.AbstractModel):
-    _name = "studio.serializer.base.automation"
-    _inherit = "studio.serializer"
-    _description = "Studio Serializer for base.automation"
+    _name = "builder.serializer.base.automation"
+    _inherit = "builder.serializer"
+    _description = "Builder Serializer for base.automation"
 
-    _studio_model = "base.automation"
-    _studio_sequence = SEQ_AUTOMATION
-    _studio_dir = "data"
-    _studio_suffix = "_automation"
-    _studio_fields = (
+    _builder_model = "base.automation"
+    _builder_sequence = SEQ_AUTOMATION
+    _builder_dir = "data"
+    _builder_suffix = "_automation"
+    _builder_fields = (
         "name",
         "model_id",
         "active",
@@ -49,7 +51,7 @@ class BaseAutomationSerializer(models.AbstractModel):
         "record_getter",
         "log_webhook_calls",
     )
-    _studio_ignored = (
+    _builder_ignored = (
         # A per-database secret. Committing it would both leak the URL that
         # can drive this automation and make the file differ between
         # databases; base.automation regenerates it on create.
@@ -64,9 +66,9 @@ class BaseAutomationSerializer(models.AbstractModel):
     def _group_model(self, record: BaseModel) -> str | None:
         # `record` is genuinely a `base.automation` recordset at runtime, but
         # the overridden method's own declared parameter type (`BaseModel`,
-        # `studio_serializer.py`) is what has to match here -- same
+        # `builder_serializer.py`) is what has to match here -- same
         # "`record[fname]`, not `record.fname`" idiom `_should_skip` below and
-        # `StudioSerializer` itself already use for a field pyright cannot
+        # `BuilderSerializer` itself already use for a field pyright cannot
         # know a generically-typed record carries.
         return record["model_id"].model
 
@@ -74,12 +76,12 @@ class BaseAutomationSerializer(models.AbstractModel):
     def _should_skip(self, record: BaseModel, fname: str) -> bool:
         if fname == "active":
             return bool(record["active"])
-        # `BaseAutomationSerializer`'s only real base is `studio.serializer`,
+        # `BaseAutomationSerializer`'s only real base is `builder.serializer`,
         # composed in at the registry level via `_inherit` -- never a real
         # Python base class -- so `_should_skip` is invisible to pyright on
-        # the plain `super()` call the same way `self._assert_studio_manager()`
+        # the plain `super()` call the same way `self._assert_builder_manager()`
         # is on `self` for the `_inherit`-mixin-invisible-to-pyright pattern
         # `typed.security()` already fixes; the identical cast, aimed at
         # `super()` instead of `self`, since there is no shared helper for
         # this call shape yet.
-        return cast("StudioSerializer", super())._should_skip(record, fname)
+        return cast("BuilderSerializer", super())._should_skip(record, fname)

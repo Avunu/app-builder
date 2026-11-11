@@ -1,6 +1,6 @@
 /** @odoo-module **/
 /**
- * "Studio" in the systray -- the way into the console from any screen.
+ * "Builder" in the systray -- the way into the console from any screen.
  *
  * The cog item reaches the console from inside a view's control panel; this
  * one sits in the navbar, where Enterprise puts its toggle, and is there
@@ -23,20 +23,21 @@
  * own "a controller is mounted" event and re-renders itself.
  */
 
-import { Component, onWillStart, useState } from "@odoo/owl";
-import { _t } from "./l10n";
-import { registry } from "@web/core/registry";
-import { useBus } from "@web/core/utils/hooks";
-import type { EnvWithBus } from "./compat";
-import type { ActionController, ActionService } from "./odoo";
-import { useService, user } from "./odoo";
+import {Component, onWillStart, useState} from "@odoo/owl";
+import {_t} from "./l10n";
+import {registry} from "@web/core/registry";
+import {useBus} from "@web/core/utils/hooks";
+import type {EventBus} from "@odoo/owl";
+import type {EnvWithBus} from "./compat";
+import type {ActionController, ActionService} from "./odoo";
+import {useService, user} from "./odoo";
 
 // `registry.category("systray")`'s item shape (`SystrayRegistryItemShape`)
 // and its `declare module "registries"` augmentation both live in
 // `odoo.ts` now -- "the framework boundary, fenced in one place"
 // (TYPING.md, Phase 2c) -- alongside `app_builder.panes`/`console_tabs`.
 
-/** `StudioSystrayItem` takes no props of its own -- `static props = {}`
+/** `BuilderSystrayItem` takes no props of its own -- `static props = {}`
  * below, and the systray mounts every entry with none. `Record<string,
  * never>` rather than a bare `{}`: TypeScript treats an empty *interface*
  * as accepting almost any value structurally, which is not what is meant
@@ -52,115 +53,118 @@ type Props = Record<string, never>;
  * `previous_action`), so this stays local rather than joining
  * `types.ts`. */
 interface SystrayTarget {
-    model: string;
-    view_type: string | undefined;
-    view_id: number | false;
-    action_id: number | false;
-    res_id: number | false;
+  model: string;
+  view_type: string | undefined;
+  view_id: number | false;
+  action_id: number | false;
+  res_id: number | false;
 }
 
-export class StudioSystrayItem extends Component<Props, EnvWithBus> {
-    static override template = "app_builder_view.StudioSystrayItem";
-    static override props = {};
+export class BuilderSystrayItem extends Component<Props, EnvWithBus> {
+  static override template = "app_builder_view.BuilderSystrayItem";
+  static override props = {};
 
-    // Assigned in `setup()`, not the constructor -- Owl's own idiom, and
-    // the constructor here is entirely framework-driven -- so declared
-    // with the definite-assignment assertion rather than given an
-    // initializer or an `| undefined` that would make every read below
-    // narrow for nothing.
-    action!: ActionService;
-    state!: { allowed: boolean };
+  // Assigned in `setup()`, not the constructor -- Owl's own idiom, and
+  // the constructor here is entirely framework-driven -- so declared
+  // with the definite-assignment assertion rather than given an
+  // initializer or an `| undefined` that would make every read below
+  // narrow for nothing.
+  action!: ActionService;
+  state!: {allowed: boolean};
 
-    override setup(): void {
-        this.action = useService("action");
-        this.state = useState({ allowed: false });
-        // Gated on the studio group the way the cog item is: the server
-        // guards the writes, this only keeps the button out of the way of
-        // people it would do nothing for.
-        onWillStart(async () => {
-            this.state.allowed = await user.hasGroup("app_builder_base.group_studio_user");
-        });
-        // Fired after the new controller is mounted and the stack committed
-        // (18, 19 and master alike), so what is read below is current.
-        useBus(this.env.bus, "ACTION_MANAGER:UI-UPDATED", () => this.render());
+  override setup(): void {
+    this.action = useService("action");
+    this.state = useState({allowed: false});
+    // Gated on the builder group the way the cog item is: the server
+    // guards the writes, this only keeps the button out of the way of
+    // people it would do nothing for.
+    onWillStart(async () => {
+      this.state.allowed = await user.hasGroup("app_builder_base.group_builder_user");
+    });
+    // Fired after the new controller is mounted and the stack committed
+    // (18, 19 and master alike), so what is read below is current.
+    useBus(this.env.bus as unknown as EventBus, "ACTION_MANAGER:UI-UPDATED", () =>
+      this.render()
+    );
+  }
+
+  /**
+   * What the console would be opened on, or `null` when the screen is
+   * not a view of a model.
+   *
+   * A controller restored from the URL may be a `virtual` placeholder
+   * with an empty action and no props; a client action -- the console
+   * among them -- has a tag and no `resModel`. Both are refused by the
+   * one check on the action's type, the placeholder by its own flag too.
+   */
+  get target(): SystrayTarget | null {
+    if (!this.state.allowed) {
+      return null;
     }
-
-    /**
-     * What the console would be opened on, or `null` when the screen is
-     * not a view of a model.
-     *
-     * A controller restored from the URL may be a `virtual` placeholder
-     * with an empty action and no props; a client action -- the console
-     * among them -- has a tag and no `resModel`. Both are refused by the
-     * one check on the action's type, the placeholder by its own flag too.
-     */
-    get target(): SystrayTarget | null {
-        if (!this.state.allowed) {
-            return null;
-        }
-        const ctrl = this.action.currentController;
-        if (!ctrl || ctrl.virtual || !ctrl.action || !ctrl.props) {
-            return null;
-        }
-        if (ctrl.action.type !== "ir.actions.act_window" || !ctrl.props.resModel) {
-            return null;
-        }
-        const viewType = ctrl.props.type;
-        const views = ctrl.action.views || [];
-        const pinned = views.find((view) => view[1] === viewType);
-        // Contextually typed against `ActionController["currentState"]`
-        // itself (minus the `| undefined` the fallback exists to clear):
-        // an un-annotated `ctrl.currentState || {}` infers a bare `{}`
-        // for the fallback branch, and `state.resId` below would then
-        // fail against that branch of the union -- the same "widen the
-        // fallback to the field's own optional shape" move TYPING.md's
-        // other clusters already use for a `||` default that must keep
-        // an optional key reachable.
-        const state: NonNullable<ActionController["currentState"]> = ctrl.currentState || {};
-        return {
-            model: ctrl.props.resModel,
-            view_type: viewType,
-            view_id: (pinned && pinned[0]) || false,
-            action_id: ctrl.action.id || false,
-            res_id: state.resId || ctrl.props.resId || false,
-        };
+    const ctrl = this.action.currentController;
+    if (!ctrl || ctrl.virtual || !ctrl.action || !ctrl.props) {
+      return null;
     }
-
-    get label(): string {
-        return String(_t("Studio"));
+    if (ctrl.action.type !== "ir.actions.act_window" || !ctrl.props.resModel) {
+      return null;
     }
+    const viewType = ctrl.props.type;
+    const views = ctrl.action.views || [];
+    const pinned = views.find((view) => view[1] === viewType);
+    // Contextually typed against `ActionController["currentState"]`
+    // itself (minus the `| undefined` the fallback exists to clear):
+    // an un-annotated `ctrl.currentState || {}` infers a bare `{}`
+    // for the fallback branch, and `state.resId` below would then
+    // fail against that branch of the union -- the same "widen the
+    // fallback to the field's own optional shape" move TYPING.md's
+    // other clusters already use for a `||` default that must keep
+    // an optional key reachable.
+    const state: NonNullable<ActionController["currentState"]> =
+      ctrl.currentState || {};
+    return {
+      model: ctrl.props.resModel,
+      view_type: viewType,
+      view_id: (pinned && pinned[0]) || false,
+      action_id: ctrl.action.id || false,
+      res_id: state.resId || ctrl.props.resId || false,
+    };
+  }
 
-    get tooltip(): string {
-        const target = this.target;
-        return target
-            ? String(_t("Edit this %s view in Studio", target.view_type))
-            : String(_t("Open Studio"));
-    }
+  get label(): string {
+    return String(_t("Builder"));
+  }
 
-    /**
-     * Open the console on the screen, on its Views pane. What the console
-     * needs to come back to this screen after a reload it keeps in its
-     * own URL, so nothing is mirrored into the context.
-     */
-    open(): void {
-        const target = this.target;
-        if (!target) {
-            return;
-        }
-        void this.action.doAction({
-            type: "ir.actions.client",
-            tag: "app_builder_console",
-            target: "fullscreen",
-            name: String(_t("Studio")),
-            params: { ...target, pane: "views" },
-        });
+  get tooltip(): string {
+    const target = this.target;
+    return target
+      ? String(_t("Edit this %s view in Builder", target.view_type))
+      : String(_t("Open Builder"));
+  }
+
+  /**
+   * Open the console on the screen, on its Views pane. What the console
+   * needs to come back to this screen after a reload it keeps in its
+   * own URL, so nothing is mirrored into the context.
+   */
+  open(): void {
+    const target = this.target;
+    if (!target) {
+      return;
     }
+    void this.action.doAction({
+      type: "ir.actions.client",
+      tag: "app_builder_console",
+      target: "fullscreen",
+      name: String(_t("Builder")),
+      params: {...target, pane: "views"},
+    });
+  }
 }
 
 registry.category("systray").add(
-    "app_builder.toggle",
-    { Component: StudioSystrayItem, isDisplayed: () => true },
-    {
-        sequence: 5,
-    },
+  "app_builder.toggle",
+  {Component: BuilderSystrayItem, isDisplayed: () => true},
+  {
+    sequence: 5,
+  }
 );

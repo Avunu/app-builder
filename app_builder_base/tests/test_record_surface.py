@@ -20,47 +20,47 @@ from odoo.tests import tagged
 from odoo.addons.base.models.ir_model import IrModel, IrModelAccess
 from odoo.addons.base.models.ir_rule import IrRule
 
-from ..models.studio_security_surfaces import StudioAccessSurface, StudioRuleSurface
+from ..models.builder_security_surfaces import BuilderAccessSurface, BuilderRuleSurface
 from ..tools import typed
-from .common import StudioCase, raises
+from .common import BuilderCase, raises
 
 if TYPE_CHECKING:
     # Only for the casts below (`from __future__ import annotations` defers
-    # all of them to strings); `StudioAccessSurface`/`StudioRuleSurface` are
+    # all of them to strings); `BuilderAccessSurface`/`BuilderRuleSurface` are
     # real, top-level imports instead (above), since `typed.model()` reads
     # `cls._name` at *runtime* -- the same split every other Phase 1c/1d
     # file's own `TYPE_CHECKING` block makes.
-    from ..models.studio_record_surface import StudioRecordSurface
+    from ..models.builder_record_surface import BuilderRecordSurface
 
 
 @tagged("post_install", "-at_install")
-class TestRecordSurface(StudioCase):
+class TestRecordSurface(BuilderCase):
     def setUp(self):
         super().setUp()
         self.package = self.make_package(name="x_surf_pkg")
         self.build_demo_content(self.package)
         self.package.action_write_files()
-        # Both surfaces compose `studio.record.surface` only via
+        # Both surfaces compose `builder.record.surface` only via
         # `_inherit` (registry-level, never a real Python base class), so
         # their own declared class carries none of its methods as far as
         # pyright can see -- the same shape `typed.security()`/`typed
-        # .serializer()` (`tools/typed.py`) already fix for the studio's
+        # .serializer()` (`tools/typed.py`) already fix for the builder's
         # other two mixins, applied here at the call site instead since
         # this file cannot add a helper of its own to `tools/typed.py`.
         self.access = cast(
-            "StudioRecordSurface", typed.model(self.env, StudioAccessSurface)
+            "BuilderRecordSurface", typed.model(self.env, BuilderAccessSurface)
         )
         self.rules = cast(
-            "StudioRecordSurface", typed.model(self.env, StudioRuleSurface)
+            "BuilderRecordSurface", typed.model(self.env, BuilderRuleSurface)
         )
-        self.model = "x_studio_project"
+        self.model = "x_builder_project"
         self.group = typed.ref(self.env, "base.group_user")
 
     def _file(self, relative):
         # `root_path` is always set by `make_package` before a test ever
         # reaches here (a Char field, `str | Literal[False]` by its own
         # declared type) -- true by construction, the same way
-        # `studio_package.py`'s own `root_path` reads already cast it.
+        # `builder_package.py`'s own `root_path` reads already cast it.
         path = os.path.join(cast("str", self.package.root_path), relative)
         if not os.path.isfile(path):
             return ""
@@ -94,7 +94,7 @@ class TestRecordSurface(StudioCase):
     def test_rule_templates_need_the_field_they_use(self):
         keys = [t["key"] for t in self.rules.templates(self.model)]
         self.assertIn("own_records", keys)
-        self.assertNotIn("assigned_to_me", keys, "x_studio_project has no user_id")
+        self.assertNotIn("assigned_to_me", keys, "x_builder_project has no user_id")
         self.assertIn(
             "assigned_to_me", [t["key"] for t in self.rules.templates("res.partner")]
         )
@@ -105,7 +105,7 @@ class TestRecordSurface(StudioCase):
         # `self.package` is a real, `.create()`-backed record for the rest
         # of this suite (`setUp`), so `.id` is true by construction a real
         # `int`, never `NewId`/`Literal[False]` -- the same cast `_row`
-        # (`studio_record_surface.py`) already makes on `record.id`. Every
+        # (`builder_record_surface.py`) already makes on `record.id`. Every
         # other `self.package.id`/`<record>.id` argument below is the same
         # cast, for the same reason.
         rows = self.access.rows(self.model, cast("int", self.package.id))
@@ -205,7 +205,7 @@ class TestRecordSurface(StudioCase):
         )
         self.assertEqual(described["advanced"]["res_model"], "ir.model.access")
         self.assertEqual(
-            described["advanced"]["context"]["studio_package_id"], self.package.id
+            described["advanced"]["context"]["builder_package_id"], self.package.id
         )
 
     def test_write_lands_in_the_file(self):
@@ -235,7 +235,7 @@ class TestRecordSurface(StudioCase):
             self.access.write_record(
                 row["id"], {"model_id": 1}, cast("int", self.package.id)
             )
-        self.assertIn("Not something the studio sets", str(caught.exception))
+        self.assertIn("Not something the builder sets", str(caught.exception))
 
     # -- create / duplicate / remove ----------------------------------------------
 
@@ -282,9 +282,9 @@ class TestRecordSurface(StudioCase):
         rule = typed.model(self.env, IrRule).browse(row["id"])
         self.assertEqual(rule.domain_force, "[('create_uid', '=', user.id)]")
         self.assertIn(
-            self.group, rule[cast("StudioRuleSurface", self.rules)._groups_field()]
+            self.group, rule[cast("BuilderRuleSurface", self.rules)._groups_field()]
         )
-        self.assertIn("Own", self._file("security/x_studio_project_security.xml"))
+        self.assertIn("Own", self._file("security/x_builder_project_security.xml"))
         described = cast(
             "dict[str, Any]",
             self.rules.describe(row["id"], cast("int", self.package.id)),
@@ -341,7 +341,9 @@ class TestRecordSurface(StudioCase):
     # -- guards ------------------------------------------------------------------------
 
     def test_writes_need_a_manager(self):
-        builder = self.make_user("surf_builder", ["app_builder_base.group_studio_user"])
+        builder = self.make_user(
+            "surf_builder", ["app_builder_base.group_builder_user"]
+        )
         as_builder = self.access.with_user(builder)
         self.assertTrue(as_builder.rows(self.model, cast("int", self.package.id)))
         with raises(self, AccessError):

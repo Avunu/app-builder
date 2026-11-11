@@ -3,21 +3,21 @@
 // hover and selection outlines step aside, the accepting containers show
 // their edges.
 
-$o-studio-dnd-brand: var(--o-color-primary, #714b67);
+$o-builder-dnd-brand: var(--o-color-primary, #714b67);
 
 // -- the helper ---------------------------------------------------------------
 
 // What the hook moves: a small box whose top-left corner is the pointer. It
 // is what the zones are matched against, so it stays small; the chip the
 // user sees hangs off it, out from under the pointer.
-.o_studio_drag_hit {
+.o_builder_drag_hit {
     position: fixed;
     z-index: 1100;
     background: transparent;
     pointer-events: auto;
 }
 
-.o_studio_drag_chip {
+.o_builder_drag_chip {
     position: absolute;
     top: 14px;
     left: 14px;
@@ -27,7 +27,7 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
     width: 200px;
     height: 36px;
     padding: 0 10px;
-    border: 1px solid $o-studio-dnd-brand;
+    border: 1px solid $o-builder-dnd-brand;
     border-radius: 4px;
     background: #fff;
     color: #212529;
@@ -44,17 +44,17 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
         flex: 0 0 auto;
         width: 16px;
         text-align: center;
-        color: $o-studio-dnd-brand;
+        color: $o-builder-dnd-brand;
     }
 
-    .o_studio_chip_label {
+    .o_builder_chip_label {
         flex: 1 1 auto;
         overflow: hidden;
         text-overflow: ellipsis;
         font-weight: 600;
     }
 
-    .o_studio_chip_caption {
+    .o_builder_chip_caption {
         display: none;
         flex: 0 1 auto;
         overflow: hidden;
@@ -62,12 +62,12 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
         color: rgba(0, 0, 0, 0.6);
     }
 
-    &.o_studio_chip_has_caption {
-        .o_studio_chip_label {
+    &.o_builder_chip_has_caption {
+        .o_builder_chip_label {
             flex: 0 1 auto;
         }
 
-        .o_studio_chip_caption {
+        .o_builder_chip_caption {
             display: inline;
         }
     }
@@ -78,7 +78,7 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
 // The layer the zones are drawn in: a point at the origin of a scroll
 // container's content, with the zones laid out from it. The canvas has one
 // in its overlay; the outline has one in its list.
-.o_studio_zones {
+.o_builder_zones {
     position: absolute;
     top: 0;
     left: 0;
@@ -96,7 +96,7 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
 
 // A zone has real size -- the hit area -- and draws a thinner bar inside
 // it, so a tour can find it and a person can aim at it.
-.o_studio_dropzone {
+.o_builder_dropzone {
     pointer-events: none;
 
     &::before {
@@ -110,15 +110,15 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
     // A bar across a column: 6px tall, the width of the zone. Drawn near
     // the top of a canvas zone, which is thin; on the line the zone
     // names when it has one, as an outline zone spanning two rows does.
-    &.o_studio_dz_y::before {
+    &.o_builder_dz_y::before {
         left: 0;
         right: 0;
-        top: calc(var(--o-studio-dz-line, 7px) - 3px);
+        top: calc(var(--o-builder-dz-line, 7px) - 3px);
         height: 6px;
     }
 
     // A bar between things side by side: 6px wide, the height of the zone.
-    &.o_studio_dz_x::before {
+    &.o_builder_dz_x::before {
         top: 0;
         bottom: 0;
         left: 4px;
@@ -126,7 +126,7 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
     }
 
     // An empty container: the whole box, dashed.
-    &.o_studio_dz_inside {
+    &.o_builder_dz_inside {
         border: 1px dashed rgba(113, 75, 103, 0.45);
         border-radius: 3px;
 
@@ -136,54 +136,54 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
     }
 
     // The one the drop would land in.
-    &.o_studio_dz_active {
+    &.o_builder_dz_active {
         &::before {
-            background: $o-studio-dnd-brand;
+            background: $o-builder-dnd-brand;
             box-shadow: 0 0 0 1px #fff;
         }
 
-        &.o_studio_dz_y::before {
-            top: calc(var(--o-studio-dz-line, 7px) - 2px);
+        &.o_builder_dz_y::before {
+            top: calc(var(--o-builder-dz-line, 7px) - 2px);
             height: 4px;
         }
 
-        &.o_studio_dz_x::before {
+        &.o_builder_dz_x::before {
             left: 5px;
             width: 4px;
         }
 
         // The dot at the start of the active bar.
-        &.o_studio_dz_y::after,
-        &.o_studio_dz_x::after {
+        &.o_builder_dz_y::after,
+        &.o_builder_dz_x::after {
             content: "";
             position: absolute;
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: $o-studio-dnd-brand;
+            background: $o-builder-dnd-brand;
             box-shadow: 0 0 0 1px #fff;
         }
 
-        &.o_studio_dz_y::after {
+        &.o_builder_dz_y::after {
             left: -4px;
-            top: calc(var(--o-studio-dz-line, 7px) - 4px);
+            top: calc(var(--o-builder-dz-line, 7px) - 4px);
         }
 
-        &.o_studio_dz_x::after {
+        &.o_builder_dz_x::after {
             top: -4px;
             left: 3px;
         }
 
-        &.o_studio_dz_inside {
+        &.o_builder_dz_inside {
             border-style: solid;
-            border-color: $o-studio-dnd-brand;
+            border-color: $o-builder-dnd-brand;
             background: rgba(113, 75, 103, 0.08);
         }
     }
 }
 
 // Every container that would take the drop shows its edges.
-.o_studio_dz_container {
+.o_builder_dz_container {
     outline: 1px dashed rgba(113, 75, 103, 0.4);
     outline-offset: -1px;
     pointer-events: none;
@@ -191,46 +191,46 @@ $o-studio-dnd-brand: var(--o-color-primary, #714b67);
 
 // -- the rest of the console while dragging --------------------------------------
 
-.o_studio_dragging {
+.o_builder_dragging {
     // The palette and the properties step back; the outline does not --
     // it takes drops -- and opacity on the sidebar itself could not be
     // undone on it.
-    .o_studio_sidebar_tabs,
-    .o_studio_sidebar_pane {
+    .o_builder_sidebar_tabs,
+    .o_builder_sidebar_pane {
         opacity: 0.55;
     }
 
-    .o_studio_outline {
+    .o_builder_outline {
         cursor: grabbing;
     }
 
-    .o_studio_overlay {
-        .o_studio_hover,
-        .o_studio_selection {
+    .o_builder_overlay {
+        .o_builder_hover,
+        .o_builder_selection {
             display: none;
         }
     }
 
     // The canvas is not for clicking now.
-    .o_studio_canvas {
+    .o_builder_canvas {
         cursor: grabbing;
     }
 }
 
 // The tile -- or the outline row -- being dragged stays where it is,
 // faded, until the drop.
-.o_studio_tile.o_dragged,
-.o_studio_outline_row.o_dragged {
+.o_builder_tile.o_dragged,
+.o_builder_outline_row.o_dragged {
     opacity: 0.4;
 }
 
 // A tile lifts a hair on hover, as something that can be picked up.
-.o_studio_tile.o_studio_draggable:hover:not(:disabled) {
+.o_builder_tile.o_builder_draggable:hover:not(:disabled) {
     transform: translateY(-1px);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-.o_studio_drag_hint {
+.o_builder_drag_hint {
     margin-left: 4px;
     opacity: 0.8;
 }

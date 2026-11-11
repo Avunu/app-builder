@@ -1,0 +1,4 @@
+# The label of the fleet's self-hosted runner, which typecheck.yml names directly.
+self-hosted-runner:
+  labels:
+    - nixos

@@ -10,31 +10,31 @@ from typing import TYPE_CHECKING, cast
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_actions_report import IrActionsReport
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
-from odoo.addons.app_builder_view.models.studio_view_editor import StudioViewEditor
+from odoo.addons.app_builder_view.models.builder_view_editor import BuilderViewEditor
+from odoo.addons.base.models.ir_actions_report import IrActionsReport
 
-from ..models.studio_report import StudioReport as StudioReportBase
-from ..models.studio_report_surface import StudioReport
+from ..models.builder_report import BuilderReport as BuilderReportBase
+from ..models.builder_report_surface import BuilderReport
 
 if TYPE_CHECKING:
-    from odoo.addons.base.models.ir_actions import IrActions
-    from odoo.addons.app_builder_base.models.studio_record_surface import (
+    from odoo.addons.app_builder_base.models.builder_record_surface import (
+        BuilderRecordSurface,
         RecordActionJSON,
-        StudioRecordSurface,
     )
+    from odoo.addons.base.models.ir_actions import IrActions
 
-    from ..models.studio_report_surface import ReportRowJSON
+    from ..models.builder_report_surface import ReportRowJSON
 
-MODEL = "x_studio_project"
+MODEL = "x_builder_project"
 
 
 @tagged("post_install", "-at_install")
-class TestReportSurface(StudioCase):
+class TestReportSurface(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.Surface = typed.model(self.env, StudioReport)
+        self.Surface = typed.model(self.env, BuilderReport)
         self.package = self.make_package()
         self.build_demo_content(self.package)
 
@@ -58,7 +58,7 @@ class TestReportSurface(StudioCase):
         self.assertIn("print", [b["key"] for b in row["badges"]])
         self.assertIn("template", row["sentence"])
         files = self.package._render_files()
-        self.assertIn("Job Sheet", files["report/x_studio_project_reports.xml"])
+        self.assertIn("Job Sheet", files["report/x_builder_project_reports.xml"])
         with raises(self, UserError):
             self.Surface.create_record(
                 MODEL,
@@ -80,11 +80,11 @@ class TestReportSurface(StudioCase):
         )
         report = typed.model(self.env, IrActionsReport).browse(row["id"])
         self.assertTrue(cast("IrActions", report).binding_model_id)
-        described = cast("StudioRecordSurface", self.Surface).describe(
+        described = cast("BuilderRecordSurface", self.Surface).describe(
             row["id"], cast("int", self.package.id)
         )
         self.assertTrue(cast("dict[str, object]", described["values"])["in_print_menu"])
-        cast("StudioRecordSurface", self.Surface).write_record(
+        cast("BuilderRecordSurface", self.Surface).write_record(
             row["id"],
             {
                 "in_print_menu": False,
@@ -94,7 +94,7 @@ class TestReportSurface(StudioCase):
         )
         self.assertFalse(cast("IrActions", report).binding_model_id)
         self.assertIn(typed.ref(self.env, "base.group_user"), report.groups_id)
-        rendered = self.package._render_files()["report/x_studio_project_reports.xml"]
+        rendered = self.package._render_files()["report/x_builder_project_reports.xml"]
         self.assertIn("base.group_user", rendered)
 
     def test_a_core_report_is_shown_with_its_patch_and_reset(self):
@@ -103,14 +103,14 @@ class TestReportSurface(StudioCase):
         )
         if not report:
             self.skipTest("no qweb report installed here")
-        view = typed.model(self.env, StudioReportBase)._template_of(report)
+        view = typed.model(self.env, BuilderReportBase)._template_of(report)
         if not view:
             self.skipTest("that report's template is not a view")
         rows = {
             r["id"]: r
             for r in cast(
                 "list[ReportRowJSON]",
-                cast("StudioRecordSurface", self.Surface).rows(
+                cast("BuilderRecordSurface", self.Surface).rows(
                     cast("str", report.model), cast("int", self.package.id)
                 ),
             )
@@ -121,20 +121,20 @@ class TestReportSurface(StudioCase):
         self.assertFalse(row["patched"])
         self.assertIn("layout you can edit", row["reason"])
         with raises(self, UserError):
-            cast("StudioRecordSurface", self.Surface).write_record(
+            cast("BuilderRecordSurface", self.Surface).write_record(
                 cast("int", report.id), {"name": "Mine"}, cast("int", self.package.id)
             )
-        typed.model(self.env, StudioViewEditor).apply_operation(
+        typed.model(self.env, BuilderViewEditor).apply_operation(
             cast("int", view.id),
             cast("int", self.package.id),
             {
                 "type": "set_attributes",
                 "xpath": "//t[@t-call='web.html_container']",
                 "position": "attributes",
-                "attrs": {"data-studio": "1"},
+                "attrs": {"data-builder": "1"},
             },
         )
-        described = cast("StudioRecordSurface", self.Surface).describe(
+        described = cast("BuilderRecordSurface", self.Surface).describe(
             cast("int", report.id), cast("int", self.package.id)
         )
         self.assertTrue(cast("ReportRowJSON", described["row"])["patched"])
@@ -142,14 +142,14 @@ class TestReportSurface(StudioCase):
             "reset_layout",
             [a["key"] for a in cast("list[RecordActionJSON]", described["actions"])],
         )
-        cast("StudioRecordSurface", self.Surface).run(
+        cast("BuilderRecordSurface", self.Surface).run(
             cast("int", report.id), "reset_layout", cast("int", self.package.id)
         )
         self.assertFalse(self.Surface._patch_of(report, self.package))
         self.assertFalse(
             cast(
                 "ReportRowJSON",
-                cast("StudioRecordSurface", self.Surface).describe(
+                cast("BuilderRecordSurface", self.Surface).describe(
                     cast("int", report.id), cast("int", self.package.id)
                 )["row"],
             )["patched"]

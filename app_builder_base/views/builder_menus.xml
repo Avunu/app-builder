@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <menuitem
+        id="menu_builder_root"
+        name="Builder"
+        sequence="200"
+        groups="group_builder_user"
+    />
+
+    <!-- The builder is the console (app_builder_view points the root at it).
+         The package list and the technical lists other addons hang under it
+         are for developer mode: rows behind what the console shows as cards. -->
+    <menuitem
+        id="menu_builder_packages"
+        name="Packages"
+        parent="menu_builder_root"
+        action="builder_package_action"
+        groups="base.group_no_one"
+        sequence="900"
+    />
+</odoo>

@@ -14,43 +14,47 @@ from typing import TYPE_CHECKING, cast
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.models.studio_domain import StudioDomain
-from odoo.addons.app_builder_base.models.studio_security_surfaces import (
-    StudioRuleSurface,
+from odoo.addons.app_builder_base.models.builder_domain import BuilderDomain
+from odoo.addons.app_builder_base.models.builder_security_surfaces import (
+    BuilderRuleSurface,
 )
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
 
 if TYPE_CHECKING:
     # Only for the casts below; with `from __future__ import annotations`
-    # nothing here needs these at runtime. `StudioRecordSurface` is
-    # `studio.rule.surface`'s sibling mixin (`_inherit = ["studio.record
+    # nothing here needs these at runtime. `BuilderRecordSurface` is
+    # `builder.rule.surface`'s sibling mixin (`_inherit = ["builder.record
     # .surface"]`, registry-level, never a real Python base class of the
-    # imported `StudioRuleSurface`) -- the identical gap `typed.py`'s own
+    # imported `BuilderRuleSurface`) -- the identical gap `typed.py`'s own
     # `security()`/`serializer()` document. `_DomainEditableJSON`/
     # `_DomainNotEditableJSON` are `read_domain`'s own two branch variants,
-    # named the same way `studio_record_surface.py` itself casts to its own
+    # named the same way `builder_record_surface.py` itself casts to its own
     # `_RecordCheckDomainInvalidJSON`.
-    from odoo.addons.app_builder_base.models.studio_domain import (
+    from odoo.addons.app_builder_base.models.builder_domain import (
         _DomainEditableJSON,
         _DomainNotEditableJSON,
     )
-    from odoo.addons.app_builder_base.models.studio_owned_mixin import StudioOwnedMixin
-    from odoo.addons.app_builder_base.models.studio_record_surface import (
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
+    from odoo.addons.app_builder_base.models.builder_record_surface import (
+        BuilderRecordSurface,
         RecordCheckDomainJSON,
-        StudioRecordSurface,
     )
 
 
 @tagged("post_install", "-at_install")
-class TestRuleBuilder(StudioCase):
+class TestRuleBuilder(BuilderCase):
     def _make(self, package, **overrides):
         values: dict[str, object] = {
             "name": "Own contacts only",
             "domain_force": "[['user_id', '=', 1]]",
         }
         values.update(overrides)
-        surface = cast("StudioRecordSurface", typed.model(self.env, StudioRuleSurface))
+        surface = cast(
+            "BuilderRecordSurface", typed.model(self.env, BuilderRuleSurface)
+        )
         return surface.create_record(
             "res.partner", package.id, values, template="blank"
         )
@@ -60,7 +64,7 @@ class TestRuleBuilder(StudioCase):
         self._make(package)
         rule = self.env["ir.rule"].search([("name", "=", "Own contacts only")], limit=1)
         self.assertTrue(rule)
-        self.assertEqual(cast("StudioOwnedMixin", rule).studio_package_id, package)
+        self.assertEqual(cast("BuilderOwnedMixin", rule).builder_package_id, package)
         self.assertIn("ir.rule", "".join(package._render_files().values()))
 
     def test_a_condition_that_does_not_search_is_refused(self):
@@ -74,7 +78,9 @@ class TestRuleBuilder(StudioCase):
     def test_the_pane_says_what_the_condition_matches(self):
         package = self.make_package()
         row = self._make(package, domain_force="[]")
-        surface = cast("StudioRecordSurface", typed.model(self.env, StudioRuleSurface))
+        surface = cast(
+            "BuilderRecordSurface", typed.model(self.env, BuilderRuleSurface)
+        )
         described = surface.describe(row["id"], cast("int", package.id))
         matches = cast("RecordCheckDomainJSON", described["matches"])
         self.assertTrue(matches["valid"])
@@ -83,11 +89,11 @@ class TestRuleBuilder(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestDomainBuilder(StudioCase):
+class TestDomainBuilder(BuilderCase):
     def test_fields_come_with_operators_that_suit_them(self):
         fields = {
             f["name"]: f
-            for f in typed.model(self.env, StudioDomain).fields_for("res.partner")
+            for f in typed.model(self.env, BuilderDomain).fields_for("res.partner")
         }
         self.assertIn("name", fields)
         char_ops = {o["value"] for o in fields["name"]["operators"]}
@@ -100,14 +106,14 @@ class TestDomainBuilder(StudioCase):
     def test_a_selection_brings_its_values(self):
         fields = {
             f["name"]: f
-            for f in typed.model(self.env, StudioDomain).fields_for("ir.ui.view")
+            for f in typed.model(self.env, BuilderDomain).fields_for("ir.ui.view")
         }
         self.assertTrue(fields["type"].get("values"))
 
     def test_a_relation_names_what_it_points_at(self):
         fields = {
             f["name"]: f
-            for f in typed.model(self.env, StudioDomain).fields_for("res.partner")
+            for f in typed.model(self.env, BuilderDomain).fields_for("res.partner")
         }
         # `comodel` is `NotRequired`, but every relational field sets it
         # (`FieldSpecJSON`'s own docstring) -- `.get()` reads it without
@@ -116,7 +122,7 @@ class TestDomainBuilder(StudioCase):
         self.assertEqual(fields["parent_id"].get("comodel"), "res.partner")
 
     def test_a_flat_domain_reads_back_as_rows(self):
-        read = typed.model(self.env, StudioDomain).read_domain(
+        read = typed.model(self.env, BuilderDomain).read_domain(
             "['&', ['a', '=', 1], ['b', '=', 2]]"
         )
         self.assertTrue(read["editable"])
@@ -125,7 +131,7 @@ class TestDomainBuilder(StudioCase):
         self.assertEqual(len(editable["rows"]), 2)
 
     def test_a_grouped_domain_refuses_rather_than_flattening_it(self):
-        read = typed.model(self.env, StudioDomain).read_domain(
+        read = typed.model(self.env, BuilderDomain).read_domain(
             "['|', '&', ['a','=',1], ['b','=',2], ['c','=',3]]"
         )
         self.assertFalse(read["editable"])
@@ -133,13 +139,13 @@ class TestDomainBuilder(StudioCase):
         self.assertIn("cannot be shown as a flat list", not_editable["reason"])
 
     def test_rows_become_a_domain_odoo_accepts(self):
-        domain = typed.model(self.env, StudioDomain).write_domain(
+        domain = typed.model(self.env, BuilderDomain).write_domain(
             [
                 {"field": "name", "operator": "ilike", "value": "acme"},
                 {"field": "parent_id", "operator": "set"},
             ]
         )
-        checked = typed.model(self.env, StudioDomain).check_domain(
+        checked = typed.model(self.env, BuilderDomain).check_domain(
             "res.partner", domain
         )
         self.assertTrue(checked["valid"], checked.get("reason"))

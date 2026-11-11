@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, cast
 
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioHttpCase, join_groups
+from odoo.addons.app_builder_base.tests.common import BuilderHttpCase, join_groups
 from odoo.addons.app_builder_base.tools import typed
 
 if TYPE_CHECKING:
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 @tagged("post_install", "-at_install")
-class TestApprovalsPaneTour(StudioHttpCase):
+class TestApprovalsPaneTour(BuilderHttpCase):
     def setUp(self):
         super().setUp()
         console = self.env["ir.module.module"].search(
@@ -35,10 +35,10 @@ class TestApprovalsPaneTour(StudioHttpCase):
         package_vals: dict[str, object] = {
             "name": "x_tour_appr_pkg",
             "display_name_": "Tour Approvals",
-            "root_path": tempfile.mkdtemp(prefix="studio-tour-"),
+            "root_path": tempfile.mkdtemp(prefix="builder-tour-"),
             "auto_commit": "off",
         }
-        self.env["studio.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
+        self.env["builder.package"].create(package_vals)  # pyright: ignore[reportArgumentType]
         module_vals: dict[str, object] = {
             "name": "x_tour_appr_pkg",
             "state": "installed",
@@ -46,7 +46,7 @@ class TestApprovalsPaneTour(StudioHttpCase):
         self.env["ir.module.module"].create(module_vals)  # pyright: ignore[reportArgumentType]
         join_groups(
             cast("Users", typed.ref(self.env, "base.user_admin")),
-            ["app_builder_base.group_studio_manager"],
+            ["app_builder_base.group_builder_manager"],
         )
         action_vals: dict[str, object] = {
             "name": "Tour Contacts",
@@ -62,7 +62,7 @@ class TestApprovalsPaneTour(StudioHttpCase):
         self.assertNotIn(
             "tier.validation",
             # `_inherit_module`'s own stub gap is the identical one
-            # `studio_approval.py`'s own `_empty_state` already documents.
+            # `builder_approval.py`'s own `_empty_state` already documents.
             self.env["res.partner"]._inherit_module,  # pyright: ignore[reportAttributeAccessIssue]
             "the tour must not have switched the gate on",
         )

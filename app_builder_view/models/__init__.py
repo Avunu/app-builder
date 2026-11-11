@@ -1,17 +1,17 @@
-from . import studio_view_edit, studio_view_editor  # isort:skip
-from . import studio_report_ops
-from . import studio_package_model, studio_view_canvas
-from . import studio_view_new_field
-from . import studio_model_draft
+from . import builder_view_edit, builder_view_editor  # isort:skip
+from . import builder_report_ops
+from . import builder_package_model, builder_view_canvas
+from . import builder_view_new_field
+from . import builder_model_draft
 
 # Importing a model module is what registers its models with the registry;
 # nothing reads the names. Listed so that is stated, not reported as unused.
 __all__ = [
-    "studio_model_draft",
-    "studio_package_model",
-    "studio_report_ops",
-    "studio_view_canvas",
-    "studio_view_edit",
-    "studio_view_editor",
-    "studio_view_new_field",
+    "builder_model_draft",
+    "builder_package_model",
+    "builder_report_ops",
+    "builder_view_canvas",
+    "builder_view_edit",
+    "builder_view_editor",
+    "builder_view_new_field",
 ]

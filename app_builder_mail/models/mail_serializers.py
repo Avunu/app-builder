@@ -9,7 +9,7 @@ action are all things a person does deliberately and would silently lose on
 reload if the generated source did not carry them.
 
 Every extension here goes through ``super()`` rather than by re-declaring
-``_studio_fields``. Setting the class attribute from a second module *replaces*
+``_builder_fields``. Setting the class attribute from a second module *replaces*
 it, so this addon and any other bridge would clobber each other and whichever
 loaded last would win. The chain composes instead, which is what lets ``sms``
 sit alongside ``mail`` below and any future bridge sit alongside both.
@@ -31,13 +31,13 @@ if TYPE_CHECKING:
     # nothing here needs this at runtime. Cross-addon (this addon is not
     # app_builder_base itself), so fully qualified -- same house convention
     # `tier_serializers.py`'s own imports follow.
-    from odoo.addons.app_builder_base.models.studio_serializer import (
-        StudioSerializer,
+    from odoo.addons.app_builder_base.models.builder_serializer import (
+        BuilderSerializer,
     )
 
 
 class IrModelSerializer(models.AbstractModel):
-    _inherit = "studio.serializer.ir.model"
+    _inherit = "builder.serializer.ir.model"
 
     @api.model
     def _emitted_field_names(self) -> tuple[str, ...]:
@@ -49,14 +49,14 @@ class IrModelSerializer(models.AbstractModel):
         #
         # `_inherit`-only composition (never a real Python base class), so
         # `super()` here is invisible to pyright the same way `self
-        # ._assert_studio_user()` is on `studio.security.mixin`.
+        # ._assert_builder_user()` is on `builder.security.mixin`.
         # `typed.serializer_super()` targets that same gap but does not
         # type-check at any real call site (pyright infers a bare `super()`
         # call's own type as the synthesized concrete base class, not the
         # builtin `super` type that helper declares) -- so this uses the same
         # direct cast `tier_serializers.py`, `ir_model.py` and
         # `base_automation_serializer.py` already use instead.
-        return cast("StudioSerializer", super())._emitted_field_names() + (
+        return cast("BuilderSerializer", super())._emitted_field_names() + (
             "is_mail_thread",
             "is_mail_activity",
             "is_mail_blacklist",
@@ -64,18 +64,18 @@ class IrModelSerializer(models.AbstractModel):
 
 
 class IrModelFieldsSerializer(models.AbstractModel):
-    _inherit = "studio.serializer.ir.model.fields"
+    _inherit = "builder.serializer.ir.model.fields"
 
     @api.model
     def _emitted_field_names(self) -> tuple[str, ...]:
         # Whether a change to this field is logged in the chatter, and at what
         # level. Set per field, by hand, and invisible once lost.
         # Same `cast()` as `IrModelSerializer` above, same reason.
-        return cast("StudioSerializer", super())._emitted_field_names() + ("tracking",)
+        return cast("BuilderSerializer", super())._emitted_field_names() + ("tracking",)
 
 
 class IrActionsServerSerializer(models.AbstractModel):
-    _inherit = "studio.serializer.ir.actions.server"
+    _inherit = "builder.serializer.ir.actions.server"
 
     @api.model
     def _emitted_field_names(self) -> tuple[str, ...]:
@@ -88,7 +88,7 @@ class IrActionsServerSerializer(models.AbstractModel):
         -- a rule that still fired, and did the wrong thing quietly.
         """
         # Same `cast()` as `IrModelSerializer` above, same reason.
-        return cast("StudioSerializer", super())._emitted_field_names() + (
+        return cast("BuilderSerializer", super())._emitted_field_names() + (
             # Send Email
             "template_id",
             "mail_post_method",

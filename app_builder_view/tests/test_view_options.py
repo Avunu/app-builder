@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING, cast
 
 from odoo.tests import tagged
 
-from odoo.addons.app_builder_base.tests.common import StudioCase, unchecked
+from odoo.addons.app_builder_base.tests.common import BuilderCase, unchecked
 from odoo.addons.app_builder_base.tools import catalogue, typed
 
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_editor import BuilderViewEditor
 from ..tools import view_options
 
 if TYPE_CHECKING:
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     # annotations` defers them to strings) -- `_fields["type"]` off a
     # `typed.model()`-less lookup is the base `Field`, which does not
     # declare `get_values`; only its `Selection` subclass does (`odoo
-    # /fields.py`). Same shape as `studio_approval.py`'s own traced
+    # /fields.py`). Same shape as `builder_approval.py`'s own traced
     # `_selection_values` gap.
     from odoo.fields import Selection
 
@@ -39,7 +39,7 @@ def _owner_name(owner):
 
 
 @tagged("post_install", "-at_install")
-class TestOptionCatalogue(StudioCase):
+class TestOptionCatalogue(BuilderCase):
     def _all_rows(self):
         for group in view_options.OPTION_GROUPS:
             for row in group.rows:
@@ -149,14 +149,14 @@ class TestOptionCatalogue(StudioCase):
 
 
 @tagged("post_install", "-at_install")
-class TestEditingContextCarriesTheCatalogue(StudioCase):
+class TestEditingContextCarriesTheCatalogue(BuilderCase):
     def test_editing_context_sends_options_and_widgets(self):
         package = self.make_package()
         self.build_demo_content(package)
         view = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
-        context = typed.model(self.env, StudioViewEditor).editing_context(
+        context = typed.model(self.env, BuilderViewEditor).editing_context(
             cast("int", view.id)
         )
         self.assertTrue(context["options"], "the panel would have nothing to show")
@@ -171,9 +171,9 @@ class TestEditingContextCarriesTheCatalogue(StudioCase):
         package = self.make_package()
         self.build_demo_content(package)
         view = self.env["ir.ui.view"].search(
-            [("model", "=", "x_studio_project"), ("type", "=", "form")], limit=1
+            [("model", "=", "x_builder_project"), ("type", "=", "form")], limit=1
         )
-        context = typed.model(self.env, StudioViewEditor).editing_context(
+        context = typed.model(self.env, BuilderViewEditor).editing_context(
             cast("int", view.id)
         )
         group = next(g for g in context["options"] if g["id"] == "form_field")

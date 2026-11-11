@@ -2,171 +2,305 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_view.HomePane">
-    <div class="o_studio_pane o_studio_home" data-pane="home">
-        <!-- First run: the create-package flow is the page. -->
-        <t t-if="this.firstRun">
-            <div class="o_studio_home_first_run">
-                <h3>Create a package to start</h3>
-                <Flow shell="this.shell" model="this.model.firstRun"/>
-            </div>
-        </t>
-        <t t-else="">
-            <!-- Several packages: a row of cards above the chosen one. -->
-            <div t-if="this.packages.length > 1" class="o_studio_cards o_studio_package_cards">
-                <div class="o_studio_card o_studio_package_card" t-att-class="{ selected: info.active }" t-foreach="this.packages"
-                     t-as="info" t-key="info.id"
-                     t-att-data-package="info.name"
-                     t-on-click="() => this.shell.setPackage(info.id)">
-                    <div class="fw-bold" t-esc="info.name"/>
-                    <div class="small text-muted" t-esc="info.title"/>
-                    <div class="small">
-                        <span class="o_studio_dot me-1" t-attf-class="o_studio_dot_{{ info.dot }}"/>
-                        <t t-esc="info.summaryLine"/> · <t t-esc="info.models.python + info.models.xml + info.models.extends"/> models
-                    </div>
+        <div class="o_builder_pane o_builder_home" data-pane="home">
+            <!-- First run: the create-package flow is the page. -->
+            <t t-if="this.firstRun">
+                <div class="o_builder_home_first_run">
+                    <h3>Create a package to start</h3>
+                    <Flow shell="this.shell" model="this.model.firstRun" />
                 </div>
-                <button type="button" class="o_studio_card o_studio_package_card o_studio_package_add"
-                        t-on-click="() => this.shell.openPane('create_package')">
-                    <i class="fa fa-plus me-1"/>New package
+            </t>
+            <t t-else="">
+                <!-- Several packages: a row of cards above the chosen one. -->
+                <div
+                    t-if="this.packages.length > 1"
+                    class="o_builder_cards o_builder_package_cards"
+                >
+                    <div
+                        class="o_builder_card o_builder_package_card"
+                        t-att-class="{ selected: info.active }"
+                        t-foreach="this.packages"
+                        t-as="info"
+                        t-key="info.id"
+                        t-att-data-package="info.name"
+                        t-on-click="() => this.shell.setPackage(info.id)"
+                    >
+                        <div class="fw-bold" t-esc="info.name" />
+                        <div class="small text-muted" t-esc="info.title" />
+                        <div class="small">
+                        <span
+                            class="o_builder_dot me-1"
+                            t-attf-class="o_builder_dot_{{ info.dot }}"
+                        />
+                        <t t-esc="info.summaryLine" /> · <t
+                            t-esc="info.models.python + info.models.xml + info.models.extends"
+                        /> models
+                    </div>
+                    </div>
+                    <button
+                        type="button"
+                        class="o_builder_card o_builder_package_card o_builder_package_add"
+                        t-on-click="() => this.shell.openPane('create_package')"
+                    >
+                    <i class="fa fa-plus me-1" />New package
                 </button>
-            </div>
+                </div>
 
-            <div t-if="this.noneWritable" class="alert alert-warning" role="alert">
+                <div t-if="this.noneWritable" class="alert alert-warning" role="alert">
                 No package here can be written to, so nothing can be built. Create one where the files are writable.
             </div>
 
-            <t t-if="this.package">
-                <div class="o_studio_home_head">
-                    <div>
-                        <h3 class="mb-0" t-esc="this.package.title"/>
-                        <div class="small text-muted">
-                            <code t-esc="this.package.name"/> · <span class="font-monospace" t-esc="this.package.root_path"/>
+                <t t-if="this.package">
+                    <div class="o_builder_home_head">
+                        <div>
+                            <h3 class="mb-0" t-esc="this.package.title" />
+                            <div class="small text-muted">
+                            <code t-esc="this.package.name" /> · <span
+                                class="font-monospace"
+                                t-esc="this.package.root_path"
+                            />
+                        </div>
                         </div>
                     </div>
-                </div>
-                <div class="o_studio_health" t-att-data-health="this.package.health.join(' ')">
-                    <t t-if="this.healthy">
-                        <span class="o_studio_dot o_studio_dot_green me-1"/>
-                        <span class="o_studio_health_line">In sync</span>
-                        <span t-if="this.gitLine" class="ms-2 text-muted" t-esc="this.gitLine"/>
-                        <span class="ms-2 text-muted">↻ <t t-if="this.package.reload_mode === 'manual'">restart to apply · this server runs workers</t><t t-else="">reloads in process</t></span>
-                    </t>
-                    <t t-else="">
-                        <span t-foreach="this.health" t-as="entry" t-key="entry.flag" class="o_studio_health_item me-3"
-                              t-att-data-flag="entry.flag">
-                            <span class="o_studio_dot me-1" t-attf-class="o_studio_dot_{{ entry.dot }}"/>
-                            <span t-esc="entry.label"/>
-                            <button t-if="entry.action and (this.shell.packageWritable or entry.action.pane)" class="btn btn-link btn-sm p-0 ms-1 o_studio_health_action"
+                    <div
+                        class="o_builder_health"
+                        t-att-data-health="this.package.health.join(' ')"
+                    >
+                        <t t-if="this.healthy">
+                            <span class="o_builder_dot o_builder_dot_green me-1" />
+                            <span class="o_builder_health_line">In sync</span>
+                            <span
+                                t-if="this.gitLine"
+                                class="ms-2 text-muted"
+                                t-esc="this.gitLine"
+                            />
+                            <span class="ms-2 text-muted">↻ <t
+                                t-if="this.package.reload_mode === 'manual'"
+                            >restart to apply · this server runs workers</t><t
+                                t-else=""
+                            >reloads in process</t></span>
+                        </t>
+                        <t t-else="">
+                            <span
+                                t-foreach="this.health"
+                                t-as="entry"
+                                t-key="entry.flag"
+                                class="o_builder_health_item me-3"
+                                t-att-data-flag="entry.flag"
+                            >
+                                <span
+                                    class="o_builder_dot me-1"
+                                    t-attf-class="o_builder_dot_{{ entry.dot }}"
+                                />
+                                <span t-esc="entry.label" />
+                                <button
+                                    t-if="entry.action and (this.shell.packageWritable or entry.action.pane)"
+                                    class="btn btn-link btn-sm p-0 ms-1 o_builder_health_action"
                                     type="button"
                                     t-att-disabled="this.model.busy"
-                                    t-on-click="() => this.onHealthAction(entry)">
-                                <t t-esc="entry.action.label"/>
-                            </button>
-                        </span>
-                    </t>
-                </div>
-                <div t-if="this.model.error" class="alert alert-warning" role="alert" t-esc="this.model.error"/>
+                                    t-on-click="() => this.onHealthAction(entry)"
+                                >
+                                    <t t-esc="entry.action.label" />
+                                </button>
+                            </span>
+                        </t>
+                    </div>
+                    <div
+                        t-if="this.model.error"
+                        class="alert alert-warning"
+                        role="alert"
+                        t-esc="this.model.error"
+                    />
 
-                <div class="o_studio_tiles o_studio_home_tiles">
-                    <button t-foreach="this.tiles" t-as="tile" t-key="tile.key" type="button"
-                            class="o_studio_tile o_studio_home_tile" t-att-data-tile="tile.key"
+                    <div class="o_builder_tiles o_builder_home_tiles">
+                        <button
+                            t-foreach="this.tiles"
+                            t-as="tile"
+                            t-key="tile.key"
+                            type="button"
+                            class="o_builder_tile o_builder_home_tile"
+                            t-att-data-tile="tile.key"
                             t-att-disabled="!tile.enabled"
                             t-att-data-tooltip="tile.enabled ? undefined : tile.reason"
-                            t-on-click="() => tile.run()">
-                        <i t-att-class="tile.icon + ' o_studio_tile_icon'"/>
-                        <span class="o_studio_tile_label" t-esc="tile.label"/>
-                        <small class="text-muted d-block" t-esc="tile.hint"/>
-                    </button>
-                </div>
+                            t-on-click="() => tile.run()"
+                        >
+                            <i t-att-class="tile.icon + ' o_builder_tile_icon'" />
+                            <span class="o_builder_tile_label" t-esc="tile.label" />
+                            <small class="text-muted d-block" t-esc="tile.hint" />
+                        </button>
+                    </div>
 
-                <div class="o_studio_home_models">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <div class="o_studio_section_title mb-0">Models</div>
-                        <input type="search" class="form-control form-control-sm w-auto" placeholder="search models…"
-                               t-on-input="(ev) => this.state.modelSearch = ev.target.value"/>
-                    </div>
-                    <div t-if="this.model.busy and !this.shell.inventory" class="text-muted small">
-                        <i class="fa fa-circle-o-notch fa-spin me-1"/>Reading the package…
-                    </div>
-                    <t t-elif="this.shell.inventory">
-                        <div class="small text-muted mb-1">Defined here</div>
-                        <div t-if="!this.models.length" class="o_studio_empty o_studio_empty_inline">
-                            <div class="fw-bold">Nothing built yet</div>
-                            <div class="small text-muted">An app is a model with its views, menu and access, written as a Python class and XML you can read.</div>
+                    <div class="o_builder_home_models">
+                        <div
+                            class="d-flex align-items-center justify-content-between mb-2"
+                        >
+                            <div class="o_builder_section_title mb-0">Models</div>
+                            <input
+                                type="search"
+                                class="form-control form-control-sm w-auto"
+                                placeholder="search models…"
+                                t-on-input="(ev) => this.state.modelSearch = ev.target.value"
+                            />
                         </div>
-                        <div t-foreach="this.models" t-as="entry" t-key="entry.model"
-                             class="o_studio_model_row" t-att-data-model="entry.model">
-                            <i class="fa fa-cube text-muted"/>
-                            <div class="flex-grow-1">
-                                <span class="fw-bold" t-esc="entry.display_name"/>
-                                <code class="ms-2 small" t-esc="entry.model"/>
-                                <small class="text-muted ms-2">
-                                    <t t-esc="entry.sourceLabel"/> · <t t-esc="entry.field_count"/> fields
-                                    <t t-if="entry.views.length"> · <t t-esc="entry.views.join(' ')"/></t>
-                                    <t t-if="this.countsLine(entry.counts)"> · <t t-esc="this.countsLine(entry.counts)"/></t>
-                                </small>
+                        <div
+                            t-if="this.model.busy and !this.shell.inventory"
+                            class="text-muted small"
+                        >
+                        <i
+                            class="fa fa-circle-o-notch fa-spin me-1"
+                        />Reading the package…
+                    </div>
+                        <t t-elif="this.shell.inventory">
+                            <div class="small text-muted mb-1">Defined here</div>
+                            <div
+                                t-if="!this.models.length"
+                                class="o_builder_empty o_builder_empty_inline"
+                            >
+                                <div class="fw-bold">Nothing built yet</div>
+                                <div
+                                    class="small text-muted"
+                                >An app is a model with its views, menu and access, written as a Python class and XML you can read.</div>
                             </div>
-                            <select t-if="this.featuresFor(entry).length" class="form-select form-select-sm w-auto o_studio_model_feature"
-                                    t-att-disabled="this.model.busy" t-att-title="entry.model"
-                                    t-on-change="(ev) => this.onAddFeature(entry, ev)">
-                                <option value="">+ Feature…</option>
-                                <option t-foreach="this.featuresFor(entry)" t-as="feature" t-key="feature.key"
-                                        t-att-value="feature.key" t-att-disabled="feature.companion" t-esc="feature.label"/>
-                            </select>
-                            <button type="button" class="btn btn-link btn-sm o_studio_model_open"
-                                    t-on-click="() => this.onOpenModel(entry)">Open ▸</button>
-                            <button t-if="entry.adoptable" class="btn btn-link btn-sm o_studio_model_adopt" type="button"
-                                    t-att-disabled="!this.shell.packageWritable"
-                                    t-on-click="() => this.onAdopt(entry)">Adopt ▸</button>
-                        </div>
-                        <t t-if="this.extended.length">
-                            <div class="small text-muted mb-1 mt-3">Extended here</div>
-                            <div t-foreach="this.extended" t-as="entry" t-key="entry.model"
-                                 class="o_studio_model_row" t-att-data-model="entry.model">
-                                <i class="fa fa-puzzle-piece text-muted"/>
+                            <div
+                                t-foreach="this.models"
+                                t-as="entry"
+                                t-key="entry.model"
+                                class="o_builder_model_row"
+                                t-att-data-model="entry.model"
+                            >
+                                <i class="fa fa-cube text-muted" />
                                 <div class="flex-grow-1">
-                                    <code class="small" t-esc="entry.model"/>
-                                    <small class="text-muted ms-2" t-esc="this.countsLine(entry.counts)"/>
+                                    <span class="fw-bold" t-esc="entry.display_name" />
+                                    <code class="ms-2 small" t-esc="entry.model" />
+                                    <small class="text-muted ms-2">
+                                    <t t-esc="entry.sourceLabel" /> · <t
+                                        t-esc="entry.field_count"
+                                    /> fields
+                                    <t t-if="entry.views.length"> · <t
+                                        t-esc="entry.views.join(' ')"
+                                    /></t>
+                                    <t t-if="this.countsLine(entry.counts)"> · <t
+                                        t-esc="this.countsLine(entry.counts)"
+                                    /></t>
+                                </small>
                                 </div>
-                                <button type="button" class="btn btn-link btn-sm o_studio_model_open"
-                                        t-on-click="() => this.onOpenModel(entry)">Open ▸</button>
+                                <select
+                                    t-if="this.featuresFor(entry).length"
+                                    class="form-select form-select-sm w-auto o_builder_model_feature"
+                                    t-att-disabled="this.model.busy"
+                                    t-att-title="entry.model"
+                                    t-on-change="(ev) => this.onAddFeature(entry, ev)"
+                                >
+                                    <option value="">+ Feature…</option>
+                                    <option
+                                        t-foreach="this.featuresFor(entry)"
+                                        t-as="feature"
+                                        t-key="feature.key"
+                                        t-att-value="feature.key"
+                                        t-att-disabled="feature.companion"
+                                        t-esc="feature.label"
+                                    />
+                                </select>
+                                <button
+                                    type="button"
+                                    class="btn btn-link btn-sm o_builder_model_open"
+                                    t-on-click="() => this.onOpenModel(entry)"
+                                >Open ▸</button>
+                                <button
+                                    t-if="entry.adoptable"
+                                    class="btn btn-link btn-sm o_builder_model_adopt"
+                                    type="button"
+                                    t-att-disabled="!this.shell.packageWritable"
+                                    t-on-click="() => this.onAdopt(entry)"
+                                >Adopt ▸</button>
                             </div>
+                            <t t-if="this.extended.length">
+                                <div
+                                    class="small text-muted mb-1 mt-3"
+                                >Extended here</div>
+                                <div
+                                    t-foreach="this.extended"
+                                    t-as="entry"
+                                    t-key="entry.model"
+                                    class="o_builder_model_row"
+                                    t-att-data-model="entry.model"
+                                >
+                                    <i class="fa fa-puzzle-piece text-muted" />
+                                    <div class="flex-grow-1">
+                                        <code class="small" t-esc="entry.model" />
+                                        <small
+                                            class="text-muted ms-2"
+                                            t-esc="this.countsLine(entry.counts)"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        class="btn btn-link btn-sm o_builder_model_open"
+                                        t-on-click="() => this.onOpenModel(entry)"
+                                    >Open ▸</button>
+                                </div>
+                            </t>
                         </t>
-                    </t>
-                </div>
-
-                <div t-if="this.checklist.length" class="o_studio_checklist">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="o_studio_section_title mb-0">Getting started</div>
-                        <button type="button" class="btn btn-link btn-sm o_studio_checklist_dismiss"
-                                t-on-click="() => this.dismissChecklist()">dismiss</button>
                     </div>
-                    <span class="me-3" t-att-class="{ 'text-muted': !item.done }" t-foreach="this.checklist" t-as="item"
-                          t-key="item.key" t-att-data-item="item.key">
-                        <i t-att-class="item.done ? 'fa fa-check-circle text-success' : 'fa fa-circle-o'"/>
-                        <t t-esc="item.label"/>
-                    </span>
-                </div>
+
+                    <div t-if="this.checklist.length" class="o_builder_checklist">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div
+                                class="o_builder_section_title mb-0"
+                            >Getting started</div>
+                            <button
+                                type="button"
+                                class="btn btn-link btn-sm o_builder_checklist_dismiss"
+                                t-on-click="() => this.dismissChecklist()"
+                            >dismiss</button>
+                        </div>
+                        <span
+                            class="me-3"
+                            t-att-class="{ 'text-muted': !item.done }"
+                            t-foreach="this.checklist"
+                            t-as="item"
+                            t-key="item.key"
+                            t-att-data-item="item.key"
+                        >
+                            <i
+                                t-att-class="item.done ? 'fa fa-check-circle text-success' : 'fa fa-circle-o'"
+                            />
+                            <t t-esc="item.label" />
+                        </span>
+                    </div>
+                </t>
             </t>
-        </t>
-    </div>
-</t>
+        </div>
+    </t>
 
 <t t-name="app_builder_view.OpenViewStep">
-    <div class="o_studio_flow_step">
-        <input type="search" class="form-control mb-2 o_studio_open_view_search" placeholder="Any model…"
-               t-on-input="(ev) => this.onSearch(ev)"/>
-        <div class="list-group">
-            <t t-set="entries" t-value="this.state.matches.length ? this.state.matches : this.suggestions"/>
-            <button class="list-group-item list-group-item-action" t-att-class="{ active: this.flow.values.model === entry.model }" t-foreach="entries" t-as="entry"
+        <div class="o_builder_flow_step">
+            <input
+                type="search"
+                class="form-control mb-2 o_builder_open_view_search"
+                placeholder="Any model…"
+                t-on-input="(ev) => this.onSearch(ev)"
+            />
+            <div class="list-group">
+                <t
+                    t-set="entries"
+                    t-value="this.state.matches.length ? this.state.matches : this.suggestions"
+                />
+                <button
+                    class="list-group-item list-group-item-action"
+                    t-att-class="{ active: this.flow.values.model === entry.model }"
+                    t-foreach="entries"
+                    t-as="entry"
                     t-key="entry.model"
                     type="button"
                     t-att-data-model="entry.model"
-                    t-on-click="() => this.pick(entry)">
-                <span t-esc="entry.display_name"/>
-                <small class="ms-2 opacity-75" t-esc="entry.model"/>
-            </button>
+                    t-on-click="() => this.pick(entry)"
+                >
+                    <span t-esc="entry.display_name" />
+                    <small class="ms-2 opacity-75" t-esc="entry.model" />
+                </button>
+            </div>
         </div>
-    </div>
-</t>
+    </t>
 
 </templates>

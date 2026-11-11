@@ -7,7 +7,7 @@ concrete rather than aspirational, so this stays deliberately small: status,
 diff, add, commit. Precedent: ``odoo-module-migrator._commit_changes``.
 
 Every helper degrades to a benign value when git is missing or the path is not
-a repository -- the studio must remain usable outside version control.
+a repository -- the builder must remain usable outside version control.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ class LogEntryJSON(TypedDict):
 
     Not a dataclass's own ``to_json`` (``log`` builds this dict directly,
     there is no ``LogEntry`` class), but a wire type all the same:
-    ``studio_workspace.changes()`` serves this list straight through as
+    ``builder_workspace.changes()`` serves this list straight through as
     ``git.log`` in that RPC's own payload, with no further reshaping.
     """
 

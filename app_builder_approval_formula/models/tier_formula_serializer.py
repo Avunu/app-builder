@@ -32,21 +32,21 @@ if TYPE_CHECKING:
     # nothing here needs this at runtime. Cross-addon (this addon is not
     # app_builder_base itself), so fully qualified -- same house convention
     # `tier_serializers.py`'s own imports follow.
-    from odoo.addons.app_builder_base.models.studio_serializer import (
-        StudioSerializer,
+    from odoo.addons.app_builder_base.models.builder_serializer import (
+        BuilderSerializer,
     )
 
 MODULE = "base_tier_validation_formula"
 
 
 class TierDefinitionFormulaSerializer(models.AbstractModel):
-    _inherit = "studio.serializer.tier.definition"
+    _inherit = "builder.serializer.tier.definition"
 
     @api.model
     def _emitted_field_names(self) -> tuple[str, ...]:
         # `_inherit`-only composition (never a real Python base class), so
         # `super()` here is invisible to pyright the same way `self
-        # ._assert_studio_user()` is on `studio.security.mixin` -- same gap
+        # ._assert_builder_user()` is on `builder.security.mixin` -- same gap
         # `typed.serializer_super()` targets. That helper itself does not
         # type-check at any real call site, though: pyright infers a
         # zero-arg `super()` call's own type as the synthesized concrete
@@ -57,14 +57,14 @@ class TierDefinitionFormulaSerializer(models.AbstractModel):
         # this uses the same direct cast `tier_serializers.py`,
         # `ir_model.py` and `base_automation_serializer.py` already use
         # instead (`serializer_super`'s own would-be body, inlined).
-        return cast("StudioSerializer", super())._emitted_field_names() + (
+        return cast("BuilderSerializer", super())._emitted_field_names() + (
             "python_code",
             "reviewer_expression",
         )
 
     @api.model
     def _value_depends(self) -> dict[str, dict[str, str]]:
-        depends = dict(cast("StudioSerializer", super())._value_depends())
+        depends = dict(cast("BuilderSerializer", super())._value_depends())
         depends["definition_type"] = {
             **depends.get("definition_type", {}),
             "formula": MODULE,

@@ -22,6 +22,6 @@
         ],
     },
     "data": [
-        "views/studio_report_views.xml",
+        "views/builder_report_views.xml",
     ],
 }

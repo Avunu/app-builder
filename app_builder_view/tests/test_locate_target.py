@@ -17,21 +17,21 @@ from odoo import Command
 from odoo.exceptions import AccessError
 from odoo.tests import tagged
 
-from odoo.addons.base.models.ir_ui_view import View
-from odoo.addons.app_builder_base.tests.common import StudioCase, raises
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.base.models.ir_ui_view import View
 
-from ..models.studio_view_editor import StudioViewEditor
+from ..models.builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
     # Only for the casts below; with `from __future__ import annotations`
     # nothing here needs these at runtime, the same bargain every Phase 1c
-    # file's own `TYPE_CHECKING` block makes. `View`/`StudioViewEditor` are
+    # file's own `TYPE_CHECKING` block makes. `View`/`BuilderViewEditor` are
     # real, top-level imports instead (`typed.model()` reads `cls._name` at
     # runtime) -- only `locate_target`'s own found()/not-found() union
     # branches and its nested field descriptor are cast-only and need no
     # runtime binding.
-    from ..models.studio_view_editor import (
+    from ..models.builder_view_editor import (
         FieldInfoJSON,
         _LocateTargetFoundJSON,
         _LocateTargetNotFoundJSON,
@@ -65,14 +65,14 @@ NESTED_FORM_ARCH = """
 
 
 @tagged("post_install", "-at_install")
-class TestLocateTarget(StudioCase):
+class TestLocateTarget(BuilderCase):
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
 
     def _view(self, arch, view_type="list", model="res.partner"):
         vals: dict[str, object] = {
-            "name": "studio.locate.test",
+            "name": "builder.locate.test",
             "model": model,
             "type": view_type,
             "arch": arch,
@@ -197,7 +197,7 @@ class TestLocateTarget(StudioCase):
     def test_editing_context_reports_an_owned_primary_view_as_owned(self):
         package = self.make_package(name="x_ctx_pkg")
         view = self._view(LIST_ARCH)
-        package.studio_capture(view)
+        package.builder_capture(view)
         context = self.editor.editing_context(cast("int", view.id))
         self.assertTrue(context["owned"])
         self.assertEqual(context["suggested_package_id"], package.id)
@@ -231,7 +231,7 @@ NOTEBOOK_FORM = """
 
 
 @tagged("post_install", "-at_install")
-class TestPageDescriptors(StudioCase):
+class TestPageDescriptors(BuilderCase):
     """Notebook pages, which mostly have no name to be found by.
 
     Core forms rarely name their pages, so refusing to resolve an unnamed one
@@ -242,9 +242,9 @@ class TestPageDescriptors(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         vals: dict[str, object] = {
-            "name": "studio.page.test",
+            "name": "builder.page.test",
             "model": "res.partner",
             "type": "form",
             "arch": NOTEBOOK_FORM,
@@ -302,7 +302,7 @@ CALENDAR_ARCH = """
 
 
 @tagged("post_install", "-at_install")
-class TestCalendarEditing(StudioCase):
+class TestCalendarEditing(BuilderCase):
     """A calendar is edited as settings, not by clicking events.
 
     It draws events rather than fields, so there is no per-node DOM that maps
@@ -314,7 +314,7 @@ class TestCalendarEditing(StudioCase):
 
     def setUp(self):
         super().setUp()
-        self.editor = typed.model(self.env, StudioViewEditor)
+        self.editor = typed.model(self.env, BuilderViewEditor)
         # A model that genuinely has a date and a link to colour by. res.partner
         # has neither, and a calendar naming a field that does not exist fails
         # view validation at create time.
@@ -350,7 +350,7 @@ class TestCalendarEditing(StudioCase):
         }
         self.env["ir.model"].create(model_vals)  # pyright: ignore[reportArgumentType]
         view_vals: dict[str, object] = {
-            "name": "studio.calendar.test",
+            "name": "builder.calendar.test",
             "model": "x_cal_demo",
             "type": "calendar",
             "arch": CALENDAR_ARCH,
@@ -393,7 +393,7 @@ class TestCalendarEditing(StudioCase):
         # the patch path -- and it has an external ID, because the serializer
         # rightly refuses to emit a patch naming a view it cannot reference.
         owner = self.make_package(name="x_cal_owner")
-        owner.studio_capture(self.view)
+        owner.builder_capture(self.view)
         package = self.make_package(name="x_cal_pkg")
         found = self.editor.locate_target(cast("int", self.view.id), {"kind": "root"})
         found = cast("_LocateTargetFoundJSON", found)
