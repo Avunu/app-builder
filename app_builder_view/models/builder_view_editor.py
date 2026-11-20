@@ -3740,6 +3740,10 @@ class BuilderViewEditor(models.AbstractModel):
             [("res_model", "=", model_name)]
         )
         touched = actions.browse()
+        if "builder_package_id" not in actions._fields:
+            # Window actions carry an owner only once app_builder_ui is
+            # installed. Without it no action is the package's to change.
+            return touched
         for action in actions:
             # Same `builder.owned.mixin` composed-elsewhere cast as
             # `_find_extension` above, on a different owned model.
