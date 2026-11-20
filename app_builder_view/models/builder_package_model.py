@@ -67,6 +67,7 @@ class BuilderPackageModel(models.Model):
     _inherit = "builder.package.model"
 
     def action_compose(self) -> ComposeActionJSON:
+        typed.security(self.env["builder.security.mixin"])._assert_builder_user()
         self.ensure_one()
         record = cast("BuilderPackageModelBase", self)
         if record.source != "python":

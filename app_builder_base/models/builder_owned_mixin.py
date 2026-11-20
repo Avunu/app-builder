@@ -18,7 +18,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from odoo import api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 
 from odoo.addons.base.models.ir_model import IrModelData
 
@@ -168,6 +168,7 @@ class BuilderOwnedMixin(models.AbstractModel):
 
     def action_builder_write(self) -> bool:
         """Flush the owning package to disk."""
+        typed.security(self.env["builder.security.mixin"])._assert_builder_manager()
         for package in cast("BuilderPackage", self.mapped("builder_package_id")):
             package.action_write_files()
         return True
@@ -264,14 +265,35 @@ class IrModelFields(models.Model):
             .browse(cast("list[int]", self.env.context.get("builder_package_id") or []))
             .exists()
         )
+        # A package named in context is the builder acting on purpose, and
+        # that is refused out loud when it is not allowed (the guard inside
+        # `builder_capture`). Ownership inferred from the model is not.
+        asked = "builder_package_id" in self.env.context and bool(fallback)
         for record in records:
             core_record = cast("CoreIrModelFields", record)
             if core_record.state != "manual":
                 continue
             model = cast("BuilderOwnedMixin", core_record.model_id)  # pyright: ignore[reportUnknownMemberType]
             package = cast("BuilderPackage", model.builder_package_id) or fallback
-            if package:
+            if package and (asked or self._builder_may_capture()):
                 package.builder_capture(record)
+            elif package:
+                # Nobody asked for this package: the field merely landed on
+                # a model one owns, through Settings > Technical, another
+                # addon's `sudo()`, or a data file. Where the builder may
+                # not write -- the switch is off, or the caller is not a
+                # builder -- that create is still none of its business, so
+                # it goes through and only the capture is skipped. Raising
+                # here would make the builder's read-only mode break
+                # everything else that adds a field.
+                _logger.warning(
+                    "Manual field %s.%s was created on a model of builder "
+                    "package %s where the builder may not write, so it was "
+                    "not captured and will not be written to source.",
+                    core_record.model,
+                    core_record.name,
+                    package.name,
+                )
             else:
                 # Warn rather than raise: creating a manual field outside any
                 # package is legitimate for callers that are not the builder,
@@ -284,3 +306,13 @@ class IrModelFields(models.Model):
                     core_record.name,
                 )
         return records
+
+    @api.model
+    def _builder_may_capture(self) -> bool:
+        """Whether the caller could build here: the manager guard, as a
+        question rather than a refusal."""
+        try:
+            typed.security(self.env["builder.security.mixin"])._assert_builder_manager()
+        except AccessError:
+            return False
+        return True

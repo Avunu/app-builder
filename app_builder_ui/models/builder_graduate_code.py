@@ -66,6 +66,7 @@ class BuilderGraduateCode(models.AbstractModel):
     @api.model
     def can_graduate(self, action: IrActionsServer) -> str:
         """Why this action's code cannot become a method, or nothing."""
+        typed.security(self)._assert_builder_user()
         if action.state != "code":
             return _("Only an Execute Code action has code to promote.")
         if not (action.code or "").strip():
