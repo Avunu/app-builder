@@ -10,7 +10,8 @@ from datetime import date
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import patch
 
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
+from odoo.service.model import get_public_method
 from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.models.builder_package_model import (
@@ -479,6 +480,51 @@ class TestGraduateCode(BuilderCase):
                 cast("int", action.id), apply=False
             )
         self.assertEqual(action.code, "record.write(payload)")
+
+    def test_json_from_base_automation_is_bound(self):
+        """`base_automation` adds `json` to every code action's context."""
+        package = self.make_package()
+        code = "record.write({'comment': json.dumps({'a': [1, 2]})})"
+        action = self._action(package, model_name="res.partner", code=code)
+        partner = cast("Any", self.env["res.partner"]).create({"name": "Graduate J"})
+        name, function = self._graduated(package, action)
+        self._run_graduated(action, name, function, partner)
+        self.assertIn("[1, 2]", partner.comment)
+
+    def test_a_name_with_no_binding_is_refused(self):
+        """Any addon may add names to the eval context (`website` adds
+        `request` and reads back `response`); a name this cannot bind must not
+        become a NameError at run time after the working code is replaced."""
+        graduate = typed.model(self.env, BuilderGraduateCode)
+        package = self.make_package()
+        for code, name in (
+            ("record.write({'ref': request.httprequest.path})", "request"),
+            ("response = 'ok'", "response"),
+            ("record.write({'ref': some_addon_helper()})", "some_addon_helper"),
+        ):
+            action = self._action(package, model_name="res.partner", code=code)
+            self.assertIn("'%s'" % name, graduate.can_graduate(action))
+            with raises(self, UserError):
+                graduate.graduate(cast("int", action.id), apply=False)
+            self.assertEqual(action.code, code)
+
+    def test_names_the_code_binds_itself_are_not_free(self):
+        body, _returns = method_body_for(
+            "import math\n"
+            "def double(x):\n"
+            "    return [y * 2 for y in range(x)]\n"
+            "try:\n"
+            "    total = len(double(math.floor(2.5)))\n"
+            "except ValueError as err:\n"
+            "    total = str(err)\n"
+        )
+        self.assertIn("total = str(err)", body)
+
+    def test_can_graduate_is_not_reachable_over_rpc(self):
+        with raises(self, AccessError):
+            get_public_method(
+                typed.model(self.env, BuilderGraduateCode), "can_graduate"
+            )
 
     def test_a_model_the_package_does_not_own_gets_an_extension(self):
         """Most automations run on sale.order and its neighbours, which is the

@@ -26,6 +26,7 @@ which is why it could not be built until ``ModelSpec.extends`` existed.
 from __future__ import annotations
 
 import ast
+import builtins
 from typing import TYPE_CHECKING, TypedDict, cast
 
 from odoo import api, models
@@ -94,6 +95,9 @@ _EVAL_CONTEXT_BINDINGS: dict[str, tuple[str, ...]] = {
     "b64encode": ("from base64 import b64encode",),
     "b64decode": ("from base64 import b64decode",),
     "Command": ("from odoo import Command",),
+    # `base_automation` (a dependency of this addon) adds `json` -- the
+    # script-safe encoder -- to every code action's context.
+    "json": ("from odoo.tools.json import scriptsafe as json",),
     "UserError": ("from odoo.exceptions import UserError",),
     "_logger": (
         "import logging",
@@ -116,12 +120,66 @@ _EVAL_CONTEXT_BINDINGS: dict[str, tuple[str, ...]] = {
 #: called with no arguments could bind them to.
 _UNPORTABLE_NAMES = ("payload",)
 
+#: Names other than ``action`` whose *assignment* the caller reads back out of
+#: the eval context (``website``'s ``response``). A method's locals are gone
+#: when it returns, so code that sets one would silently stop working.
+_READ_BACK_NAMES = ("response",)
+
+_BUILTIN_NAMES = frozenset(dir(builtins))
+
+
+class UnportableNamesError(ValueError):
+    """The code reads names a method has no binding for.
+
+    ``args[0]`` is the sorted tuple of those names.
+    """
+
+
 #: Where the preamble ends and the automation's own code starts.
 _BODY_MARKER = "# -- the automation's code, as it was written --"
 
 
 def _names_in(tree: ast.AST) -> set[str]:
     return {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+
+
+def _bound_names(tree: ast.AST) -> set[str]:
+    """Every name the code itself binds, anywhere, by any statement.
+
+    Deliberately flow-insensitive: code that reads a name before binding it
+    failed under ``safe_eval`` just the same, so it is not this check's job.
+    """
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store | ast.Del):
+            bound.add(node.id)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            bound.add(node.name)
+        elif isinstance(node, ast.arg):
+            bound.add(node.arg)
+        elif isinstance(node, ast.alias):
+            bound.add(node.asname or node.name.split(".")[0])
+        elif isinstance(node, ast.ExceptHandler | ast.MatchAs | ast.MatchStar):
+            if node.name:
+                bound.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            bound.add(node.rest)
+    return bound
+
+
+def _free_names(tree: ast.AST) -> set[str]:
+    """Names the code reads but neither binds nor gets from Python itself.
+
+    Under ``safe_eval`` these come from the action's eval context -- which any
+    installed addon may extend (``website`` adds ``request``/``response``) --
+    so a body moved into a method needs a binding for each one.
+    """
+    loaded = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+    return loaded - _bound_names(tree) - _BUILTIN_NAMES
 
 
 def _assigns_action(tree: ast.Module) -> bool:
@@ -143,7 +201,9 @@ def method_body_for(code: str) -> tuple[str, bool]:
 
     The body is the code unchanged, under the bindings it needs and -- when it
     assigns ``action`` -- over a ``return action``. Raises ``SyntaxError`` for
-    code that does not parse and ``ValueError`` for code no method can run.
+    code that does not parse and ``ValueError`` for code no method can run
+    (``UnportableNamesError``, a subclass, when it reads or sets names this
+    has no binding for).
     """
     code = code.strip("\n")
     tree = ast.parse(code)
@@ -151,6 +211,11 @@ def method_body_for(code: str) -> tuple[str, bool]:
     for name in _UNPORTABLE_NAMES:
         if name in used:
             raise ValueError(name)
+    unbound = (_free_names(tree) - set(_EVAL_CONTEXT_BINDINGS)) | (
+        used & set(_READ_BACK_NAMES)
+    )
+    if unbound:
+        raise UnportableNamesError(tuple(sorted(unbound)))
     returns_action = _assigns_action(tree)
     preamble: list[str] = []
     for name, statements in _EVAL_CONTEXT_BINDINGS.items():
@@ -218,6 +283,13 @@ class BuilderGraduateCode(models.AbstractModel):
             method_body_for(cast("str", action.code))
         except SyntaxError as err:
             return _("This code does not parse, so it cannot be moved: %s", err.msg)
+        except UnportableNamesError as err:
+            return _(
+                "This code uses %s, which the action gets from its "
+                "evaluation context and a method has no equivalent for. "
+                "Rewrite it without them, or keep it as an action.",
+                ", ".join("'%s'" % name for name in err.args[0]),
+            )
         except ValueError as err:
             return _(
                 "This code reads '%s', which only exists while a webhook "
