@@ -174,4 +174,15 @@ $o-builder-outline-brand: var(--o-color-primary, #714b67);
         font-size: 12px;
         padding: 4px 12px;
     }
+
+    // "Move to…": a list under the items, set off from them.
+    .o_builder_outline_move_to {
+        margin-top: 4px;
+        padding: 6px 12px 2px;
+        border-top: 1px solid rgba(0, 0, 0, 0.1);
+
+        .form-select {
+            font-size: 12px;
+        }
+    }
 }

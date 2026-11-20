@@ -48,13 +48,14 @@ import {useService} from "../odoo";
 import type {DialogService} from "../odoo";
 import {
   flatten,
+  moveDestinations,
   moveTarget,
   nextFocus,
   pathAfterMove,
   pathKey,
   visibleChildren,
 } from "../outline_tree";
-import type {MoveDirection} from "../outline_tree";
+import type {MoveDirection, MoveTarget} from "../outline_tree";
 import {ZoneLayer} from "../overlay";
 import {attachVerticalResize} from "../split";
 import type {VerticalResizeHandle} from "../split";
@@ -134,16 +135,57 @@ interface OutlineMenuItem {
   disabled: boolean;
 }
 
+/** One place "Move to…" offers: a container, named and indented as the
+ * outline shows it. */
+interface OutlineMenuDestination {
+  token: Token;
+  label: string;
+}
+
 interface OutlineMenuProps {
   items: OutlineMenuItem[];
   onPick: (key: string) => void;
+  /** Where the row can be sent; the control is left out when nowhere. */
+  destinations?: OutlineMenuDestination[];
+  onMoveTo?: (token: Token) => void;
   close: () => void;
 }
 
 /** The items of the right-click menu, and what picking one does. */
 export class OutlineMenu extends Component<OutlineMenuProps> {
   static override template = "app_builder_view.OutlineMenu";
-  static override props = {items: Array, onPick: Function, close: Function};
+  static override props = {
+    items: Array,
+    onPick: Function,
+    destinations: {type: Array, optional: true},
+    onMoveTo: {type: Function, optional: true},
+    close: Function,
+  };
+
+  rootRef!: {el: HTMLElement | null};
+
+  override setup(): void {
+    this.rootRef = useRef("root");
+    // Opened by key as often as by pointer: the focus goes to the first
+    // item that can be picked, so the arrows below have somewhere to
+    // start, and Escape somewhere to be heard.
+    onMounted(() => {
+      const first = this.buttons()[0];
+      if (first) {
+        first.focus();
+      }
+    });
+  }
+
+  /** The items that can be picked, in order. */
+  buttons(): HTMLButtonElement[] {
+    const root = this.rootRef.el;
+    return root
+      ? [...root.querySelectorAll<HTMLButtonElement>("button[role='menuitem']")].filter(
+          (button) => !button.disabled
+        )
+      : [];
+  }
 
   pick(item: OutlineMenuItem): void {
     if (item.disabled) {
@@ -151,6 +193,52 @@ export class OutlineMenu extends Component<OutlineMenuProps> {
     }
     this.props.close();
     this.props.onPick(item.key);
+  }
+
+  /** "Move to…": a place was chosen from the list. */
+  onMoveTo(ev: Event): void {
+    const token = (ev.target as HTMLSelectElement).value;
+    if (!token || !this.props.onMoveTo) {
+      return;
+    }
+    this.props.close();
+    this.props.onMoveTo(token);
+  }
+
+  /**
+   * The keys a menu answers to: the arrows, Home and End walk the items,
+   * Escape shuts it. Keys pressed in the "Move to…" list are the list's
+   * own, Escape apart.
+   */
+  onKeyDown(ev: KeyboardEvent): void {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.props.close();
+      return;
+    }
+    if (ev.target instanceof HTMLSelectElement) {
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(ev.key)) {
+      return;
+    }
+    const buttons = this.buttons();
+    if (!buttons.length) {
+      return;
+    }
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    let next = 0;
+    if (ev.key === "End") {
+      next = buttons.length - 1;
+    } else if (ev.key === "ArrowDown") {
+      next = (at + 1) % buttons.length;
+    } else if (ev.key === "ArrowUp") {
+      next = (at - 1 + buttons.length) % buttons.length;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    buttons[next]?.focus();
   }
 }
 
@@ -214,6 +302,9 @@ export class Outline extends Component<Props> {
     this.menu = usePopover(OutlineMenu as never, {
       position: "bottom-start",
       popoverClass: "o_builder_outline_menu_popover",
+      // The menu takes the focus when it opens (`OutlineMenu.setup`);
+      // shut without a pick, it gives it back to the row it was for.
+      onClose: () => this.refocusRow(),
     });
     this.rootRef = useRef("root");
     this.listRef = useRef("list");
@@ -468,7 +559,29 @@ export class Outline extends Component<Props> {
       // `no-misused-promises` fix already established for
       // `doAction`/`discard`/`remove` (TYPING.md, cluster 4 wave 1).
       onPick: (key: string) => void this.runMenu(entry, key),
+      destinations: this.destinationsFor(entry),
+      onMoveTo: (token: Token) => void this.moveTo(entry, token),
     });
+  }
+
+  /**
+   * Where "Move to…" can send a row: every container that takes it, named
+   * as its own row is and indented by its depth. Nothing when the view
+   * cannot be written, which leaves the control out.
+   */
+  destinationsFor(entry: OutlineRow): OutlineMenuDestination[] {
+    if (!this.canWrite) {
+      return [];
+    }
+    const root = this.model.root;
+    if (!root) {
+      return [];
+    }
+    return moveDestinations(this.model.nodes, root, entry.token).map((place) => ({
+      token: place.token,
+      // Non-breaking spaces: an `<option>` collapses ordinary ones.
+      label: "\u00a0\u00a0".repeat(place.depth) + this.model.tagFor(place.token),
+    }));
   }
 
   /** What the menu offers for a row, each item said to be possible or not. */
@@ -645,6 +758,23 @@ export class Outline extends Component<Props> {
     }
   }
 
+  /**
+   * The menu has shut. If the focus was in it -- still there, or fallen
+   * to the body with it -- it goes back to the row the keyboard is on; a
+   * focus that has gone somewhere else on its own is left there.
+   */
+  refocusRow(): void {
+    const active = document.activeElement;
+    const inMenu = Boolean(active && active.closest(".o_builder_outline_menu"));
+    if (active && active !== document.body && !inMenu) {
+      return;
+    }
+    const el = this.rowEl(this.focusKey);
+    if (el) {
+      el.focus();
+    }
+  }
+
   /** Put the focus on a row: now when it is drawn, else once it is. */
   focusRow(entry: OutlineRow | undefined): void {
     if (!entry) {
@@ -679,6 +809,16 @@ export class Outline extends Component<Props> {
     if (!target) {
       return undefined;
     }
+    return this.send(entry, target);
+  }
+
+  /** Make a move already known to be one the server would take. */
+  async send(
+    entry: OutlineRow,
+    target: MoveTarget
+  ): Promise<
+    (DropSuccessResult & {created_field: boolean; staged_field: boolean}) | undefined
+  > {
     const node = entry.node;
     const payload: DragPayload =
       node.kind === "pending"
@@ -699,6 +839,23 @@ export class Outline extends Component<Props> {
       this.afterMove();
     }
     return result;
+  }
+
+  /**
+   * "Move to…": send a row to the end of the container chosen. The same
+   * request as a drop inside it, checked the same way first.
+   */
+  async moveTo(entry: OutlineRow, container: Token): Promise<void> {
+    if (!this.canWrite) {
+      return;
+    }
+    const allowed = this.destinationsFor(entry).some(
+      (place) => place.token === container
+    );
+    if (!allowed) {
+      return;
+    }
+    await this.send(entry, {target: container, position: "inside"});
   }
 
   /**

@@ -11,7 +11,15 @@
  */
 
 import {expect, test} from "@odoo/hoot";
-import {click, hover, press, queryAll, queryOne, rightClick} from "@odoo/hoot-dom";
+import {
+  click,
+  hover,
+  press,
+  queryAll,
+  queryOne,
+  rightClick,
+  select,
+} from "@odoo/hoot-dom";
 import {animationFrame} from "@odoo/hoot-mock";
 import {reactive} from "@odoo/owl";
 import {browser} from "@web/core/browser/browser";
@@ -518,6 +526,46 @@ test("the right-click menu says what a row can do", async () => {
     ["label", "n4", false],
     ["reveal", "n1"],
   ]);
+});
+
+test("Move to… sends a row to any container that takes it, without a pointer", async () => {
+  const calls: Call[] = [];
+  await mountOutline(calls);
+  row("n3").focus();
+  // The menu by key: it opens with the focus on its first live item, and
+  // the arrows walk the items.
+  await press(["Shift", "F10"]);
+  await animationFrame();
+  const menu = queryOne(".o_builder_outline_menu");
+  expect(document.activeElement).toBe(menu.querySelector("[data-item='move_down']"));
+  await press("ArrowDown");
+  expect(document.activeElement).toBe(menu.querySelector("[data-item='move_out']"));
+  // Where Street can go: the sheet, its own group (it is not the last
+  // there), the empty group and the two pages -- not the notebook.
+  const places = [...menu.querySelectorAll("select[name='move_to'] option")].map(
+    (option) => (option as HTMLOptionElement).value
+  );
+  expect(places).toEqual(["", "n1", "n2", "n6", "n8", "n9"]);
+  await select("n6", {target: ".o_builder_outline_menu select[name='move_to']"});
+  await animationFrame();
+  expect(calls).toEqual([["drop", "n6", "inside", {kind: "move", token: "n3"}]]);
+  expect(queryAll(".o_builder_outline_menu")).toHaveLength(0);
+
+  // Escape shuts the menu and gives the focus back to the row.
+  row("n4").focus();
+  await press(["Shift", "F10"]);
+  await animationFrame();
+  expect(queryAll(".o_builder_outline_menu")).toHaveLength(1);
+  await press("Escape");
+  await animationFrame();
+  expect(queryAll(".o_builder_outline_menu")).toHaveLength(0);
+  expect(document.activeElement).toBe(row("n4"));
+
+  // What stays put is offered nowhere to go.
+  row("n1").focus();
+  await press(["Shift", "F10"]);
+  await animationFrame();
+  expect(queryAll(".o_builder_outline_menu select[name='move_to']")).toHaveLength(0);
 });
 
 test("Delete asks to remove what can be removed", async () => {
