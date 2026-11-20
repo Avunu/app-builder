@@ -12,7 +12,7 @@ import tempfile
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from odoo import Command
-from odoo.tests import HttpCase, TransactionCase
+from odoo.tests import BaseCase, HttpCase, TransactionCase
 from odoo.tools.convert import convert_csv_import, convert_xml_import
 from odoo.tools.translate import TranslationImporter
 
@@ -23,6 +23,7 @@ from odoo.addons.app_builder_base.models.builder_package import (
     UNLINK_ORDER,
     BuilderPackage,
 )
+from odoo.addons.app_builder_base.models.builder_security import WRITE_ENV_VAR
 from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.app_builder_base.tools.compat import groups_field
 from odoo.addons.base.models.ir_actions import IrActionsActWindow
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
     # only imports what its own fixture methods' return types need -- not
     # every model this suite ever touches.
     import unittest
+    from collections.abc import Callable
     from contextlib import AbstractContextManager
     from unittest.case import _AssertRaisesContext
 
@@ -151,6 +153,41 @@ def prime_memoized_class_attributes() -> None:
                 setattr(model, name, getattr(BaseModel, name))
 
 
+def set_code_write(value: str | None) -> Callable[[], None]:
+    """Set (or, with ``None``, unset) the code-writing switch in the process
+    environment, and return what puts it back.
+
+    Done by hand rather than with ``mock.patch.dict``: Odoo's own leak
+    detector (``BaseCase.check_attrs``) walks every active ``mock`` patcher
+    and reads its ``.target``, which a dict patcher does not have.
+    """
+    before = os.environ.get(WRITE_ENV_VAR)
+
+    def restore() -> None:
+        if before is None:
+            os.environ.pop(WRITE_ENV_VAR, None)
+        else:
+            os.environ[WRITE_ENV_VAR] = before
+
+    if value is None:
+        os.environ.pop(WRITE_ENV_VAR, None)
+    else:
+        os.environ[WRITE_ENV_VAR] = value
+    return restore
+
+
+def enable_code_write(cls: type[BaseCase]) -> None:
+    """Opt this test class in to writing code, as an operator would.
+
+    The switch is off by default (``builder_security.code_write_enabled``)
+    and lives in the process environment, so a suite that builds packages
+    has to turn it on for itself rather than depend on the shell it was
+    started from. Set for the class and put back afterwards; a test of the
+    switch itself sets it again, narrower, inside the test.
+    """
+    cls.addClassCleanup(set_code_write("1"))
+
+
 class BuilderHttpCase(HttpCase):
     """``HttpCase`` for the console's tours, with the snapshot primed."""
 
@@ -158,6 +195,9 @@ class BuilderHttpCase(HttpCase):
     def setUpClass(cls) -> None:
         prime_memoized_class_attributes()
         super().setUpClass()
+        # The server thread a tour talks to shares this process, and with
+        # it the environment.
+        enable_code_write(cls)
 
 
 class BuilderCase(TransactionCase):
@@ -173,6 +213,7 @@ class BuilderCase(TransactionCase):
     def setUpClass(cls) -> None:
         prime_memoized_class_attributes()
         super().setUpClass()
+        enable_code_write(cls)
         cls.registry.enter_test_mode(cls.cr)
         cls.addClassCleanup(cls.registry.leave_test_mode)
 

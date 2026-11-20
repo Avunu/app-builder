@@ -377,6 +377,7 @@ class BuilderReport(models.AbstractModel):
     def remove_record(
         self, record_id: int, package_id: int | None = None, force: bool = False
     ) -> bool:
+        typed.security(self)._assert_builder_manager()
         # `_record` lives on `builder.record.surface` -- same rule 6 gap as
         # `_assert_in_source`/`_coerce` above.
         record = cast("BuilderRecordSurface", self)._record(record_id)

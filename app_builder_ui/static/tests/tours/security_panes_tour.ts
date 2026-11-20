@@ -73,7 +73,12 @@ registry.category("web_tour.tours").add("app_builder_security_panes_tour", {
     },
     {
       content: "a template from the New menu",
-      trigger: ".o_builder_record_pane .o_builder_pane_toolbar .dropdown-toggle-split",
+      // The Filter Rules pane's own toolbar, by name: Access Control has
+      // the same split button, and is still on screen for a moment after
+      // the tab is clicked. A menu opened there goes away with its pane,
+      // and the template below is then never found.
+      trigger:
+        ".o_builder_record_pane[data-pane='rules'] .o_builder_pane_toolbar .dropdown-toggle-split",
       run: "click",
     },
     {

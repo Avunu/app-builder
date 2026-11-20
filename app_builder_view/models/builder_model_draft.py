@@ -323,6 +323,7 @@ class BuilderModelDraft(models.TransientModel):
         return cast("BuilderModelDraftBase", super()).remove_field(name)
 
     def action_discard(self) -> Literal[True]:
+        typed.security(self)._assert_builder_manager()
         self._store_anchors({})
         return cast("BuilderModelDraftBase", super()).action_discard()
 

@@ -513,7 +513,14 @@ class BuilderPackage(models.Model):
 
     @api.depends("root_path")
     def _compute_writable(self) -> None:
+        # The server-side opt-in (`builder_security.py`) comes before the
+        # filesystem: a directory that happens to be writable is not
+        # permission to write code into it.
+        enabled = cast("BuilderSecurityMixin", self)._builder_write_enabled()
         for package in self:
+            if not enabled:
+                package.writable = False
+                continue
             path = package.root_path
             if not path:
                 package.writable = False
@@ -1277,6 +1284,9 @@ class BuilderPackage(models.Model):
 
     def _assert_writable(self) -> None:
         self.ensure_one()
+        disabled = cast("BuilderSecurityMixin", self)._builder_write_disabled_reason()
+        if disabled:
+            raise UserError(disabled)
         if not self.writable:
             raise UserError(
                 _(

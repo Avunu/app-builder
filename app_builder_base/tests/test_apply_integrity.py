@@ -712,7 +712,7 @@ class TestApplyIntegrity(BuilderCase):
         self.assertIn("first supported schema", logs.output[0])
 
     def test_uninstalling_names_the_packages_it_orphans(self):
-        from odoo.addons import app_builder_base
+        from .. import uninstall_hook
 
         installed = self.make_package(name="x_integ_uninst_a")
         self.build_demo_content(installed)
@@ -725,7 +725,7 @@ class TestApplyIntegrity(BuilderCase):
         }
         loose.builder_capture(typed.model(self.env, View).create(view_vals))  # pyright: ignore[reportArgumentType]
         with self.assertLogs("odoo.addons.app_builder_base", level="WARNING") as logs:
-            app_builder_base.uninstall_hook(self.env)
+            uninstall_hook(self.env)
         text = "\n".join(logs.output)
         self.assertIn("x_integ_uninst_b", text)
         self.assertNotIn("x_integ_uninst_a", text)

@@ -230,6 +230,13 @@ export class BuilderConsole extends Component<Props, ConsoleEnv> {
 
   get readOnlyNote(): string {
     const info = this.shell.package;
+    // The server's own sentence when it says the builder is switched off
+    // (`builder_security.py`): that is fixed by the server's operator, and
+    // "the directory cannot be written" would send somebody to the wrong
+    // place.
+    if (info && info.health.includes("write_disabled") && info.read_only_reason) {
+      return info.read_only_reason;
+    }
     return String(
       _t(
         "%s is read-only: its directory cannot be written. This is normal on a deployment — build where the files are writable and ship the result through git.",

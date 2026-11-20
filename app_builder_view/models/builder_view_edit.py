@@ -152,6 +152,7 @@ class BuilderViewEdit(models.Model):
         promises -- so those entries are marked superseded and stay in the
         table as a record of what happened.
         """
+        typed.security(self)._assert_builder_manager()
         self.sudo().search(
             [
                 ("base_view_id", "=", base_view.id),

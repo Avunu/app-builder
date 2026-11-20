@@ -299,6 +299,7 @@ class BuilderPackageApply(models.Model):
         the restart the user was already owed is the one that makes it
         count, so nothing is reloaded here and the answer says so.
         """
+        typed.security(self.env["builder.security.mixin"])._assert_builder_manager()
         self.ensure_one()
         # `package_id` read once and reused -- side-effect-free (a Many2one
         # field read), the same "read once into a local, reuse it" idiom
@@ -336,10 +337,7 @@ class BuilderPackageApply(models.Model):
         return {"rolled_back": True, "restart_required": restart_required}
 
     def action_discard_backup(self) -> bool:
-        if self:
-            typed.security(
-                cast("BuilderPackage", self[0].package_id)
-            )._assert_builder_manager()
+        typed.security(self.env["builder.security.mixin"])._assert_builder_manager()
         for record in self:
             backup = record._backup_dir()
             if backup and os.path.isdir(backup):
@@ -684,6 +682,7 @@ class BuilderPackageApplyFile(models.Model):
     existed = fields.Boolean(default=False)
 
     def action_view_before(self) -> bool:
+        typed.security(self.env["builder.security.mixin"])._assert_builder_user()
         self.ensure_one()
         if not self.existed:
             raise UserError(_("%s did not exist before this change.", self.path))
