@@ -3,12 +3,17 @@
  * The console's action: the shell (`shell/shell.ts`) under the tag every
  * entry point sends, and the panes this module ships.
  *
+ * This is the entry of the console's own bundle
+ * (`app_builder_view.assets_console`), which `console_loader.ts` fetches
+ * the first time the action is opened.
+ *
  * Importing the panes here is what registers them: the Views pane with
  * the canvas, Home, Changes, and the record-pane and flow hosts that
  * data-only registrations from other addons resolve to.
  */
 
 import {registry} from "@web/core/registry";
+import {CONSOLE_TAGS} from "./console_loader";
 import {BuilderConsole} from "./shell/shell";
 import "./panes/views_pane";
 import "./panes/home_pane";
@@ -18,18 +23,10 @@ import "./flows/flow";
 
 export {BuilderConsole};
 
-// `registry.category("actions")` is core Odoo's own category, already
-// declared for real (`ActionsRegistryItemShape` -- a plain component
-// class, the same shape `app_builder.field_editor`/`app_builder.canvas`/
-// `cogMenu`/`systray` already give a registry that only ever stores
-// component classes) via the ambient ActionRegistry augmentation
-// `@web/webclient/actions/action_registry.js` supplies, which `allowJs`
-// picks up transitively -- no local or `odoo.ts` `declare module` needed,
-// unlike `cogMenu`/`systray`/`view_widgets`, which are core categories
-// this repo had to transcribe by hand (TYPING.md, "Known traps") because
-// their own vendor `.d.ts` sits outside `tsconfig.json`'s `include`.
-// Confirmed by this file compiling clean with no augmentation added.
-registry.category("actions").add("app_builder_console", BuilderConsole);
-// The tag the cog item and the report action sent before the console
-// existed, kept so a bookmarked URL and an older caller still open it.
-registry.category("actions").add("app_builder_view_wysiwyg", BuilderConsole);
+// Forced, because both tags are already held: `console_loader.ts`, in
+// `web.assets_backend`, registers under each a function that fetches this
+// bundle and runs the action again -- against what is registered here.
+// The category's item type is `ActionsRegistryItemShape` (`odoo.ts`).
+for (const tag of CONSOLE_TAGS) {
+  registry.category("actions").add(tag, BuilderConsole, {force: true});
+}

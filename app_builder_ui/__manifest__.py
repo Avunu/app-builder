@@ -14,6 +14,10 @@
         "web.assets_backend": [
             "app_builder_ui/static/src/automations_menu_item.js",
             "app_builder_ui/static/src/automations_menu_item.xml",
+        ],
+        # The console is fetched on demand, by app_builder_view; this addon
+        # does not depend on it, and without it the bundle is never asked for.
+        "app_builder_view.assets_console": [
             "app_builder_ui/static/src/console_items.js",
         ],
         "web.assets_tests": [

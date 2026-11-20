@@ -1,6 +1,7 @@
 from . import (
     test_add_view,
     test_anchor_placement,
+    test_asset_bundles,
     test_canvas,
     test_canvas_stamp,
     test_compose_entry,
