@@ -125,9 +125,14 @@ Enterprise models normally uses `OPL-1` or `OEEL-1`).
 
 ## Production
 
-The editor gates on write access to the package directory. Against a read-only
-deployment it disables itself with an explanatory banner rather than failing: build in
-development, ship through git, deploy immutably.
+The editor gates on write access to the package directory, established by creating and
+removing a temporary file there rather than by asking `os.access` (which is wrong for
+root, ACLs and read-only mounts). Against a read-only deployment it disables itself with
+an explanatory banner rather than failing: build in development, ship through git,
+deploy immutably. The guard is only that filesystem probe: on a server whose addons path
+is writable the builder is enabled, so keep production read-only or leave the builder
+uninstalled there. The supported envelope (Odoo 18.0, one process, one database) is in
+"Scope and limits" in the [repository README](../README.md#scope-and-limits).
 
 ## Roadmap
 

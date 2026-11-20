@@ -4,6 +4,8 @@
 
 An open-source alternative to Odoo Studio whose output is **ordinary source code from the first keystroke**.
 
+> **Status: beta, Odoo 18.0 only.** Seven addons declare `development_status: Beta` and the two approval addons `Alpha`; none claims Production/Stable. The only supported and tested series is **18.0** (OCB). Odoo 19.0 and later are not supported: [FORWARD_COMPAT.md](FORWARD_COMPAT.md) records a port that was read against the 19 sources but never run on a 19 server. The builder is a **development-time tool** for a single-process development database, not something to switch on in production. Read [Scope and limits](#scope-and-limits) before installing it, and [CHANGELOG.md](CHANGELOG.md) before upgrading.
+
 Odoo Studio keeps everything in the database and offers a one-time, irreversible "export to module". Once a developer touches the exported code, they can never go back to the visual tool. App Builder inverts that: every visual change writes both the database record and the corresponding file in a real addon directory, in the same transaction. The builder and the codebase are two views of one artifact.
 
 ```
@@ -19,7 +21,7 @@ Odoo Studio keeps everything in the database and offers a one-time, irreversible
 "Files are the source of truth" naively means a module upgrade on every drag-drop — 1–3s per edit, unusable. It doesn't have to, because Odoo already makes the database side free:
 
 -   `IrModel.create` rebuilds the registry synchronously, so a new model and its table are live **in the same transaction** (`ir_model.py:404-416`).
--   With `--dev=xml`, `ir.ui.view._compute_arch` reads arch from disk whenever `arch_updated` is False, so a file-authored view goes live with no DB write.
+-   With `--dev=xml`, `ir.ui.view._compute_arch` reads arch from disk whenever `arch_updated` is False, so a file-authored view goes live with no DB write. `--dev=xml` is Odoo's development flag; it is one more reason the builder belongs on a development server (see [Scope and limits](#scope-and-limits)).
 
 So each operation writes the record _and_ the file atomically, and a full `update_list()` + `button_immediate_upgrade()` becomes the verification and repair path rather than the edit path.
 
@@ -99,6 +101,28 @@ Turn it on only where every `Settings` administrator is trusted with a shell: a 
 
 The supported deployment is one Odoo process (`workers = 0`) serving one database, used by administrators only. [SECURITY.md](SECURITY.md) has the threat model, what each role can see, the hardening checklist, and how to report a vulnerability.
 
+## Scope and limits
+
+What the builder is for, and the envelope it is tested in. Outside it the builder either refuses with a message or is unsupported.
+
+-   **Odoo 18.0 only.** OCB 18.0 is what the suite runs on. No other series is supported yet.
+-   **A development database, not production.** The builder writes Python and XML into the server's addons path and reloads modules in the running process. Use it on a development or staging copy, commit the result, and deploy the generated addon like any other. Back up (or be able to recreate) the database you build on.
+-   **Writing switched on, on a writable addons path.** A package is editable only when the server-side switch described under [Security](#security) is on and its directory passes the write probe described above. With the switch off, or on a read-only checkout, a Nix-store build or a read-only container mount, the console opens read-only.
+-   **Trusted administrators only.** A Builder Administrator, and so every `Settings` administrator, can write code that the server then imports and runs. Treat that access as equivalent to shell access on the server and grant it accordingly. See [Security](#security) above and [SECURITY.md](SECURITY.md) for the security model and how to report a vulnerability.
+-   **A single process: `workers = 0`.** Applying a change re-imports Python in the running process. Other workers would rebuild their registry against the stale classes they still hold, so under `workers > 0` (or with a package's reload mode set to manual) an Apply writes the files and stops at _Restart needed_; it finishes after the server restarts. Nothing is half-applied, but it is not the interactive loop the builder is designed for.
+-   **One database per source tree.** Files are the source of truth and are shared by every database served from the same addons path; the builder's records are per database. Editing the same package from two databases (or two servers on one checkout) is not coordinated: the second one sees drift and has to reload from files. Build in one database.
+-   **Model changes are staged behind Apply.** Views, menus, actions and the like are written as you edit. A new field or model on a package-owned Python model needs its class re-imported, so those edits collect in a pending tray and land together on **Apply** — one reload per changeset. A failed apply rolls the files back.
+-   **Compiled JavaScript is not in git.** The console is TypeScript; a clone has no `.js` until it is built. The Nix dev shell and Nix builds do that for you (see [TypeScript](#typescript)).
+
+What it deliberately does not do:
+
+-   It is not a hosted or multi-tenant service, and has no per-user sandbox: output is real, unrestricted Python.
+-   It does not rewrite code outside its marked block, and does not edit core or third-party views in place — every change to an existing view is an inheriting view in your package.
+-   It does not deploy, commit or push. Git, review and release stay with your own tooling.
+-   It does not migrate data. Renaming or removing a field changes the source; the data migration is yours to write.
+-   It does not replicate Odoo Studio feature for feature. [PLAN.md](PLAN.md) lists what is covered, what is left and what will not be built.
+-   It ships no upgrade path from the pre-2.0 `studio.*` addons; see [CHANGELOG.md](CHANGELOG.md).
+
 ## Available addons
 
 | addon | summary |
@@ -133,7 +157,21 @@ The console is written in TypeScript, and the compiled `.js` is not committed. E
 - **The shell:** entering it installs and builds, so a fresh clone serves a working console; `devenv up` keeps rebuilding through each addon's `watch` script; `odoo module build` builds by hand.
 - **Type checks:** esbuild checks nothing. `prek run -c .pre-commit-config.yaml --hook-stage manual -a` runs pyright, tsc and the type-aware eslint in the dev shell, as `typecheck.yml` does in CI.
 
-See [DESIGN.md](DESIGN.md) for the full architecture, the core machinery it drives, and the traps it works around — three Odoo caches that are never invalidated, two reserved module names, the `ir_cron` lock `button_immediate_upgrade` takes, and the findings from an adversarial review. See [TYPING.md](TYPING.md) for how the Python and TypeScript are typed, checked, built and loaded today, and the traps that cost time; the plan it came out of and the log of carrying it out are in [TYPING_HISTORY.md](TYPING_HISTORY.md).
+### Tests
+
+`odoo-nix gate test` is what CI runs: every addon's Python tests, tours and hoot tests on a fresh database, with coverage. For one addon while working, `odoo test app_builder_view` (comma-separate several). [DESIGN.md](DESIGN.md#verification) has the end-to-end probes for the paths a `TransactionCase` cannot reach.
+
+### Translations
+
+Each addon with translatable terms ships `i18n/<addon>.pot`, exported by Odoo itself. The export reads the compiled `.js`, which is how the console's TypeScript `_t()` strings get in, so build before exporting. [Contributing](.github/CONTRIBUTING.md#translations) has the command.
+
+### Contributing and releases
+
+[.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) covers the workflow, commit convention and checks. Work lands on `develop`; the release workflow bumps each changed addon's version from its conventional commits and fast-forwards the series branch `18.0`. Notable changes and upgrade notes are in [CHANGELOG.md](CHANGELOG.md).
+
+### Further reading
+
+See [DESIGN.md](DESIGN.md) for the full architecture, the core machinery it drives, and the traps it works around — three Odoo caches that are never invalidated, two reserved module names, the `ir_cron` lock `button_immediate_upgrade` takes, and the findings from an adversarial review. See [TYPING.md](TYPING.md) for how the Python and TypeScript are typed, checked, built and loaded today, and the traps that cost time; the plan it came out of and the log of carrying it out are in [TYPING_HISTORY.md](TYPING_HISTORY.md). [PLAN.md](PLAN.md) is the roadmap against Odoo Studio, and [FORWARD_COMPAT.md](FORWARD_COMPAT.md) the unverified notes for a 19.0 port.
 
 ## Licence
 
