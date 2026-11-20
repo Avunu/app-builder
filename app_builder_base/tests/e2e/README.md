@@ -34,8 +34,13 @@ Two things to know before running them in a checkout you are working in:
   repository. The commit runs the repository's pre-commit hooks, and pre-commit sets
   unstaged changes aside while its hooks run: for those seconds your uncommitted edits
   are not in the working tree. They come back, but do not edit, build or copy the tree
-  while the probes run. `run_probes.sh` takes the probes' entries back out of the index
-  when it ends.
+  while the probes run. Apply also commits the package before it writes
+  (`builder: before apply`) whenever the hooks let that commit through, so the branch
+  you are on can gain `builder: ...` commits holding `x_*_probe` files. When it ends,
+  `run_probes.sh` puts the probes' index entries back to what `HEAD` held before the
+  run, and if `HEAD` moved it lists the new commits and prints the `git reset --soft`
+  that drops them; it resets nothing itself. In CI the checkout is detached and thrown
+  away, so none of this matters there.
 
 ## `probe_reimport.py` — is in-process re-import sound?
 

@@ -90,15 +90,28 @@ else
 fi
 
 # The builder stages what it writes when the addons directory is inside a git
-# repository (tools/gitrepo.py). The probes delete their packages afterwards,
-# which leaves those entries in the index of the checkout: take them back out.
+# repository (tools/gitrepo.py), and Apply commits the package before it writes
+# ("builder: before apply") whenever the repository's hooks let it. The probes
+# delete their packages afterwards. So, in a checkout: the probes' index
+# entries go back to what HEAD held before the run (absent), and if a builder
+# commit moved HEAD, the way back is printed -- never taken for you.
+START_HEAD="$(git rev-parse -q --verify HEAD 2>/dev/null || true)"
 # shellcheck disable=SC2329  # called by cleanup, which the trap calls
 unstage() {
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
-    local pkg
+    [ -n "$START_HEAD" ] || return 0
+    local pkg now
     for pkg in x_reimport_probe x_reflect_probe x_scaffold_probe x_compose_probe x_console_probe; do
-        [ -e "$pkg" ] || git reset -q -- "$pkg" >/dev/null 2>&1 || true
+        [ -e "$pkg" ] || git reset -q "$START_HEAD" -- "$pkg" >/dev/null 2>&1 || true
     done
+    now="$(git rev-parse -q --verify HEAD 2>/dev/null || true)"
+    if [ -n "$now" ] && [ "$now" != "$START_HEAD" ]; then
+        echo "==> WARNING: HEAD moved during the probes (${START_HEAD:0:12} -> ${now:0:12})." >&2
+        echo "    The builder committed probe packages into this checkout:" >&2
+        git log --oneline "$START_HEAD..$now" >&2 || true
+        echo "    To drop those commits and keep your working tree and index:" >&2
+        echo "      git reset --soft $START_HEAD" >&2
+    fi
 }
 
 # shellcheck disable=SC2329  # called by the trap
