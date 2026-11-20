@@ -24,7 +24,12 @@ somebody else's edit is a decision rather than a surprise.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, TypedDict, cast
+
+from lxml import (  # pyright: ignore[reportMissingTypeStubs]
+    etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
@@ -37,6 +42,7 @@ if TYPE_CHECKING:
     # annotations` nothing here needs these at runtime, the same bargain
     # every other Phase 1c file's `TYPE_CHECKING` block makes.
     from odoo.addons.app_builder_base.models.builder_package import BuilderPackage
+    from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
     from odoo.addons.base.models.ir_ui_view import View
 
     # `builder_view_edit.py` <-> `builder_view_editor.py`: a real circular
@@ -53,6 +59,43 @@ if TYPE_CHECKING:
     # pyright module identity (see `builder_package.py`'s own `TYPE_CHECKING`
     # block for the traced, first-hand version of this).
     from .builder_view_editor import BuilderViewEditor
+
+
+# How long an entry is kept. History is what undo reads, and an undo is only
+# honoured while the view still is what the entry left behind (`_stands`) --
+# so an entry this old is a log line at best. Superseded entries can never be
+# reached again and go after a day.
+HISTORY_RETENTION_DAYS = 90
+SUPERSEDED_RETENTION_DAYS = 1
+
+
+def canonical_arch(arch: str | None) -> bytes:
+    """``arch`` reduced to what it says, for comparing two of them.
+
+    Indentation, attribute order and an XML declaration are not content: a
+    view reloaded from its own generated file comes back re-serialised by
+    ``convert.py``, and must still compare equal to the snapshot taken when
+    the editor wrote it. A bare spec and the same spec wrapped in ``<data>``
+    are one extension too. An arch that does not parse is compared as its
+    own bytes.
+    """
+    text = (arch or "").strip()
+    if not text:
+        return b"<data></data>"
+    try:
+        root = cast("LxmlElement", etree.fromstring(text.encode()))
+    except etree.XMLSyntaxError:
+        return text.encode()
+    if root.tag != "data":
+        wrapper = cast("LxmlElement", etree.Element("data"))
+        wrapper.append(root)
+        root = wrapper
+    for node in root.iter():
+        if node.text is not None and not node.text.strip():
+            node.text = None
+        if node.tail is not None and not node.tail.strip():
+            node.tail = None
+    return cast("bytes", etree.tostring(root, method="c14n"))
 
 
 class HistoryEntryJSON(TypedDict):
@@ -245,11 +288,90 @@ class BuilderViewEdit(models.Model):
             order="id asc",
         )
         editor = cast("BuilderViewEditor", self.env["builder.view.editor"])
+        # A stack whose top no longer applies is not offered at all: the
+        # entries under it could only be reached through it. Decided from
+        # the view as it is, so the button comes back by itself the moment
+        # the view does -- an edit made on top of a hand-written change can
+        # be undone, and what is left is the hand-written change again.
+        if undo and not undo[0]._stands("after"):
+            undo = undo.browse()
+        if redo and not redo[0]._stands("before"):
+            redo = redo.browse()
         return {
             "undo": [e._entry() for e in undo],
             "redo": [e._entry() for e in redo],
             "arch_version": editor.arch_version(base_view_id),
         }
+
+    def _written_view(self) -> View:
+        """The view this entry wrote, found again if its id was let go."""
+        editor = cast("BuilderViewEditor", self.env["builder.view.editor"])
+        return cast("View", self.view_id) or editor._find_extension(
+            cast("View", self.base_view_id), cast("BuilderPackage", self.package_id)
+        )
+
+    def _stands(self, side: str) -> bool:
+        """Whether the written view still is what this entry recorded.
+
+        ``side`` is ``"after"`` for undo -- the view must be as the edit
+        left it -- and ``"before"`` for redo. Restoring a snapshot over
+        anything else is not undoing this edit: it throws away whatever was
+        written in between, by a hand edit adopted from the file, by the
+        debug view editor, by anything that is not this history. The
+        combined-arch version cannot tell: the client that holds the
+        current version has seen the change and is about to lose it anyway.
+
+        Compared in the source language and by content (``canonical_arch``).
+        A view that is gone stands for undo, which then has nothing to put
+        back; for redo it stands only if this entry is the one that made it.
+        An entry recorded before ``arch_after`` existed has nothing to
+        compare and is taken at its word.
+        """
+        self.ensure_one()
+        entry = self.sudo()
+        view = entry._written_view()
+        if not view:
+            return side == "after" or bool(entry.created_view)
+        if side == "after" and not entry.arch_after:
+            return True
+        current = cast("str", view.with_context(lang=None).arch)
+        recorded = entry.arch_after if side == "after" else entry.arch_before
+        return canonical_arch(current) == canonical_arch(cast("str", recorded))
+
+    def _assert_stands(self, side: str) -> None:
+        if self._stands(side):
+            return
+        if side == "after":
+            raise UserError(
+                _(
+                    "This view has been changed outside the builder since "
+                    "'%s' was made, so undoing it would discard that change. "
+                    "Nothing was touched.",
+                    self.summary,
+                )
+            )
+        raise UserError(
+            _(
+                "This view has been changed outside the builder since '%s' "
+                "was undone, so putting it back would discard that change. "
+                "Nothing was touched.",
+                self.summary,
+            )
+        )
+
+    @api.autovacuum
+    def _gc_history(self) -> None:
+        """Let go of entries nobody can act on any more."""
+        now = fields.Datetime.now()
+        self.sudo().search(
+            [
+                "|",
+                ("create_date", "<", now - timedelta(days=HISTORY_RETENTION_DAYS)),
+                "&",
+                ("superseded", "=", True),
+                ("create_date", "<", now - timedelta(days=SUPERSEDED_RETENTION_DAYS)),
+            ]
+        ).unlink()
 
     def _redoable(self) -> BuilderViewEdit:
         """The one entry of this base view that redo may put back next."""
@@ -272,10 +394,13 @@ class BuilderViewEdit(models.Model):
 
         ``expected_arch_version`` is checked first, like any other mutation:
         an undo aimed at a view somebody else has since edited would take back
-        *their* change, not the one on the button.
+        *their* change, not the one on the button. That is a claim about what
+        the client has seen; whether the view is still what this entry left
+        behind is a second question, asked of the view itself (``_stands``).
         """
         typed.security(self)._assert_builder_manager()
         self.ensure_one()
+        cast("BuilderPackage", self.package_id)._assert_writable()
         editor = cast("BuilderViewEditor", self.env["builder.view.editor"])
         editor._assert_arch_version(
             cast("View", self.base_view_id), expected_arch_version
@@ -297,9 +422,8 @@ class BuilderViewEdit(models.Model):
             )
 
         package = cast("BuilderPackage", self.package_id)
-        view = cast("View", self.view_id) or cast(
-            "BuilderViewEditor", self.env["builder.view.editor"]
-        )._find_extension(cast("View", self.base_view_id), package)
+        view = self._written_view()
+        self._assert_stands("after")
         self.undone = True
         if not view:
             # Somebody removed the written view by other means. There is
@@ -314,9 +438,11 @@ class BuilderViewEdit(models.Model):
             # than cascaded -- because redo needs to know what to recreate.
             view.unlink()
         else:
-            view.write({"arch": self.arch_before})
-        if package.writable:
-            package.action_write_files()
+            # In the source language, as it was read (`_neutral_arch`): a
+            # snapshot written back under the undoing user's language would
+            # become the `en_US` source of the view.
+            view.with_context(lang=None).write({"arch": self.arch_before})
+        package.action_write_files()
         return True
 
     def action_redo(self, expected_arch_version: str | None = None) -> bool:
@@ -333,6 +459,7 @@ class BuilderViewEdit(models.Model):
         """
         typed.security(self)._assert_builder_manager()
         self.ensure_one()
+        cast("BuilderPackage", self.package_id)._assert_writable()
         editor = cast("BuilderViewEditor", self.env["builder.view.editor"])
         base_view = cast("View", self.base_view_id)
         editor._assert_arch_version(base_view, expected_arch_version)
@@ -349,7 +476,9 @@ class BuilderViewEdit(models.Model):
         # the edit that created it emptied view_id on *all* of them. A later
         # redo may already have brought it back; take that one before making
         # another.
-        view = cast("View", self.view_id) or editor._find_extension(base_view, package)
+        view = self._written_view()
+        if view:
+            self._assert_stands("before")
         if not view:
             if not self.created_view:
                 raise UserError(
@@ -362,8 +491,7 @@ class BuilderViewEdit(models.Model):
                 base_view, package, write_files=False
             )
         self.view_id = view
-        view.write({"arch": self.arch_after})
+        view.with_context(lang=None).write({"arch": self.arch_after})
         self.undone = False
-        if package.writable:
-            package.action_write_files()
+        package.action_write_files()
         return True

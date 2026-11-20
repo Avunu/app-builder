@@ -14,9 +14,10 @@ held to the same standard: it puts back the bytes the edit produced.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, cast
 
-from odoo import Command
+from odoo import Command, fields
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
@@ -25,10 +26,12 @@ from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.app_builder_view.exceptions import BuilderStaleView
 from odoo.addons.base.models.ir_ui_view import View
 
-from ..models.builder_view_edit import BuilderViewEdit
+from ..models.builder_view_edit import BuilderViewEdit, canonical_arch
 from ..models.builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
+    from odoo.sql_db import Cursor
+
     # Only for the cast below; with `from __future__ import annotations`
     # nothing here needs this at runtime, the same bargain every converted
     # model file's own `TYPE_CHECKING` block makes. `builder_package_id` is a
@@ -323,6 +326,154 @@ class TestUndo(BuilderCase):
         self.assertEqual(
             stack["arch_version"], self.editor.arch_version(cast("int", self.view.id))
         )
+
+    # -- the view has to still be what the entry left -----------------------
+
+    HAND_EDIT = """
+        <data>
+            <xpath expr="/list" position="attributes">
+                <attribute name="editable">top</attribute>
+            </xpath>
+            <xpath expr="//field[@name='x_name']" position="attributes">
+                <attribute name="string">Written by hand</attribute>
+            </xpath>
+        </data>
+    """
+
+    def _refused(self, action):
+        """Not ``assertRaises``, for the reason given above: what matters is
+        what the view looks like after the refusal."""
+        try:
+            action()
+        except UserError as caught:
+            self.assertIn("changed outside the builder", str(caught))
+        else:
+            self.fail("restoring a snapshot over a foreign change has to be refused")
+
+    def test_undo_does_not_delete_a_patch_that_was_edited_by_hand(self):
+        """The generated file is source, and source gets edited. Undoing the
+        edit that created the patch used to delete the patch -- with whatever
+        a developer had since added to it."""
+        self._set({"editable": "top"})
+        entry = self._latest()
+        self._patch().arch = self.HAND_EDIT
+        version = self.editor.arch_version(cast("int", self.view.id))
+
+        self._refused(lambda: entry.action_undo(expected_arch_version=version))
+
+        self.assertFalse(entry.undone)
+        self.assertIn("Written by hand", cast("str", self._patch().arch))
+
+    def test_undo_does_not_overwrite_a_hand_edit_with_an_old_snapshot(self):
+        self._set({"editable": "top"})
+        self._set({"multi_edit": "1"})
+        entry = self._latest()
+        self._patch().arch = self.HAND_EDIT
+
+        self._refused(entry.action_undo)
+
+        self.assertIn("Written by hand", cast("str", self._patch().arch))
+
+    def test_redo_does_not_overwrite_a_hand_edit(self):
+        self._set({"editable": "top"})
+        self._set({"multi_edit": "1"})
+        entry = self._latest()
+        entry.action_undo()
+        self._patch().arch = self.HAND_EDIT
+
+        self._refused(entry.action_redo)
+
+        self.assertTrue(entry.undone)
+        self.assertIn("Written by hand", cast("str", self._patch().arch))
+
+    def test_redo_does_not_fill_a_patch_somebody_else_made_meanwhile(self):
+        """The creating edit was undone, so the patch is gone; one that has
+        appeared since is not this entry's to overwrite."""
+        self._set({"editable": "top"})
+        entry = self._latest()
+        entry.action_undo()
+        patch = self.editor._get_or_create_extension(self.view, self.package)
+        patch.arch = self.HAND_EDIT
+
+        self._refused(entry.action_redo)
+
+        self.assertIn("Written by hand", cast("str", self._patch().arch))
+
+    def test_a_stale_stack_is_not_offered(self):
+        """The buttons go away rather than waiting to refuse -- and come
+        back by themselves, because the test is the view, not a flag: an
+        edit made on top of the hand edit can be undone, and what is left
+        is the hand edit again."""
+        self._set({"editable": "top"})
+        self._patch().arch = self.HAND_EDIT
+        view_id = cast("int", self.view.id)
+        self.assertEqual(self.history.stack_for(view_id)["undo"], [])
+
+        self._set({"multi_edit": "1"})
+        stack = self.history.stack_for(view_id)
+        self.assertEqual(len(stack["undo"]), 2)
+        self.history.browse(stack["undo"][0]["id"]).action_undo()
+
+        self.assertEqual(
+            canonical_arch(cast("str", self._patch().arch)),
+            canonical_arch(self.HAND_EDIT),
+        )
+        stack = self.history.stack_for(view_id)
+        self.assertEqual(stack["undo"], [])
+        self.assertEqual(len(stack["redo"]), 1)
+
+    def test_a_reformatted_patch_is_still_the_same_patch(self):
+        """Reloading the package from its own files re-serialises the arch:
+        an XML declaration, other indentation, attributes in another order.
+        None of that is a change, and none of it disarms undo."""
+        self._set({"editable": "top"})
+        entry = self._latest()
+        patch = self._patch()
+        patch.arch = (
+            '<?xml version="1.0"?>\n<data><xpath position="attributes" '
+            'expr="/list">\n\n<attribute name="editable">top</attribute>'
+            "</xpath></data>"
+        )
+        self.assertEqual(
+            len(self.history.stack_for(cast("int", self.view.id))["undo"]), 1
+        )
+        entry.action_undo()
+        self.assertTrue(entry.undone)
+        self.assertFalse(self._patch())
+
+    # -- retention -----------------------------------------------------------
+
+    def _age(self, entry, days):
+        cast("Cursor", self.env.cr).execute(
+            "UPDATE builder_view_edit SET create_date = %s WHERE id = %s",
+            (fields.Datetime.now() - timedelta(days=days), entry.id),
+        )
+        entry.invalidate_recordset()
+
+    def test_old_and_unreachable_entries_are_pruned(self):
+        self._set({"editable": "top"})
+        old = self._latest()
+        self._set({"multi_edit": "1"})
+        undone = self._latest()
+        undone.action_undo()
+        self._set({"default_order": "x_name"})
+        superseded, kept = undone, self._latest()
+        self.assertTrue(superseded.superseded, "fixture")
+        self._age(old, 200)
+        self._age(superseded, 2)
+
+        self.history._gc_history()
+
+        self.assertFalse(old.exists(), "past retention")
+        self.assertFalse(superseded.exists(), "superseded entries go first")
+        self.assertTrue(kept.exists())
+
+    def test_recent_history_is_kept(self):
+        self._set({"editable": "top"})
+        entry = self._latest()
+        self._age(entry, 30)
+        self.history._gc_history()
+        self.assertTrue(entry.exists())
 
     # -- guarded like everything else --------------------------------------
 
