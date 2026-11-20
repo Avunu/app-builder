@@ -379,9 +379,12 @@ class BuilderModelDraft(models.TransientModel):
         chain = _placing + (name,)
         if other and (other in _placing or not self._ensure_placed(view, other, chain)):
             return False
+        # In the source language, like every tree a locator and its
+        # expectation are minted on: the owned path checks them against the
+        # untranslated primary arch.
         root = cast(
             "LxmlElement",
-            etree.fromstring(cast("str", view.get_combined_arch()).encode()),
+            etree.fromstring(editor._neutral_combined_arch(view).encode()),
         )
         if other:
             located = cast("BuilderViewEditorCanvas", editor)._pending_locator(
