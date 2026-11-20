@@ -198,6 +198,9 @@ export interface PackageEntryJSON {
   version: string;
   root_path: string;
   writable: boolean;
+  /** Why not, in a sentence; `""` when `writable`. Optional: a server
+   * older than the switch (`builder_security.py`) does not send it. */
+  read_only_reason?: string;
   reload_mode: string;
   state: string;
   drift_count: number;

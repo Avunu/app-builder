@@ -363,6 +363,8 @@ const WORST_HEALTH_ORDER = [
 ] as const;
 
 const HEALTH_LINES: Record<string, () => ReturnType<typeof _t>> = {
+  write_disabled: () =>
+    _t("Switched off on this server · writing source code has not been enabled"),
   read_only: () => _t("Read-only · the directory cannot be written"),
   missing: () => _t("Files missing on disk"),
   not_installed: () => _t("Not installed · Odoo has not loaded this module yet"),
@@ -396,6 +398,7 @@ const HEALTH_ACTIONS: Record<string, HealthAction> = {
 };
 
 const FLAG_DOT: Record<string, string> = {
+  write_disabled: "grey",
   read_only: "grey",
   no_git: "grey",
   manual_reload: "grey",
