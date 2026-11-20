@@ -13,12 +13,21 @@
     "depends": ["app_builder_base", "app_builder_ui", "app_builder_view", "web"],
     "external_dependencies": {"python": ["typing_extensions"]},
     "assets": {
-        "web.assets_backend": [
+        # The console is fetched on demand (app_builder_view): its panes go
+        # in its bundle, not in what every internal user downloads.
+        # Named file by file: a glob would also load the compiled .js that a
+        # renamed or deleted .ts left behind.
+        "app_builder_view.assets_console": [
             "app_builder_report/static/src/console_items.js",
-            "app_builder_report/static/src/console/**/*",
+            "app_builder_report/static/src/console/report_canvas.js",
+            "app_builder_report/static/src/console/report_canvas.scss",
+            "app_builder_report/static/src/console/report_canvas.xml",
         ],
         "web.assets_tests": [
             "app_builder_report/static/tests/tours/report_editor_tour.js",
+        ],
+        "web.assets_unit_tests": [
+            "app_builder_report/static/tests/report_canvas.test.js",
         ],
     },
     "data": [

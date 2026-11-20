@@ -143,6 +143,9 @@ class TestReportPreview(BuilderCase):
         self.assertTrue(anchor["found"])
         anchor = cast("_BodyAnchorFoundJSON", anchor)
         self.assertIn("page", anchor["xpath"])
+        # Read without rendering: what the canvas lists fields from when
+        # the preview fails.
+        self.assertEqual(anchor["model"], "x_builder_project")
 
     def test_the_anchor_is_usable_as_an_operation_target(self):
         """The point of it: add something without having clicked anything."""

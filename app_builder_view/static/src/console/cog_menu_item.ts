@@ -23,11 +23,10 @@ import type {ActionController, ActionService, CogMenuItem, ViewEnv} from "./odoo
 // `env.config` slice it reads (`ViewEnv`/`ViewEnvConfig`), and the
 // `declare module "registries"` augmentation all live in `odoo.ts` now --
 // "the framework boundary, fenced in one place" (TYPING.md, Phase 2c) --
-// alongside `app_builder.panes`/`console_tabs`/`systray`. Note for whoever
-// converts `app_builder_ui/static/src/automations_menu_item.js`: it
-// registers into this same "cogMenu" category and reads exactly
-// `resModel`/`actionId` off its own `env.config`, both already named in
-// `ViewEnvConfig` -- import from `odoo.ts` rather than re-declaring.
+// alongside `app_builder.panes`/`console_tabs`/`systray`.
+// `app_builder_ui/static/src/automations_menu_item.ts` registers into this
+// same "cogMenu" category and reads `resModel`/`actionId` off its own
+// `env.config`; it takes these types from `odoo.ts` too, as types only.
 
 // Types the editor can open. A settings-only view (pivot, graph, timeline)
 // belongs here as much as a clickable one: what it *is* lives in its root
@@ -120,7 +119,9 @@ export class EditThisView extends Component<Props, ViewEnv> {
 export const editThisViewItem: CogMenuItem = {
   Component: EditThisView,
   groupNumber: 40,
+  // Not on a phone-sized viewport: the console is laid out for a desktop.
   isDisplayed: async (env) =>
+    !env.isSmall &&
     EDITABLE_TYPES.includes(env.config.viewType) &&
     (await user.hasGroup("app_builder_base.group_builder_user")),
 };

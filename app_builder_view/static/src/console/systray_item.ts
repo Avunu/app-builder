@@ -48,7 +48,7 @@ type Props = Record<string, never>;
  * showing it, the view id if the current action pins one for that type,
  * the action id (so the console's own Close can restore it) and the
  * record on screen, if any. Not a shape any other file needs --
- * `cog_menu_item.js`'s own `params` object (still unconverted) names an
+ * `cog_menu_item.ts`'s own `params` object names an
  * overlapping but not identical set of keys (`res_model` *and* `model`,
  * `previous_action`), so this stays local rather than joining
  * `types.ts`. */
@@ -163,7 +163,9 @@ export class BuilderSystrayItem extends Component<Props, EnvWithBus> {
 
 registry.category("systray").add(
   "app_builder.toggle",
-  {Component: BuilderSystrayItem, isDisplayed: () => true},
+  // The console is laid out for a desktop: on a phone-sized viewport the
+  // way in is not offered (`shell.xml` says why to whoever arrives by URL).
+  {Component: BuilderSystrayItem, isDisplayed: (env) => !env.isSmall},
   {
     sequence: 5,
   }

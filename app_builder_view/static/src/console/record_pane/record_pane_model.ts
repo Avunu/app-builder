@@ -12,7 +12,7 @@
  * and the values the sidebar renders, and templates say what the New
  * tiles offer.
  *
- * The same three rules the canvas follows (`console_model.js`): a
+ * The same three rules the canvas follows (`console_model.ts`): a
  * refusal is a sentence shown as the server said it, the list is
  * replaced rather than patched after every write, and nothing here
  * rethrows what the caller has nothing to add to.
@@ -37,7 +37,7 @@ import type {
 } from "../wire";
 
 /** One entry of `entry.rowActions`, contributed alongside the built-in
- * Remove/Duplicate row actions (`app_builder_ui/static/src/console_items.js`'s
+ * Remove/Duplicate row actions (`app_builder_ui/static/src/console_items.ts`'s
  * "menu" pane is the one real registration today). */
 export interface RowActionSpec {
   key: string;
@@ -48,7 +48,7 @@ export interface RowActionSpec {
 }
 
 /** The pane's registry entry, the fields this model itself reads
- * (`shell/pane_registry.js`'s own docstring: "a record pane: surface,
+ * (`shell/pane_registry.ts`'s own docstring: "a record pane: surface,
  * surfaceArgs, rowActions, newFlow") plus `label`/`empty`, which
  * `record_pane.ts` -- the real, first reader of either -- needs off the
  * same entry. */

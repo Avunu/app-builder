@@ -156,8 +156,8 @@ interface PropertiesTabState {
 /**
  * What this file hands `this.editor.open(...)` -- `FieldEditorProps`
  * (`types.ts`) minus `close`. Every real opener of `useFieldEditor` in
- * this tree (this file's own `onEditOwned`/`onEditPending`, `view_tab.js`'s
- * `editorProps`, `add_tab.js`'s `openEditor`) omits `close` from what it
+ * this tree (this file's own `onEditOwned`/`onEditPending`, `view_tab.ts`'s
+ * `editorProps`, `add_tab.ts`'s `openEditor`) omits `close` from what it
  * hands `.open()` -- confirmed by grepping every real call site, not an
  * oversight of this conversion. `usePopover`'s own `open(target, props)`
  * (`@web/core/popover/popover_hook.js`) forwards `props` to

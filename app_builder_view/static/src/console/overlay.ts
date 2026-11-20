@@ -95,11 +95,14 @@ export class Overlay {
     this.gripEl = child(this.frameEl, "button", "o_builder_grip");
     this.gripEl.type = "button";
     this.gripEl.title = String(_t("Drag to move"));
-    this.gripEl.innerHTML = '<i class="oi oi-draggable"></i>';
+    // Icon-only, so the name a screen reader says is given outright.
+    this.gripEl.setAttribute("aria-label", String(_t("Drag to move")));
+    this.gripEl.innerHTML = '<i class="oi oi-draggable" aria-hidden="true"></i>';
     this.removeEl = child(this.frameEl, "button", "o_builder_remove");
     this.removeEl.type = "button";
     this.removeEl.title = String(_t("Remove from view"));
-    this.removeEl.innerHTML = '<i class="fa fa-times"></i>';
+    this.removeEl.setAttribute("aria-label", String(_t("Remove from view")));
+    this.removeEl.innerHTML = '<i class="fa fa-times" aria-hidden="true"></i>';
     this.removeEl.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();

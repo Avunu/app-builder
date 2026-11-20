@@ -2,7 +2,7 @@
 /**
  * Token <-> DOM, on views the real compilers rendered.
  *
- * `identity.js` rests on one contract with the web client: the `class` of
+ * `identity.ts` rests on one contract with the web client: the `class` of
  * an arch node reaches the element that renders it, except in the places
  * the module says it does not -- a list heading, a generated label, a
  * kanban card that renders once per record. These tests mount the stock

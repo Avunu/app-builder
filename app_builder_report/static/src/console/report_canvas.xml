@@ -34,6 +34,7 @@
                 <select
                     class="form-select form-select-sm mb-1"
                     name="report_field"
+                    aria-label="Field to print"
                     t-on-change="(ev) => state.field = ev.target.value"
                 >
                     <option value="">Choose a field…</option>
@@ -50,6 +51,7 @@
                     class="form-control form-control-sm mb-1"
                     name="report_label"
                     placeholder="Label (optional)"
+                    aria-label="Label (optional)"
                     t-att-value="state.label"
                     t-on-input="(ev) => state.label = ev.target.value"
                 />
@@ -67,6 +69,7 @@
                 <select
                     class="form-select form-select-sm mb-1"
                     name="report_list"
+                    aria-label="List to print"
                     t-on-change="(ev) => this.onListChange(ev)"
                 >
                     <option value="">Choose a list…</option>
@@ -112,18 +115,46 @@
             </div>
 
             <!-- A report is a template: the client has no qweb view type, so the
-             preview is the report's own rendered output. -->
-            <div
-                class="o_builder_report_preview flex-grow-1 overflow-auto p-3"
-                t-ref="preview"
-            >
+             preview is the report's own rendered output. It is a whole
+             document with stylesheets of its own, so it gets a document of
+             its own: a sandboxed frame, which runs no script and from which
+             no style reaches the console. -->
+            <div class="o_builder_report_preview flex-grow-1 d-flex flex-column">
                 <div
-                    t-if="state.report.reason"
-                    class="alert alert-info"
+                    t-if="state.report.error"
+                    class="alert alert-danger m-3 o_builder_report_error"
+                    role="alert"
+                >
+                    <div class="fw-bold">This report could not be rendered.</div>
+                    <div class="small mb-2" t-esc="state.report.error" />
+                    <div class="small mb-2">
+                        Fix the template in its source, or undo the last change,
+                        and try again.
+                    </div>
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        name="retry_report_preview"
+                        t-on-click="() => this.retry()"
+                    >
+                    Retry
+                </button>
+                </div>
+                <div
+                    t-elif="state.report.reason"
+                    class="alert alert-info m-3"
                     role="alert"
                     t-esc="state.report.reason"
                 />
-                <div t-else="" t-out="state.report.html" />
+                <iframe
+                    t-else=""
+                    class="o_builder_report_frame flex-grow-1"
+                    sandbox="allow-same-origin"
+                    t-att-title="frameTitle"
+                    t-att-srcdoc="state.report.html"
+                    t-ref="frame"
+                    t-on-load="() => this.prepareFrame()"
+                />
             </div>
         </div>
     </t>
