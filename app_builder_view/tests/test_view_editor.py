@@ -18,6 +18,7 @@ from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.base.models.ir_ui_view import View
 
+from ..models.builder_view_edit import BuilderViewEdit
 from ..models.builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
@@ -146,19 +147,32 @@ class TestViewEditor(BuilderCase):
         self.assertEqual(attributes["readonly"], "1")
 
     def test_remove_node_is_idempotent(self):
+        """A replayed removal of a node that is already gone changes
+        nothing -- decided from the view, where ``vat`` is the only node of
+        that name, not from a spec that happens to hold the same string."""
         first = self.editor.apply_operation(
             cast("int", self.base_view.id),
             cast("int", self.package.id),
-            {"type": "remove_node", "xpath": "//field[@name='function']"},
+            {"type": "remove_node", "xpath": "//field[@name='vat']"},
         )
-        self.editor.apply_operation(
+        second = self.editor.apply_operation(
             cast("int", self.base_view.id),
             cast("int", self.package.id),
-            {"type": "remove_node", "xpath": "//field[@name='function']"},
+            {"type": "remove_node", "xpath": "//field[@name='vat']"},
         )
+        self.assertEqual(second["arch_version"], first["arch_version"])
         extension = typed.model(self.env, View).browse(first["view_id"])
         root = etree.fromstring(cast("str", extension.arch).encode())
         self.assertEqual(len(root.findall("xpath")), 1)
+        self.assertEqual(
+            len(
+                typed.model(self.env, BuilderViewEdit).history_for(
+                    cast("int", self.base_view.id)
+                )
+            ),
+            1,
+            "an edit that changed nothing is not in the history",
+        )
 
     def test_invalid_xpath_is_rejected_with_a_useful_error(self):
         """Odoo's own validator runs over the combined arch, so bad edits fail."""

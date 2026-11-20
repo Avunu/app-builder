@@ -294,6 +294,10 @@ class BuilderViewEditor(models.AbstractModel):
         package = typed.model(self.env, BuilderPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a builder package to record this field in."))
+        # Before the field exists: a manual field assigned to a package that
+        # cannot be written has an xmlid and no data file, and the next
+        # upgrade of that module drops the column with everything in it.
+        package._assert_writable()
 
         values = dict(values or {})
         label: str = (
@@ -344,7 +348,7 @@ class BuilderViewEditor(models.AbstractModel):
             expected_arch_version=expected_arch_version,
             write_files=False,
         )
-        if write_files and package.writable:
+        if write_files:
             package.action_write_files()
         return {"name": name, "label": label, "live": True}
 
@@ -404,6 +408,7 @@ class BuilderViewEditor(models.AbstractModel):
         package = typed.model(self.env, BuilderPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a builder package to record this change in."))
+        package._assert_writable()
         values = dict(values or {})
         unknown = set(values) - set(MANUAL_FIELD_WRITABLE)
         if unknown:
