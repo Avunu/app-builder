@@ -26,6 +26,9 @@
         "web.assets_tests": [
             "app_builder_report/static/tests/tours/report_editor_tour.js",
         ],
+        "web.assets_unit_tests": [
+            "app_builder_report/static/tests/report_canvas.test.js",
+        ],
     },
     "data": [
         "views/builder_report_views.xml",

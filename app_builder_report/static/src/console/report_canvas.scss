@@ -6,3 +6,17 @@
     flex: 0 0 320px;
     background: #fff;
 }
+
+// The document is in a frame of its own (report_canvas.ts): it fills what
+// the tools leave and scrolls inside itself.
+.o_builder_report_preview {
+    min-width: 0;
+    min-height: 0;
+}
+
+.o_builder_report_frame {
+    width: 100%;
+    min-height: 0;
+    border: 0;
+    background: #fff;
+}
