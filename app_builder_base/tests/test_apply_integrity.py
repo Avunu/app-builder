@@ -431,6 +431,9 @@ class TestApplyIntegrity(BuilderCase):
                 "_acquire_cron_lock",
                 side_effect=[None, UserError("a cron runs")],
             ),
+            # The failed apply logs its traceback at ERROR, which the gate's
+            # checklog would otherwise count against the run.
+            mute_logger("odoo.addons.app_builder_base.models.builder_package"),
             raises(self, UserError),
         ):
             package.action_apply(
