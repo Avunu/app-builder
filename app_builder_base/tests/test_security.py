@@ -10,6 +10,7 @@ through, still may not reach.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
 from typing import TYPE_CHECKING, cast
@@ -335,6 +336,7 @@ class TestDiffPathsStayInThePackage(BuilderCase):
         "from the top of the repository": the rest of an addons repository
         the package is one directory of."""
         repo = tempfile.mkdtemp(prefix="builder-test-repo-")
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
         nested = os.path.join(repo, "x_sec_nested")
         other = os.path.join(repo, "other_addon")
         os.makedirs(nested)
