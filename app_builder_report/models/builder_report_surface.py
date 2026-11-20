@@ -360,6 +360,13 @@ class BuilderReport(models.AbstractModel):
         package = typed.model(self.env, BuilderPackage)._chosen(package_id)
         if not package:
             raise UserError(_("Choose a package to record this in first."))
+        # `_chosen` already hands back only a writable package (a read-only
+        # choice falls through to the suggestion, or to nothing), and
+        # `create_report` checks again. Said here as well because this method
+        # writes after that one returns (`report.write(vals)` below), and the
+        # one precondition every write has should not rest on how two other
+        # methods happen to behave.
+        package._assert_writable()
         made = cast("BuilderReportBase", self).create_report(
             cast("int", package.id),
             model_name,
@@ -377,6 +384,9 @@ class BuilderReport(models.AbstractModel):
     def remove_record(
         self, record_id: int, package_id: int | None = None, force: bool = False
     ) -> bool:
+        # First, before anything is looked up: `super()` has the same guard,
+        # but it runs after the reads below, and a caller who may not remove
+        # a report should not get as far as resolving one.
         typed.security(self)._assert_builder_manager()
         # `_record` lives on `builder.record.surface` -- same rule 6 gap as
         # `_assert_in_source`/`_coerce` above.

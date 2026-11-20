@@ -25,6 +25,8 @@ which is why it could not be built until ``ModelSpec.extends`` existed.
 
 from __future__ import annotations
 
+import ast
+import builtins
 from typing import TYPE_CHECKING, TypedDict, cast
 
 from odoo import api, models
@@ -58,11 +60,190 @@ class GraduateJSON(TypedDict):
     applied: bool
 
 
+#: What ``ir.actions.server`` code is written against, and what each name is
+#: inside an ordinary method. ``safe_eval`` hands the code these as globals
+#: (``IrActionsServer._get_eval_context`` and the ``ir.actions.actions`` one
+#: under it); a method has none of them, so a body moved verbatim raised
+#: ``NameError`` on its first line. Each entry is the statements that bind the
+#: name to its real equivalent -- emitted only for the names a body actually
+#: uses, so a two-line automation does not become a method with a twenty-line
+#: header.
+#:
+#: Imports are local to the method on purpose: the generated file's own import
+#: block belongs to ``pycodegen`` and knows nothing about a method body.
+#: ``time``/``datetime``/``dateutil`` are the real modules rather than
+#: ``safe_eval``'s wrapped ones -- the wrappers exist to keep sandboxed code
+#: away from module internals, which no longer applies to code in a file.
+_EVAL_CONTEXT_BINDINGS: dict[str, tuple[str, ...]] = {
+    "env": ("env = self.env",),
+    "model": ("model = self.browse()",),
+    "records": ("records = self",),
+    "record": ("record = self[:1]",),
+    "uid": ("uid = self.env.uid",),
+    "user": ("user = self.env.user",),
+    "time": ("import time",),
+    "datetime": ("import datetime",),
+    "dateutil": (
+        "import dateutil",
+        "import dateutil.parser",
+        "import dateutil.relativedelta",
+        "import dateutil.rrule",
+        "import dateutil.tz",
+    ),
+    "timezone": ("from pytz import timezone",),
+    "float_compare": ("from odoo.tools import float_compare",),
+    "b64encode": ("from base64 import b64encode",),
+    "b64decode": ("from base64 import b64decode",),
+    "Command": ("from odoo import Command",),
+    # `base_automation` (a dependency of this addon) adds `json` -- the
+    # script-safe encoder -- to every code action's context.
+    "json": ("from odoo.tools.json import scriptsafe as json",),
+    "UserError": ("from odoo.exceptions import UserError",),
+    "_logger": (
+        "import logging",
+        "_logger = logging.getLogger(__name__)",
+    ),
+    # The action's own `log()` inserts an `ir.logging` row keyed on the action
+    # id, which a method does not have. The server log is where a developer
+    # reading this file would look anyway.
+    "log": (
+        "import logging",
+        "def log(message, level='info'):",
+        "    logging.getLogger(__name__).log(",
+        "        getattr(logging, str(level).upper(), logging.INFO), message",
+        "    )",
+    ),
+}
+
+#: Names that exist only while a webhook request is being served
+#: (`base_automation`'s own `_get_eval_context`). There is nothing a method
+#: called with no arguments could bind them to.
+_UNPORTABLE_NAMES = ("payload",)
+
+#: Names other than ``action`` whose *assignment* the caller reads back out of
+#: the eval context (``website``'s ``response``). A method's locals are gone
+#: when it returns, so code that sets one would silently stop working.
+_READ_BACK_NAMES = ("response",)
+
+_BUILTIN_NAMES = frozenset(dir(builtins))
+
+
+class UnportableNamesError(ValueError):
+    """The code reads names a method has no binding for.
+
+    ``args[0]`` is the sorted tuple of those names.
+    """
+
+
+#: Where the preamble ends and the automation's own code starts.
+_BODY_MARKER = "# -- the automation's code, as it was written --"
+
+
+def _names_in(tree: ast.AST) -> set[str]:
+    return {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+
+
+def _bound_names(tree: ast.AST) -> set[str]:
+    """Every name the code itself binds, anywhere, by any statement.
+
+    Deliberately flow-insensitive: code that reads a name before binding it
+    failed under ``safe_eval`` just the same, so it is not this check's job.
+    """
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store | ast.Del):
+            bound.add(node.id)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            bound.add(node.name)
+        elif isinstance(node, ast.arg):
+            bound.add(node.arg)
+        elif isinstance(node, ast.alias):
+            bound.add(node.asname or node.name.split(".")[0])
+        elif isinstance(node, ast.ExceptHandler | ast.MatchAs | ast.MatchStar):
+            if node.name:
+                bound.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            bound.add(node.rest)
+    return bound
+
+
+def _free_names(tree: ast.AST) -> set[str]:
+    """Names the code reads but neither binds nor gets from Python itself.
+
+    Under ``safe_eval`` these come from the action's eval context -- which any
+    installed addon may extend (``website`` adds ``request``/``response``) --
+    so a body moved into a method needs a binding for each one.
+    """
+    loaded = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+    return loaded - _bound_names(tree) - _BUILTIN_NAMES
+
+
+def _assigns_action(tree: ast.Module) -> bool:
+    """Does the code set ``action``, the one name a server action reads back?
+
+    ``_run_action_code_multi`` returns ``eval_context.get("action")``: that is
+    how an automation's code opens a window or shows a notification.
+    """
+    return any(
+        isinstance(node, ast.Name)
+        and node.id == "action"
+        and isinstance(node.ctx, ast.Store)
+        for node in ast.walk(tree)
+    )
+
+
+def method_body_for(code: str) -> tuple[str, bool]:
+    """``code`` as a method body, and whether it hands back an ``action``.
+
+    The body is the code unchanged, under the bindings it needs and -- when it
+    assigns ``action`` -- over a ``return action``. Raises ``SyntaxError`` for
+    code that does not parse and ``ValueError`` for code no method can run
+    (``UnportableNamesError``, a subclass, when it reads or sets names this
+    has no binding for).
+    """
+    code = code.strip("\n")
+    tree = ast.parse(code)
+    used = _names_in(tree)
+    for name in _UNPORTABLE_NAMES:
+        if name in used:
+            raise ValueError(name)
+    unbound = (_free_names(tree) - set(_EVAL_CONTEXT_BINDINGS)) | (
+        used & set(_READ_BACK_NAMES)
+    )
+    if unbound:
+        raise UnportableNamesError(tuple(sorted(unbound)))
+    returns_action = _assigns_action(tree)
+    preamble: list[str] = []
+    for name, statements in _EVAL_CONTEXT_BINDINGS.items():
+        if name not in used:
+            continue
+        preamble.extend(line for line in statements if line not in preamble)
+    if returns_action:
+        # Bound up front so the `return` below is safe when the assignment
+        # sits in a branch that did not run -- `eval_context.get("action")`
+        # answered None for that too.
+        preamble.append("action = None")
+    lines = [*preamble, _BODY_MARKER, code] if preamble else [code]
+    if returns_action:
+        lines.append("return action")
+    return "\n".join(lines), returns_action
+
+
 class BuilderGraduateCode(models.AbstractModel):
     _name = "builder.graduate.code"
     _inherit = ["builder.security.mixin"]
     _description = "Builder: Promote Automation Code to Source"
 
+    # `@api.private`: takes a recordset, so it was never callable over RPC
+    # except by accident of failing on an id. Said outright rather than left
+    # to that -- `builder.security.mixin`'s own rule is that every method
+    # reachable over RPC opens with a guard, and this one has no business
+    # being reachable.
+    @api.private
     @api.model
     def can_graduate(self, action: IrActionsServer) -> str:
         """Why this action's code cannot become a method, or nothing."""
@@ -98,14 +279,37 @@ class BuilderGraduateCode(models.AbstractModel):
             )
         if self._already_promoted(action):
             return _("This action already calls a method in your source.")
+        try:
+            method_body_for(cast("str", action.code))
+        except SyntaxError as err:
+            return _("This code does not parse, so it cannot be moved: %s", err.msg)
+        except UnportableNamesError as err:
+            return _(
+                "This code uses %s, which the action gets from its "
+                "evaluation context and a method has no equivalent for. "
+                "Rewrite it without them, or keep it as an action.",
+                ", ".join("'%s'" % name for name in err.args[0]),
+            )
+        except ValueError as err:
+            return _(
+                "This code reads '%s', which only exists while a webhook "
+                "request is being served. A method has no such thing to read.",
+                str(err),
+            )
         return ""
 
     @api.model
     def _already_promoted(self, action: IrActionsServer) -> bool:
         """A one-line body that is just a call is one we wrote."""
-        body = (action.code or "").strip()
-        prefix = "(records or record).%s" % modelspec.BUILDER_METHOD_PREFIX
-        return body.startswith(prefix)
+        body = (action.code or "").strip().removeprefix("action = ")
+        # The second form is what this wrote before it fell back to `model`;
+        # an action promoted then is promoted still.
+        return body.startswith(
+            tuple(
+                "(%s).%s" % (target, modelspec.BUILDER_METHOD_PREFIX)
+                for target in ("records or record or model", "records or record")
+            )
+        )
 
     @api.model
     def graduate(self, action_id: int, apply: bool = True) -> GraduateJSON:
@@ -113,7 +317,16 @@ class BuilderGraduateCode(models.AbstractModel):
 
         ``apply`` writes the source *and* reloads the module, which is what
         makes the method callable -- Python is the one thing in this project
-        that does not go live on write. It is separable because
+        that does not go live on write.
+
+        The body is not moved bare. Server-action code is written against the
+        names ``safe_eval`` gives it (``record``, ``records``, ``env``,
+        ``model``, ``log``, ``UserError``...), none of which exist in a method,
+        so the method opens by binding the ones the code uses
+        (``method_body_for``) and ends by returning ``action`` when the code
+        sets it.
+
+        It is separable because
         ``action_apply`` commits, and a commit is unreachable from a
         ``TransactionCase``: the same reason the end-to-end probes exist. So the
         transformation is testable in the ordinary suite and the reload is
@@ -147,14 +360,14 @@ class BuilderGraduateCode(models.AbstractModel):
                 )
             )
 
+        # `code` is declared `str | False` (`odoo/fields.py`'s own `Text` read
+        # type); `can_graduate` above already required it non-empty and
+        # portable -- same "declared too abstract for what is really there"
+        # cast as every other required-by-validation read in this migration.
+        body, returns_action = method_body_for(cast("str", action.code))
         method = modelspec.MethodSpec(
             name=self._unique_method_name(spec, cast("str", action.name)),
-            # `code` is declared `str | False` (`odoo/fields.py`'s own `Text`
-            # read type); `can_graduate` above already required it non-empty
-            # -- same "declared too abstract for what is really there"
-            # cast as every other required-by-validation read in this
-            # migration.
-            body=cast("str", action.code).strip("\n"),
+            body=body,
             doc=_("Promoted from the automation %s.", action.name),
         )
         from dataclasses import replace as _replace
@@ -165,7 +378,10 @@ class BuilderGraduateCode(models.AbstractModel):
         # The call, not the body. `records` is the whole set in multi-mode and
         # `record` the single one; taking whichever is there means the method
         # sees a recordset either way and can be written as an ordinary one.
-        action.code = "(records or record).%s()" % method.name
+        # `model` last: an action run with no record at all (a cron, a button
+        # on nothing) has both of the others as None, and its code still ran.
+        call = "(records or record or model).%s()" % method.name
+        action.code = "action = %s" % call if returns_action else call
         if apply:
             package.action_apply(reason=_("promote %s to source", action.name))
         return {"method": method.name, "model": model_name, "applied": apply}

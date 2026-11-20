@@ -4,9 +4,14 @@
 
 from __future__ import annotations
 
+import ast
 import os
+from datetime import date
 from typing import TYPE_CHECKING, Any, cast
+from unittest.mock import patch
 
+from odoo.exceptions import AccessError, UserError
+from odoo.service.model import get_public_method
 from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.models.builder_package_model import (
@@ -15,14 +20,14 @@ from odoo.addons.app_builder_base.models.builder_package_model import (
 from odoo.addons.app_builder_base.models.builder_security_surfaces import (
     BuilderAccessSurface,
 )
-from odoo.addons.app_builder_base.tests.common import BuilderCase
+from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base.models.ir_actions import IrActionsServer
 from odoo.addons.base.models.ir_model import IrModel
 from odoo.addons.base_automation.models.base_automation import BaseAutomation
 
 from ..models.builder_automation import BuilderAutomation
-from ..models.builder_graduate_code import BuilderGraduateCode
+from ..models.builder_graduate_code import BuilderGraduateCode, method_body_for
 from ..models.builder_menu_surface import BuilderMenu
 
 if TYPE_CHECKING:
@@ -320,7 +325,9 @@ class TestGraduateCode(BuilderCase):
             cast("int", action.id), apply=False
         )
         self.assertTrue(result["method"].startswith("_builder_"))
-        self.assertEqual(action.code, "(records or record).%s()" % result["method"])
+        self.assertEqual(
+            action.code, "(records or record or model).%s()" % result["method"]
+        )
         entry = typed.model(self.env, BuilderPackageModel).search(
             [("package_id", "=", package.id), ("model", "=", "res.partner")],
             limit=1,
@@ -328,6 +335,196 @@ class TestGraduateCode(BuilderCase):
         source = cast("str", package._read_source(cast("str", entry.python_path)))
         self.assertIn("def %s(self):" % result["method"], source)
         self.assertIn("record.write({})", source)
+
+    # -- the method runs --------------------------------------------------
+    #
+    # Everything above asserts on strings, and the string it asserted on --
+    # `record.write({})` directly under `def ...(self):` -- was a method that
+    # raised NameError the first time anything called it. `action_apply` is
+    # what would load the file, and it commits, so these load the one function
+    # instead: the generated source is compiled exactly as written and the
+    # result is put on the registry class for the length of the test, which is
+    # what the reload does for good.
+
+    def _graduated(self, package, action):
+        """Graduate ``action`` and return its method, compiled from the file."""
+        result = typed.model(self.env, BuilderGraduateCode).graduate(
+            cast("int", action.id), apply=False
+        )
+        entry = typed.model(self.env, BuilderPackageModel).search(
+            [("package_id", "=", package.id), ("model", "=", result["model"])],
+            limit=1,
+        )
+        source = cast("str", package._read_source(cast("str", entry.python_path)))
+        tree = ast.parse(source)
+        found = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == result["method"]
+        ]
+        self.assertEqual(len(found), 1, source)
+        # The module's own imports and this one function: not the class, whose
+        # body would register a second `res.partner` with the metaclass.
+        imports = [
+            node for node in tree.body if isinstance(node, ast.Import | ast.ImportFrom)
+        ]
+        module = ast.Module(body=[*imports, found[0]], type_ignores=[])
+        namespace: dict[str, Any] = {"__name__": "odoo.addons.%s.models" % package.name}
+        exec(compile(module, "<graduated>", "exec"), namespace)  # noqa: S102
+        return result["method"], namespace[result["method"]]
+
+    def _run_graduated(self, action, name, function, records=None):
+        """Run the action for real, with the method where a reload puts it."""
+        context: dict[str, object] = {}
+        if records is not None:
+            context = {
+                "active_model": records._name,
+                "active_id": records[:1].id,
+                "active_ids": records.ids,
+            }
+        model_class = self.registry[cast("str", action.model_id.model)]
+        with patch.object(model_class, name, function, create=True):
+            return action.with_context(**context).run()
+
+    def test_a_graduated_method_runs(self):
+        """Every name server-action code is written against resolves."""
+        package = self.make_package()
+        code = (
+            "partners = env['res.partner'].browse(records.ids)\n"
+            "if not record:\n"
+            "    raise UserError('nothing to escalate')\n"
+            "stamp = '%s/%s' % (user.id == uid, datetime.date.today().year)\n"
+            "for partner in partners:\n"
+            "    partner.write({'comment': 'escalated ' + stamp})\n"
+            "model.browse(record.id).write({'ref': 'first'})\n"
+            "log('escalated %s' % len(records), level='warning')\n"
+            "_logger.info('done at %s', time.time())\n"
+            "partners.write({'category_id': [Command.clear()]})\n"
+        )
+        action = self._action(package, model_name="res.partner", code=code)
+        partners = cast("Any", self.env["res.partner"]).create(
+            [{"name": "Graduate A"}, {"name": "Graduate B"}]
+        )
+        name, function = self._graduated(package, action)
+        self.assertEqual(action.code, "(records or record or model).%s()" % name)
+
+        with self.assertLogs("odoo.addons.%s.models" % package.name, "INFO") as logs:
+            self._run_graduated(action, name, function, partners)
+
+        year = date.today().year
+        self.assertEqual(
+            partners.mapped("comment"), ["<p>escalated True/%s</p>" % year] * 2
+        )
+        self.assertEqual(partners.mapped("ref"), ["first", False])
+        self.assertIn("WARNING", logs.output[0])
+        self.assertIn("escalated 2", logs.output[0])
+
+    def test_a_graduated_method_still_raises_what_the_code_raised(self):
+        package = self.make_package()
+        code = "if not records:\n    raise UserError('nothing to escalate')"
+        action = self._action(package, model_name="res.partner", code=code)
+        name, function = self._graduated(package, action)
+        # No active record at all: `records` and `record` are both None in the
+        # action, and the call falls through to `model` rather than to
+        # `None.<method>()`.
+        with raises(self, UserError) as caught:
+            self._run_graduated(action, name, function)
+        self.assertIn("nothing to escalate", str(caught.exception))
+
+    def test_a_graduated_method_hands_back_the_action_it_built(self):
+        """`action = {...}` is how automation code opens a window; a method
+        that dropped it would run and then do nothing visible."""
+        package = self.make_package()
+        code = (
+            "if record:\n"
+            "    action = {\n"
+            "        'type': 'ir.actions.act_window',\n"
+            "        'res_model': 'res.partner',\n"
+            "        'res_id': record.id,\n"
+            "    }\n"
+        )
+        action = self._action(package, model_name="res.partner", code=code)
+        partner = cast("Any", self.env["res.partner"]).create({"name": "Graduate C"})
+        name, function = self._graduated(package, action)
+        self.assertEqual(
+            action.code, "action = (records or record or model).%s()" % name
+        )
+        result = cast("Any", self._run_graduated(action, name, function, partner))
+        self.assertEqual(result["res_id"], partner.id)
+        # The branch that never assigned it answers nothing, as it did before.
+        self.assertFalse(self._run_graduated(action, name, function))
+        self.assertIn(
+            "already calls",
+            typed.model(self.env, BuilderGraduateCode).can_graduate(action),
+        )
+
+    def test_only_the_names_the_code_uses_are_bound(self):
+        body, returns_action = method_body_for("record.write({})")
+        self.assertFalse(returns_action)
+        self.assertEqual(body.splitlines()[0], "record = self[:1]")
+        self.assertEqual(body.splitlines()[-1], "record.write({})")
+        self.assertNotIn("env", body)
+        self.assertEqual(method_body_for("pass"), ("pass", False))
+
+    def test_code_that_reads_a_webhook_payload_is_refused(self):
+        package = self.make_package()
+        action = self._action(
+            package, model_name="res.partner", code="record.write(payload)"
+        )
+        self.assertIn(
+            "payload",
+            typed.model(self.env, BuilderGraduateCode).can_graduate(action),
+        )
+        with raises(self, UserError):
+            typed.model(self.env, BuilderGraduateCode).graduate(
+                cast("int", action.id), apply=False
+            )
+        self.assertEqual(action.code, "record.write(payload)")
+
+    def test_json_from_base_automation_is_bound(self):
+        """`base_automation` adds `json` to every code action's context."""
+        package = self.make_package()
+        code = "record.write({'comment': json.dumps({'a': [1, 2]})})"
+        action = self._action(package, model_name="res.partner", code=code)
+        partner = cast("Any", self.env["res.partner"]).create({"name": "Graduate J"})
+        name, function = self._graduated(package, action)
+        self._run_graduated(action, name, function, partner)
+        self.assertIn("[1, 2]", partner.comment)
+
+    def test_a_name_with_no_binding_is_refused(self):
+        """Any addon may add names to the eval context (`website` adds
+        `request` and reads back `response`); a name this cannot bind must not
+        become a NameError at run time after the working code is replaced."""
+        graduate = typed.model(self.env, BuilderGraduateCode)
+        package = self.make_package()
+        for code, name in (
+            ("record.write({'ref': request.httprequest.path})", "request"),
+            ("response = 'ok'", "response"),
+            ("record.write({'ref': some_addon_helper()})", "some_addon_helper"),
+        ):
+            action = self._action(package, model_name="res.partner", code=code)
+            self.assertIn("'%s'" % name, graduate.can_graduate(action))
+            with raises(self, UserError):
+                graduate.graduate(cast("int", action.id), apply=False)
+            self.assertEqual(action.code, code)
+
+    def test_names_the_code_binds_itself_are_not_free(self):
+        body, _returns = method_body_for(
+            "import math\n"
+            "def double(x):\n"
+            "    return [y * 2 for y in range(x)]\n"
+            "try:\n"
+            "    total = len(double(math.floor(2.5)))\n"
+            "except ValueError as err:\n"
+            "    total = str(err)\n"
+        )
+        self.assertIn("total = str(err)", body)
+
+    def test_can_graduate_is_not_reachable_over_rpc(self):
+        with raises(self, AccessError):
+            get_public_method(
+                typed.model(self.env, BuilderGraduateCode), "can_graduate"
+            )
 
     def test_a_model_the_package_does_not_own_gets_an_extension(self):
         """Most automations run on sale.order and its neighbours, which is the
@@ -375,8 +572,6 @@ class TestGraduateCode(BuilderCase):
             cast("int", self._action(package, model_name="res.partner").id),
             apply=False,
         )
-        import ast
-
         manifest = ast.literal_eval(package._render_files()["__manifest__.py"])
         self.assertIn("base", manifest["depends"])
 
