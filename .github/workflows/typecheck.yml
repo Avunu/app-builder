@@ -1,6 +1,11 @@
 # pyright, tsc and the type-aware eslint (TYPING.md). They need Odoo's sources and the
 # dev shell's Python, which the lint gate's shell does not have, so they run here, on the
 # manual stage of .pre-commit-config.yaml.
+#
+# The step evaluates the pull request's own flake.nix and runs its hooks, so a fork's pull
+# request never runs it on the fleet's self-hosted runners: like odoo-nix's reusable
+# workflows (ci.yml, pr-policy.yml, deps.yml), it gets ubuntu-latest, whatever the labels
+# below say. A branch of this repository, Dependabot's included, is not a fork.
 name: typecheck
 on:
   push:
@@ -13,13 +18,28 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   typecheck:
-    runs-on: [self-hosted, nixos]
+    # Fail closed: a pull request whose head is not this repository -- a fork, or a fork
+    # since deleted (head.repo is then null) -- gets ubuntu-latest.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        if: runner.environment == 'github-hosted'
+        with:
+          determinate: false
+
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
+        if: runner.environment == 'github-hosted'
+        with:
+          diagnostic-endpoint: ""
+          use-flakehub: false
+
       - name: pyright, tsc, eslint
         env:
           ODOO_NIX_CI: "1"

@@ -16,6 +16,8 @@ coverage.xml
 # Nix rebuilds it into the deployed tree (docs: odoo-nix, Addon frontends).
 /app_builder*/static/src/**/*.js
 /app_builder*/static/tests/**/*.js
+# `npm run dist` (scripts/dist.py): the installable zip of the addons.
+/dist/
 # >>> odoo-nix: dev-shell (managed) >>>
 /odoo.conf
 /odools.toml

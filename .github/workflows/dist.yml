@@ -1,0 +1,144 @@
+# The install without Nix. The compiled .js is not committed and the manifests name it,
+# so a plain clone serves an empty console until `npm run build` has run. This proves, on a
+# GitHub-hosted runner with nothing but Node and Python, that a clean clone builds into an
+# installable tree (scripts/dist.py: every .ts compiled, every asset a manifest names
+# found), packs that tree, and attaches the zip to a release: unpacked into an addons path
+# it needs neither Nix nor Node.
+#
+# A local workflow, not one of odoo-nix's managed ones. It runs no code on the self-hosted
+# fleet, so a fork's pull request runs it as is.
+name: dist
+on:
+  push:
+    branches: ["develop"]
+    tags: ["v*", "18.0.*"]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing release's tag to build and attach the zip to (empty to only build)
+        type: string
+        default: ""
+permissions: {}
+concurrency:
+  group: dist-${{ github.event.pull_request.number || github.event.release.tag_name || inputs.tag || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.ref.outputs.tag }}
+      zip: ${{ steps.ref.outputs.zip }}
+    steps:
+      - id: ref
+        name: What is built
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag=""
+          case "$EVENT" in
+            release) tag="$RELEASE_TAG" ;;
+            workflow_dispatch) tag="$INPUT_TAG" ;;
+            push) if [ "$REF_TYPE" = tag ]; then tag="$REF_NAME"; fi ;;
+          esac
+          if [ -n "$tag" ] && ! [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::not a tag this workflow builds: $tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "zip=app-builder-${tag:-${SHA:0:12}}.zip" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.ref.outputs.tag != '' && format('refs/tags/{0}', steps.ref.outputs.tag) || '' }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: A clean clone has no compiled .js
+        run: |
+          set -euo pipefail
+          # Only the script's own verdict counts: exit 1 *and* its "not installable"
+          # line. A missing script (exit 2) or a crash (a traceback, also exit 1)
+          # must fail here, not pass as if the tree were merely unbuilt.
+          rc=0
+          python3 scripts/dist.py check >/dev/null 2>"$RUNNER_TEMP/dist-check.err" || rc=$?
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::the checkout already passes scripts/dist.py check: compiled .js is committed"
+            exit 1
+          fi
+          if [ "$rc" -ne 1 ] || ! grep -q "this tree is not installable" "$RUNNER_TEMP/dist-check.err"; then
+            cat "$RUNNER_TEMP/dist-check.err" >&2
+            echo "::error::scripts/dist.py check could not run (exit $rc)"
+            exit 1
+          fi
+
+      # The commands the README gives. `npm ci` installs the root's lint tools, which the
+      # build does not need: it is here because it is what a reader would type.
+      - name: npm ci && npm run build
+        run: npm ci && npm run build
+
+      - name: The built tree is installable
+        run: |
+          set -euo pipefail
+          python3 scripts/dist.py check
+          python3 -m compileall -q app_builder*
+
+      - name: Pack it, and check the zip as it unpacks
+        env:
+          ZIP: ${{ steps.ref.outputs.zip }}
+        run: |
+          set -euo pipefail
+          python3 scripts/dist.py zip "dist/$ZIP"
+          unpacked="$(mktemp -d)"
+          unzip -q "dist/$ZIP" -d "$unpacked"
+          python3 scripts/dist.py check --root "$unpacked"
+          (cd dist && sha256sum "$ZIP" > "$ZIP.sha256")
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-builder-addons
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: build
+    if: needs.build.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # the release and its assets
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: app-builder-addons
+          path: dist
+
+      # A pushed tag gets a release of its own; a published one only gets the assets.
+      - name: Attach the zip to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+          fi
+          gh release upload "$TAG" dist/* --clobber
