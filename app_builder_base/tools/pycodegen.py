@@ -247,7 +247,8 @@ def _render_compute(spec_field: FieldSpec) -> str:
 
 
 def _render_method(method: MethodSpec) -> str:
-    lines = ["    def %s(self):" % method.name]
+    args = ", %s" % method.args if method.args else ""
+    lines = ["    def %s(self%s):" % (method.name, args)]
     if method.doc:
         lines.append('        """%s"""' % method.doc)
     body = (method.body or "").strip("\n")
