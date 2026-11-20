@@ -16,4 +16,5 @@
         "views/builder_package_views.xml",
         "views/builder_menus.xml",
     ],
+    "uninstall_hook": "uninstall_hook",
 }

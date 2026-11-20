@@ -71,6 +71,58 @@ writes the files and stops: the pill reads _Restart needed_, the apply is record
 awaiting a restart, and Odoo loads the package on the way up. Nothing is half-applied; a
 rollback from that state restores the files as they were.
 
+The restart is a plain one. An installed package is marked `to upgrade` when the apply
+stops, and Odoo upgrades a module in that state on any registry load, so the restart
+creates the columns the new Python declares -- no `-u` needed. The one exception is
+recorded on the apply as its restart hint: a package that gained a dependency on a
+module that is not installed needs `-u <package>`, because a plain boot does not
+install. A package that is not installed yet is simply installed in place, workers or
+not: nothing has imported it, so there is nothing stale to reload.
+
+**Restart soon.** While a module is marked `to upgrade`, Odoo runs no scheduled actions
+in that database at all -- outgoing mail included -- so the wait is not free. After
+about five hours of it Odoo gives up and clears the mark by itself, and a restart later
+than that upgrades nothing. The apply stays _awaiting a restart_ either way, and the
+builder puts a lost mark back the next time it is opened: before the restart if that is
+when it notices (scheduled actions pause again), or after it, when it sees the schema is
+behind and asks for a second restart with `-u <package>`. The same covers a mark lost
+because another worker rebuilt its registry in between.
+
+The same restart path applies when **one server process serves several databases** and
+another of them has the package installed: re-importing Python is process-wide, the
+upgrade is per database, so the builder refuses to reload in place and names the other
+database, which needs `-u <package>` of its own. Two databases of one server are also
+not allowed to write the same package directory; the directory remembers its database in
+`.builder/owner`.
+
+## What the builder keeps, and for how long
+
+- **Apply history.** Every apply keeps the previous content of the files it wrote, in
+  the database and under `<package>/.builder/backup/`. The daily vacuum removes applies
+  that are both beyond the newest 20 of their package and older than 30 days
+  (`app_builder_base.apply_keep` and `app_builder_base.apply_keep_days` system
+  parameters), with their backup directories. `.builder/` ignores itself for git.
+- **Removed fields.** Removing a stored field is refused unless asked for explicitly;
+  then the package moves to a new version and ships a pre-migration under it that
+  renames the column (for a manual many2many, its relation table) aside as
+  `<name>_builder_removed_<timestamp>`. Nothing removes those; drop them by hand.
+- **Uninstalling.** Uninstalling the builder removes its registry and history, never
+  what a package contains. A package installed as a module keeps working as any addon
+  does. A package that was never installed leaves its records in the database with no
+  module managing them; the uninstall logs a warning naming each one.
+- **Upgrading the builder.** 18.0.2.0.0 is the first supported schema: the pre-2.0
+  `studio.*` registry is not carried over (the packages on disk are, and are adopted
+  again). From here on a change to the builder's own stored state ships with a script
+  under the owning addon's `migrations/`.
+
+Builder packages are global: they have no company and no record rules, because the
+schema and views they define are the same for every company of the database. Any Builder
+Administrator edits them for all companies.
+
+A generated package is your own work, not a derivative of the builder. Its manifest
+declares `LGPL-3` unless you choose otherwise on the package (a package extending Odoo
+Enterprise models normally uses `OPL-1` or `OEEL-1`).
+
 ## Production
 
 The editor gates on write access to the package directory. Against a read-only
