@@ -1747,7 +1747,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-approval"
-version = "18.0.2.0.0"
+version = "18.0.2.0.1"
 source = { editable = "../app_builder_approval" }
 dependencies = [
     { name = "odoo" },
@@ -1766,7 +1766,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-approval-formula"
-version = "18.0.2.0.0"
+version = "18.0.2.0.1"
 source = { editable = "../app_builder_approval_formula" }
 dependencies = [
     { name = "odoo" },
@@ -1785,7 +1785,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-base"
-version = "18.0.2.0.2"
+version = "18.0.2.0.3"
 source = { editable = "../app_builder_base" }
 dependencies = [
     { name = "odoo" },
