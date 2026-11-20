@@ -35,9 +35,7 @@ from odoo.addons.base.models.ir_model import IrModelFields
 from .common import BuilderCase, raises, set_code_write
 
 if TYPE_CHECKING:
-    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
-        BuilderOwnedMixin,
-    )
+    from ..models.builder_owned_mixin import BuilderOwnedMixin
 
 SECRET = "admin_passwd = hunter2\n"
 
