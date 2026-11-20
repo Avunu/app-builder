@@ -17,4 +17,5 @@ from . import (
     test_undo,
     test_view_editor,
     test_view_options,
+    test_wire_contract,
 )
