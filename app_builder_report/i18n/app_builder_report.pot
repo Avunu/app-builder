@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-20 03:34+0000\n"
-"PO-Revision-Date: 2026-11-20 03:34+0000\n"
+"POT-Creation-Date: 2026-11-20 11:29+0000\n"
+"PO-Revision-Date: 2026-11-20 11:29+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -28,6 +28,13 @@ msgid ""
 "%(name)s renders through %(template)s, which is not a view in this database "
 "— so there is nothing to edit. A report whose template is built in Python "
 "has to be changed in Python."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+msgid ""
+"%s does not keep records, so there is nothing for a report on it to print."
 msgstr ""
 
 #. module: app_builder_report
@@ -124,6 +131,20 @@ msgid "Edit layout"
 msgstr ""
 
 #. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Field to print"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid ""
+"Fix the template in its source, or undo the last change,\n"
+"                        and try again."
+msgstr ""
+
+#. module: app_builder_report
 #. odoo-python
 #: code:addons/app_builder_report/models/builder_report_surface.py:0
 msgid ""
@@ -136,6 +157,12 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
 msgid "Label (optional)"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "List to print"
 msgstr ""
 
 #. module: app_builder_report
@@ -160,6 +187,14 @@ msgid ""
 "New reports you create here are written into your builder package. Reports "
 "that came with Odoo are editable too — the changes land in a view of your "
 "own that inherits theirs, so the original keeps receiving fixes."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid ""
+"No report prints this template on its own, so there is nothing to preview it"
+" with. Open the report that uses it instead."
 msgstr ""
 
 #. module: app_builder_report
@@ -213,6 +248,12 @@ msgstr ""
 
 #. module: app_builder_report
 #. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.js:0
+msgid "Report preview"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
 #. odoo-python
 #: code:addons/app_builder_report/models/builder_report.py:0
 #: code:addons/app_builder_report/static/src/console_items.js:0
@@ -223,6 +264,12 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_report/models/builder_report_surface.py:0
 msgid "Reset layout"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Retry"
 msgstr ""
 
 #. module: app_builder_report
@@ -255,6 +302,20 @@ msgstr ""
 msgid ""
 "There is no %s to preview this on yet. Create one and the report will draw "
 "it."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "This report could not be rendered."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid ""
+"This report works out what to print in Python, and that code refused the "
+"preview record: %s"
 msgstr ""
 
 #. module: app_builder_report

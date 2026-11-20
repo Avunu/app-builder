@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-20 03:34+0000\n"
-"PO-Revision-Date: 2026-11-20 03:34+0000\n"
+"POT-Creation-Date: 2026-11-20 11:29+0000\n"
+"PO-Revision-Date: 2026-11-20 11:29+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -66,6 +66,12 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
 msgid "%s is written; restart to make it Python"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "'%s' is not a field type."
 msgstr ""
 
 #. module: app_builder_model
@@ -165,9 +171,21 @@ msgid ""
 msgstr ""
 
 #. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "A selection field needs at least one option."
+msgstr ""
+
+#. module: app_builder_model
 #. odoo-javascript
 #: code:addons/app_builder_model/static/src/field_popover.js:0
 msgid "A selection needs at least one value."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "A selection option needs a value."
 msgstr ""
 
 #. module: app_builder_model
@@ -211,6 +229,11 @@ msgid "An app of its own"
 msgstr ""
 
 #. module: app_builder_model
+#: model:ir.model.fields,field_description:app_builder_model.field_builder_package_model__create_app_pending
+msgid "App Not Finished"
+msgstr ""
+
+#. module: app_builder_model
 #. odoo-javascript
 #: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
 msgid "Automations, access and rules are one tab away."
@@ -237,6 +260,11 @@ msgstr ""
 #. module: app_builder_model
 #: model:ir.model,name:app_builder_model.model_builder_app
 msgid "Builder App Builder"
+msgstr ""
+
+#. module: app_builder_model
+#: model:ir.model,name:app_builder_model.model_builder_package_model
+msgid "Builder Package Model"
 msgstr ""
 
 #. module: app_builder_model
@@ -370,6 +398,12 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_model/static/src/field_popover.xml:0
 msgid "Draft"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "Each selection option is a value and a label."
 msgstr ""
 
 #. module: app_builder_model
@@ -607,6 +641,14 @@ msgid "Search"
 msgstr ""
 
 #. module: app_builder_model
+#: model:ir.model.fields,help:app_builder_model.field_builder_package_model__create_app_pending
+msgid ""
+"Set when the builder created this model as an app and has not yet built its "
+"access rules, views and menu. Creating the app again under the same name "
+"finishes it."
+msgstr ""
+
+#. module: app_builder_model
 #. odoo-javascript
 #: code:addons/app_builder_model/static/src/field_popover.xml:0
 msgid "Show it in"
@@ -717,6 +759,17 @@ msgid "The menu to put the app under no longer exists."
 msgstr ""
 
 #. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid ""
+"The model %(model)s was created, but its access rules, views and menu could not be built:\n"
+"\n"
+"%(error)s\n"
+"\n"
+"Once the cause is fixed, create the app again under the same name to finish it, or roll the last apply back from Changes to remove the model."
+msgstr ""
+
+#. module: app_builder_model
 #. odoo-javascript
 #: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
 msgid ""
@@ -762,6 +815,12 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_model/static/src/field_popover.xml:0
 msgid "Translatable"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "Two selection options have the same value."
 msgstr ""
 
 #. module: app_builder_model

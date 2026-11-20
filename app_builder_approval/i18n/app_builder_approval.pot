@@ -6,14 +6,33 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-20 03:34+0000\n"
-"PO-Revision-Date: 2026-11-20 03:34+0000\n"
+"POT-Creation-Date: 2026-11-20 11:29+0000\n"
+"PO-Revision-Date: 2026-11-20 11:29+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: \n"
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"%(model)s does not have approvals turned on in %(package)s, so there is "
+"nothing here to change. A gate another module wrote is that module's to "
+"edit."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"%(model)s has a %(method)s method in its class that approvals did not write,"
+" or that has been changed since. Turning approvals on, changing them or "
+"turning them off would replace or remove it, so move it below the builder's "
+"block, or make the change by hand."
+msgstr ""
 
 #. module: app_builder_approval
 #. odoo-python
@@ -35,6 +54,15 @@ msgstr ""
 #. module: app_builder_approval
 #. odoo-python
 #: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"%(model)s is not a class the builder can rewrite in %(package)s "
+"(%(reason)s), so there is nowhere safe to write the approval gate. Fix the "
+"file, or add the gate to it by hand."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
 msgid "%s already has approvals turned on."
 msgstr ""
 
@@ -48,8 +76,8 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_approval/models/builder_approval.py:0
 msgid ""
-"%s is managed as data records here, so there is no class to add the mixin "
-"to."
+"%s cannot be both a state that needs approving into and the cancelled state,"
+" which drops the approvals asked for."
 msgstr ""
 
 #. module: app_builder_approval
@@ -83,6 +111,16 @@ msgid ""
 "An approval rule gates a state change, and the model has to carry the gate "
 "first: turn approvals on from the builder, then come back here to say who "
 "approves what."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"Approval would not be asked for from: %(uncovered)s. %(field)s is an "
+"ordinary writable field, so a record could be moved there first and on into "
+"%(to)s with no approval at all. Leave the origin states empty to gate every "
+"way in, or add the missing ones."
 msgstr ""
 
 #. module: app_builder_approval
@@ -128,6 +166,14 @@ msgstr ""
 
 #. module: app_builder_approval
 #. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"Every value of %s needs approving into, so there is no state a record could "
+"wait for its approval in."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
 #: code:addons/app_builder_approval/models/builder_approval_surface.py:0
 msgid ""
 "Removing a rule takes it out of security/%s_approval.xml; approvals already "
@@ -159,6 +205,15 @@ msgid "Say who must approve, and in what order"
 msgstr ""
 
 #. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"The values of %(field)s cannot be listed, so there is no way to make sure "
+"approval is asked on every way into %(to)s. Gate a stored selection field "
+"whose values are fixed."
+msgstr ""
+
+#. module: app_builder_approval
 #: model:ir.model,name:app_builder_approval.model_tier_definition
 msgid "Tier Definition"
 msgstr ""
@@ -174,7 +229,23 @@ msgstr ""
 #: code:addons/app_builder_approval/models/builder_approval_surface.py:0
 msgid ""
 "Writes the tier.validation mixin into the model's class in the package; one "
-"reload. Turning it off later is an edit to the class."
+"reload. Approval is asked for on every way into the states you pick -- from "
+"any other state, including one added later, and for a record created, "
+"imported or duplicated already in one -- because the status field is an "
+"ordinary writable field and a gate on one path only would be walked round. "
+"Rules decide who approves; with no rule, nothing is asked."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid "change approvals on %s"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid "disable approvals on %s"
 msgstr ""
 
 #. module: app_builder_approval
@@ -187,6 +258,12 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_approval/models/builder_approval_surface.py:0
 msgid "in order"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid "it is managed as data records"
 msgstr ""
 
 #. module: app_builder_approval

@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-20 03:34+0000\n"
-"PO-Revision-Date: 2026-11-20 03:34+0000\n"
+"POT-Creation-Date: 2026-11-20 11:29+0000\n"
+"PO-Revision-Date: 2026-11-20 11:29+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -144,6 +144,12 @@ msgstr ""
 
 #. module: app_builder_base
 #. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid "%s belongs to Odoo itself; a package cannot live there."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
 #: code:addons/app_builder_base/models/builder_workspace.py:0
 msgid "%s cannot be written to."
 msgstr ""
@@ -158,6 +164,14 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_base/models/builder_model_draft.py:0
 msgid "%s has no source file to write into."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"%s is an addons directory (or contains one), not a single addon; a package "
+"cannot take it over."
 msgstr ""
 
 #. module: app_builder_base
@@ -178,6 +192,14 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_base/models/builder_model_draft.py:0
 msgid "%s is not a relation, so nothing can follow it."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"%s is not directly inside a directory on the addons path. Odoo only loads "
+"addons from directories that were on the path when the server started."
 msgstr ""
 
 #. module: app_builder_base
@@ -246,6 +268,13 @@ msgstr ""
 msgid ""
 "'%s' is not a valid module name: lowercase letters, digits and underscores, "
 "starting with a letter."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"'%s' is not an absolute, normalised path; a package directory has to be one."
 msgstr ""
 
 #. module: app_builder_base
@@ -338,6 +367,11 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_base/models/builder_package.py:0
 msgid "Adopted"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__agpl-3
+msgid "Affero GPL-3"
 msgstr ""
 
 #. module: app_builder_base
@@ -584,12 +618,19 @@ msgstr ""
 
 #. module: app_builder_base
 #: model:res.groups,comment:app_builder_base.group_builder_manager
-msgid "Can additionally write packages to disk and reload modules."
+msgid ""
+"Can additionally write packages to disk and reload modules, where the server"
+" has been started with APP_BUILDER_ENABLE_WRITE. That is arbitrary code "
+"execution as the Odoo process: treat this group as shell access. See "
+"SECURITY.md."
 msgstr ""
 
 #. module: app_builder_base
 #: model:res.groups,comment:app_builder_base.group_builder_user
-msgid "Can build models, fields and views through the builder."
+msgid ""
+"Can read what the builder knows: the metadata of every model, view, access "
+"rule and automation, and the files of every package. Not a low-privilege "
+"role. See SECURITY.md."
 msgstr ""
 
 #. module: app_builder_base
@@ -856,6 +897,26 @@ msgid "From %s"
 msgstr ""
 
 #. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__gpl-2
+msgid "GPL Version 2"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__gpl-3
+msgid "GPL Version 3"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__gpl-2_or_any_later_version
+msgid "GPL-2 or later version"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__gpl-3_or_any_later_version
+msgid "GPL-3 or later version"
+msgstr ""
+
+#. module: app_builder_base
 #. odoo-python
 #: code:addons/app_builder_base/models/builder_package.py:0
 msgid ""
@@ -945,6 +1006,11 @@ msgstr ""
 #. module: app_builder_base
 #: model:ir.model.fields,field_description:app_builder_base.field_builder_package__is_git
 msgid "Is Git"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__lgpl-3
+msgid "LGPL Version 3"
 msgstr ""
 
 #. module: app_builder_base
@@ -1072,6 +1138,16 @@ msgid "Nothing to commit."
 msgstr ""
 
 #. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__oeel-1
+msgid "Odoo Enterprise Edition License v1.0"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__opl-1
+msgid "Odoo Proprietary License v1.0"
+msgstr ""
+
+#. module: app_builder_base
 #. odoo-python
 #: code:addons/app_builder_base/models/builder_package.py:0
 msgid ""
@@ -1081,8 +1157,26 @@ msgid ""
 msgstr ""
 
 #. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Odoo is running a scheduled action, and a module cannot be reloaded while "
+"one runs. Try again in a moment."
+msgstr ""
+
+#. module: app_builder_base
 #: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__auto_commit__off
 msgid "Off"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__other_osi_approved_licence
+msgid "Other OSI Approved License"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__other_proprietary
+msgid "Other Proprietary"
 msgstr ""
 
 #. module: app_builder_base
@@ -1181,8 +1275,42 @@ msgid "Reload from disk"
 msgstr ""
 
 #. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__restart_hint
+msgid "Restart Hint"
+msgstr ""
+
+#. module: app_builder_base
 #: model:ir.model.fields,field_description:app_builder_base.field_builder_package__restart_required
 msgid "Restart Required"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Restart the server soon, with -u %(name)s: the package now depends on a "
+"module that is not installed yet, and only an explicit upgrade installs it. "
+"Until then Odoo runs no scheduled actions in this database (outgoing mail "
+"included)."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Restart the server soon. %(name)s is marked for upgrade, so the restart also"
+" updates the database schema; no -u is needed. Until then Odoo runs no "
+"scheduled actions in this database (outgoing mail included), and after about"
+" five hours of that it clears the mark by itself: a restart later than that "
+"needs -u %(name)s."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Restart the server, then install %(name)s (from the builder or the Apps "
+"menu)."
 msgstr ""
 
 #. module: app_builder_base
@@ -1264,6 +1392,12 @@ msgstr ""
 #. module: app_builder_base
 #. odoo-python
 #: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "That is not a file of this package."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
 msgid "That package no longer exists."
 msgstr ""
 
@@ -1274,10 +1408,39 @@ msgid "That record no longer exists."
 msgstr ""
 
 #. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security.py:0
+msgid ""
+"The builder is read-only on this server: writing source code has not been "
+"enabled. It is switched on outside the database, by setting %(env)s=1 in the"
+" server's environment or %(key)s = True in odoo.conf, and should only be "
+"switched on where every Settings administrator is trusted with shell access."
+msgstr ""
+
+#. module: app_builder_base
 #: model:ir.model.fields,help:app_builder_base.field_builder_package_model__extends
 msgid ""
 "The class adds to a model another module declares, rather than declaring "
 "one. It renders as _inherit with no _name."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"The directory %(path)s is managed by the builder in the database '%(db)s', "
+"which this server is also serving. Two databases writing one package would "
+"overwrite each other's work; edit it from that database, or remove "
+"%(marker)s if it no longer does."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__license
+msgid ""
+"The licence written to the package's manifest. What you build is yours: it "
+"is not a derivative of the builder, and you may pick any licence compatible "
+"with the modules it depends on (a package extending Odoo Enterprise models "
+"normally uses OPL-1 or OEEL-1)."
 msgstr ""
 
 #. module: app_builder_base
@@ -1292,9 +1455,43 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_base/models/builder_package.py:0
 msgid ""
+"The package %s is being written or applied by somebody else right now. Try "
+"again in a moment."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
 "The package directory '%s' is not writable. This is normal on a production "
 "deployment: build packages in a development environment and ship them "
 "through git."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid ""
+"The package directory cannot be written to. This is normal on a production "
+"deployment: build packages in a development environment and ship them "
+"through git."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"The package directory has to be named after the package: expected "
+"'%(name)s', got '%(got)s'."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"The package version '%(version)s' is not one Odoo understands (%(err)s). Fix"
+" it before removing fields: the migration that keeps their data is filed by "
+"version."
 msgstr ""
 
 #. module: app_builder_base
@@ -1316,6 +1513,24 @@ msgstr ""
 msgid ""
 "The server stopped while \"%s\" was being applied. The files on disk may be "
 "half-written; roll back to restore what was there before."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_apply.py:0
+msgid ""
+"The server stopped while \"%s\" was being written, before the change was "
+"recorded. The files on disk may be half-written; roll back to restore what "
+"was there before."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_apply.py:0
+msgid ""
+"The server was restarted, but %(name)s was not upgraded with it and the "
+"database is missing %(missing)s. Restart again with -u %(name)s; until then "
+"Odoo runs no scheduled actions in this database."
 msgstr ""
 
 #. module: app_builder_base
@@ -1417,6 +1632,12 @@ msgstr ""
 
 #. module: app_builder_base
 #. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "This domain cannot be searched."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
 #: code:addons/app_builder_base/models/builder_model_draft.py:0
 msgid "This model already has a field called '%s'."
 msgstr ""
@@ -1455,8 +1676,10 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_base/models/builder_package.py:0
 msgid ""
-"This server runs %(workers)s worker processes, so a package cannot be "
-"reloaded in place. Restart the server to read the package from disk."
+"This server process also serves the database(s) %(dbs)s, which have %(name)s"
+" installed. Reloading its Python in place would change it under them without"
+" upgrading their schema. Restart the server to pick this change up, and "
+"upgrade the package in those databases too (-u %(name)s)."
 msgstr ""
 
 #. module: app_builder_base
@@ -1497,6 +1720,13 @@ msgid "View"
 msgstr ""
 
 #. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_apply__restart_hint
+msgid ""
+"What the restart an apply is waiting for has to be: a plain one, or one with"
+" -u."
+msgstr ""
+
+#. module: app_builder_base
 #: model:ir.model.fields,help:app_builder_base.field_builder_package__auto_commit
 msgid "What to do with git after each write."
 msgstr ""
@@ -1521,6 +1751,12 @@ msgstr ""
 #. module: app_builder_base
 #: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
 msgid "Write to disk"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "You are not allowed to search this model."
 msgstr ""
 
 #. module: app_builder_base

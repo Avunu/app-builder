@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-20 03:34+0000\n"
-"PO-Revision-Date: 2026-11-20 03:34+0000\n"
+"POT-Creation-Date: 2026-11-20 11:29+0000\n"
+"PO-Revision-Date: 2026-11-20 11:29+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -222,6 +222,14 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/top_bar.js:0
 msgid "%s pending · %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/shell.js:0
+msgid ""
+"%s staged change(s) on %s are kept in your draft and are not applied yet. "
+"Open Changes in the builder to apply or discard them."
 msgstr ""
 
 #. module: app_builder_view
@@ -887,6 +895,15 @@ msgid "Arch Before"
 msgstr ""
 
 #. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid ""
+"Arrow keys move between rows. Enter selects a row on the canvas.\n"
+"                Alt with an arrow key moves it. Delete removes it. Shift+F10\n"
+"                opens its menu, which can also move it to another container."
+msgstr ""
+
+#. module: app_builder_view
 #. odoo-python
 #: code:addons/app_builder_view/tools/view_options.py:0
 msgid ""
@@ -1094,6 +1111,7 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
 #: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
 msgid "Changes"
 msgstr ""
 
@@ -1738,6 +1756,12 @@ msgstr ""
 
 #. module: app_builder_view
 #. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "Filter the outline"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
 msgid "Filters"
 msgstr ""
@@ -2184,6 +2208,12 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
 msgid "Move out of %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "Move to…"
 msgstr ""
 
 #. module: app_builder_view
@@ -2672,6 +2702,12 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
 msgid "Outline"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "Outline row actions"
 msgstr ""
 
 #. module: app_builder_view
@@ -3422,6 +3458,12 @@ msgstr ""
 
 #. module: app_builder_view
 #. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Switched off on this server · writing source code has not been enabled"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/console_model.js:0
 msgid "Tab"
 msgstr ""
@@ -3517,6 +3559,14 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_view/models/builder_view_editor.py:0
 msgid "The builder does not create %s views."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/shell.xml:0
+msgid ""
+"The builder is designed for a desktop-sized screen. Dragging and\n"
+"                the side panels do not work well on a display this small."
 msgstr ""
 
 #. module: app_builder_view
