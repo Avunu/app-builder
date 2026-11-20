@@ -1,0 +1,202 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* app_builder_approval
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-20 03:34+0000\n"
+"PO-Revision-Date: 2026-11-20 03:34+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"%(model)s has no field called %(field)s, and approvals are a gate on a state"
+" change. Add a status field first."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"%(model)s has no such value for %(field)s: %(unknown)s. A rule naming a "
+"value the field does not have never fires, which looks exactly like "
+"approvals being switched off."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid "%s already has approvals turned on."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval_surface.py:0
+msgid "%s approves"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"%s is managed as data records here, so there is no class to add the mixin "
+"to."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"%s is on both sides of the transition, so there is no moment at which "
+"approval could be asked for."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-javascript
+#: code:addons/app_builder_approval/static/src/console_items.js:0
+msgid ""
+"A rule names the reviewer and the records it covers. Rules you add are "
+"written to security/<model>_approval.xml."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval_surface.py:0
+msgid ""
+"An approval rule gates a state change, and the model has to carry the gate "
+"first."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"An approval rule gates a state change, and the model has to carry the gate "
+"first: turn approvals on from the builder, then come back here to say who "
+"approves what."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+#: code:addons/app_builder_approval/static/src/console_items.js:0
+msgid "Approvals"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval_surface.py:0
+msgid "Approvals are not switched on for %s"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid "Approvals are not switched on for %s yet"
+msgstr ""
+
+#. module: app_builder_approval
+#: model:ir.model,name:app_builder_approval.model_builder_serializer_tier_definition
+msgid "Builder Serializer for tier.definition"
+msgstr ""
+
+#. module: app_builder_approval
+#: model:ir.model,name:app_builder_approval.model_builder_workspace
+msgid "Builder Workspace"
+msgstr ""
+
+#. module: app_builder_approval
+#: model:ir.model,name:app_builder_approval.model_builder_approval
+msgid "Builder: Approval Rules"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid "Choose a builder package to record this in."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval_surface.py:0
+msgid ""
+"Removing a rule takes it out of security/%s_approval.xml; approvals already "
+"in flight are untouched."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"Rules you create here are written into your builder package, so they ship "
+"with the rest of your customisation."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid ""
+"Say which state needs approving into. This engine gates a state change, not "
+"a button, so a rule with no destination has nothing to attach to."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+#: code:addons/app_builder_approval/static/src/console_items.js:0
+msgid "Say who must approve, and in what order"
+msgstr ""
+
+#. module: app_builder_approval
+#: model:ir.model,name:app_builder_approval.model_tier_definition
+msgid "Tier Definition"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid "Unknown model '%s'."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval_surface.py:0
+msgid ""
+"Writes the tier.validation mixin into the model's class in the package; one "
+"reload. Turning it off later is an edit to the class."
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval.py:0
+msgid "enable approvals on %s"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval_surface.py:0
+msgid "in order"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval_surface.py:0
+msgid "nobody yet"
+msgstr ""
+
+#. module: app_builder_approval
+#. odoo-python
+#: code:addons/app_builder_approval/models/builder_approval_surface.py:0
+msgid "only for %s"
+msgstr ""

@@ -1,0 +1,4764 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* app_builder_view
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-20 03:34+0000\n"
+"PO-Revision-Date: 2026-11-20 03:34+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid ""
+"%(comodel)s has no link to %(model)s yet. Add one there first, then pick it "
+"here."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid ""
+"%(field)s is defined in Python; its definition can only be changed in the "
+"code that declares it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "%(field)s is not a field of %(model)s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_report_ops.py:0
+msgid "%(label)s cannot be placed as text: %(why)s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "%(model)s already has a %(type)s view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_model_draft.py:0
+msgid "%(model)s does not have %(fields)s yet; the apply did not go through."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_report_ops.py:0
+msgid "%(model)s has no field %(name)s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid ""
+"%(model)s is defined in Python by %(package)s, so a new field is a class "
+"attribute and the model has to be re-imported before it exists. Dropping it "
+"stages it here, where it lands on Apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"%(name)s has no external ID, so a button naming it could not survive being "
+"loaded into another database. Assign the action to a builder package first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid ""
+"%(relation)s has no link field called %(inverse)s. Add a 'Link to one "
+"record' there first, then pick it here."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "%(relation)s.%(inverse)s links to %(other)s, not to %(model)s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "%(step)s is not a field of %(model)s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "%(what)s cannot be dropped into a %(kind)s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "%(what)s → %(where)s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "%s already has a field called %s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "%s already has a label of its own."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "%s already has that."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "%s cannot be dropped here."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"%s does not carry messaging yet; the chatter needs the mail mixins on the "
+"model first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "%s does not lead to a field of this model."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "%s files · %s modified · %s new"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_package_model.py:0
+msgid ""
+"%s has no view to open the console on yet. Add one from the app builder, or "
+"write one, and come back."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid ""
+"%s is defined by %s, so its fields can only change there. Pick another model"
+" to switch."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid ""
+"%s is defined in Python, so a new field is staged here and appears after "
+"Apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "%s is not a link to res.currency."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_report_ops.py:0
+msgid "%s is not a list of records, so it cannot be a table."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "%s is not a relation, so nothing can follow it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "%s is not a selection."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/shell.js:0
+msgid ""
+"%s is read-only: its directory cannot be written. This is normal on a "
+"deployment — build where the files are writable and ship the result through "
+"git."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "%s of %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "%s pending · %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "%s staged on %s: apply from the Views pane."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "%s to look at"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "%s view created. It is now offered by this app's menu."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "'%(expr)s' locates %(count)d nodes; the builder needs exactly one."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "'%(key)s' cannot be set on a field created here: %(why)s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "'%s' does not locate anything in this view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "'%s' is not a usable field name."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+msgid ""
+"'%s' is not a valid module name: lowercase letters, digits and underscores, "
+"starting with a letter."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "'%s' is not a valid xpath position."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "'%s' is not an xpath the builder can apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "'%s' is not something the builder can drop."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "(no difference)"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "+ Add a"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "+ Feature…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid ""
+", in class order — the order\n"
+"                they are written to Python. Edits here are staged and land on Apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid ""
+".\n"
+"                Files you edited by hand under the package are included."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid ""
+". Nothing is\n"
+"            installed until the package has something in it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"A %(type)s has to know which date to place records on. Choose a date field "
+"on %(model)s first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A button"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"A calendar needs a date field to place records on, and this model has none. "
+"Add one first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "A checkbox saying the event lasts the whole day."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "A condition on the record, e.g. state != 'draft'."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "A condition on the record, e.g. state == 'draft'."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "A condition on the record."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "A custom field name must start with 'x_'."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A drop has to say before, after or inside what."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid ""
+"A field added here has no place on this canvas yet; Apply puts it\n"
+"                where the balanced layout says, or drop it from the Add tab to\n"
+"                choose the spot."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "A field cannot be created here."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_model_draft.py:0
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "A field cannot be placed beside itself."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "A field name, optionally followed by desc — e.g. date desc."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "A field name, optionally followed by desc."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "A field of type '%s' cannot be created on a live model."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A group"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A label"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "A model, its views, menu and access"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A node can move before, after or inside another, not '%s'."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A node cannot be moved into itself."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A node cannot be moved relative to itself."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A notebook"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid ""
+"A package is an Odoo addon directory the builder writes as you work:\n"
+"            models, views, menus and rules land in it as source you can review,\n"
+"            commit and deploy."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_model_draft.py:0
+msgid "A pending field has nothing to be dropped into."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "A related list needs the field on %s that links back to this model."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "A repository is initialised;"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A search view has no '%s' to add."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid ""
+"A search view has no display of its own — it fills the search\n"
+"                bar and menus of the list beside it. So it is edited as the\n"
+"                three lists it is."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "A selection needs at least one value."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A separator"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A tab can only live in a notebook."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_report_ops.py:0
+msgid "A table needs a model and a one2many field."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"A timeline has to know what to make its rows from. Choose a field on %s to "
+"group by."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"A timeline needs a date field to place records on, and this model has none. "
+"Add one first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"A timeline needs something to make its rows from — a link or a selection. "
+"This model has neither."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "About the field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Access records from a cell"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Access records from the chart"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "Acme customisations"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Activity"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/views_pane.js:0
+msgid "Add"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Add a %s view"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Add a field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Add a field to the model"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid "Add a group-by…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid "Add a searchable field…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Add a value"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Add a view"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "Add the button"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Added at the end of the view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Added inside %s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Added just after %s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Adding a field requires a field name."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Adopt a model"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "Adopt ▸"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Advanced…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "All-day flag"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Allow creating"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Allow deleting"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Allow duplicating"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Allow editing"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"An activity view shows scheduled activities, and this model does not have "
+"them. Turn on Messaging & activities first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid ""
+"An amount needs a currency field on %s. Add a 'Link to one record' pointing "
+"at res.currency first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_model_draft.py:0
+msgid "An anchor needs a view and a side to be dropped on."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid ""
+"An app is a model with its views, menu and access, written as a Python class"
+" and XML you can read."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "An inheriting view:"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,help:app_builder_view.field_builder_view_edit__superseded
+msgid ""
+"An undone edit that a later edit has made unreachable: redoing it would have"
+" to discard that later edit, so it is no longer offered."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Ancestors"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_model_draft__anchors_json
+msgid "Anchors Json"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Any model, any view"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Any model…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid ""
+"Anything more intricate — a domain with several terms —\n"
+"                belongs in the source, where it can be read."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Applied"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/draft_model.js:0
+msgid "Applied."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Apply"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+msgid "Apply %s pending change(s)"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+msgid "Apply anyway — I understand a column with data in it goes."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Apply history"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+msgid "Applying reloads this package in place. It takes a moment."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Applying…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+msgid "Applying… reloading the package"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Apply…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Approval is asked for when %s goes from %s to %s."
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__arch_after
+msgid "Arch After"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__arch_before
+msgid "Arch Before"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid ""
+"Arrows between records, which the enterprise Gantt has and Odoo Studio does "
+"not expose."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Ask before running"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Auto-commit"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Automate something"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Awaiting restart"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/flow.xml:0
+msgid "Back"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Bar"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Bar and line charts only."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Bar charts with two groupings only."
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__base_view_id
+msgid "Base View"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Block"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Bootstrap or custom classes, separated by spaces."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Bring a hand-made x_ model under Python"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Build an app"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/row_editor.xml:0
+#: code:addons/app_builder_view/static/src/console/shell/shell_model.js:0
+#: code:addons/app_builder_view/static/src/console/systray_item.js:0
+#: model:ir.actions.server,name:app_builder_view.builder_console_action
+msgid "Builder"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model,name:app_builder_view.model_builder_model_draft
+msgid "Builder Model Draft"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model,name:app_builder_view.model_builder_package_model
+msgid "Builder Package Model"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model,name:app_builder_view.model_builder_view_edit
+msgid "Builder View Edit"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model,name:app_builder_view.model_builder_view_editor
+msgid "Builder View Editor"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.actions.act_window,name:app_builder_view.ir_ui_view_action_builder
+#: model:ir.ui.menu,name:app_builder_view.menu_builder_views
+#: model_terms:ir.ui.view,arch_db:app_builder_view.ir_ui_view_view_list_builder
+msgid "Builder Views"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Button"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Button box"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "CSS classes"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Calendar"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Can't drop here: "
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/flow.xml:0
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Cancel"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Cancel state"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Cannot be created live on this model"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Canvas"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Card"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Card body"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Card side panel"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Cards can be dragged"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Changes"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid ""
+"Changes are saved as you make them and are visible to everyone\n"
+"            straight away — a view is data, so there is nothing to reload."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Changes pending on a model"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Changes: what is pending, written and committed"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Chart"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Chatter"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Check drift"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Choose a builder package to record this change in first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "Choose a builder package to record this change in."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "Choose a builder package to record this field in."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Choose a builder package to record this view in."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Choose a field that exists on %s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "Choose a field to follow."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/pane_registry.js:0
+msgid "Choose a model first — from the crumb, or open any view with Builder."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane_model.js:0
+msgid "Choose a package to record this change in first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_report_ops.py:0
+msgid "Choose at least one column for the table."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.js:0
+msgid "Choose how %s links back to this model."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Choose the action this button should run."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.js:0
+msgid "Choose the field this one follows."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "Choose the model this field should link to."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.js:0
+msgid "Choose the model this points at."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Choose the server action this button should run."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Click a card to see and change what it does; New to add one."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid ""
+"Click anything in the view to edit it — a field, a column heading,\n"
+"            a tab, or empty space for the view's own settings."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Close"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Colour by"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Column"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Column total"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Column width (px)"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Columns"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Columns can be added"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Columns can be archived"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Comes back as"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Commit"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Commit each change"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid ""
+"Commit each change: every write is a commit, with a message the builder "
+"makes up."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Committed %s · nothing to commit."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "Components"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Console"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Create"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Create a new link"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Create a package"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "Create a package to start"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Create by dragging a slot"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+msgid "Create package"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__created_view
+msgid "Created View"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__create_uid
+msgid "Created by"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__create_date
+msgid "Created on"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Created the moment you press Done."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Currency field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Day"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid ""
+"Declared by the kanban, shown on no card. Drag one onto a card to show it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/static/src/console/options.js:0
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Default"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Default sort"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Defined"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "Defined here"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Defined in"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid ""
+"Defined in Python by this package. An edit is staged on the\n"
+"                        model and written on Apply, the way a new field is."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid ""
+"Defined in Python, so its definition is read-only here; the\n"
+"                    view can still relabel or hide it above."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Deletes the backup copy; this apply can no longer be rolled back."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Delivery date"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "Directory"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Discard"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+msgid "Discard all"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Discard backup"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Discard pending changes"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/shell.xml:0
+msgid "Dismiss"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__display_name
+msgid "Display Name"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/flow.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Done"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Draft"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid ""
+"Drag the ghost to change where it will land. Apply from the\n"
+"                        status pill when the changeset is complete."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/overlay.js:0
+msgid "Drag to move"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "Drag to resize"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Dragging %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Draw dependencies from"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Duplicate into"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Duplicate into %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Duration field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Edit definition"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Edit many records at once"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Edit menus"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Edit rows inline"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/systray_item.js:0
+msgid "Edit this %s view in Builder"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/cog_menu_item.xml:0
+msgid "Edit this view"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Element"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Empty: from any state."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Ends on"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "Every field of this model is already on the view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "Every selection value needs a value and a label."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Everything, zoomed to fit"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Everywhere"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "Existing fields"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "Extended here"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Extended in"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Extends"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Failed"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Field definition"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid "Field…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Files edited on disk"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Files missing on disk"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid ""
+"Files were written that only a restart of the server can load. After the "
+"restart,"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid "Filters"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "Filter…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Fold"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Follows"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Footer"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Form"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "From"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "Getting started"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Git"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.js:0
+msgid "Give the field a label."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Give the filter a name — it becomes its menu entry."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Giving a field a label requires its name."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Graph"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Grey hint text shown while the field is empty."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Group"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Group by"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Header"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Heading"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Help"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Help text"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Hidden"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Hidden for your groups"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Hidden from you by its groups; still editable."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Hidden when"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+msgid "Hide diff"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Hide label"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Hide the outline"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Hide this column"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid ""
+"Hides the column without removing it, so nothing that depends on the field "
+"breaks."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid ""
+"Hides the field without removing it, so anything depending on it keeps "
+"working."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Highest first"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Home"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Hours the event lasts, when there is no end date."
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__id
+msgid "ID"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "In progress"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "In sync"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "In this package"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Inactive"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Indexed"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "Initialise a git repository in the package directory"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Initialise git…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Install app_builder_ui."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Install it"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Invisible"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+msgid "Its column would be dropped; the data is kept aside, not deleted."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Its definition has a staged edit; Apply writes it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Kanban"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Label"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__write_uid
+msgid "Last Updated by"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__write_date
+msgid "Last Updated on"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Last apply failed · a rollback is available"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Leave empty for an unlabelled group."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Leave empty for single-moment events."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Leave empty to let Odoo size the column."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Leave empty to show it to everyone."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Lets a user add a card from the column without a form."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Lets a user select rows and change a value on all of them."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Line"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Linked back by"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "List"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Loading…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Lowest first"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Makes the package directory a repository of its own."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Matches"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Model"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "Models"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Month"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Move down"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Move into %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Move into the one above"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Move out"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Move out of %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Move up"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Moving a node needs both what moves and where."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+msgid "Name"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "New"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/drag.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.js:0
+msgid "New %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "New field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "New fields"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "New package"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "New package…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/flow.js:0
+msgid "Next"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "No"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "No apply yet."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "No attributes given."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+msgid "No difference: the file already says this."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "No draft to resolve the path on."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "No entry on the addons path can be written to."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "No fields yet."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "No package"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/views_pane.xml:0
+msgid ""
+"No package can be written to, so nothing can be edited yet. Create one\n"
+"        on the Home tab."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid ""
+"No package here can be written to, so nothing can be built. Create one where"
+" the files are writable."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "No server action is defined on this model yet."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/options.js:0
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "None"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Not a git repository"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Not a git repository."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/pane_registry.js:0
+msgid "Not available here."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Not installed · Odoo has not loaded this module yet"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+msgid "Not on this canvas: it was dropped on another view of this model."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+msgid "Not on this canvas: it will be placed automatically after Apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Not saved"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid ""
+"Not shown here: outside a group a field has no label unless it is given one."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Not shown: the label is switched off."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "Not something the builder changes on a field: %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Not sorted"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Notebook"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "Nothing built yet"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Nothing goes beside the view itself; drop it inside."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Nothing here yet."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "Nothing is pending on %s; fields here are created live."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+#: code:addons/app_builder_view/static/src/console/shell/draft_model.js:0
+msgid "Nothing is pending."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "Nothing matches."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Nothing pending"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Nothing pending."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Nothing to commit."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Nothing to redo"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "Nothing to show."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Nothing to undo"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Nothing written yet."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Nothing yet — the first change writes an inheriting view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid ""
+"Odoo only loads addons from directories that were on the addons path\n"
+"            when the server started."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Off"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Off: nothing is staged or committed; git is yours to run."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Offer as a side filter"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid ""
+"On this view only. Edit the definition below to rename the field itself."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "One end of that move is not a node the builder can address."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Only a field can be given a label."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Only a form draws labels for its fields."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Only a form has a chatter."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "Only text fields can be translated."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_edit.py:0
+msgid ""
+"Only the most recent change can be undone -- putting an older version back "
+"would quietly throw away everything done since."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_edit.py:0
+msgid ""
+"Only the most recently undone change can be redone -- and not once a newer "
+"change has been made over it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Open"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/systray_item.js:0
+msgid "Open Builder"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Open a view"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/pane_registry.js:0
+msgid "Open a view first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Open events in a popup"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Open records in a popup"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Open the model ▸"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "Open ▸"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/shell.xml:0
+msgid "Opening the builder…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/shell.xml:0
+msgid "Opening…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Opens Odoo's own form. What it saves is written to the package too."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Opens on"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Opens the field editor first"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Optional column"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid ""
+"Optional columns can be turned on and off by each user from the toggle at "
+"the right of the header row."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "Or drag a tile onto the view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "Outline"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Overwrites the files with what the database says; hand edits are lost."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__package_id
+msgid "Package"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Pending"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Pending field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Pending on models"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "Pending until Apply"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Pending write"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Pending write: the database is ahead of the files."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/pending_widget.xml:0
+msgid "Pending — appears after Apply"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Pending — appears here after Apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Pick a model."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Pie"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Pivot"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Placeholder"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_report_ops.py:0
+msgid "Placing a field requires a model and a field name."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Points at"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Press any key to cancel"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid ""
+"Primary is the main action on the screen and is more prominent; secondary is"
+" everything else."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/views_pane.js:0
+msgid "Properties"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid ""
+"Puts back the %s file(s) as they were before \"%s\" and reloads the package."
+" The apply is recorded as rolled back; its backup is kept until you discard "
+"it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Python"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Python (code-owned)"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Quick create"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid ""
+"Re-reads the package from disk into the database; the hand edits become the "
+"records. The package is reloaded."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Reaching it clears the approvals asked so far."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Read-only"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Read-only when"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Read-only · the directory cannot be written"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "Reading the package…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Recent"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Recent changes"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Records"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Records sharing a value share a colour."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Redo"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Redo: %(summary)s · by %(author)s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Relation"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Reload"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Reload from disk"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/remove_flow.js:0
+msgid "Remove"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid ""
+"Remove %s from the draft? It has not been applied, so nothing is lost but "
+"its definition."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.js:0
+msgid ""
+"Remove %s from the model? Nothing changes until Apply; then its column is "
+"dropped and its data kept aside by a migration. Discard the pending changes "
+"to take it back before that."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Remove %s? It is taken out of the package's files as well."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.js:0
+msgid "Remove field from the model"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Remove from model"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/overlay.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/remove_flow.js:0
+msgid "Remove from view"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Remove pending field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid ""
+"Remove the pending field %s? It has not been applied, so nothing is lost but"
+" its definition."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"Remove this %(what)s and the %(count)d elements in it? Confirm to proceed."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"Remove this %(what)s and the %(count)d fields in it? Confirm to proceed."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Remove this %s and the element in it? Confirm to proceed."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Remove this %s and the field in it? Confirm to proceed."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Remove this %s? The rest stay as they are."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Remove this field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Renames the field itself, on every view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Report"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Required"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid ""
+"Required by web_timeline, unlike the enterprise Gantt where rows are "
+"optional."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid ""
+"Required on this form only. The field itself stays optional, so other "
+"screens and imports are unaffected."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Required on this list only."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Required when"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Required — the calendar cannot open without it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Required — the timeline cannot open without it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Restart needed"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Restart to apply · this server runs workers"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Restart to load · files were written that only a restart can load"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Reveal on canvas"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Review"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Roll back"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Roll back…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Rolled back"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Rows"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "Runs which action?"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvas.xml:0
+msgid "Sample data"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Save values"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Saved"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Saving…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Say which state needs approving into."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Search"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "Search fields…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid "Searchable fields"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "See what is waiting"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Select a place in a card first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Separator"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Sheet"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Show a count"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+msgid "Show diff"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Show invisible elements"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Show label"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Show the outline"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Shown as"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Shown by a label of its own, just before it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Shown when the user hovers the label."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Shows the field's values in the panel beside the calendar."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "Skip this when the directory is already inside a repository."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Something new goes before, after or inside a node, not '%s'."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid ""
+"Something was written to disk that only a restart of the server can load."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/draft_model.js:0
+msgid "Something went wrong."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Sort by value"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/row_editor.xml:0
+msgid "Source"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Stack overlapping bars"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Stack the bars"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Stage only"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+msgid ""
+"Stage only: every write is staged; you commit from Changes with a message of"
+" your own."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid ""
+"Stage only: every write is staged; you commit from here with a message of "
+"your own."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.js:0
+msgid "Stage the removal"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Staged as a new field; Apply creates it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Staged for removal; Apply drops the column and keeps its data aside."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Staged on this model's draft; click to apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "Staged only — nothing is written until you apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Staged until Apply"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Stages every file the package owns and commits them on ⎇"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Starts on"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Status field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Style"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__summary
+msgid "Summary"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__superseded
+msgid "Superseded"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Tab"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Tab name"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.js:0
+msgid "Tabs"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid ""
+"Takes it off this screen only. To keep it loading but out of\n"
+"                    sight, use Hidden above."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Technical name"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "That"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"That element comes from another module's extension of this view, so it "
+"cannot be edited in place here."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"That element is not something the builder can edit: it does not correspond "
+"to a node in the view's definition."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "That is not a place in the view the builder can address."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "The %s stays where it is; it is not something to move."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "The %s stays where it is; it is not something to remove from the view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "The apps this package owns"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"The builder cannot create a %s view yet. One made by hand can still be "
+"edited here."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "The builder does not add '%s'."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "The builder does not create %s views."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/add_tab.xml:0
+msgid "The button goes where it was dropped."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "The class this field belongs to could not be read into a draft."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "The draft this field is staged on could not be read."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "The field needs a label."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "The field whose values become the columns, e.g. state."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "The fields of"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "The form is empty; put something on it first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "The label shown beside the total, e.g. “Total”."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid ""
+"The name becomes the directory and the xmlid prefix of everything\n"
+"                    the package owns. It cannot be changed later."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "The number of records behind each aggregate."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "The package is read-only, so the gate cannot be written."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "The package is read-only."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+msgid "The package needs a technical name."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "The package will be"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "The question to ask. Leave empty to run straight away."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "The selection value '%s' is listed twice."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "The view being edited no longer exists."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_canvas.py:0
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "The view no longer exists."
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,help:app_builder_view.field_builder_view_edit__view_id
+msgid ""
+"The view that was written -- the patch, when editing a foreign view, and the"
+" view itself when the package owns it. Empty once undoing the edit that "
+"created the patch has removed it; redo then recreates the patch and fills "
+"this in again."
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,help:app_builder_view.field_builder_view_edit__base_view_id
+msgid ""
+"The view the user was looking at, which is what the editor undoes against."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_edit.py:0
+msgid ""
+"The view this change was made to no longer exists, so the change cannot be "
+"put back."
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,help:app_builder_view.field_builder_view_edit__arch_after
+msgid ""
+"The written view's arch as this edit left it, which is what redo puts back."
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,help:app_builder_view.field_builder_view_edit__arch_before
+msgid ""
+"The written view's arch before this edit. Empty when the edit created the "
+"view, in which case undoing removes it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "There is no %(type)s view of %(model)s to edit."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "There is no '%s' in this search view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "There is no model called %s to link to."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_model_draft.py:0
+msgid "There is no pending field called '%s' to place beside."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_model_draft.py:0
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "There is no pending field called '%s' to place."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/draft_model.js:0
+msgid "There is nothing to apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvas.xml:0
+msgid "There is nothing to render for this view yet."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This button"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This calendar"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"This change produces an invalid view:\n"
+"\n"
+"%s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This column"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "This condition does not search:"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"This condition does not search:\n"
+"\n"
+"%s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This form"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This graph"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This group"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This kanban"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This list"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "This model already has a %s view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvas.xml:0
+msgid ""
+"This model has no records yet, so the view shows sample data. Changes to the"
+" view are real."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid ""
+"This model has no status field to gate on. Add a Selection field first, from"
+" the Views pane."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/draft_model.js:0
+msgid "This package is read-only, so nothing can be applied."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.js:0
+msgid "This package owns this view, so changes are written into it directly."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This pivot"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid ""
+"This search view has no list to show it in, so there is nothing\n"
+"                to preview — the lists on the left are still the editor for it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+msgid ""
+"This server runs several workers, so it cannot reload in place. The files "
+"are written and the package is marked for upgrade; restart the server and "
+"Odoo loads it on the way up. Until then the fields are in the file, not in "
+"the database."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This tab"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+msgid "This takes a moment."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "This timeline"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.js:0
+msgid ""
+"This view belongs to another module. Changes become a separate inheriting "
+"view, so the original keeps working and upgrades cleanly."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/exceptions.py:0
+msgid ""
+"This view changed since it was loaded; it has been refreshed — please try "
+"again."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "This view changed; drop the button again."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "This view changed; drop the field again."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "This view changed; it was refreshed — try again."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+msgid "This view has no model."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "This view itself."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid ""
+"Throw away the %s staged change(s) on %s? Nothing has been applied, so "
+"nothing else is lost."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid ""
+"Throw away the %s staged change(s)? Nothing has been applied, so nothing "
+"else is lost."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+msgid "Tick \"Apply anyway\" to accept the data that would be kept aside."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Title"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "To"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Tooltip"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Translatable"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Turn on approvals"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Type"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Uncommitted changes"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "Undo"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Undo: %(summary)s · by %(author)s"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__undone
+msgid "Undone"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.js:0
+msgid "Unfold"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Unknown builder operation '%s'."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Unknown filter condition '%s'."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+#: code:addons/app_builder_view/models/builder_view_new_field.py:0
+#: code:addons/app_builder_view/tools/manualfield.py:0
+msgid "Unknown model '%s'."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Values"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+#: code:addons/app_builder_view/static/src/console/outline_tree.js:0
+#: code:addons/app_builder_view/static/src/console/panes/views_pane.js:0
+#: model:ir.model.fields,field_description:app_builder_view.field_builder_view_edit__view_id
+msgid "View"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/outline.xml:0
+msgid "View outline"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/views_pane.js:0
+msgid "Views"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Visible only to"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/tools/view_options.py:0
+msgid "Week"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "What changed, in a sentence"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.js:0
+msgid "Where"
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,help:app_builder_view.field_builder_model_draft__anchors_json
+msgid ""
+"Where each staged field was dropped: a view, an xpath minted on it, and the "
+"neighbour it was dropped beside. View intent, like placement, and kept apart"
+" from it because the placement slots are a fixed vocabulary."
+msgstr ""
+
+#. module: app_builder_view
+#: model:ir.model.fields,help:app_builder_view.field_builder_view_edit__created_view
+msgid "Whether this edit brought the written view into existence."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/console_model.js:0
+msgid "Widget"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/pending_widget.xml:0
+msgid "Will be placed automatically"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "Will be placed automatically after Apply."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "Write"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.js:0
+msgid "Write & restart…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.js:0
+msgid "Write files"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "Write to disk"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "Writes"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
+msgid "Writing the files; the package is marked for upgrade."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "Written files"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.xml:0
+msgid "Written so far"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/shell/draft_model.js:0
+msgid ""
+"Written to disk. Restart the server to load it; the changes stay pending "
+"until then."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "Yes"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "__init__.py"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "__manifest__.py"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "access line"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "acme_custom"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "added %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "added the chatter"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "after %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "and"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "approval"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "at the end of %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "auto-commit"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "automation"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "before %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "button"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "button box"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "cannot be written to"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "card"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "card body"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "card side panel"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "changed %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "changed attributes"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "chatter"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "choose a model"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "column"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+msgid "currency_id"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "data records"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "diff"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "dismiss"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/field_editor_fallback.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "draft"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "drops data"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.js:0
+msgid "edited"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "edited on disk"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "element"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "fields"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "file(s)"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "files"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "finish placing the fields"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "footer"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "gave %s a label"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "group"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "header"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "in Python"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "in sync"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
+msgid "in this database"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/outline_zones.js:0
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "into %s"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid "is false"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid "is not set"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid "is set"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
+msgid "is true"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "label"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "menu"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
+msgid "missing"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "models"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.js:0
+msgid "new"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "notebook"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "of"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "optional"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "pending field"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/top_bar.xml:0
+msgid "read-only"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "records today."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "reloads in process"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/sidebar/view_tab.js:0
+msgid "removed"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "removed a node"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "report"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "restart to apply · this server runs workers"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "rule"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.xml:0
+msgid "search models…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "search…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "separator"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "sheet"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/row_editor.xml:0
+#: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.xml:0
+msgid "state == 'draft'"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "such"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/drag.js:0
+msgid "switching to %s…"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "tab"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "that model"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the block"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the button box"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the card"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the card body"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the card footer"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the card side panel"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the group"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the header"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the list"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the notebook"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the sheet"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the tab"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/zones.js:0
+msgid "the view"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
+msgid "this project's own"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "uncommitted"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "view"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "widget"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid "↻ Applying reloads the package in this process."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
+msgid ""
+"↻ This server runs workers: applying writes the files and marks the package "
+"for upgrade; restart to load it."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "⎇ %s · %s uncommitted"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/panes/home_pane.js:0
+msgid "⎇ %s · nothing to commit"
+msgstr ""
