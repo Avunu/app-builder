@@ -215,11 +215,12 @@ export class BuilderShell {
   }
 
   /**
-   * Whether leaving now would interrupt or strand something: a write
-   * still on its way, an Apply running, or changes staged on the draft
-   * and not applied. The draft itself is kept on the server either way;
-   * the browser's own "leave this page?" (`shell.ts`) is there so it is
-   * not walked away from unknowingly.
+   * Whether leaving now would interrupt something: a write still on its
+   * way, or an Apply running. Changes staged on the draft are not counted:
+   * they are kept on the server and are there again on the next visit, so
+   * the browser's "leave this page?" (`shell.ts`) would be asking about
+   * nothing -- on every reload, for a package that waits for a manual
+   * restart. Closing the console says where they are (`close()`).
    */
   get hasUnfinishedWork(): boolean {
     const activity = this.activity;
@@ -227,8 +228,7 @@ export class BuilderShell {
       activity.busy ||
         activity.applying ||
         activity.status === "saving" ||
-        this.draft.applying ||
-        this.pendingCount > 0
+        this.draft.applying
     );
   }
 

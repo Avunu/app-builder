@@ -150,10 +150,9 @@ export class BuilderConsole extends Component<Props, ConsoleEnv> {
     // The shell outlives nothing: what it scheduled is dropped with the
     // component (`BuilderShell.destroy`).
     onWillDestroy(() => this.shell.destroy());
-    // Closing the tab or reloading while a write is on its way, or with
-    // changes staged and not applied: the browser asks first. In-app
-    // navigation is not blocked -- the draft is kept on the server, and
-    // `close()` says so.
+    // Closing the tab or reloading while a write is on its way or an Apply
+    // is running: the browser asks first. Staged changes do not ask --
+    // the draft is kept on the server, and `close()` says so.
     useExternalListener(window, "beforeunload", (ev: BeforeUnloadEvent) =>
       this.onBeforeUnload(ev)
     );

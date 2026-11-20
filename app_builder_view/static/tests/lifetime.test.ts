@@ -13,7 +13,9 @@ import {expect, getFixture, test} from "@odoo/hoot";
 import {advanceTime} from "@odoo/hoot-mock";
 
 import {focusLabelRow} from "@app_builder_view/console/drag";
+import {BuilderConsole} from "@app_builder_view/console/shell/shell";
 import {BuilderShell} from "@app_builder_view/console/shell/shell_model";
+import type {DraftPayload} from "@app_builder_view/console/wire";
 import type {
   FieldService,
   NotificationService,
@@ -81,6 +83,28 @@ test("leaving is worth a question only while something is unfinished", () => {
     activity: {busy: false, status: "saved", error: "", drag: null, applying: false},
   } as unknown as PaneModel;
   expect(shell.hasUnfinishedWork).toBe(false);
+  // Staged changes are kept on the server: reloading loses none of them,
+  // so they are no reason to ask.
+  shell.draft.draft = {change_count: 3} as unknown as DraftPayload;
+  expect(shell.pendingCount).toBe(3);
+  expect(shell.hasUnfinishedWork).toBe(false);
+});
+
+test("the browser is asked to confirm leaving only while something is unfinished", () => {
+  const {shell} = makeShell();
+  // Only `shell` is read of the component here.
+  const host = Object.assign(
+    Object.create(BuilderConsole.prototype) as BuilderConsole,
+    {shell}
+  );
+  const leave = (): Event => {
+    const ev: BeforeUnloadEvent = new Event("beforeunload", {cancelable: true});
+    host.onBeforeUnload(ev);
+    return ev;
+  };
+  expect(leave().defaultPrevented).toBe(false);
+  shell.draft.applying = true;
+  expect(leave().defaultPrevented).toBe(true);
 });
 
 // -- the wait for the Label row ------------------------------------------------
