@@ -1,7 +1,8 @@
-from . import builder_app
+from . import builder_app, builder_package_model
 
 # Importing a model module is what registers its models with the registry;
 # nothing reads the names. Listed so that is stated, not reported as unused.
 __all__ = [
     "builder_app",
+    "builder_package_model",
 ]

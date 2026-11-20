@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
@@ -163,3 +163,29 @@ class TestReportSurface(BuilderCase):
         self.Surface.remove_record(row["id"], cast("int", self.package.id), force=True)
         self.assertFalse(self.env["ir.ui.view"].browse(view_id).exists())
         self.assertNotIn("Gone", "".join(self.package._render_files().values()))
+
+    def test_a_read_only_package_cannot_be_given_a_report(self):
+        self.package.write({"root_path": self.unwritable_path()})
+        with raises(self, UserError):
+            self.Surface.create_record(
+                MODEL, cast("int", self.package.id), {"name": "Nope"}
+            )
+        self.assertFalse(
+            typed.model(self.env, IrActionsReport).search([("name", "=", "Nope")])
+        )
+
+    def test_removing_is_refused_before_anything_is_looked_up(self):
+        """The guard comes first: a caller who may not remove a report gets
+        the refusal, not whatever resolving one that does not exist says."""
+        row = self.Surface.create_record(
+            MODEL, cast("int", self.package.id), {"name": "Kept"}, template="blank"
+        )
+        user = self.make_user("report_reader", ["app_builder_base.group_builder_user"])
+        for record_id in (row["id"], row["id"] + 100000):
+            with raises(self, AccessError):
+                self.Surface.with_user(user).remove_record(
+                    record_id, cast("int", self.package.id), force=True
+                )
+        self.assertTrue(
+            typed.model(self.env, IrActionsReport).browse(row["id"]).exists()
+        )

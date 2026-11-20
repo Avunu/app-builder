@@ -250,6 +250,19 @@ class BuilderReport(models.AbstractModel):
         package._assert_writable()
         if model_name not in self.env:
             raise UserError(_("Unknown model '%s'.", model_name))
+        target = self.env[model_name]
+        if target._abstract or target._transient:
+            # Neither has records anyone can open and print: an abstract model
+            # has no table at all, and a transient one is a wizard's scratch
+            # rows, vacuumed within the hour. A report bound to either gets a
+            # Print entry nobody can reach and a preview with nothing to draw.
+            raise UserError(
+                _(
+                    "%s does not keep records, so there is nothing for a "
+                    "report on it to print.",
+                    model_name,
+                )
+            )
         if layout not in scaffold.REPORT_LAYOUTS_BY_KEY:
             raise UserError(_("'%s' is not a report layout.", layout))
 
