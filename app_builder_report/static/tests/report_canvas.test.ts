@@ -12,7 +12,7 @@
  */
 
 import {expect, test} from "@odoo/hoot";
-import {click, queryAll, queryOne, waitFor} from "@odoo/hoot-dom";
+import {click, queryAll, queryOne, select, waitFor} from "@odoo/hoot-dom";
 import {animationFrame} from "@odoo/hoot-mock";
 import {reactive} from "@odoo/owl";
 import {makeServerError, mountWithCleanup, onRpc} from "@web/../tests/web_test_helpers";
@@ -71,11 +71,16 @@ function serve(preview: () => unknown): string[] {
     calls.push("preview_html");
     return preview();
   });
-  onRpc("body_anchor", () => ({found: true, xpath: "//main", position: "inside"}));
-  onRpc("printable_fields", () => ({
-    values: [{name: "name", string: "Name", type: "char"}],
-    lists: [],
+  onRpc("body_anchor", () => ({
+    found: true,
+    xpath: "//main",
+    position: "inside",
+    model: "x.job",
   }));
+  onRpc("printable_fields", ({args}) => {
+    calls.push(`printable_fields ${String(args[0])}`);
+    return {values: [{name: "name", string: "Name", type: "char"}], lists: []};
+  });
   onRpc("locate_expression", ({args}) => {
     const expression = String(args[1]);
     calls.push(`locate ${expression}`);
@@ -111,7 +116,7 @@ test("the report is shown in a sandboxed frame, and none of it reaches the page"
   expect(value).toHaveAttribute("tabindex", "0");
   await click(value);
   await animationFrame();
-  expect(calls).toEqual(["preview_html", "locate doc.name"]);
+  expect(calls).toEqual(["preview_html", "printable_fields x.job", "locate doc.name"]);
   expect(".o_builder_report_tools").toHaveText(/doc\.name/);
   expect(value).toHaveClass("o_builder_report_selected");
   // Neither the script nor the inline handler ran.
@@ -135,12 +140,22 @@ test("a report that does not render opens anyway, says why, and can be retried",
     /t-field refers to a field that is gone/
   );
   expect(queryAll(FRAME)).toHaveLength(0);
-  // The tools are up: where a value would go was still read.
-  expect(queryAll("select[name='report_field']")).toHaveLength(1);
+  // The tools are usable: where a value would go and what the model can
+  // print were read without the render, so a field can be placed to fix
+  // the template.
+  expect("select[name='report_field'] option[value='name']").toHaveCount(1);
+  await select("name", {target: "select[name='report_field']"});
+  await animationFrame();
+  expect("button[name='place_report_field']").toBeEnabled();
 
   broken = false;
   await click("button[name='retry_report_preview']");
   await waitFor(`${READY}:iframe [data-oe-expression='doc.name']`);
   expect(queryAll(".o_builder_report_error")).toHaveLength(0);
-  expect(calls).toEqual(["preview_html", "preview_html"]);
+  expect(calls).toEqual([
+    "preview_html",
+    "printable_fields x.job",
+    "preview_html",
+    "printable_fields x.job",
+  ]);
 });

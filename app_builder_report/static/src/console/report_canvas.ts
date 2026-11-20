@@ -98,9 +98,13 @@ interface FoundBodyAnchor {
   found: true;
   xpath: string;
   position: "inside";
+  /** The model the report prints, read without rendering it. */
+  model: string | false;
 }
 
-type BodyAnchorResult = FoundBodyAnchor | {found: false; reason: string};
+type BodyAnchorResult =
+  | FoundBodyAnchor
+  | {found: false; reason: string; model: string | false};
 
 /**
  * `state.report`, built up by `loadReport` from the three RPCs above and
@@ -277,8 +281,9 @@ export class ReportCanvas extends Component<Props> {
    *
    * Never rejects. Each of the three answers is taken on its own: a
    * template that does not render still has an arch to place a value in
-   * and a model with fields, so the tools keep what could be read and the
-   * preview says what could not. An answer that arrives after a newer
+   * and a model with fields (`body_anchor` names the model without
+   * rendering), so the tools keep what could be read and the preview says
+   * what could not. An answer that arrives after a newer
    * load has started, or after the canvas has gone, is dropped.
    */
   async loadReport(): Promise<void> {
@@ -316,12 +321,17 @@ export class ReportCanvas extends Component<Props> {
     // The version this answer is for, whether or not it rendered: a
     // failure is not asked for again until something changes, or Retry.
     this.loadedVersion = version;
-    if (preview.status === "fulfilled") {
+    if (anchor.status === "fulfilled" && anchor.value.model) {
+      // Known without rendering: a template that fails to render still
+      // lists what its model can print.
+      report.model = report.model || anchor.value.model;
+    }
+    if (report.model) {
       try {
         const printable = await this.orm.call<PrintableFieldsResult>(
           "builder.report",
           "printable_fields",
-          [preview.value.model || false]
+          [report.model]
         );
         if (!current()) {
           return;
@@ -334,6 +344,10 @@ export class ReportCanvas extends Component<Props> {
         }
         this.state.message = messageOf(err);
       }
+    } else {
+      // A template no report prints on its own: nothing to list.
+      report.values = [];
+      report.lists = [];
     }
     // A selection is an expression, and its locator can move when
     // something is inserted above it: re-resolve rather than trust it.
