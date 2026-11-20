@@ -1,0 +1,367 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* app_builder_report
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-20 11:29+0000\n"
+"PO-Revision-Date: 2026-11-20 11:29+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+msgid "%(model)s already has a report called %(name)s."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+msgid ""
+"%(name)s renders through %(template)s, which is not a view in this database "
+"— so there is nothing to edit. A report whose template is built in Python "
+"has to be changed in Python."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+msgid ""
+"%s does not keep records, so there is nothing for a report on it to print."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid ""
+"%s is printed by something the builder cannot point at — a sub-template, or "
+"an expression built at render time."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "'%s' is not a report layout."
+msgstr ""
+
+#. module: app_builder_report
+#: model_terms:ir.ui.view,arch_db:app_builder_report.act_report_xml_view_builder
+msgid "<span class=\"o_stat_text\">Edit Layout</span>"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Add table"
+msgstr ""
+
+#. module: app_builder_report
+#: model:ir.model,name:app_builder_report.model_builder_report
+msgid "Builder: PDF Reports"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+msgid "Choose a builder package to record this report in."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Choose a field…"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Choose a list…"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "Choose a package first."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "Choose a package to record this in first."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid ""
+"Click a value in the document to select it. The prose around\n"
+"                it is not something the builder put there, so it is edited as\n"
+"                source."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Columns, in order:"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+msgid "Edit %s"
+msgstr ""
+
+#. module: app_builder_report
+#: model_terms:ir.ui.view,arch_db:app_builder_report.act_report_xml_view_tree_builder
+msgid "Edit Layout"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console_items.js:0
+msgid "Edit layout"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Field to print"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid ""
+"Fix the template in its source, or undo the last change,\n"
+"                        and try again."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid ""
+"From %s. Its settings are its module's; its layout you can edit from the "
+"canvas, and the change lands in a view of your own that inherits theirs, so "
+"the original keeps receiving fixes."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Label (optional)"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "List to print"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "Name is required."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console_items.js:0
+msgid ""
+"New reports are written into the package. Reports that came with Odoo are "
+"editable too: your changes land in a view of your own that inherits theirs, "
+"so the original keeps receiving fixes."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+msgid ""
+"New reports you create here are written into your builder package. Reports "
+"that came with Odoo are editable too — the changes land in a view of your "
+"own that inherits theirs, so the original keeps receiving fixes."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid ""
+"No report prints this template on its own, so there is nothing to preview it"
+" with. Open the report that uses it instead."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "No template"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Place"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Place a value"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Print a table"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "Print menu"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+#: code:addons/app_builder_report/static/src/console_items.js:0
+msgid "Put this on paper"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "Read-only."
+msgstr ""
+
+#. module: app_builder_report
+#: model:ir.model,name:app_builder_report.model_ir_actions_report
+msgid "Report Action"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.js:0
+msgid "Report preview"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+#: code:addons/app_builder_report/static/src/console_items.js:0
+msgid "Reports"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "Reset layout"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Retry"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "Selected"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid "That is not a report template."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+msgid "That report no longer exists."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid "The report template no longer exists."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid ""
+"There is no %s to preview this on yet. Create one and the report will draw "
+"it."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid "This report could not be rendered."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid ""
+"This report works out what to print in Python, and that code refused the "
+"preview record: %s"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid ""
+"This template has no recognisable body to add to. Edit it as source, or "
+"start from a layout the builder generated."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report.py:0
+msgid "Unknown model '%s'."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid ""
+"Your layout changes live in a view of %s that inherits the template. Reset "
+"deletes that patch; the original was never changed."
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "no template to edit"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_preview.py:0
+msgid "record"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-python
+#: code:addons/app_builder_report/models/builder_report_surface.py:0
+msgid "template %s"
+msgstr ""
+
+#. module: app_builder_report
+#. odoo-javascript
+#: code:addons/app_builder_report/static/src/console/report_canvas.xml:0
+msgid ""
+"— what you add\n"
+"                next goes just after it."
+msgstr ""

@@ -1,0 +1,1016 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* app_builder_model
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-20 11:29+0000\n"
+"PO-Revision-Date: 2026-11-20 11:29+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "\"draft\""
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "%(model)s already has everything %(key)s adds."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid ""
+"%(model)s is defined by %(owner)s; switch to that package to change it."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid ""
+"%(model)s was written to source but did not load. Check the server log for "
+"the import error."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid ""
+"%s has no external id, so a menu file cannot refer to it. Pick a menu a "
+"module declares, or make the app a root."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid "%s is Python now"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "%s is live"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid "%s is written; restart to make it Python"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "'%s' is not a field type."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid ""
+"'%s' is not a valid model name: lowercase letters, digits, dots and "
+"underscores."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "(unavailable)"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "+ Computed value"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid ""
+"; more can\n"
+"            be added later from Access Control."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+msgid ""
+"A computed field needs the fields it reads, so Odoo knows when to recompute."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "A custom field name must start with 'x_'."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "A field called"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid ""
+"A menu entry in another app, which has to come from a module so the file can"
+" point at it."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "A model called"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid ""
+"A model made by hand, or by an older builder as records, becomes a Python\n"
+"            class in the package. Afterwards it is like any model the package\n"
+"            defines: fields are staged and applied, and the class is yours to edit.\n"
+"            One at a time is easiest to review."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "A one2many field needs an inverse field."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "A related list gets its own page — it is unreadable in a column."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "A relational field needs a related model."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid ""
+"A root menu with an icon in the apps menu, and the model's list under it."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "A selection field needs at least one option."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+msgid "A selection needs at least one value."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "A selection option needs a value."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Add a value"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "Adds: %s"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid "Adopt"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid "Adopt a model"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid ""
+"An app is a model with its list and form, a menu to reach it and the\n"
+"            access lines that let people in. It is written to the package as\n"
+"            Python and XML, and it is live when this flow ends."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "An app of its own"
+msgstr ""
+
+#. module: app_builder_model
+#: model:ir.model.fields,field_description:app_builder_model.field_builder_package_model__create_app_pending
+msgid "App Not Finished"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "Automations, access and rules are one tab away."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "Build an app"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "Build it"
+msgstr ""
+
+#. module: app_builder_model
+#: model_terms:ir.actions.act_window,help:app_builder_model.builder_package_model_action
+msgid "Build your first model"
+msgstr ""
+
+#. module: app_builder_model
+#: model:ir.model,name:app_builder_model.model_builder_app
+msgid "Builder App Builder"
+msgstr ""
+
+#. module: app_builder_model
+#: model:ir.model,name:app_builder_model.model_builder_package_model
+msgid "Builder Package Model"
+msgstr ""
+
+#. module: app_builder_model
+#: model_terms:ir.actions.act_window,help:app_builder_model.builder_package_model_action
+msgid ""
+"Builder → New Model creates one, along with the views, menu and\n"
+"               access rules that make it usable."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid ""
+"Builds a second model (%s). Decided now: adding it later means building "
+"another app."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Cancel"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid "Choose"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid "Choose at least one model."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+msgid "Choose how %s links back to this model."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+msgid "Choose the field this one follows."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+msgid "Choose the model this points at."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Comes back as"
+msgstr ""
+
+#. module: app_builder_model
+#: model_terms:ir.ui.view,arch_db:app_builder_model.builder_package_model_view_form
+#: model_terms:ir.ui.view,arch_db:app_builder_model.builder_package_model_view_list
+msgid "Compose"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Create a new link"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "Create the first one"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/console_items.xml:0
+msgid "Created the moment you press Done."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Currency field"
+msgstr ""
+
+#. module: app_builder_model
+#: model:ir.actions.act_window,name:app_builder_model.ir_model_fields_action_builder
+#: model:ir.ui.menu,name:app_builder_model.menu_builder_fields
+#: model_terms:ir.ui.view,arch_db:app_builder_model.ir_model_fields_view_list_builder
+msgid "Custom Fields"
+msgstr ""
+
+#. module: app_builder_model
+#: model:ir.actions.act_window,name:app_builder_model.ir_model_action_builder
+#: model:ir.ui.menu,name:app_builder_model.menu_builder_models
+#: model_terms:ir.ui.view,arch_db:app_builder_model.ir_model_view_list_builder
+msgid "Custom Models"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Customer reference"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Default"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+msgid "Delete this record too"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Done"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Draft"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "Each selection option is a value and a label."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid "Every manual model here is already Python, or there is none."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "Features"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Follows"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+msgid "Give the field a label."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Group by"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "Groups"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Help text"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Indexed"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid ""
+"Its fields live in models/ as a class; the builder keeps the marked block in"
+" sync and leaves the rest to you."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid ""
+"Its form is on the canvas: drop fields on it, or open the other views from "
+"the switcher."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Label"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+msgid "Leave empty"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Linked back by"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid "Loading…"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid "Made by hand in Settings › Technical"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid "Made by the builder in %s, as records"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "Menu"
+msgstr ""
+
+#. module: app_builder_model
+#: model_terms:ir.ui.view,arch_db:app_builder_model.builder_package_model_view_form
+msgid "Model"
+msgstr ""
+
+#. module: app_builder_model
+#: model:ir.actions.act_window,name:app_builder_model.builder_package_model_action
+#: model_terms:ir.ui.view,arch_db:app_builder_model.builder_package_model_view_list
+msgid "Models"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "Name"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "New field"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid "New fields on it are staged and applied with one reload."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "Nothing is written before"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid "Nothing to adopt"
+msgstr ""
+
+#. module: app_builder_model
+#: model:ir.ui.menu,name:app_builder_model.menu_builder_composer
+msgid "Package Models"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "Pick at least one group, or nobody can open it."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Points at"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.js:0
+msgid "Prevent deletion"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+msgid "Preview"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Python: a literal, or a lambda."
+msgstr ""
+
+#. module: app_builder_model
+#: model_terms:ir.ui.view,arch_db:app_builder_model.builder_package_model_view_form
+#: model_terms:ir.ui.view,arch_db:app_builder_model.builder_package_model_view_list
+msgid "Re-read the file"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Read-only"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Recomputes when these change"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Remove this field"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Required"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.js:0
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "Review"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "Say which app the menu goes under."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Search"
+msgstr ""
+
+#. module: app_builder_model
+#: model:ir.model.fields,help:app_builder_model.field_builder_package_model__create_app_pending
+msgid ""
+"Set when the builder created this model as an app and has not yet built its "
+"access rules, views and menu. Creating the app again under the same name "
+"finishes it."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Show it in"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/console_items.xml:0
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Staged only — nothing is written until you apply."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Store it"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid ""
+"Stored values can be searched and grouped; unstored ones are\n"
+"                    worked out on every read."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid ""
+"Tags and Lines build a second model each. Create it with New Model, then "
+"drop a Tags or Lines field that points at it."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "Technical name"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "That package no longer exists."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "The app needs a name."
+msgstr ""
+
+#. module: app_builder_model
+#: model_terms:ir.ui.view,arch_db:app_builder_model.builder_package_model_view_form
+msgid ""
+"The builder stopped rewriting this file because it could not\n"
+"                        read its block. Nothing has been lost — the file is left\n"
+"                        exactly as it is. Fix the block and re-read it."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "The class and its file take this name. No"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid "The class as it will be written. Nothing is on disk yet."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid ""
+"The class is written, the manual definition it replaces is retired from\n"
+"            the database, and the package reloads once. Records are untouched: the\n"
+"            table stays, the class now describes it."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "The form"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid ""
+"The groups whose users can see, make and change records. One access line\n"
+"            per group is written to"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "The list"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "The menu to put the app under no longer exists."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid ""
+"The model %(model)s was created, but its access rules, views and menu could not be built:\n"
+"\n"
+"%(error)s\n"
+"\n"
+"Once the cause is fixed, create the app again under the same name to finish it, or roll the last apply back from Changes to remove the model."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid ""
+"The model's class is written and the package reloads; the views, menu\n"
+"            and access lines are built on the live model and the package reloads\n"
+"            once more. Two reloads, a few seconds each; the console waits."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "There is no feature called '%s'."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid ""
+"This model cannot be built:\n"
+"\n"
+"%s"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid ""
+"This server runs several workers, so it cannot reload in place. The\n"
+"            files are written and the package is marked for upgrade; restart the\n"
+"            server and Odoo loads the app on the way up."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid ""
+"This server runs several workers, so it cannot reload in place. The class\n"
+"            is written and the manual definition retired; restart the server and\n"
+"            Odoo loads the class on the way up."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Translatable"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "Two selection options have the same value."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Type"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "Under"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "Under an existing app"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "Unknown model '%s'."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "Values"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "What happens"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "What is written"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid ""
+"What the model carries from the start. Each tile is a field or two and\n"
+"            the view that shows them; the ones on by default are what most apps want."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "When the linked record is deleted"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "Where the app is reached from."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.js:0
+msgid "Who can use it"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "Workshop Job"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "adopt %s"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "already exists — open it instead, or change the name."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "create %s"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "currency_id"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "draft"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid "fields ·"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid ""
+"for rec in self:\n"
+"    rec.total = rec.price * rec.qty"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "in the same step."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "no users"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "prefix: the model is Python, not a manual record."
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "price, qty"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/adopt_model_flow.xml:0
+msgid "records"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-python
+#: code:addons/app_builder_model/models/builder_app.py:0
+msgid "scaffold %s"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "security/ir.model.access.csv"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "will be added to"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/flows/build_app_flow.xml:0
+msgid "x_"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "— fixed once the field exists"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "— not stored, so it cannot be searched or grouped"
+msgstr ""
+
+#. module: app_builder_model
+#. odoo-javascript
+#: code:addons/app_builder_model/static/src/field_popover.xml:0
+msgid "− Computed value"
+msgstr ""

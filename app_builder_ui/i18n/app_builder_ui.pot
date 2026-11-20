@@ -1,0 +1,556 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* app_builder_ui
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-20 11:29+0000\n"
+"PO-Revision-Date: 2026-11-20 11:29+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "%(model)s has no source the builder can read: %(why)s"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "%(n)s %(unit)s %(when)s"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "%(what)s %(template)s"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "%(what)s: %(field)s"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "%s (copy)"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid ""
+"%s is managed as data records here, so there is no class to put a method on."
+" Graduate the model first."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid ""
+"%s is read-only, which is what a production checkout should be. Promote the "
+"code where you build, and ship it through git."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_menu_surface.py:0
+msgid "A menu cannot go under itself."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_security_surface.py:0
+msgid ""
+"A record rule is a condition on the records, per group. Rules you create "
+"here are written into your builder package's security files, so they ship "
+"with the rest of your customisation."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid ""
+"A rule is a condition on the records, per group. Rules you add are written "
+"to security/<model>_security.xml."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation.py:0
+msgid ""
+"A webhook gives you a URL. Anything that can send it a POST can create or "
+"update records here."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid ""
+"A webhook gives you a URL. Anything that can send it a POST can create or "
+"update records of this model."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_security_surface.py:0
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Access Control"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_ir_actions_act_window
+msgid "Action Window"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid ""
+"An app is a root menu with an icon; a submenu opens a model's views. Both "
+"are written to views/menus.xml."
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_base_automation
+msgid "Automation Rule"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation.py:0
+#: code:addons/app_builder_ui/static/src/automations_menu_item.xml:0
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Automations"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/automations_menu_item.js:0
+msgid "Builder"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_builder_security_surface
+msgid "Builder Access Control"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_builder_automation_step
+msgid "Builder Automation Step Surface"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_builder_automation
+msgid "Builder Automations"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_builder_menu
+msgid "Builder Menu Surface"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model.fields,field_description:app_builder_ui.field_base_automation__builder_package_id
+#: model:ir.model.fields,field_description:app_builder_ui.field_ir_actions_act_window__builder_package_id
+#: model:ir.model.fields,field_description:app_builder_ui.field_ir_actions_report__builder_package_id
+#: model:ir.model.fields,field_description:app_builder_ui.field_ir_actions_server__builder_package_id
+#: model:ir.model.fields,field_description:app_builder_ui.field_ir_model_access__builder_package_id
+#: model:ir.model.fields,field_description:app_builder_ui.field_ir_rule__builder_package_id
+#: model:ir.model.fields,field_description:app_builder_ui.field_ir_ui_menu__builder_package_id
+msgid "Builder Package"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_builder_serializer_base_automation
+msgid "Builder Serializer for base.automation"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_builder_workspace
+msgid "Builder Workspace"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_builder_graduate_code
+msgid "Builder: Promote Automation Code to Source"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_menu_surface.py:0
+msgid "Choose a package to record this in first."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_security_surface.py:0
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Decide which records each group sees"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid ""
+"Defined by %s. Shown here so you can see what runs; a copy in your package "
+"starts switched off, and the original keeps running until you switch it off "
+"in its own module."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_menu_surface.py:0
+msgid ""
+"Defined by %s. Shown here so you can see where yours sit; edit it in that "
+"module."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_security_surface.py:0
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Filter Rules"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "Graduate to a method"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation.py:0
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Let another system drive this database"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation.py:0
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Make something happen on its own"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+#: model:ir.model,name:app_builder_ui.model_ir_ui_menu
+msgid "Menu"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_ir_model_access
+msgid "Model Access"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Move down"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Move up"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Nobody but the administrator can see this model"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Nothing in the apps menu yet"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid ""
+"One line per group. Lines you add are written to "
+"security/ir.model.access.csv."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_security_surface.py:0
+msgid ""
+"One line per group. Lines you create here are written into your builder "
+"package's access file, so they ship with the rest of your customisation."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "Only an Execute Code action has code to promote."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_menu_surface.py:0
+msgid "Opens %(model)s · %(views)s"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_menu_surface.py:0
+msgid "Opens %s"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_menu_surface.py:0
+msgid "Opens nothing: a folder for the menus under it."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "POST to %s"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid ""
+"Pick what to watch for and what to do about it. Rules you add are written to"
+" data/<model>_automation.xml and ship with the package."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation.py:0
+msgid ""
+"Pick what to watch for and what to do about it. Rules you create here are "
+"written into your builder package, so they ship with the rest of your "
+"customisation."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "Promoted from the automation %s."
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_ir_rule
+msgid "Record Rule"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_ir_actions_report
+msgid "Report Action"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "Rotate secret"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "Say which date the delay counts from (Counting from)."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_menu_surface.py:0
+msgid "Say which menu the submenu goes under."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_menu_surface.py:0
+msgid "Say which model the menu opens."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_security_surface.py:0
+msgid "Say who may read, write, create and delete"
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model,name:app_builder_ui.model_ir_actions_server
+msgid "Server Action"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "Steps belong to an automation; say which."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "That action no longer exists."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "That automation no longer exists."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "The action does not say which model it runs on."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "The automation needs something to do."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid ""
+"The old URL stops working the moment the secret is rotated. Neither is "
+"written to source."
+msgstr ""
+
+#. module: app_builder_ui
+#: model:ir.model.fields,help:app_builder_ui.field_base_automation__builder_package_id
+#: model:ir.model.fields,help:app_builder_ui.field_ir_actions_act_window__builder_package_id
+#: model:ir.model.fields,help:app_builder_ui.field_ir_actions_report__builder_package_id
+#: model:ir.model.fields,help:app_builder_ui.field_ir_actions_server__builder_package_id
+#: model:ir.model.fields,help:app_builder_ui.field_ir_model_access__builder_package_id
+#: model:ir.model.fields,help:app_builder_ui.field_ir_rule__builder_package_id
+#: model:ir.model.fields,help:app_builder_ui.field_ir_ui_menu__builder_package_id
+msgid "The package whose source files this record is written into."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid ""
+"The value this trigger waits for is set from Advanced: it points at a record"
+" of another model."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "Then"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "There is no code here to promote."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "There is no template called '%s'."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "This action already calls a method in your source."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid ""
+"This action does not belong to a builder package, so there is no source tree"
+" to write the method into."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "This code does not parse, so it cannot be moved: %s"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid ""
+"This code reads '%s', which only exists while a webhook request is being "
+"served. A method has no such thing to read."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid ""
+"This code uses %s, which the action gets from its evaluation context and a "
+"method has no equivalent for. Rewrite it without them, or keep it as an "
+"action."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation.py:0
+#: code:addons/app_builder_ui/models/builder_security_surface.py:0
+msgid "Unknown model '%s'."
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "Webhook"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-javascript
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation.py:0
+#: code:addons/app_builder_ui/static/src/console_items.js:0
+msgid "Webhooks"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "only when %s"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "promote %s to source"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_automation_surface.py:0
+msgid "step"
+msgstr ""
+
+#. module: app_builder_ui
+#. odoo-python
+#: code:addons/app_builder_ui/models/builder_graduate_code.py:0
+msgid "the file is missing"
+msgstr ""

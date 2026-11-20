@@ -22,6 +22,15 @@ Installing this module pulls in the whole suite:
 - `app_builder_model` — model and field builder
 - `app_builder_view` — view editor
 - `app_builder_ui` — menus, actions, access rules and automations
+- `app_builder_report` — PDF reports
+
+`app_builder_mail`, `app_builder_approval` and `app_builder_approval_formula` install
+themselves when the module they bridge (`mail`, `base_tier_validation`,
+`base_tier_validation_formula`) is also installed.
+
+Beta, for Odoo 18.0 only, and meant for a single-process development database with a
+writable addons path: see "Scope and limits" in the
+[repository README](../README.md#scope-and-limits).
 
 ## Credits
 
