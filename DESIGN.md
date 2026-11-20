@@ -853,12 +853,20 @@ views + action + menu from one record), `odoo-pim/attribute_set` (dynamic fields
 
 ## Verification
 
+The supported series is Odoo 18.0 (OCB), and that is the only one the suite runs on.
+Everything below is run from the Nix dev shell (`direnv allow`, or
+`nix develop --no-pure-eval`), which also compiles the TypeScript the tours and hoot
+tests load.
+
 ```sh
-# unit suite
-python odoo/odoo-bin -c odoo.conf -d builder_test -i app_builder \
-  --test-enable \
-  --test-tags /app_builder_base,/app_builder_model,/app_builder_view,/app_builder_ui,/app_builder_report \
-  --stop-after-init
+# what CI runs: every installable addon (the approval addons included) on a fresh
+# database -- Python tests, tours, hoot tests -- then checklog and coverage
+odoo-nix gate test
+
+# one addon, or several comma-separated, while working
+odoo test app_builder_view
+odoo test app_builder_approval,app_builder_approval_formula
+
 # hoot unit tests, in a browser: /web/tests?filter=%22%40app_builder_view%2F%22
 
 # the paths a TransactionCase cannot reach: install, upgrade, reload
@@ -927,7 +935,7 @@ And for the console, on a dev DB, in order:
 8.  Save again with nothing changed -> zero diff; `test_canvas_is_pure` holds against
     the same views
 9.  Point at a read-only checkout -> the console opens read-only, no traceback
-10. Repeat 1–4 against the 19.0 checkout with only `compat.js` differences (see
+10. Repeat 1–4 against the 19.0 checkout with only `compat.ts` differences (see
     `FORWARD_COMPAT.md`; not yet run on a 19 server)
 
 Steps 1–6 are driven by the tours in `app_builder_view/tests/test_console_tour.py` and
