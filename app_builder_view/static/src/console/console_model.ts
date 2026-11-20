@@ -1963,6 +1963,9 @@ export class ConsoleModel implements PaneModel {
         this.packageId,
         kind,
         values,
+        // Checked server-side before the tree is read: a list drawn from
+        // an older arch would place the new node beside a moved one.
+        this.archVersion,
       ])
     );
   }
@@ -1977,6 +1980,7 @@ export class ConsoleModel implements PaneModel {
         this.packageId,
         kind,
         name,
+        this.archVersion,
       ])
     );
   }
