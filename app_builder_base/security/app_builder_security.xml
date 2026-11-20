@@ -5,7 +5,7 @@
         <field name="category_id" ref="base.module_category_hidden" />
         <field
             name="comment"
-        >Can build models, fields and views through the builder.</field>
+        >Can read what the builder knows: the metadata of every model, view, access rule and automation, and the files of every package. Not a low-privilege role. See SECURITY.md.</field>
     </record>
 
     <record id="group_builder_manager" model="res.groups">
@@ -14,9 +14,13 @@
         <field name="implied_ids" eval="[(4, ref('group_builder_user'))]" />
         <field
             name="comment"
-        >Can additionally write packages to disk and reload modules.</field>
+        >Can additionally write packages to disk and reload modules, where the server has been started with APP_BUILDER_ENABLE_WRITE. That is arbitrary code execution as the Odoo process: treat this group as shell access. See SECURITY.md.</field>
     </record>
 
+    <!-- Settings administrators are Builder Administrators. Both groups are
+         in the hidden category, so this is the only way in; what keeps it
+         from being a way to run code on every server the addon is installed
+         on is the switch outside the database (builder_security.py). -->
     <record id="base.group_system" model="res.groups">
         <field name="implied_ids" eval="[(4, ref('group_builder_manager'))]" />
     </record>

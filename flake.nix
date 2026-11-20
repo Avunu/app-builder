@@ -77,6 +77,12 @@
               ];
             };
 
+            # The builder writes source code only where the server's operator
+            # has said so, outside the database (SECURITY.md). A development
+            # shell is exactly that place: `odoo` started from it, and the
+            # test gate, both build packages.
+            devenv.shells.default.env.APP_BUILDER_ENABLE_WRITE = "1";
+
             # The addons' .js is compiled, not committed, so a fresh clone and
             # `odoo-nix gate test` both need it built before Odoo serves a page:
             # without it the console's bundle is empty. odoo-nix installs on

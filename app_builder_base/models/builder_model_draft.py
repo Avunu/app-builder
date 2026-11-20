@@ -356,6 +356,7 @@ class BuilderModelDraft(models.TransientModel):
     # name over RPC); flagged, not fixed.
     def load(self) -> DraftPayloadJSON:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Everything the console needs of the draft, in one round trip."""
+        typed.security(self)._assert_builder_user()
         self.ensure_one()
         spec = self._spec()
         placement = self._placement()
@@ -615,6 +616,7 @@ class BuilderModelDraft(models.TransientModel):
         points back, or have one made -- and if neither is possible, say why
         in the same breath rather than failing on Apply.
         """
+        typed.security(self)._assert_builder_user()
         self.ensure_one()
         out: InverseOptionsJSON = {
             "candidates": [],
@@ -865,6 +867,7 @@ class BuilderModelDraft(models.TransientModel):
 
     def stage_feature(self, key: str) -> list[str]:
         """Remember that ``key`` was added; its fields are staged separately."""
+        typed.security(self)._assert_builder_manager()
         self.ensure_one()
         keys = self._features()
         if key not in keys:
@@ -892,6 +895,7 @@ class BuilderModelDraft(models.TransientModel):
         about to change workshop.task" is exactly the thing a user would be
         annoyed to discover only in the diff.
         """
+        typed.security(self)._assert_builder_user()
         self.ensure_one()
         out = self._own_changes()
         for companion in cast("BuilderModelDraft", self.companion_ids):
@@ -958,6 +962,7 @@ class BuilderModelDraft(models.TransientModel):
     @api.model
     def field_types(self, spec_json: str | None = None) -> list[FieldTypeJSON]:
         """The picker's contents, for the current draft state."""
+        typed.security(self)._assert_builder_user()
         spec = (
             modelspec.spec_from_json(json.loads(spec_json))
             if spec_json
@@ -967,12 +972,14 @@ class BuilderModelDraft(models.TransientModel):
 
     def preview_source(self) -> str:
         """The block exactly as Apply would write it."""
+        typed.security(self)._assert_builder_user()
         self.ensure_one()
         return pycodegen.render_block(self._spec())
 
     def preview_diff(self) -> str:
         """A unified diff of every block Apply will write, so it is never a
         leap of faith -- including the one on the other model."""
+        typed.security(self)._assert_builder_user()
         self.ensure_one()
         chunks: list[str] = []
         for draft in self | self.companion_ids:
@@ -999,6 +1006,7 @@ class BuilderModelDraft(models.TransientModel):
         problem on the other model is a problem with *this* Apply, and finding
         it afterwards would mean finding it during a rollback.
         """
+        typed.security(self)._assert_builder_user()
         self.ensure_one()
         known = set(
             cast(
@@ -1265,6 +1273,7 @@ class BuilderModelDraft(models.TransientModel):
         return view
 
     def action_discard(self) -> Literal[True]:
+        typed.security(self)._assert_builder_manager()
         self.ensure_one()
         self.spec_json = self.base_spec_json
         self.placement_json = "{}"

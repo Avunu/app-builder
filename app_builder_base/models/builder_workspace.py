@@ -143,6 +143,7 @@ class PackageJSON(TypedDict):
     version: str
     root_path: str
     writable: bool
+    read_only_reason: str
     reload_mode: str
     state: str
     drift_count: int
@@ -507,6 +508,10 @@ class BuilderWorkspace(models.AbstractModel):
         health: list[str] = []
         if not package.writable:
             health.append("read_only")
+        if not typed.security(self)._builder_write_enabled():
+            # Beside `read_only`, not instead of it: a console that only
+            # knows the older flag still says the right thing.
+            health.append("write_disabled")
         if package.state == "missing":
             health.append("missing")
         if module_state != "installed":
@@ -536,6 +541,7 @@ class BuilderWorkspace(models.AbstractModel):
             "version": cast("str", package.version),
             "root_path": package.root_path or "",
             "writable": package.writable,
+            "read_only_reason": self._read_only_reason(package),
             "reload_mode": cast("str", package.reload_mode),
             "state": cast("str", package.state),
             "drift_count": drift_count,
@@ -556,6 +562,25 @@ class BuilderWorkspace(models.AbstractModel):
         }
 
     @api.model
+    def _read_only_reason(self, package: BuilderPackage) -> str:
+        """Why this package cannot be written, in a sentence; ``""`` if it can.
+
+        Two different causes look the same from the console -- a server
+        that has not opted in to writing code, and a directory the process
+        cannot write -- and they are fixed by different people.
+        """
+        disabled = typed.security(self)._builder_write_disabled_reason()
+        if disabled:
+            return disabled
+        if package.writable:
+            return ""
+        return _(
+            "The package directory cannot be written to. This is normal on "
+            "a production deployment: build packages in a development "
+            "environment and ship them through git."
+        )
+
+    @api.model
     def addons_dirs(self) -> list[AddonsDirJSON]:
         """Where a package may be created: the addons path, as it is.
 
@@ -571,6 +596,7 @@ class BuilderWorkspace(models.AbstractModel):
 
         core_root = os.path.dirname(os.path.dirname(os.path.abspath(odoo.__file__)))
         Package = typed.model(self.env, BuilderPackage)
+        enabled = typed.security(self)._builder_write_enabled()
         out: list[AddonsDirJSON] = []
         for path in odoo.addons.__path__:
             real = os.path.realpath(path)
@@ -583,7 +609,8 @@ class BuilderWorkspace(models.AbstractModel):
             out.append(
                 {
                     "path": real,
-                    "writable": kind != "core"
+                    "writable": enabled
+                    and kind != "core"
                     and os.path.isdir(real)
                     and Package._can_write_to(real),
                     "kind": kind,
@@ -1031,13 +1058,40 @@ class BuilderWorkspace(models.AbstractModel):
         return out
 
     @api.model
+    def _confined_path(self, package: BuilderPackage, path: str) -> str:
+        """``path`` as a path relative to the package root, or a refusal.
+
+        The diff methods are read-tier and take ``path`` from the caller.
+        ``os.path.join`` drops everything before an absolute component and
+        passes ``..`` through, so an unchecked path reads any file the Odoo
+        process can -- ``odoo.conf`` and its ``admin_passwd`` included.
+        Resolved with ``realpath`` on both sides, so a symlink inside the
+        package that points outside it is refused as well.
+        """
+        root = os.path.realpath(package.root_path or "")
+        if (
+            not package.root_path
+            or not isinstance(path, str)  # pyright: ignore[reportUnnecessaryIsInstance] -- RPC input
+            or not path
+            or "\x00" in path
+        ):
+            raise UserError(_("That is not a file of this package."))
+        full = os.path.realpath(os.path.join(root, path))
+        if not full.startswith(root + os.sep):
+            raise UserError(_("That is not a file of this package."))
+        return os.path.relpath(full, root)
+
+    @api.model
     def git_diff(self, package_id: int, path: str | None = None) -> DiffResultJSON:
         typed.security(self)._assert_builder_user()
         package = self._package(package_id)
+        if path:
+            path = self._confined_path(package, path)
         if not package.is_git:
             return {"diff": "", "truncated": False}
-        paths = [os.path.join(cast("str", package.root_path), path)] if path else None
-        diff = gitrepo.diff(cast("str", package.root_path), paths)
+        # Relative to the package root, which is git's working directory
+        # for this call: the pathspec cannot name anything above it.
+        diff = gitrepo.diff(cast("str", package.root_path), [path] if path else None)
         return {"diff": diff[:DIFF_LIMIT], "truncated": len(diff) > DIFF_LIMIT}
 
     @api.model
@@ -1045,6 +1099,7 @@ class BuilderWorkspace(models.AbstractModel):
         """What the database would write against what is on disk."""
         typed.security(self)._assert_builder_user()
         package = self._package(package_id)
+        path = self._confined_path(package, path)
         generated = package._render_files().get(path)
         on_disk = package._read_source(path)
         return {"diff": self._unified(generated, on_disk, path, "generated", "on disk")}
@@ -1186,8 +1241,12 @@ class BuilderWorkspace(models.AbstractModel):
         )[:1]
         if not entry:
             raise UserError(_("%s was not part of that apply.", path))
+        package = cast("BuilderPackage", apply.package_id)
+        # The row's own path is trusted no further than the caller's: a
+        # manager can write `builder.package.apply.file` rows directly.
+        self._confined_path(package, path)
         before = cast("str", entry.content_before) if entry.existed else None
-        after = cast("BuilderPackage", apply.package_id)._read_source(path)
+        after = package._read_source(path)
         return {"diff": self._unified(before, after, path, "before", "now")}
 
     # -- the user ------------------------------------------------------------

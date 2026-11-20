@@ -168,6 +168,7 @@ class BuilderOwnedMixin(models.AbstractModel):
 
     def action_builder_write(self) -> bool:
         """Flush the owning package to disk."""
+        typed.security(self.env["builder.security.mixin"])._assert_builder_manager()
         for package in cast("BuilderPackage", self.mapped("builder_package_id")):
             package.action_write_files()
         return True
