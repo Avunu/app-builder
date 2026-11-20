@@ -1,7 +1,7 @@
 {
     "name": "App Builder: View Editor",
     "summary": "Edit views visually; every change becomes an inheriting view in source",
-    "version": "18.0.1.2.0",
+    "version": "18.0.2.0.0",
     "category": "Technical",
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",
