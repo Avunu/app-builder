@@ -470,17 +470,57 @@ class TestOwnedViewWithForeignExtension(BuilderCase):
             [],
         )
 
-    def test_a_positional_locator_past_the_foreign_tab_is_refused(self):
-        """Our tab is page[2] in the combined arch and page[1] in ours: the
-        minted path finds nothing in the primary arch, and the refusal says
-        so rather than blaming a node that was never found."""
-        self._refused({"kind": "page", "index": 1}, "does not locate anything")
+    def test_our_tab_past_the_foreign_one_is_found_by_what_it_holds(self):
+        """Our tab is page[2] in the combined arch and page[1] in ours, so a
+        positional path would miss it. It is located by the field it holds
+        instead, which means the same page in both trees -- and the edit
+        lands in it."""
+        self.editor.add_field_at(
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            {"kind": "page", "index": 1},
+            "x_budget",
+            position="inside",
+        )
+        self.view.invalidate_recordset()
+        root = etree.fromstring(cast("str", self.view.arch).encode())
+        self.assertEqual(
+            [f.get("name") for f in root.find(".//page").findall("field")],
+            ["x_stage", "x_budget"],
+        )
 
     def test_the_foreign_tab_itself_is_refused_rather_than_editing_ours(self):
-        """page[1] in the combined arch is theirs; in ours it is Notes. The
-        path resolves, to the wrong node -- which is the case that would have
-        edited silently."""
-        self._refused({"kind": "page", "index": 0}, "another module's extension")
+        """page[1] in the combined arch is theirs; in ours it is Notes. A
+        positional path would resolve, to the wrong node -- the case that
+        would have edited silently. Located by the field it holds, their tab
+        is simply not in our arch, and the refusal says so."""
+        self._refused({"kind": "page", "index": 0}, "does not locate anything")
+
+    def test_a_raw_positional_path_onto_our_tab_is_refused(self):
+        """A caller that brings its own positional locator, and says what it
+        saw there, is still checked: page[1] is their tab in the combined
+        arch and ours in the primary one."""
+        combined = etree.fromstring(self.view.get_combined_arch().encode())
+        theirs = combined.find(".//page")
+        before = self.view.arch
+        try:
+            self.editor.apply_operation(
+                cast("int", self.view.id),
+                cast("int", self.package.id),
+                {
+                    "type": "add_field",
+                    "name": "x_budget",
+                    "xpath": "/form/sheet/notebook/page[1]",
+                    "position": "inside",
+                    "_expect": self.editor._expectation_for(theirs),
+                },
+            )
+        except UserError as caught:
+            self.assertIn("another module's extension", str(caught))
+        else:
+            self.fail("the positional locator has to be refused on the owned path")
+        self.view.invalidate_recordset()
+        self.assertEqual(self.view.arch, before)
 
     def test_a_named_locator_still_edits_in_place(self):
         self.editor.add_field_at(
@@ -587,16 +627,23 @@ class TestOwnedContainersWithoutNames(BuilderCase):
 
     def test_a_shifted_locator_onto_a_look_alike_sibling_is_refused(self):
         """The group holding x_name is group[2] in the combined arch and
-        group[1] in ours, so the minted path lands on the group holding
+        group[1] in ours, so a positional path lands on the group holding
         x_budget: same tag, no name, no label on either. The named children
         are what give it away."""
+        combined = etree.fromstring(self.view.get_combined_arch().encode())
+        pointed_at = combined.findall(".//group")[1]
+        self.assertEqual(pointed_at[0].get("name"), "x_name", "fixture")
         try:
-            self.editor.add_field_at(
+            self.editor.apply_operation(
                 cast("int", self.view.id),
                 cast("int", self.package.id),
-                {"kind": "group", "index": 1},
-                "x_active_flag",
-                position="inside",
+                {
+                    "type": "add_field",
+                    "name": "x_active_flag",
+                    "xpath": "/form/sheet/group[2]",
+                    "position": "inside",
+                    "_expect": self.editor._expectation_for(pointed_at),
+                },
             )
         except UserError as caught:
             self.assertIn("another module's extension", str(caught))
@@ -604,6 +651,24 @@ class TestOwnedContainersWithoutNames(BuilderCase):
             self.fail("the shifted locator has to be refused")
         self.view.invalidate_recordset()
         self.assertEqual(self.view.arch, self.before, "the wrong group was not edited")
+
+    def test_a_bare_group_is_located_by_the_field_it_holds(self):
+        """The same gesture through the descriptor: the locator minted for
+        an unnamed group names a field in it, so it finds the group holding
+        x_name in our arch although every index is off by one."""
+        self.editor.add_field_at(
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            {"kind": "group", "index": 1},
+            "x_active_flag",
+            position="inside",
+        )
+        self.view.invalidate_recordset()
+        root = etree.fromstring(cast("str", self.view.arch).encode())
+        self.assertEqual(
+            [f.get("name") for f in root.find(".//group").findall("field")],
+            ["x_name", "x_active_flag"],
+        )
 
     def test_a_page_whose_label_a_foreign_module_overrides_is_still_ours(self):
         """The combined arch says "Their Notes" and ours says "Notes"; the

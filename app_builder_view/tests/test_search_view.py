@@ -25,6 +25,7 @@ from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.exceptions import BuilderStaleView
 from odoo.addons.base.models.ir_ui_view import View
 
 from ..models.builder_view_editor import BuilderViewEditor
@@ -151,6 +152,130 @@ class TestSearchView(BuilderCase):
             [g["name"] for g in elements["group_bys"]], ["group_by_x_user_id"]
         )
         self.assertNotIn("group_by_x_user_id", [f["name"] for f in elements["filters"]])
+
+    # -- names, and the version ----------------------------------------------
+
+    def _names(self):
+        return [f.get("name") for f in self._arch().iter("filter")]
+
+    def test_the_same_filter_is_not_added_twice(self):
+        """Two filters with one name are one filter to everything that looks
+        them up by it -- removal, a ``search_default_`` key."""
+        values: dict[str, object] = {"field": "x_user_id", "condition": "not_set"}
+        self.editor.add_search_element(
+            cast("int", self.view.id), cast("int", self.package.id), "filter", values
+        )
+        with raises(self, UserError):
+            self.editor.add_search_element(
+                cast("int", self.view.id),
+                cast("int", self.package.id),
+                "filter",
+                values,
+            )
+        self.assertEqual(self._names().count("filter_x_user_id_not_set"), 1)
+
+    def test_the_same_group_by_is_not_added_twice(self):
+        for turn in range(2):
+            try:
+                self.editor.add_search_element(
+                    cast("int", self.view.id),
+                    cast("int", self.package.id),
+                    "group_by",
+                    {"field": "x_user_id"},
+                )
+            except UserError as caught:
+                self.assertEqual(turn, 1)
+                self.assertIn("already groups by", str(caught))
+        self.assertEqual(self._names().count("group_by_x_user_id"), 1)
+
+    def test_a_name_that_is_taken_by_another_filter_is_made_unique(self):
+        """``group_by_<field>`` is also what core calls its own. A filter
+        that already answers to the generated name and means something else
+        must not get a namesake."""
+        self.view.arch = SEARCH_ARCH.replace(
+            "</search>",
+            """<filter name="group_by_x_user_id" string="Unassigned"
+                       domain="[('x_user_id', '=', False)]"/></search>""",
+        )
+        self.editor.add_search_element(
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            "group_by",
+            {"field": "x_user_id"},
+        )
+        names = self._names()
+        self.assertEqual(len(names), len(set(names)), "every filter has its own name")
+        added = self._arch().find(".//filter[@name='group_by_x_user_id_2']")
+        self.assertEqual(added.get("context"), "{'group_by': 'x_user_id'}")
+        # ...and each is removed by its own name.
+        self.editor.remove_search_element(
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            "group_by",
+            "group_by_x_user_id_2",
+        )
+        self.assertEqual(self._names(), ["mine", "group_by_x_user_id"])
+
+    def test_a_built_filter_with_a_taken_name_is_made_unique(self):
+        for value in ("a", "b"):
+            self.editor.add_search_element(
+                cast("int", self.view.id),
+                cast("int", self.package.id),
+                "filter",
+                {
+                    "condition": "built",
+                    "string": "By name",
+                    "rows": [{"field": "x_name", "operator": "=", "value": value}],
+                },
+            )
+        self.assertEqual(self._names(), ["mine", "filter_by_name", "filter_by_name_2"])
+
+    def test_a_search_edit_against_a_stale_version_is_refused(self):
+        """The search lists were the one family of mutators with no version
+        claim to check."""
+        before = self.view.get_combined_arch()
+        for call in (
+            lambda: self.editor.add_search_element(
+                cast("int", self.view.id),
+                cast("int", self.package.id),
+                "filter",
+                {"field": "x_user_id", "condition": "set"},
+                expected_arch_version="not-what-the-server-has",
+            ),
+            lambda: self.editor.remove_search_element(
+                cast("int", self.view.id),
+                cast("int", self.package.id),
+                "filter",
+                "mine",
+                expected_arch_version="not-what-the-server-has",
+            ),
+        ):
+            try:
+                call()
+            except BuilderStaleView:  # pylint: disable=except-pass
+                pass
+            else:
+                self.fail("a stale version has to be refused")
+        self.view.invalidate_recordset()
+        self.assertEqual(self.view.get_combined_arch(), before)
+
+    def test_a_search_edit_with_the_current_version_goes_through(self):
+        version = self.editor.arch_version(cast("int", self.view.id))
+        result = self.editor.add_search_element(
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            "filter",
+            {"field": "x_user_id", "condition": "set"},
+            expected_arch_version=version,
+        )
+        self.editor.remove_search_element(
+            cast("int", self.view.id),
+            cast("int", self.package.id),
+            "filter",
+            "mine",
+            expected_arch_version=result["arch_version"],
+        )
+        self.assertEqual(self._names(), ["filter_x_user_id_set"])
 
     # -- removing ----------------------------------------------------------
 

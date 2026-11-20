@@ -16,8 +16,11 @@ a generated form plus a pile of xpaths against it in the same addon.
 
 from __future__ import annotations
 
+import ast
+import collections
 import hashlib
 import logging
+import re
 import secrets
 from collections import Counter
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias, TypedDict, cast
@@ -93,9 +96,24 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-# Core loads views ordered by priority; 99 keeps builder edits last so they win
-# over other extensions without replacing them.
+# Core applies inheriting views ordered by (priority, id). 99 puts a builder
+# extension after the ordinary ones (priority 16) so its edits win over them
+# without replacing them -- but "after" is all it is. A view with a higher
+# priority, another package's own priority-99 extension created later, and --
+# when the edited view is itself an extension -- every sibling ordered after
+# it (core's pre-order walk) are all applied *after* this one: they are in
+# the combined arch a locator is minted from and not in the tree this
+# extension's specs are evaluated on. `_tree_at` builds that second tree and
+# `_assert_extension_locators` checks every locator against it, rather than
+# assuming 99 is last.
 BUILDER_PRIORITY = 99
+
+# What an attribute name may be: an XML name, as lxml would accept it. Checked
+# before the handler runs so a bad key is a sentence, not a `ValueError`.
+ATTRIBUTE_NAME_RE = re.compile(r"^[A-Za-z_][\w.\-]*(:[A-Za-z_][\w.\-]*)?$")
+
+# The operations that name the thing they add, and cannot do without it.
+NAME_REQUIRED = ("add_filter", "add_button")
 
 VALID_POSITIONS = ("after", "before", "inside", "replace", "attributes")
 
@@ -670,7 +688,7 @@ class BuilderViewEditor(models.AbstractModel):
 
     @api.model
     def _parse_data(self, view: View) -> LxmlElement:
-        root = xml_writer.parse_arch(cast("str", view.arch))
+        root = xml_writer.parse_arch(self._neutral_arch(view))
         if root.tag != "data":
             # A hand-written extension may use a bare xpath as its root; wrap it
             # so we always have somewhere to append.
@@ -680,13 +698,158 @@ class BuilderViewEditor(models.AbstractModel):
         return root
 
     @api.model
-    def _find_xpath(
-        self, root: LxmlElement, expr: str, position: str
-    ) -> LxmlElement | None:
-        for node in root.findall("xpath"):
-            if node.get("expr") == expr and node.get("position") == position:
-                return node
+    def _specs(self, root: LxmlElement) -> list[LxmlElement]:
+        """The specs of an extension, in the order core applies them."""
+        return [child for child in root if isinstance(child.tag, str)]
+
+    @api.model
+    def _mergeable_attributes(self, root: LxmlElement, expr: str) -> LxmlElement | None:
+        """The ``position="attributes"`` block a new attribute edit for
+        ``expr`` may be folded into, or ``None``.
+
+        A spec means what it means *where it sits*: each one is evaluated on
+        the tree the specs before it left behind. So an earlier block with
+        the same ``expr`` is only the same node while nothing between it and
+        the end of the spec has moved the ground -- an insertion above a
+        positional path, the removal and re-adding of a named node. Matching
+        on the string alone put the attribute on whatever the path named
+        back then.
+
+        Hence: walking back from the end, through attribute blocks only.
+        Those change no structure, with one exception -- a block that
+        rewrites an identifying attribute changes what a ``[@name=...]``
+        locator finds, and ends the walk like anything structural does.
+        """
+        for spec in reversed(self._specs(root)):
+            if spec.tag != "xpath" or spec.get("position") != "attributes":
+                return None
+            if spec.get("expr") == expr:
+                return spec
+            if any(
+                attribute.get("name") in IDENTIFYING_ATTRS
+                for attribute in spec.findall("attribute")
+            ):
+                return None
         return None
+
+    @api.model
+    def _named_locators(self, node: LxmlElement) -> set[str]:
+        """Every ``//tag[@attr='value']`` that ``_locator_for`` could have
+        minted for ``node``."""
+        locators: set[str] = set()
+        for attr in IDENTIFYING_ATTRS:
+            literal = self._xpath_literal(node.get(attr))
+            if literal:
+                locators.add("//%s[@%s=%s]" % (node.tag, attr, literal))
+        return locators
+
+    @api.model
+    def _retract_last_insert(
+        self, root: LxmlElement, exprs: list[str], tree: LxmlElement | None = None
+    ) -> bool:
+        """Take back what the last spec added, instead of removing it again.
+
+        Removing a node this same extension inserted does not need a
+        ``replace``: the insertion can simply not happen. That is what a
+        developer would write, and it keeps a label switched on and off
+        four times from leaving four specs behind.
+
+        Only the *last* spec is ever touched. Nothing is evaluated after it,
+        so taking a child out of it cannot change what any other spec finds;
+        an earlier insertion may have later specs standing on it and is left
+        alone, with a ``replace`` appended as before. Every locator in
+        ``exprs`` has to name a direct child of that spec, by the identity
+        ``_locator_for`` mints -- all of them or none.
+
+        And each locator has to name exactly one node in ``tree``, the view
+        the removal would be evaluated on. ``apply_operation`` takes raw
+        xpaths: a ``//field[@name='z']`` that also matches an earlier ``z``
+        would, under core's first-match rule, remove that earlier one, not
+        the one the last spec inserted. Without a tree to ask, nothing is
+        retracted.
+        """
+        specs = self._specs(root)
+        if not specs or tree is None:
+            return False
+        for expr in exprs:
+            found = self._resolve_xpath(tree, expr)
+            if not found or len(found) != 1:
+                return False
+        last = specs[-1]
+        if last.tag != "xpath" or last.get("position") not in INSERT_POSITIONS:
+            return False
+        doomed: list[LxmlElement] = []
+        for expr in exprs:
+            matches = [
+                child
+                for child in self._specs(last)
+                if child.tag != "xpath" and expr in self._named_locators(child)
+            ]
+            if len(matches) != 1:
+                return False
+            doomed.append(matches[0])
+        for child in doomed:
+            last.remove(child)
+        if not self._specs(last):
+            root.remove(last)
+        return True
+
+    @api.model
+    def _holds_field(
+        self,
+        tree: LxmlElement,
+        expr: str,
+        position: str,
+        name: str,
+    ) -> LxmlElement | None:
+        """Whether ``name`` already stands exactly where an add would put it.
+
+        Asked of the tree the spec is about to be applied to -- never of the
+        spec, which remembers every field this extension ever added,
+        including the ones it has since removed. "Exactly where" is the
+        place the insertion would produce: the anchor's last child for
+        ``inside``, its neighbour for a sibling -- past the ``<label for>``
+        an add may have put in front of the field. That is the replayed
+        request this guards against. The same field anywhere else in the
+        view is the caller's business: core views do repeat one.
+
+        Answers the field found there, or ``None``.
+        """
+        found = self._resolve_xpath(tree, expr)
+        if not found:
+            return None
+        anchor = found[0]
+        if position == "inside":
+            children = self._specs(anchor)
+            neighbour = children[-1] if children else None
+        elif position == "before":
+            neighbour = self._element_beside(anchor, forward=False)
+        else:
+            neighbour = self._element_beside(anchor, forward=True)
+            if (
+                neighbour is not None
+                and neighbour.tag == "label"
+                and neighbour.get("for") == name
+            ):
+                neighbour = self._element_beside(neighbour, forward=True)
+        if (
+            neighbour is not None
+            and neighbour.tag == "field"
+            and neighbour.get("name") == name
+        ):
+            return neighbour
+        return None
+
+    @api.model
+    def _element_beside(self, node: LxmlElement, forward: bool) -> LxmlElement | None:
+        """The next or previous sibling that is an element, past comments."""
+        parent = node.getparent()
+        if parent is None:
+            return None
+        siblings = self._specs(parent)
+        index = next(i for i, sibling in enumerate(siblings) if sibling is node)
+        beside = index + 1 if forward else index - 1
+        return siblings[beside] if 0 <= beside < len(siblings) else None
 
     @api.model
     def _write_arch(self, view: View, root: LxmlElement) -> View:
@@ -695,7 +858,8 @@ class BuilderViewEditor(models.AbstractModel):
         xml_writer.indent(root)
         arch = cast("str", etree.tostring(root, encoding="unicode"))
         try:
-            view.write({"arch": arch})
+            # In the source language, like every read of it (`_neutral_arch`).
+            view.with_context(lang=None).write({"arch": arch})
         except ValidationError as err:
             # _check_xml combines the whole inheritance chain and validates the
             # result, so this catches an xpath that matches nothing as well as
@@ -704,6 +868,20 @@ class BuilderViewEditor(models.AbstractModel):
                 _("This change produces an invalid view:\n\n%s", err)
             ) from err
         return view
+
+    @api.model
+    def _neutral_arch(self, view: View) -> str:
+        """``view``'s own arch in the source language, whoever is asking.
+
+        ``arch`` is translated. An edit reads it, changes it and writes it
+        back, and undo writes back what an earlier edit read: done in the
+        acting user's language, a French-speaking builder's edit would store
+        French terms as the ``en_US`` source of the view -- and of the
+        generated file -- and drop the translations that matched the old
+        ones. Every read and write of an arch the editor keeps therefore
+        goes through ``lang=None``, as the version hash already does.
+        """
+        return cast("str", view.with_context(lang=None).arch) or ""
 
     # -- the version a client edits against --------------------------------
 
@@ -833,7 +1011,13 @@ class BuilderViewEditor(models.AbstractModel):
         package = typed.model(self.env, BuilderPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("Choose a builder package to record this change in."))
+        # Server-side, not only as a banner in the console: an edit recorded
+        # against a package whose directory cannot be written leaves a view
+        # under that module's xmlids with no data file behind it, and the
+        # next `-u` of the module reaps it. Refused before anything exists.
+        package._assert_writable()
 
+        operation = self._checked_operation(operation)
         # `getattr` with a non-literal name is `Any` by construction (pyright
         # cannot know which `_op_*` method it names); every real handler
         # takes `(LxmlElement, dict[str, object]) -> LxmlElement`, but that
@@ -845,15 +1029,15 @@ class BuilderViewEditor(models.AbstractModel):
         # Checked once, here, before any write -- including the creation of
         # the extension view below, which would otherwise survive a refusal.
         self._assert_arch_version(base_view, expected_arch_version)
-        operation = dict(operation)
         expectations = {key: operation.pop(key, None) for key in EXPECTATION_KEYS}
         if operation.get("type") == "move_node":
             self._assert_move_is_sane(base_view, operation)
 
+        target = typed.model(self.env, View).browse()
         if self._owns_outright(base_view, package):
             target = base_view
-            created = False
-            primary = xml_writer.parse_arch(cast("str", base_view.arch))
+            source = self._neutral_arch(base_view)
+            primary = xml_writer.parse_arch(source)
             self._assert_owned_locators(
                 primary,
                 operation,
@@ -869,14 +1053,16 @@ class BuilderViewEditor(models.AbstractModel):
                     cast("View", base_view.inherit_children_ids).filtered("active")
                 ),
             )
-            spec = cast("LxmlElement", etree.Element("data"))
-            # A handler dedupes against the spec it is building, which is
-            # enough on the extension path where the spec accumulates every
-            # edit. Here the spec is empty every time, so a handler that cares
-            # about "is this already there" has to be shown the arch it is
-            # about to be merged into.
-            operation["_current_arch"] = base_view.arch
+            spec = self._empty_spec()
+            # The spec is empty every time here, so a handler that cares about
+            # "is this already there" cannot ask the spec. It is shown the
+            # tree the spec is about to be applied to (`_tree`), which is the
+            # only thing that can answer on either path, and the same arch as
+            # a string for the handlers that still read it that way.
+            operation["_current_arch"] = source
+            operation["_tree"] = primary
             handler(spec, operation)
+            changed = bool(len(spec))
             # `apply_inheritance_specs` (`odoo/tools/template_inheritance.py`)
             # is a core function with no annotations of its own; its
             # parameters are untyped, so its inferred return is `Unknown` --
@@ -888,18 +1074,44 @@ class BuilderViewEditor(models.AbstractModel):
                 template_inheritance.apply_inheritance_specs(primary, spec),
             )
         else:
-            existing = self._find_extension(base_view, package)
-            target = existing or self._get_or_create_extension(
+            target = self._find_extension(base_view, package)
+            # The tree this extension's *next* spec will be evaluated on, and
+            # the views core applies after it. Not the combined arch, unless
+            # nothing comes later: see `_tree_at`.
+            tree, later = self._tree_at(base_view, target)
+            if (
+                operation.get("type") == "remove_node"
+                and not later
+                and self._resolve_xpath(tree, cast("str", operation["xpath"])) == []
+            ):
+                # Already gone: a replayed removal. Appending a second
+                # `replace` for a node that is not there would be an invalid
+                # view; changing nothing is what idempotence means.
+                return self._operation_result(base_view, target, operation)
+            self._assert_extension_locators(tree, operation, expectations, later)
+            arch = self._parse_data(target) if target else self._empty_spec()
+            before = cast("bytes", etree.tostring(arch))
+            operation["_tree"] = tree
+            handler(arch, operation)
+            changed = cast("bytes", etree.tostring(arch)) != before
+
+        if not changed:
+            # The handler found the view already says what was asked -- the
+            # same field at the same place, twice. Nothing is written, no
+            # extension is created for it, and no history entry claims an
+            # edit that did not happen.
+            return self._operation_result(base_view, target, operation)
+
+        created = not target
+        if created:
+            target = self._get_or_create_extension(
                 base_view, package, write_files=False
             )
-            created = not existing
-            arch = self._parse_data(target)
-            handler(arch, operation)
-
         # Captured before the write, and including whether the target had to be
         # brought into existence -- undoing an edit that created the patch has
-        # to remove it rather than leave an empty one behind.
-        arch_before = "" if created else cast("str", target.arch)
+        # to remove it rather than leave an empty one behind. In the source
+        # language, like the write: a snapshot is put back by whoever undoes.
+        arch_before = "" if created else self._neutral_arch(target)
         self._write_arch(target, arch)
         typed.model(self.env, BuilderViewEdit).record(
             base_view,
@@ -908,7 +1120,7 @@ class BuilderViewEditor(models.AbstractModel):
             self._describe(operation),
             arch_before,
             created,
-            arch_after=cast("str", target.arch),
+            arch_after=self._neutral_arch(target),
         )
         package.builder_capture(target, write_files=False)
         # A view edit is live the moment the arch is written -- views are data,
@@ -917,13 +1129,25 @@ class BuilderViewEditor(models.AbstractModel):
         # while nothing was wrong, and the next reload from disk would quietly
         # undo the edit. Written once, here, after everything the operation
         # captured, so a failure anywhere above leaves nothing on disk.
-        if write_files and package.writable:
+        if write_files:
             package.action_write_files()
+        return self._operation_result(base_view, target, operation)
+
+    @api.model
+    def _empty_spec(self) -> LxmlElement:
+        return cast("LxmlElement", etree.Element("data"))
+
+    @api.model
+    def _operation_result(
+        self, base_view: View, target: View, operation: dict[str, object]
+    ) -> OperationResultJSON:
+        """What ``apply_operation`` answers, read after whatever was written."""
         # Re-browsed so the combined arch is read after the write, not from
         # what was cached before it. The arch the client renders is in its
         # own language; the version it will edit against is not, or the
         # next call from a colleague in another language would refuse it.
         base_view = typed.model(self.env, View).browse(cast("int", base_view.id))
+        target = target or base_view
         return {
             "view_id": cast("int", target.id),
             "arch": cast("str", target.arch),
@@ -936,6 +1160,215 @@ class BuilderViewEditor(models.AbstractModel):
             # other way to find a node it did not name itself.
             "created_name": cast("str | None", operation.get("_created_name")),
         }
+
+    @api.model
+    def _checked_operation(self, operation: object) -> dict[str, object]:
+        """A copy of ``operation``, refused in a sentence when it is malformed.
+
+        ``apply_operation`` is a public RPC. A missing locator used to reach a
+        handler as a ``KeyError`` and an attribute key that is not an XML
+        name reached lxml as a ``ValueError``; both arrived in the console
+        as a traceback. Nothing was corrupted -- the transaction rolls back
+        -- but a caller that sent a bad operation is owed the reason.
+        """
+        if not isinstance(operation, dict):
+            raise UserError(_("A builder operation is a set of named values."))
+        checked = dict(cast("dict[str, object]", operation))
+        kind = checked.get("type")
+        if not kind or not isinstance(kind, str):
+            raise UserError(_("A builder operation has to say what type it is."))
+        for key in ("xpath", "target_xpath", "label_xpath"):
+            expr = checked.get(key)
+            if expr is None and key != "xpath":
+                continue
+            if not expr or not isinstance(expr, str):
+                raise UserError(
+                    _("The '%s' operation has to say where in the view it goes.", kind)
+                )
+            try:
+                etree.ETXPath(expr)
+            except etree.XPathError:
+                raise UserError(
+                    _("'%s' is not an xpath the builder can apply.", expr)
+                ) from None
+        if kind in NAME_REQUIRED and not checked.get("name"):
+            raise UserError(_("The '%s' operation has to name what it adds.", kind))
+        attrs = checked.get("attrs")
+        if attrs is not None:
+            if not isinstance(attrs, dict):
+                raise UserError(_("Attributes are given as names and values."))
+            for key in cast("dict[object, object]", attrs):
+                if not isinstance(key, str) or not ATTRIBUTE_NAME_RE.match(key):
+                    raise UserError(_("'%s' is not a valid attribute name.", key))
+        return checked
+
+    @api.model
+    def _inheritance(self, base_view: View) -> tuple[View, dict[View, list[View]]]:
+        """The root core combines ``base_view`` from, and the hierarchy it
+        walks -- built exactly as ``_get_combined_arch`` builds them, in the
+        source language."""
+        root = base_view.with_context(lang=None)
+        chain = [cast("int", root.id)]
+        while root.inherit_id:
+            root = cast("View", root.inherit_id)
+            chain.append(cast("int", root.id))
+        views = root.browse(chain).with_context(check_view_ids=list(chain))
+        hierarchy: dict[View, list[View]] = collections.defaultdict(list)
+        for view in views._get_inheriting_views():
+            hierarchy[cast("View", view.inherit_id)].append(view)
+        return root, hierarchy
+
+    @api.model
+    def _applied_after(
+        self,
+        base_view: View,
+        extension: View,
+        root: View,
+        hierarchy: dict[View, list[View]],
+    ) -> View:
+        """The views core applies after ``extension`` when it combines
+        ``base_view``.
+
+        Not only ``extension``'s later siblings. Core's ``_combine`` is a
+        pre-order walk: a view's extensions are applied right after it,
+        before the view's own later siblings. So when ``base_view`` is
+        itself an extension, everything ordered after it under its parent
+        -- and after each ancestor under *its* parent, up to the root -- is
+        applied after this package's extension too. The walk is replayed
+        here, on the same hierarchy, rather than approximated.
+
+        ``extension`` empty means the one this package is about to create:
+        a child of ``base_view`` at priority 99 with the highest id there
+        is, so it goes after every sibling of priority 99 or less.
+        """
+        View_ = typed.model(self.env, View)
+        # Keyed by parent id. The chain's root sits under the empty parent,
+        # whose id is `False` -- equal to 0 as a key -- so only real parents
+        # are kept, and the stand-in id below is negative.
+        children: dict[int, list[tuple[int, str]]] = {
+            cast("int", parent.id): [
+                (cast("int", view.id), cast("str", view.mode)) for view in views
+            ]
+            for parent, views in hierarchy.items()
+            if parent
+        }
+        # Id -1 never names a real view: it stands for the one not created yet.
+        target = cast("int", extension.id) if extension else -1
+        if not extension:
+            siblings = hierarchy.get(base_view, [])
+            at = sum(1 for view in siblings if view.priority <= BUILDER_PRIORITY)
+            children.setdefault(cast("int", base_view.id), []).insert(
+                at, (-1, "extension")
+            )
+        order: list[int] = []
+        queue = collections.deque(
+            sorted(children.get(cast("int", root.id), []), key=lambda c: c[1])
+        )
+        while queue:
+            view_id, _mode = queue.popleft()
+            order.append(view_id)
+            for child in reversed(children.get(view_id, [])):
+                if child[1] == "primary":
+                    queue.append(child)
+                else:
+                    queue.appendleft(child)
+        if target not in order:
+            return View_.browse()
+        return View_.browse(order[order.index(target) + 1 :])
+
+    @api.model
+    def _tree_at(self, base_view: View, extension: View) -> tuple[LxmlElement, View]:
+        """The tree ``extension``'s next spec is evaluated on, and what is
+        applied after it.
+
+        A locator is minted on the *combined* arch: everything, in its final
+        shape. A spec stored in this package's extension is evaluated earlier
+        than that -- on everything core applies before the extension, plus
+        the extension's own specs so far. When nothing is applied after the
+        extension the two trees are the same one, and that is the ordinary
+        case. When something is -- a view with a priority above 99, another
+        package's extension created later, a later sibling of the extension
+        view being edited -- they differ by exactly what those later views
+        do, and a positional locator can name one node in the first and its
+        sibling in the second. So the tree is rebuilt here without the later
+        views, the way core would build it (``_get_combined_arch``), and the
+        caller checks its locators against that.
+
+        Always in the source language: the tree is compared against specs,
+        which are not translated.
+        """
+        root, hierarchy = self._inheritance(base_view)
+        later = self._applied_after(base_view, extension, root, hierarchy)
+        if not later:
+            return (
+                cast(
+                    "LxmlElement",
+                    etree.fromstring(
+                        base_view.with_context(lang=None).get_combined_arch().encode()
+                    ),
+                ),
+                later,
+            )
+        skipped = set(later.ids)
+        # A later view's own descendants are later too, and the walk never
+        # reaches them once their parent is gone from the hierarchy.
+        pruned: dict[View, list[View]] = collections.defaultdict(list)
+        for parent, views in hierarchy.items():
+            pruned[parent] = [view for view in views if view.id not in skipped]
+        return cast("LxmlElement", root._combine(pruned)), later
+
+    @api.model
+    def _assert_extension_locators(
+        self,
+        tree: LxmlElement,
+        operation: dict[str, object],
+        expectations: dict[str, object | None],
+        later: View,
+    ) -> None:
+        """On the extension path, each locator must find its node where the
+        spec will be evaluated.
+
+        The counterpart of ``_assert_owned_locators``. ``tree`` is the view
+        as it stands when this package's extension is applied
+        (``_tree_at``); ``later`` the views applied after it. Core takes the
+        first node a locator matches, so one is enough -- but there has to
+        be one, and when later views exist the node has to be the one the
+        minting step saw (``_matches_expectation``): they are the only way
+        a locator minted on the combined arch can mean something else here.
+        With nothing applied later the two trees are the same tree and the
+        expectation is not consulted, for the reason given on the owned
+        path: it could only refuse a bare node it has no signal for.
+        """
+        for key, expected in (
+            ("xpath", expectations.get("_expect")),
+            ("target_xpath", expectations.get("_expect_target")),
+            ("label_xpath", expectations.get("_expect_label")),
+        ):
+            expr = cast("str | None", operation.get(key))
+            if not expr:
+                continue
+            found = self._resolve_xpath(tree, expr)
+            if found is None:
+                raise UserError(_("'%s' is not an xpath the builder can apply.", expr))
+            if found and (
+                not later
+                or self._matches_expectation(
+                    found[0], cast("NodeExpectationJSON | None", expected)
+                )
+            ):
+                continue
+            if not later:
+                raise UserError(_("'%s' does not locate anything in this view.", expr))
+            raise UserError(
+                _(
+                    "That element is placed by an extension of this view that "
+                    "is applied after this package's own (%s), so it cannot "
+                    "be addressed from here.",
+                    ", ".join(
+                        sorted(cast("str", view.xml_id or view.name) for view in later)
+                    ),
+                )
+            )
 
     @api.model
     def _resolve_xpath(self, root: LxmlElement, expr: str) -> list[LxmlElement] | None:
@@ -964,7 +1397,8 @@ class BuilderViewEditor(models.AbstractModel):
         aside and lets core's own, clearer error surface.
         """
         root = cast(
-            "LxmlElement", etree.fromstring(base_view.get_combined_arch().encode())
+            "LxmlElement",
+            etree.fromstring(self._neutral_combined_arch(base_view).encode()),
         )
         source = self._resolve_xpath(root, cast("str", operation.get("xpath")) or "")
         target = self._resolve_xpath(
@@ -1127,12 +1561,19 @@ class BuilderViewEditor(models.AbstractModel):
         itself a patch and is always edited as one, and a view owned by another
         module must never be rewritten in place -- that is the Studio failure
         mode this project exists to avoid.
+
+        And only one that inherits from nothing. A ``mode="primary"`` view
+        with an ``inherit_id`` is primary in name: its arch is a list of
+        specs against its parent, not a tree, so a locator minted on what it
+        renders resolves to nothing in it and every edit was refused. It is
+        edited the way any other patch is -- through an extension of it.
         """
         # Same `builder.owned.mixin` composed-elsewhere cast as
         # `_find_extension` above.
         return cast(
             "bool",
             view.mode == "primary"
+            and not view.inherit_id
             and cast(
                 "BuilderPackage", cast("BuilderOwnedMixin", view).builder_package_id
             )
@@ -1159,35 +1600,58 @@ class BuilderViewEditor(models.AbstractModel):
         not be folded into the same block: two separate ``position="after"``
         blocks apply in sequence and read back in the order the user added
         them, whereas merging them into one block silently reverses that.
+
+        "Already there" is read off the tree the spec applies to
+        (``_holds_field``), on both paths. It used to be read off the spec,
+        which still holds the block of a field added and since removed: the
+        natural "take it out, change my mind, drop it back" then created
+        nothing, and said it had.
         """
         name = cast("str | None", operation.get("name"))
         if not name:
             raise UserError(_("Adding a field requires a field name."))
         position = cast("str", operation.get("position", "after"))
         expr = cast("str", operation["xpath"])
-        node = None
-        for candidate in root.findall("xpath"):
-            if candidate.get("expr") != expr or candidate.get("position") != position:
-                continue
-            if any(f.get("name") == name for f in candidate.findall("field")):
-                node = candidate
-                break
-        if node is None:
-            node = self._new_xpath(root, expr, position)
-        field = next((f for f in node.findall("field") if f.get("name") == name), None)
-        if field is None:
-            if operation.get("label"):
-                # Where the form draws no label, one of core's own goes
-                # before the field -- in the same block, so the drop is
-                # one edit and one undo. `_label_wanted` decides.
-                label = cast("LxmlElement", etree.SubElement(node, "label"))
-                label.set("for", name)
-            field = cast("LxmlElement", etree.SubElement(node, "field"))
+        tree = cast("LxmlElement | None", operation.get("_tree"))
+        attrs = {
+            key: str(value)
+            for key, value in cast(
+                "dict[str, object]", operation.get("attrs") or {}
+            ).items()
+        }
+        # Only an insertion can be "already there". A `replace` (which
+        # `_new_xpath` accepts for a raw add) asks for the anchor to go, and
+        # a field standing beside it says nothing about that.
+        held = (
+            self._holds_field(tree, expr, position, name)
+            if position in INSERT_POSITIONS and tree is not None
+            else None
+        )
+        if held is not None:
+            if any(held.get(key) != value for key, value in attrs.items()):
+                # A replayed add that asks for different attributes is a
+                # request to change them. Inserting would show the field
+                # twice and dropping it would claim a change that did not
+                # happen, so it is refused in a sentence.
+                raise UserError(
+                    _(
+                        "%s is already there; change its properties instead "
+                        "of adding it again.",
+                        name,
+                    )
+                )
+            return root
+        node = self._new_xpath(root, expr, position)
+        if operation.get("label"):
+            # Where the form draws no label, one of core's own goes
+            # before the field -- in the same block, so the drop is
+            # one edit and one undo. `_label_wanted` decides.
+            label = cast("LxmlElement", etree.SubElement(node, "label"))
+            label.set("for", name)
+        field = cast("LxmlElement", etree.SubElement(node, "field"))
         field.set("name", name)
-        for key, value in cast(
-            "dict[str, object]", operation.get("attrs") or {}
-        ).items():
-            field.set(key, str(value))
+        for key, value in attrs.items():
+            field.set(key, value)
         return node
 
     def _op_move_node(
@@ -1281,28 +1745,42 @@ class BuilderViewEditor(models.AbstractModel):
         """Remove a node from the rendered view.
 
         Emitted as ``position="replace"`` with empty content, which is the
-        idiomatic Odoo way to drop a node without touching the base view.
+        idiomatic Odoo way to drop a node without touching the base view --
+        unless the node is one this extension's last spec put there, in
+        which case that insertion is taken back (``_retract_last_insert``).
+
+        Never deduplicated against an earlier ``replace`` with the same
+        locator. The same locator later in the spec is a different question:
+        after ``/form/sheet/group[2]`` is removed the next group *is*
+        ``group[2]``, and a label shown, removed and shown again is found by
+        the ``//label[@for]`` that removed its predecessor. A removal of
+        something already gone never gets this far (``apply_operation``).
         """
         expr = cast("str", operation["xpath"])
-        existing = self._find_xpath(root, expr, "replace")
-        if existing is not None:
-            return existing
+        label_expr = cast("str | None", operation.get("label_xpath"))
+        if self._retract_last_insert(
+            root,
+            [expr, label_expr] if label_expr else [expr],
+            cast("LxmlElement | None", operation.get("_tree")),
+        ):
+            return root
         node = self._new_xpath(root, expr, "replace")
-        if operation.get("label_xpath"):
+        if label_expr:
             # A field's own `<label for>` has nothing to label once the
             # field is gone, and would render as an empty label.
-            self._new_xpath(root, cast("str", operation["label_xpath"]), "replace")
+            self._new_xpath(root, label_expr, "replace")
         return node
 
     def _op_set_attributes(
         self, root: LxmlElement, operation: dict[str, object]
     ) -> LxmlElement:
-        """Set attributes on an existing node, merging with prior edits."""
+        """Set attributes on an existing node, merging with prior edits
+        where that is the same node (``_mergeable_attributes``)."""
         attrs = cast("dict[str, object]", operation.get("attrs") or {})
         if not attrs:
             raise UserError(_("No attributes given."))
         expr = cast("str", operation["xpath"])
-        node = self._find_xpath(root, expr, "attributes")
+        node = self._mergeable_attributes(root, expr)
         if node is None:
             node = self._new_xpath(root, expr, "attributes")
         for key, value in attrs.items():
@@ -1580,27 +2058,88 @@ class BuilderViewEditor(models.AbstractModel):
         )
 
     @api.model
+    def _xpath_literal(self, value: str | None) -> str | None:
+        """``value`` as an xpath string literal, or ``None`` if it has none.
+
+        XPath 1.0 has no escape inside a literal: a value holding an
+        apostrophe is quoted with double quotes, and one holding both cannot
+        be written at all short of ``concat()`` -- such a node is located
+        some other way instead.
+        """
+        if not value:
+            return None
+        if "'" not in value:
+            return "'%s'" % value
+        if '"' not in value:
+            return '"%s"' % value
+        return None
+
+    @api.model
+    def _unique_predicate(
+        self, node: LxmlElement, occurrences: Counter[tuple[str, str, str]]
+    ) -> str | None:
+        """``tag[@attr='value']`` when exactly one node answers to it."""
+        if not isinstance(node.tag, str):
+            return None
+        for attr in IDENTIFYING_ATTRS:
+            value = node.get(attr)
+            literal = self._xpath_literal(value)
+            if literal and occurrences[(node.tag, attr, cast("str", value))] == 1:
+                return "%s[@%s=%s]" % (node.tag, attr, literal)
+        return None
+
+    @api.model
     def _locator_for(
         self, node: LxmlElement, occurrences: Counter[tuple[str, str, str]]
     ) -> str:
         """The most durable xpath identifying exactly ``node``.
 
-        Prefer an identifying predicate over a positional index: ``//field[@name]``
-        survives a sibling being inserted, ``//div[3]`` does not -- but only
-        while exactly one node in the arch answers to it.
+        A locator is written into an extension view and into the generated
+        source, and is evaluated again on every load -- after an upstream
+        module has changed the view under it. So, in order of how much of
+        that they survive:
 
-        The fallback has to be an *absolute* path, not one relative to a
-        hand-built ancestor chain. An inline x2many subview is itself a
-        ``<form><sheet>``, so "//form/sheet/..." is ambiguous from its first
-        step and everything built on it inherits that. ``getpath()`` is anchored
-        at the document root and indexes every step, so it is unique by
-        construction -- the same call core's own ``distribute_branding`` uses.
+        1. The node's own identity, ``//field[@name='x']``, while exactly
+           one node answers to it. Survives anything short of the node going
+           away.
+        2. For a node with no identity -- a bare ``<group>``, a core
+           notebook page -- a child that has one: ``//group[field[@name=
+           'x']]``, "the group holding x". Survives siblings being inserted
+           or removed around it, and stops resolving, loudly, if the child
+           is ever taken out; it never quietly names the next group along.
+        3. Failing that, the nearest ancestor with an identity and the
+           indexed steps down from it: ``//page[@name='p']/group[2]``. Only
+           what happens inside that ancestor can shift it.
+        4. Last, the absolute indexed path from the root. Unique by
+           construction -- ``getpath()`` is the call core's own
+           ``distribute_branding`` uses -- and as fragile as it looks.
+
+        The steps of 3 and 4 are always ``getpath()``'s, never a hand-built
+        chain of tag names: an inline x2many subview is itself a
+        ``<form><sheet>``, so anything short of an index at every step is
+        ambiguous from the first one.
         """
-        for attr in IDENTIFYING_ATTRS:
-            value = node.get(attr)
-            if value and occurrences[(cast("str", node.tag), attr, value)] == 1:
-                return "//%s[@%s='%s']" % (node.tag, attr, value)
-        return node.getroottree().getpath(node)
+        own = self._unique_predicate(node, occurrences)
+        if own:
+            return "//%s" % own
+        tree = node.getroottree()
+        path = tree.getpath(node)
+        if node.getparent() is None:
+            return path
+        for child in self._specs(node):
+            held = self._unique_predicate(child, occurrences)
+            if held:
+                return "//%s[%s]" % (node.tag, held)
+        for ancestor in node.iterancestors():
+            if ancestor.getparent() is None:
+                break
+            anchor = self._unique_predicate(ancestor, occurrences)
+            if anchor:
+                return "//%s%s" % (
+                    anchor,
+                    path[len(tree.getpath(ancestor)) :],
+                )
+        return path
 
     @api.model
     def apply_at(
@@ -1644,7 +2183,9 @@ class BuilderViewEditor(models.AbstractModel):
             raise UserError(_("The view being edited no longer exists."))
         expected_arch_version = self._claimed_version(expected_arch_version, anchor)
         self._assert_arch_version(view, expected_arch_version)
-        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        root = cast(
+            "LxmlElement", etree.fromstring(self._neutral_combined_arch(view).encode())
+        )
         node, stamped, token = self._find_node_entry(root, anchor)
         if node is None:
             raise UserError(
@@ -1727,7 +2268,9 @@ class BuilderViewEditor(models.AbstractModel):
                     view.model,
                 )
             )
-        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        root = cast(
+            "LxmlElement", etree.fromstring(self._neutral_combined_arch(view).encode())
+        )
         if root.find(".//chatter") is not None:
             return False
         sheet = root.find("./sheet")
@@ -1771,7 +2314,9 @@ class BuilderViewEditor(models.AbstractModel):
             raise UserError(_("The view being edited no longer exists."))
         expected_arch_version = self._claimed_version(expected_arch_version, anchor)
         self._assert_arch_version(view, expected_arch_version)
-        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        root = cast(
+            "LxmlElement", etree.fromstring(self._neutral_combined_arch(view).encode())
+        )
         node = self._find_descriptor(root, anchor)
         if node is None or node.tag != "field" or not node.get("name"):
             raise UserError(_("Only a field can be given a label."))
@@ -1890,7 +2435,9 @@ class BuilderViewEditor(models.AbstractModel):
         # Before the node is looked at: a stale token resolves to some node,
         # and the question asked about it would be about the wrong one.
         self._assert_arch_version(view, expected_arch_version)
-        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        root = cast(
+            "LxmlElement", etree.fromstring(self._neutral_combined_arch(view).encode())
+        )
         _node, stamped, token = self._find_node_entry(root, anchor, stamp=True)
         if stamped is not None:
             # Same correlated-tuple cast as `apply_at`'s own `stamped and
@@ -2031,7 +2578,9 @@ class BuilderViewEditor(models.AbstractModel):
         # of its own to be checked against.
         expected_arch_version = self._claimed_version(expected_arch_version, anchor)
         self._assert_arch_version(view, expected_arch_version)
-        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        root = cast(
+            "LxmlElement", etree.fromstring(self._neutral_combined_arch(view).encode())
+        )
         operation: dict[str, object] = {"type": "add_page", "string": string or ""}
         if position:
             operation["position"] = position
@@ -2116,7 +2665,9 @@ class BuilderViewEditor(models.AbstractModel):
         expected_arch_version = self._claimed_version(
             expected_arch_version, source, target
         )
-        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        root = cast(
+            "LxmlElement", etree.fromstring(self._neutral_combined_arch(view).encode())
+        )
         occurrences = self._occurrences(root)
         source_node = self._find_descriptor(root, source)
         target_node = self._find_descriptor(root, target)
@@ -2290,7 +2841,9 @@ class BuilderViewEditor(models.AbstractModel):
                 "canvas": composed.canvas(cast("int", view.id), canvas_options),
             }
 
-        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        root = cast(
+            "LxmlElement", etree.fromstring(self._neutral_combined_arch(view).encode())
+        )
         stamped = canvas_stamp.stamp(root, cast("str", view.type))
         target = dict(target or {})
         draft: BaseModel | None = None
@@ -2513,7 +3066,8 @@ class BuilderViewEditor(models.AbstractModel):
 
         fresh_view = typed.model(self.env, View).browse(cast("int", view.id))
         root = cast(
-            "LxmlElement", etree.fromstring(fresh_view.get_combined_arch().encode())
+            "LxmlElement",
+            etree.fromstring(self._neutral_combined_arch(fresh_view).encode()),
         )
         fresh = canvas_stamp.stamp(root, cast("str", view.type))
         landed = self._token_named(
@@ -2768,14 +3322,35 @@ class BuilderViewEditor(models.AbstractModel):
 
     @api.model
     def add_search_element(
-        self, view_id: int, package_id: int, kind: str, values: dict[str, object]
+        self,
+        view_id: int,
+        package_id: int,
+        kind: str,
+        values: dict[str, object],
+        expected_arch_version: str | None = None,
     ) -> OperationResultJSON:
-        """Add a searchable field, a filter, or a group-by."""
+        """Add a searchable field, a filter, or a group-by.
+
+        ``expected_arch_version`` is checked before the tree is read, like
+        every other mutator's: where the new node goes is decided from the
+        tree, and a list the client drew from an older one would put it
+        beside something that has since moved.
+
+        A filter's name is how it is found again -- by ``remove_search_
+        element``, by a ``search_default_`` key in an action's context -- so
+        it has to be the only one. Asking for a filter the view already has
+        is refused; a name that merely collides with a different filter is
+        made unique (``_free_filter_name``).
+        """
         typed.security(self)._assert_builder_manager()
         view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
-        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        self._assert_arch_version(view, expected_arch_version)
+        root = cast(
+            "LxmlElement",
+            etree.fromstring(self._neutral_combined_arch(view).encode()),
+        )
         occurrences = self._occurrences(root)
         field_name = cast("str | None", values.get("field"))
         # A built condition names its fields in its rows, so there is no single
@@ -2823,29 +3398,99 @@ class BuilderViewEditor(models.AbstractModel):
                 domain = template % field_name
             else:
                 raise UserError(_("Unknown filter condition '%s'.", condition))
+            twin = self._same_filter(root, "domain", domain)
+            if twin is not None:
+                raise UserError(
+                    _(
+                        "This search already has a filter for that condition: %s.",
+                        twin.get("string") or twin.get("name"),
+                    )
+                )
             operation = {
                 "type": "add_filter",
                 "xpath": self._locator_for(anchor, occurrences),
                 "position": position,
-                "name": name,
+                "name": self._free_filter_name(root, name),
                 "string": string,
                 "domain": domain,
             }
         elif kind == "group_by":
             group = next(iter(root.iter("group")), None)
             anchor = group if group is not None else root
+            group_context = "{'group_by': '%s'}" % field_name
+            twin = self._same_filter(root, "context", group_context)
+            if twin is not None:
+                raise UserError(
+                    _(
+                        "This search already groups by %s.",
+                        twin.get("string") or field.string or field_name,
+                    )
+                )
             operation = {
                 "type": "add_filter",
                 "xpath": self._locator_for(anchor, occurrences),
                 "position": "inside",
                 "in_new_group": group is None,
-                "name": "group_by_%s" % field_name,
+                "name": self._free_filter_name(root, "group_by_%s" % field_name),
                 "string": field.string or field_name,
-                "context": "{'group_by': '%s'}" % field_name,
+                "context": group_context,
             }
         else:
             raise UserError(_("A search view has no '%s' to add.", kind))
-        return self.apply_operation(view_id, package_id, operation)
+        return self.apply_operation(
+            view_id,
+            package_id,
+            operation,
+            expected_arch_version=expected_arch_version,
+        )
+
+    @api.model
+    def _search_filters(self, root: LxmlElement) -> list[LxmlElement]:
+        """The search view's own filters -- not an embedded subview's."""
+        return [
+            node
+            for node in root.iter("filter")
+            if not any(a.tag == "field" for a in node.iterancestors())
+        ]
+
+    @api.model
+    def _free_filter_name(self, root: LxmlElement, name: str) -> str:
+        """``name``, or the first ``name_2``, ``name_3`` ... nothing has.
+
+        The generated names are deterministic -- ``group_by_<field>`` is
+        also what core calls its own -- so one can already be taken by a
+        filter that means something else. Two filters with one name are
+        one filter to everything that looks them up by it.
+        """
+        taken = {node.get("name") for node in self._search_filters(root)}
+        if name not in taken:
+            return name
+        suffix = 2
+        while "%s_%d" % (name, suffix) in taken:
+            suffix += 1
+        return "%s_%d" % (name, suffix)
+
+    @api.model
+    def _literal(self, source: str | None) -> object:
+        """A domain or context attribute as the value it spells, so two
+        spellings of one value compare equal; the text itself when it is
+        not a literal (it may name ``uid`` or ``context_today()``)."""
+        text = (source or "").strip()
+        try:
+            return cast("object", ast.literal_eval(text))
+        except (ValueError, SyntaxError):
+            return text
+
+    @api.model
+    def _same_filter(
+        self, root: LxmlElement, attribute: str, value: str
+    ) -> LxmlElement | None:
+        """The filter that already carries this domain, or this context."""
+        wanted = self._literal(value)
+        for node in self._search_filters(root):
+            if node.get(attribute) and self._literal(node.get(attribute)) == wanted:
+                return node
+        return None
 
     @api.model
     def _built_filter(
@@ -2894,14 +3539,22 @@ class BuilderViewEditor(models.AbstractModel):
 
     @api.model
     def remove_search_element(
-        self, view_id: int, package_id: int, kind: str, name: str
+        self,
+        view_id: int,
+        package_id: int,
+        kind: str,
+        name: str,
+        expected_arch_version: str | None = None,
     ) -> OperationResultJSON:
         """Take a field, filter or group-by out of a search view."""
         typed.security(self)._assert_builder_manager()
         view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The view no longer exists."))
-        root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
+        self._assert_arch_version(view, expected_arch_version)
+        root = cast(
+            "LxmlElement", etree.fromstring(self._neutral_combined_arch(view).encode())
+        )
         descriptor: dict[str, object] = {
             "kind": "field" if kind == "field" else "filter",
             "name": name,
@@ -2916,7 +3569,9 @@ class BuilderViewEditor(models.AbstractModel):
                 "type": "remove_node",
                 "xpath": self._locator_for(node, self._occurrences(root)),
                 "position": "replace",
+                "_expect": self._expectation_for(node),
             },
+            expected_arch_version=expected_arch_version,
         )
 
     # -- the WYSIWYG editor ------------------------------------------------
