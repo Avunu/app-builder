@@ -13,6 +13,37 @@ a major bump may come without a migration script, and this file will say so.
 
 ## Unreleased
 
+Changes on `develop` since 18.0.2.0.0. The release workflow has already given the
+affected addons patch versions; they are listed here until the next tagged release.
+
+### Security
+
+- **Writing code needs a server-side opt-in** (`app_builder_base`, and the guard in
+  `app_builder_model`, `app_builder_ui`, `app_builder_report` and `app_builder_view`).
+  It is off by default; set `APP_BUILDER_ENABLE_WRITE=1` in the environment or
+  `app_builder_enable_write = True` in `odoo.conf`. With it off every package is
+  read-only and the console opens as a viewer. **After upgrading, a development server
+  that should keep building packages needs the switch set.** The Nix dev shell sets it.
+- Domain checks no longer work as a read oracle, and the drift and git diffs stay inside
+  the package and take paths literally. [SECURITY.md](SECURITY.md) documents the threat
+  model and how to report a vulnerability.
+- Report previews render in a sandboxed iframe (`app_builder_view`).
+
+### Fixed
+
+- **Apply** (`app_builder_base`): a destructive apply keeps the removed column (version
+  bump plus a pre-migration), a restart under `workers > 0` upgrades the marked package,
+  files are replaced atomically and restored on rollback, a rolled-back apply leaves no
+  journal, and the cron lock tells a running cron from a stale snapshot.
+- **Approval gates** (`app_builder_approval`): every way into an approved state is
+  gated, including records created already in that state and stages added later; a gate
+  can be reconfigured and removed. `app_builder_approval` no longer auto-installs.
+- **Console** (`app_builder_ui`, `app_builder_view`): graduated automation methods bind
+  the names they use and refuse code reading names they cannot bind; creating an app
+  finishes only an app it left half built; report previews explain a template they
+  cannot render instead of raising. The console loads in its own lazy bundle, and its
+  timers and leave-page warning are tied to work in progress.
+
 ### Added
 
 - `i18n/<addon>.pot` translation templates for every addon that has translatable terms,
@@ -61,11 +92,14 @@ generated source, not only the titles.
 ### Upgrade notes
 
 **There is no migration from 1.x, and upgrading a 1.x database in place is not
-supported.** No addon ships a `migrations/` script for the rename. Running
-`-u app_builder` on a database that had the pre-rename addons installed would create the
-new `builder_*` tables empty and leave the old `studio_*` tables, their access rules and
-the old groups' memberships orphaned: every package, workspace and apply record the
-builder kept would be gone from its point of view.
+supported.** No addon ships a `migrations/` script for the rename. The addon names did
+not change, so running `-u app_builder` on a database that had the pre-rename addons
+installed is an ordinary upgrade from Odoo's point of view: it creates the new
+`builder_*` tables empty, deletes the records whose XML ids the new code no longer
+defines — the old groups (and with them their memberships), the `studio.*` model records
+and their access rules — and leaves the `studio_*` tables behind as unmanaged orphans.
+Every package, workspace and apply record the builder kept would be gone from its point
+of view. This is read from Odoo's upgrade code, not observed.
 
 The pre-rename addons were never published as a release (the public repository was
 created after the rename), so this is expected to affect only databases built from a
@@ -92,4 +126,5 @@ been scripted or tested, so try it on a copy first:
 
 Development versions under the project's working name (addons at 18.0.1.0.0 to
 18.0.1.6.0), never tagged or published. The history is in `git log`; the design record
-is in [DESIGN.md](DESIGN.md), [PLAN.md](PLAN.md) and [TYPING.md](TYPING.md).
+is in [DESIGN.md](DESIGN.md), [PLAN.md](PLAN.md) and
+[TYPING_HISTORY.md](TYPING_HISTORY.md).

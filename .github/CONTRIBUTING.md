@@ -94,8 +94,9 @@ What the suite is built around, and what a new serializer or operation has to ke
 ## Python and TypeScript
 
 - Python is typed and checked by pyright; `tools/` modules are strict and free of Odoo
-  imports. [TYPING.md](../TYPING.md) is the history of how that was done and the traps
-  found. Its build and CI details predate the move to odoo-nix.
+  imports. [TYPING.md](../TYPING.md) describes how it is typed and checked today and
+  the traps found; [TYPING_HISTORY.md](../TYPING_HISTORY.md) is the history of how that
+  was done.
 - User-facing strings go through `_()` / `self.env._()` in Python and `_t()` in
   TypeScript.
 - The console reads the server version in exactly one place,

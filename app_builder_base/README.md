@@ -129,10 +129,15 @@ The editor gates on write access to the package directory, established by creati
 removing a temporary file there rather than by asking `os.access` (which is wrong for
 root, ACLs and read-only mounts). Against a read-only deployment it disables itself with
 an explanatory banner rather than failing: build in development, ship through git,
-deploy immutably. The guard is only that filesystem probe: on a server whose addons path
-is writable the builder is enabled, so keep production read-only or leave the builder
-uninstalled there. The supported envelope (Odoo 18.0, one process, one database) is in
-"Scope and limits" in the [repository README](../README.md#scope-and-limits).
+deploy immutably.
+
+Writing code is also off unless the server enables it outside the database
+(`APP_BUILDER_ENABLE_WRITE=1` in the environment, or `app_builder_enable_write = True`
+in `odoo.conf`); with the switch off every package is read-only. Leave it off in
+production and mount the addons path read-only as well. The supported envelope (Odoo
+18.0, one process, one database) is in "Scope and limits" in the
+[repository README](../README.md#scope-and-limits), and the threat model in
+[SECURITY.md](../SECURITY.md).
 
 ## Roadmap
 
