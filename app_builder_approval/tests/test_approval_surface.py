@@ -48,6 +48,14 @@ class TestApprovalSurface(BuilderCase):
         self.assertIn("res.partner", gate["title"])
         self.assertEqual(gate["call"], "enable_gate")
         self.assertIsInstance(gate["state_fields"], list)
+        # Nothing is enforced yet, so there is no transition to report; the
+        # ways to change and remove one are named for when there is.
+        self.assertIsNone(gate["current"])
+        self.assertEqual(gate["update_call"], "update_gate")
+        self.assertEqual(gate["disable_call"], "disable_gate")
+        # The pane's hint is the one place a user is told what the gate
+        # covers before they switch it on.
+        self.assertIn("every way into", gate["consequence"])
         gated = next(
             (
                 name
@@ -58,7 +66,8 @@ class TestApprovalSurface(BuilderCase):
         )
         if gated:
             self.assertTrue(self.Surface.catalogue(gated)["gate"]["on"])
-            self.assertEqual(self.Surface.catalogue(gated)["gate"]["state_fields"], [])
+            # What is enforced is reported, so it can be changed.
+            self.assertTrue(self.Surface.catalogue(gated)["gate"]["current"])
 
     def test_a_template_makes_a_rule_with_its_reviewer_in_the_file(self):
         row = cast("BuilderRecordSurface", self.Surface).create_record(

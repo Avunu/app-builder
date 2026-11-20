@@ -29,6 +29,7 @@ than a pile of data records.
 
 from __future__ import annotations
 
+from dataclasses import replace as _replace
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from odoo import api, models
@@ -55,6 +56,24 @@ if TYPE_CHECKING:
     from odoo.fields import Field, Selection
 
 MIXIN = "tier.validation"
+
+# What enabling writes into the gated class, and so what disabling takes out.
+GATE_ATTRS = (
+    "_state_field",
+    "_state_from",
+    "_state_to",
+    "_cancel_state",
+    "_tier_validation_manual_config",
+)
+CREATE_GUARD = "_create"
+PICKER = "_get_tier_validation_model_names"
+# "No cancelled state", spelled so the engine's substring test cannot match it.
+NO_CANCEL_STATE = ""
+
+
+def _py_list(values: list[str]) -> str:
+    """A list of strings as source, quoted the way the rest of the file is."""
+    return "[%s]" % ", ".join(pycodegen._py(value) for value in values)
 
 
 class ApprovalActionJSON(TypedDict):
@@ -87,8 +106,18 @@ class StateFieldJSON(TypedDict):
     values: list[StateValueJSON]
 
 
+class GateConfigJSON(TypedDict):
+    """The transition a gate asks approval for, as it is written to the class."""
+
+    state_field: str
+    state_from: list[str]
+    state_to: list[str]
+    cancel_state: str
+
+
 class EnableApprovalJSON(TypedDict):
-    """``enable()``'s return: which model was gated, and whether it applied."""
+    """``enable()``, ``reconfigure()`` and ``disable()``'s return: which model,
+    and whether the change was applied."""
 
     model: str
     applied: bool
@@ -231,65 +260,26 @@ class BuilderApproval(models.AbstractModel):
             return []
 
     @api.model
-    def _validate_transition(
+    def _resolve_transition(
         self,
         model_name: str,
         state_field: str,
-        state_from: list[str],
-        state_to: list[str],
-    ) -> None:
-        values = {v for v, _label in self._selection_values(model_name, state_field)}
-        if not values:
-            return  # nothing to check against; the field may be dynamic
-        unknown = (set(state_from) | set(state_to)) - values
-        if unknown:
-            raise UserError(
-                _(
-                    "%(model)s has no such value for %(field)s: %(unknown)s. A "
-                    "rule naming a value the field does not have never fires, "
-                    "which looks exactly like approvals being switched off.",
-                    model=model_name,
-                    field=state_field,
-                    unknown=", ".join(sorted(unknown)),
-                )
-            )
-        overlap = set(state_from) & set(state_to)
-        if overlap:
-            raise UserError(
-                _(
-                    "%s is on both sides of the transition, so there is no "
-                    "moment at which approval could be asked for.",
-                    ", ".join(sorted(overlap)),
-                )
-            )
+        state_from: list[str] | None,
+        state_to: list[str] | None,
+        cancel_state: str | None,
+    ) -> GateConfigJSON:
+        """The transition as it will be written, or the reason it cannot be.
 
-    # -- enabling ---------------------------------------------------------
-
-    @api.model
-    def enable(
-        self,
-        package_id: int,
-        model_name: str,
-        state_field: str = "state",
-        state_from: list[str] | None = None,
-        state_to: list[str] | None = None,
-        cancel_state: str | None = None,
-        apply: bool = True,
-    ) -> EnableApprovalJSON:
-        """Give ``model_name`` an approval gate, as source.
-
-        ``apply`` reloads the module, which is what makes the mixin live.
-        Separable for the same reason it is in code graduation: `action_apply`
-        commits, and a commit is unreachable from a `TransactionCase`.
+        **Every way into a gated state has to be an origin.** The engine asks
+        for approval only when a ``write()`` moves the record out of
+        ``_state_from`` into ``_state_to``, and a builder-made status field is
+        an ordinary writable column with a clickable statusbar: a state left
+        out of ``_state_from`` is a state anybody can step through to walk
+        round the gate (draft -> in progress -> done, when only draft -> done
+        was named). So the origins default to *every* value that is not a
+        destination, and a narrower list is refused rather than written as a
+        gate that only looks like one.
         """
-        typed.security(self)._assert_builder_manager()
-        package = typed.model(self.env, BuilderPackage).browse(package_id).exists()
-        if not package:
-            raise UserError(_("Choose a builder package to record this in."))
-        package._assert_writable()
-        if model_name not in self.env:
-            raise UserError(_("Unknown model '%s'.", model_name))
-        state_from = list(state_from or ["draft"])
         state_to = list(state_to or [])
         if not state_to:
             raise UserError(
@@ -308,114 +298,434 @@ class BuilderApproval(models.AbstractModel):
                     field=state_field,
                 )
             )
-        self._validate_transition(model_name, state_field, state_from, state_to)
+        ordered = [v for v, _label in self._selection_values(model_name, state_field)]
+        values = set(ordered)
+        if not values:
+            # Nothing to check against; the field may be dynamic. The origins
+            # cannot be worked out either, so they have to be said.
+            if not state_from:
+                raise UserError(
+                    _(
+                        "The values of %(field)s cannot be read without a "
+                        "record, so say which states approval is asked from: "
+                        "every one that is not a destination.",
+                        field=state_field,
+                    )
+                )
+            return {
+                "state_field": state_field,
+                "state_from": list(state_from),
+                "state_to": state_to,
+                "cancel_state": cancel_state or NO_CANCEL_STATE,
+            }
+        named = set(state_from or []) | set(state_to)
+        if cancel_state:
+            named.add(cancel_state)
+        unknown = named - values
+        if unknown:
+            raise UserError(
+                _(
+                    "%(model)s has no such value for %(field)s: %(unknown)s. A "
+                    "rule naming a value the field does not have never fires, "
+                    "which looks exactly like approvals being switched off.",
+                    model=model_name,
+                    field=state_field,
+                    unknown=", ".join(sorted(unknown)),
+                )
+            )
+        if cancel_state and cancel_state in state_to:
+            raise UserError(
+                _(
+                    "%s cannot be both a state that needs approving into and "
+                    "the cancelled state, which drops the approvals asked for.",
+                    cancel_state,
+                )
+            )
+        origins = list(state_from or []) or [v for v in ordered if v not in state_to]
+        overlap = set(origins) & set(state_to)
+        if overlap:
+            raise UserError(
+                _(
+                    "%s is on both sides of the transition, so there is no "
+                    "moment at which approval could be asked for.",
+                    ", ".join(sorted(overlap)),
+                )
+            )
+        if not origins:
+            raise UserError(
+                _(
+                    "Every value of %s needs approving into, so there is no "
+                    "state a record could wait for its approval in.",
+                    state_field,
+                )
+            )
+        uncovered = [v for v in ordered if v not in origins and v not in state_to]
+        if uncovered:
+            raise UserError(
+                _(
+                    "Approval would not be asked for from: %(uncovered)s. "
+                    "%(field)s is an ordinary writable field, so a record "
+                    "could be moved there first and on into %(to)s with no "
+                    "approval at all. Leave the origin states empty to gate "
+                    "every way in, or add the missing ones.",
+                    uncovered=", ".join(uncovered),
+                    field=state_field,
+                    to=", ".join(state_to),
+                )
+            )
+        return {
+            "state_field": state_field,
+            "state_from": origins,
+            "state_to": state_to,
+            "cancel_state": cancel_state or NO_CANCEL_STATE,
+        }
 
-        self._write_gated_model(
-            package, model_name, state_field, state_from, state_to, cancel_state
+    # -- enabling, changing, disabling --------------------------------------
+
+    @api.model
+    def _writable_package(self, package_id: int, model_name: str) -> BuilderPackage:
+        typed.security(self)._assert_builder_manager()
+        package = typed.model(self.env, BuilderPackage).browse(package_id).exists()
+        if not package:
+            raise UserError(_("Choose a builder package to record this in."))
+        package._assert_writable()
+        if model_name not in self.env:
+            raise UserError(_("Unknown model '%s'.", model_name))
+        return package
+
+    @api.model
+    def enable(
+        self,
+        package_id: int,
+        model_name: str,
+        state_field: str = "state",
+        state_from: list[str] | None = None,
+        state_to: list[str] | None = None,
+        cancel_state: str | None = None,
+        apply: bool = True,
+    ) -> EnableApprovalJSON:
+        """Give ``model_name`` an approval gate, as source.
+
+        ``state_from`` left empty means every state that is not a
+        destination, which is the only reading under which the gate cannot
+        be walked round (`_resolve_transition`).
+
+        ``apply`` reloads the module, which is what makes the mixin live.
+        Separable for the same reason it is in code graduation: `action_apply`
+        commits, and a commit is unreachable from a `TransactionCase`.
+        """
+        package = self._writable_package(package_id, model_name)
+        config = self._resolve_transition(
+            model_name, state_field, state_from, state_to, cancel_state
         )
-        self._write_model_picker(package, model_name)
+        picker = self._model_picker(package)
+        self._write_gated_model(package, model_name, config)
+        self._write_model_picker(package, picker)
         if apply:
             package.action_apply(reason=_("enable approvals on %s", model_name))
         return {"model": model_name, "applied": apply}
+
+    @api.model
+    def reconfigure(
+        self,
+        package_id: int,
+        model_name: str,
+        state_field: str = "state",
+        state_from: list[str] | None = None,
+        state_to: list[str] | None = None,
+        cancel_state: str | None = None,
+        apply: bool = True,
+    ) -> EnableApprovalJSON:
+        """Change the transition a gated model asks approval for.
+
+        The whole configuration is restated, as it is when enabling: four
+        attributes that only make sense together are not something to patch
+        one at a time.
+        """
+        package = self._writable_package(package_id, model_name)
+        config = self._resolve_transition(
+            model_name, state_field, state_from, state_to, cancel_state
+        )
+        picker = self._model_picker(package)
+        self._write_gated_model(package, model_name, config, replace=True)
+        self._write_model_picker(package, picker)
+        if apply:
+            package.action_apply(reason=_("change approvals on %s", model_name))
+        return {"model": model_name, "applied": apply}
+
+    @api.model
+    def disable(
+        self, package_id: int, model_name: str, apply: bool = True
+    ) -> EnableApprovalJSON:
+        """Take the gate back out of ``model_name``'s class.
+
+        Exactly what enabling wrote, and nothing else: the mixin, its
+        configuration, the creation guard and the model's line in the rule
+        picker. The rules themselves are records and stay where they are --
+        with no gate they never fire, and the pane says so -- because
+        deleting somebody's rules as a side effect of a toggle is not a
+        thing to do quietly.
+        """
+        package = self._writable_package(package_id, model_name)
+        entry = self._gated_entry(package, model_name)
+        spec = entry._current_spec() if entry else None
+        if spec is None or MIXIN not in spec.inherit:
+            raise UserError(self._not_gated_here(package, model_name))
+        picker = self._model_picker(package)
+        package._seed_source_for(
+            model_name,
+            _replace(
+                spec,
+                inherit=tuple(i for i in spec.inherit if i != MIXIN),
+                class_attrs=tuple(
+                    (k, v) for k, v in spec.class_attrs if k not in GATE_ATTRS
+                ),
+                methods=tuple(m for m in spec.methods if m.name != CREATE_GUARD),
+            ),
+        )
+        self._write_model_picker(package, picker)
+        if apply:
+            package.action_apply(
+                reason=_("disable approvals on %s", model_name),
+                allow_destructive=self._drops_only_the_gate(package, model_name),
+            )
+        return {"model": model_name, "applied": apply}
+
+    @api.model
+    def _drops_only_the_gate(self, package: BuilderPackage, model_name: str) -> bool:
+        """Whether what this apply removes is the mixin's own fields and no more.
+
+        Apply refuses to drop a stored field without being told to, and on a
+        model the package declares the mixin's fields are the package's:
+        taking the mixin out removes ``validation_status`` (and the reviews
+        relation), so disabling would be refused by the very guard it has to
+        pass. Nothing of the user's is in them -- one is computed from the
+        reviews, which live in ``tier.review`` and stay -- so this says yes to
+        exactly that and to nothing else: any other pending removal in the
+        package still gets Apply's own refusal. The column is kept under
+        another name, as it is for any confirmed removal.
+        """
+        dropped = package._destructive_changes(package._render_files())
+        if not dropped:
+            return False
+        mixin_fields = set(cast("dict[str, Field[Any]]", self.env[MIXIN]._fields))
+        return set(dropped) == {model_name} and set(dropped[model_name]) <= mixin_fields
+
+    @api.model
+    def _not_gated_here(self, package: BuilderPackage, model_name: str) -> str:
+        return _(
+            "%(model)s does not have approvals turned on in %(package)s, so "
+            "there is nothing here to change. A gate another module wrote is "
+            "that module's to edit.",
+            model=model_name,
+            package=package.name,
+        )
+
+    @api.model
+    def _gated_entry(
+        self, package: BuilderPackage, model_name: str
+    ) -> BuilderPackageModel:
+        return typed.model(self.env, BuilderPackageModel).search(
+            [("package_id", "=", package.id), ("model", "=", model_name)], limit=1
+        )
+
+    @api.model
+    def _readable_spec(
+        self, entry: BuilderPackageModel, model_name: str, package: BuilderPackage
+    ) -> modelspec.ModelSpec:
+        """The class as it is on disk, or a blank one if there is none yet.
+
+        Never a blank one *instead of* a file that could not be read: the
+        write that follows replaces the file, and replacing code the builder
+        failed to understand deletes it. `_current_spec` freezes the row in
+        that case, so the check is made after asking, not before.
+        """
+        spec = entry._current_spec()
+        if spec is not None:
+            return spec
+        if entry.source != "python":
+            raise UserError(
+                _(
+                    "%(model)s is not a class the builder can rewrite in "
+                    "%(package)s (%(reason)s), so there is nowhere safe to "
+                    "write the approval gate. Fix the file, or add the gate "
+                    "to it by hand.",
+                    model=model_name,
+                    package=package.name,
+                    reason=entry.parse_error or _("it is managed as data records"),
+                )
+            )
+        return modelspec.ModelSpec(
+            name=model_name,
+            description="",
+            class_name=pycodegen.class_name_for(model_name),
+            extends=True,
+        )
 
     @api.model
     def _write_gated_model(
         self,
         package: BuilderPackage,
         model_name: str,
-        state_field: str,
-        state_from: list[str],
-        state_to: list[str],
-        cancel_state: str | None,
+        config: GateConfigJSON,
+        replace: bool = False,
     ) -> BuilderPackageModel:
-        entry = typed.model(self.env, BuilderPackageModel).search(
-            [("package_id", "=", package.id), ("model", "=", model_name)], limit=1
-        )
-        if entry and entry.source != "python":
-            raise UserError(
-                _(
-                    "%s is managed as data records here, so there is no class "
-                    "to add the mixin to.",
-                    model_name,
-                )
-            )
+        entry = self._gated_entry(package, model_name)
+        if replace and not entry:
+            raise UserError(self._not_gated_here(package, model_name))
         if not entry:
             entry = typed.model(self.env, BuilderPackageModel)._adopt(
                 package, model_name, extends=True
             )
-        spec = entry._current_spec() or modelspec.ModelSpec(
-            name=model_name,
-            description="",
-            class_name=pycodegen.class_name_for(model_name),
-            extends=True,
-        )
-        if MIXIN in spec.inherit:
+        spec = self._readable_spec(entry, model_name, package)
+        gated = MIXIN in spec.inherit
+        if gated and not replace:
             raise UserError(_("%s already has approvals turned on.", model_name))
+        if replace and not gated:
+            raise UserError(self._not_gated_here(package, model_name))
 
         attrs = dict(spec.class_attrs)
-        attrs["_state_field"] = '"%s"' % state_field
-        attrs["_state_from"] = repr(state_from)
-        attrs["_state_to"] = repr(state_to)
+        # `_py`, never a bare '"%s"': these are written into a class body, and
+        # a value with a quote in it would otherwise be source of its own.
+        attrs["_state_field"] = pycodegen._py(config["state_field"])
+        attrs["_state_from"] = _py_list(config["state_from"])
+        attrs["_state_to"] = _py_list(config["state_to"])
         # Without this the mixin injects no buttons at all: the default is True,
         # which means "the model wires up its own UI" -- and a generated model
         # has nobody to do that.
         attrs["_tier_validation_manual_config"] = "False"
-        if cancel_state:
-            # A single string, never a list. The engine compares with `in`
-            # against it in one place, so a list would make every state whose
-            # name is a substring look like a cancellation.
-            attrs["_cancel_state"] = '"%s"' % cancel_state
-
-        from dataclasses import replace as _replace
+        # Always written, even when there is none. The engine's default is
+        # "cancel" and it tests `state in self._cancel_state` -- a substring
+        # match on a string -- so a model with no cancelled state would have
+        # its approvals dropped on entering any state spelled "can" or "c".
+        # The empty string matches nothing: the engine returns before the
+        # test when the new state is empty. A single string, never a list.
+        attrs["_cancel_state"] = pycodegen._py(config["cancel_state"])
 
         package._seed_source_for(
             model_name,
             _replace(
                 spec,
-                inherit=spec.inherit + (MIXIN,),
+                inherit=spec.inherit if gated else spec.inherit + (MIXIN,),
                 class_attrs=tuple(attrs.items()),
+                methods=tuple(m for m in spec.methods if m.name != CREATE_GUARD)
+                + (self._create_guard(),),
             ),
         )
         return entry
 
     @api.model
+    def _create_guard(self) -> modelspec.MethodSpec:
+        """The gate on creation, which the engine does not have.
+
+        ``tier.validation`` overrides ``write()`` and nothing else, so
+        ``create({"state": "done"})`` lands a record past the gate without a
+        question asked. This puts a new record that is already in a gated
+        state through the engine's own write-time check: a reviewer creating
+        it approves it in passing, exactly as on a write, and anybody else is
+        told to ask.
+
+        Generated into the class, not inherited from this addon: the package
+        ships to databases the builder is not installed on, and a guard that
+        lived here would stop guarding there. ``_create`` rather than
+        ``create`` because the block's one ``create`` is the reference
+        sequence's.
+        """
+        return modelspec.MethodSpec(
+            name=CREATE_GUARD,
+            args="data_list",
+            doc="Ask for approval of a record created already in a gated state.",
+            body=(
+                "records = super()._create(data_list)\n"
+                "for record in records.with_context(skip_check_state_condition=True):\n"
+                "    state = record[record._state_field]\n"
+                "    if state in record._state_to:\n"
+                "        record._tier_validation_check_state_on_write(\n"
+                "            {record._state_field: state}\n"
+                "        )\n"
+                "return records"
+            ),
+        )
+
+    @api.model
+    def _model_picker(
+        self, package: BuilderPackage
+    ) -> tuple[BuilderPackageModel, modelspec.ModelSpec]:
+        """The package's tier.definition extension, read before anything is
+        written.
+
+        Enabling writes two files. If the second cannot be written -- the
+        class is one the builder cannot read -- that has to be known before
+        the first is, or the refusal leaves a gated model on disk that no
+        rule can be created for.
+        """
+        entry = typed.model(self.env, BuilderPackageModel)._adopt(
+            package, "tier.definition", extends=True
+        )
+        return entry, self._readable_spec(entry, "tier.definition", package)
+
+    @api.model
     def _write_model_picker(
-        self, package: BuilderPackage, model_name: str
+        self,
+        package: BuilderPackage,
+        picker: tuple[BuilderPackageModel, modelspec.ModelSpec],
     ) -> BuilderPackageModel:
-        """Append the model to tier.definition's picker.
+        """Make tier.definition's picker offer exactly the models gated here.
 
         ``_get_tier_validation_model_names`` returns ``[]`` in
         base_tier_validation, and its only caller is the domain on
         ``tier.definition.model_id``. Skip this and the mixin works while the
         rule cannot be created through Odoo's own form -- which is where we send
         people, so it is not optional.
-        """
-        entry = typed.model(self.env, BuilderPackageModel).search(
-            [("package_id", "=", package.id), ("model", "=", "tier.definition")],
-            limit=1,
-        )
-        if not entry:
-            entry = typed.model(self.env, BuilderPackageModel)._adopt(
-                package, "tier.definition", extends=True
-            )
-        spec = entry._current_spec() or modelspec.ModelSpec(
-            name="tier.definition",
-            description="",
-            class_name=pycodegen.class_name_for("tier.definition"),
-            extends=True,
-        )
-        gated = sorted(set(self._gated_models(package)) | {model_name})
-        method = modelspec.MethodSpec(
-            name="_get_tier_validation_model_names",
-            body="res = super()._get_tier_validation_model_names()\n"
-            + "res.extend(%r)\n" % gated
-            + "return res",
-            doc="Models this package gates, so they can be picked in a rule.",
-        )
-        from dataclasses import replace as _replace
 
-        package._seed_source_for("tier.definition", _replace(spec, methods=(method,)))
+        Called after the gated model's own class is written, so the list is
+        read from the source rather than passed in: enabling, changing and
+        disabling all end here.
+        """
+        entry, spec = picker
+        gated = sorted(self._gated_models(package))
+        # Only this one method is ours to replace. Anything else on the class
+        # -- a graduated automation, a later feature's override -- stays.
+        methods = tuple(m for m in spec.methods if m.name != PICKER)
+        if gated:
+            methods += (
+                modelspec.MethodSpec(
+                    name=PICKER,
+                    body="res = super()._get_tier_validation_model_names()\n"
+                    + "res.extend(%s)\n" % _py_list(gated)
+                    + "return res",
+                    doc="Models this package gates, so they can be picked in a rule.",
+                ),
+            )
+        package._seed_source_for("tier.definition", _replace(spec, methods=methods))
         return entry
+
+    @api.model
+    def gate_config(self, model_name: str) -> GateConfigJSON | None:
+        """The transition a live gated model asks approval for, else ``None``.
+
+        Read from the loaded class, which is what is being enforced -- the
+        source may already say something else until the next reload.
+        """
+        typed.security(self)._assert_builder_user()
+        if model_name not in self.env:
+            raise UserError(_("Unknown model '%s'.", model_name))
+        return self._live_gate_config(model_name)
+
+    @api.model
+    def _live_gate_config(self, model_name: str) -> GateConfigJSON | None:
+        model = self.env[model_name]
+        # `_inherit_module`'s stub gap is the one `_empty_state` documents;
+        # the four attributes are the mixin's own, on a dynamically-named
+        # model, so they are read the way any dynamic attribute is.
+        if MIXIN not in model._inherit_module:  # pyright: ignore[reportAttributeAccessIssue]
+            return None
+        return {
+            "state_field": cast("str", getattr(model, "_state_field", "state")),
+            "state_from": list(cast("list[str]", getattr(model, "_state_from", []))),
+            "state_to": list(cast("list[str]", getattr(model, "_state_to", []))),
+            "cancel_state": cast("str", getattr(model, "_cancel_state", "")),
+        }
 
     @api.model
     def _gated_models(self, package: BuilderPackage) -> list[str]:

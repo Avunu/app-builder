@@ -50,7 +50,11 @@ if TYPE_CHECKING:
     # BuilderApproval` below does not collide with it. A plain `cast()`
     # target needs no runtime binding (rule 4/7), so this stays
     # `TYPE_CHECKING`-only rather than a real top-level import.
-    from .builder_approval import EnableApprovalJSON, StateFieldJSON
+    from .builder_approval import (
+        EnableApprovalJSON,
+        GateConfigJSON,
+        StateFieldJSON,
+    )
 
 
 class ApprovalGateJSON(TypedDict):
@@ -61,8 +65,11 @@ class ApprovalGateJSON(TypedDict):
     title: str
     help: str
     consequence: str
+    current: GateConfigJSON | None
     state_fields: list[StateFieldJSON]
     call: str
+    update_call: str
+    disable_call: str
 
 
 class ApprovalCatalogueJSON(RecordCatalogueJSON):
@@ -216,6 +223,7 @@ class BuilderApproval(models.AbstractModel):
             cast("BuilderRecordSurface", super()).catalogue(model_name),
         )
         gated = self._gated(model_name)
+        base = cast("BuilderApprovalBase", self)
         out["gate"] = {
             "on": gated,
             "title": _("Approvals are not switched on for %s", model_name or "")
@@ -229,15 +237,29 @@ class BuilderApproval(models.AbstractModel):
             else "",
             "consequence": _(
                 "Writes the tier.validation mixin into the model's class in the "
-                "package; one reload. Turning it off later is an edit to the "
-                "class."
+                "package; one reload. Approval is asked for on every way into "
+                "the states you pick -- from any other state, and for a record "
+                "created already in one -- because the status field is an "
+                "ordinary writable field and a gate on one path only would be "
+                "walked round. Rules decide who approves; with no rule, nothing "
+                "is asked."
             ),
+            # What is being enforced right now, for a model that is gated, so
+            # a wrong transition can be seen and changed rather than guessed
+            # at from the source.
+            "current": base._live_gate_config(model_name)
+            if gated and model_name
+            else None,
+            # Offered when gated too: changing the transition picks from the
+            # same fields enabling did.
             "state_fields": (
-                cast("BuilderApprovalBase", self).candidate_state_fields(model_name)
-                if model_name and model_name in self.env and not gated
+                base.candidate_state_fields(model_name)
+                if model_name and model_name in self.env
                 else []
             ),
             "call": "enable_gate",
+            "update_call": "update_gate",
+            "disable_call": "disable_gate",
         }
         return out
 
@@ -256,10 +278,39 @@ class BuilderApproval(models.AbstractModel):
             package_id,
             model_name,
             state_field=state_field,
-            state_from=state_from,
+            # The pane sends False for "any state"; so does a bare RPC.
+            state_from=state_from or None,
             state_to=state_to,
             cancel_state=cancel_state or None,
             apply=True,
+        )
+
+    @api.model
+    def update_gate(
+        self,
+        package_id: int,
+        model_name: str,
+        state_field: str = "state",
+        state_from: list[str] | None = None,
+        state_to: list[str] | None = None,
+        cancel_state: str | None = None,
+    ) -> EnableApprovalJSON:
+        """Change the gated transition and reload."""
+        return cast("BuilderApprovalBase", self).reconfigure(
+            package_id,
+            model_name,
+            state_field=state_field,
+            state_from=state_from or None,
+            state_to=state_to,
+            cancel_state=cancel_state or None,
+            apply=True,
+        )
+
+    @api.model
+    def disable_gate(self, package_id: int, model_name: str) -> EnableApprovalJSON:
+        """Take the gate out of the model's class and reload."""
+        return cast("BuilderApprovalBase", self).disable(
+            package_id, model_name, apply=True
         )
 
     # -- rows ------------------------------------------------------------------

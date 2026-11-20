@@ -33,13 +33,22 @@ class TestEnableApprovals(BuilderCase):
         self.build_demo_content(package)
         return package
 
+    def _origins(self, *state_to: str) -> str:
+        """Every value of res.partner's `type` but these, as the source has it."""
+        fields_ = typed.model(self.env, BuilderApproval).candidate_state_fields(
+            "res.partner"
+        )
+        values = next(f["values"] for f in fields_ if f["name"] == "type")
+        return "[%s]" % ", ".join(
+            '"%s"' % v["value"] for v in values if v["value"] not in state_to
+        )
+
     def test_enabling_writes_the_mixin_and_its_configuration(self):
         package = self._package()
         typed.model(self.env, BuilderApproval).enable(
             cast("int", package.id),
             "res.partner",
             state_field="type",
-            state_from=["contact"],
             state_to=["invoice"],
             apply=False,
         )
@@ -57,7 +66,7 @@ class TestEnableApprovals(BuilderCase):
         # formats generated packages, does not rewrite the file and report the
         # package as drifted with nothing changed.
         self.assertIn('_state_to = ["invoice"]', source)
-        self.assertIn('_state_from = ["contact"]', source)
+        self.assertIn("_state_from = %s" % self._origins("invoice"), source)
         self.assertIn("_tier_validation_manual_config = False", source)
 
     def test_enabling_also_writes_the_model_picker(self):
@@ -68,7 +77,6 @@ class TestEnableApprovals(BuilderCase):
             cast("int", package.id),
             "res.partner",
             state_field="type",
-            state_from=["contact"],
             state_to=["invoice"],
             apply=False,
         )
@@ -142,7 +150,6 @@ class TestEnableApprovals(BuilderCase):
                 cast("int", package.id),
                 "res.partner",
                 state_field="type",
-                state_from=["contact"],
                 state_to=["invoice"],
                 apply=False,
             )
@@ -151,7 +158,6 @@ class TestEnableApprovals(BuilderCase):
                 cast("int", package.id),
                 "res.partner",
                 state_field="type",
-                state_from=["contact"],
                 state_to=["invoice"],
                 apply=False,
             )

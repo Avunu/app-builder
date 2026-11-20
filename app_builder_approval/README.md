@@ -22,13 +22,48 @@ Turning it on writes **two** classes:
   base implementation returns an empty list and without it your model never appears in
   the approval rule's own model picker.
 
+## What the gate covers
+
+The engine asks for approval when a `write()` moves a record **out of** one of the
+origin states **into** one of the gated states, and at no other moment. A status field
+the builder made is an ordinary writable column with a clickable statusbar, so that rule
+alone would leave two ways round it, and this addon closes both:
+
+- **Every other state is an origin.** Leave the origin states empty and they are every
+  value that is not a gated one. A narrower list is refused: with only "Draft → Done"
+  gated, anybody could click "In Progress" and then "Done" and never be asked.
+- **Creation is gated too.** `tier.validation` has no `create()`, so a record created
+  already in a gated state would never meet the gate. The generated class carries a
+  `_create` override that puts such a record through the engine's own write-time check —
+  a reviewer creating it approves it in passing, anybody else is told to ask. It is
+  written into your package, not inherited from this addon, so it still guards on a
+  database the builder is not installed on.
+
+What it does not cover is the engine's own: a rule fires only for records its condition
+matches before the write, and with no rule for a model nothing is asked at all.
+
+The transition can be changed, and the gate taken out again, from the same place
+(`builder.approval` `update_gate` / `disable_gate`): both rewrite the class in the
+package and reload. Turning the gate off leaves the rules where they are — they are your
+records — and they simply stop firing.
+
+## Installing
+
+This addon is **not** installed automatically. It is Alpha, it overrides
+`tier.definition` and it writes Python into your models, so it is something to choose
+rather than something that arrives because `base_tier_validation` happened to be there.
+Until it is installed, approval rules are not written to the generated source.
+
+## What is written
+
 Rules themselves are `tier.definition` records, written into
 `security/<model>_approval.xml` beside that model's access rules. In-flight approvals
 are not: `tier.review` holds one database's integer record ids and user ids, and none of
 it means anything after a fresh install.
 
-Install `base_tier_validation_formula` for Python conditions, `_forward` for delegation,
-or `_server_action` to run something on approval — each is picked up automatically.
+Install `base_tier_validation_formula` for Python conditions (its bridge,
+`app_builder_approval_formula`, then installs itself), `_forward` for delegation, or
+`_server_action` to run something on approval.
 
 ## Credits
 
