@@ -19,6 +19,7 @@ load their fake models. What is asserted on is then real ``create()`` and
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, cast
 
 from odoo_test_helper import FakeModelLoader
@@ -30,7 +31,7 @@ from odoo.addons.app_builder_base.models.builder_package_model import (
     BuilderPackageModel,
 )
 from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
-from odoo.addons.app_builder_base.tools import scaffold, typed
+from odoo.addons.app_builder_base.tools import modelspec, scaffold, typed
 from odoo.addons.base.models.ir_model import IrModel
 
 from ..models.builder_approval import BuilderApproval
@@ -192,6 +193,77 @@ class TestLiveGate(BuilderCase):
         with raises(self, ValidationError):
             job.write({"state": "done"})
         self.assertEqual(job.state, "in_progress")
+
+    def test_a_stage_added_after_enabling_is_gated_too(self):
+        """Stages stay editable after the gate is on. A list of origins
+        frozen at enable time left a new one out, and Draft -> Review ->
+        Done was then the bypass all over again."""
+        self.gate()
+        self.rule()
+        entry = typed.model(self.env, BuilderPackageModel).search(
+            [("package_id", "=", self.package.id), ("model", "=", MODEL)], limit=1
+        )
+        spec = cast("modelspec.ModelSpec", entry._current_spec())
+        state = cast("modelspec.FieldSpec", spec.field("state"))
+        review = modelspec.SelectionSpec("review", "Review")
+        self.package._seed_source_for(
+            MODEL,
+            modelspec.with_field(
+                spec,
+                replace(
+                    state,
+                    selection=state.selection[:1] + (review,) + state.selection[1:],
+                ),
+            ),
+        )
+        self.reload(MODEL)
+        self.assertIn("review", self.jobs()._state_from)
+        job = self.jobs().create({"name": "Side door"})
+        job.write({"state": "review"})
+        self.assertEqual(job.state, "review")
+        with raises(self, ValidationError):
+            job.write({"state": "done"})
+        self.assertEqual(job.state, "review")
+
+    def test_duplicating_a_record_in_a_gated_state(self):
+        """Duplicate goes through `create()`. A field called `state` is not
+        copied unless it says so (Odoo's own default), so the builder's
+        status starts the duplicate over at Draft and nothing is asked. A
+        duplicate that does land in a gated state -- a status field that is
+        copied, or a default that says so -- is a record born there, and is
+        asked about like any other."""
+        self.gate()
+        job = self.jobs().create({"name": "Original", "state": "done"})
+        self.rule()
+        self.assertFalse(self.env[MODEL]._fields["state"].copy)
+        fresh = job.copy()
+        self.assertEqual(fresh.state, "draft")
+        self.assertFalse(fresh.sudo().review_ids)
+        with raises(self, ValidationError):
+            job.copy({"state": "done"})
+        copied = job.with_user(self.reviewer).copy({"state": "done"})
+        self.assertEqual(copied.state, "done")
+        self.assertEqual(copied.sudo().review_ids.mapped("status"), ["approved"])
+
+    def test_module_data_is_loaded_as_shipped(self):
+        """A package's own records, loaded by the superuser as it installs,
+        are not asked about: a rule loaded first must not make the package
+        uninstallable. A person's import also runs in install mode, but not
+        as the superuser, so it still is."""
+        self.gate()
+        self.rule()
+        loaded: Any = (
+            cast("Any", self.env[MODEL])
+            .sudo()
+            .with_context(install_mode=True)
+            .create({"name": "Shipped", "state": "done"})
+        )
+        self.assertEqual(loaded.state, "done")
+        self.assertFalse(loaded.review_ids)
+        with raises(self, ValidationError):
+            self.jobs().with_context(install_mode=True).create(
+                {"name": "Imported", "state": "done"}
+            )
 
     def test_creating_past_the_gate_is_refused(self):
         """tier.validation gates write() only. The generated `_create` is

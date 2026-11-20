@@ -23,7 +23,7 @@ from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base.models.ir_model import IrModel
 
-from ..models.builder_approval import BuilderApproval
+from ..models.builder_approval import STATE_FROM_SOURCE, BuilderApproval
 
 
 @tagged("post_install", "-at_install")
@@ -32,16 +32,6 @@ class TestEnableApprovals(BuilderCase):
         package = self.make_package()
         self.build_demo_content(package)
         return package
-
-    def _origins(self, *state_to: str) -> str:
-        """Every value of res.partner's `type` but these, as the source has it."""
-        fields_ = typed.model(self.env, BuilderApproval).candidate_state_fields(
-            "res.partner"
-        )
-        values = next(f["values"] for f in fields_ if f["name"] == "type")
-        return "[%s]" % ", ".join(
-            '"%s"' % v["value"] for v in values if v["value"] not in state_to
-        )
 
     def test_enabling_writes_the_mixin_and_its_configuration(self):
         package = self._package()
@@ -66,7 +56,9 @@ class TestEnableApprovals(BuilderCase):
         # formats generated packages, does not rewrite the file and report the
         # package as drifted with nothing changed.
         self.assertIn('_state_to = ["invoice"]', source)
-        self.assertIn("_state_from = %s" % self._origins("invoice"), source)
+        # The rule rather than today's list, so a value added later is an
+        # origin too (`test_gate_source.TestOriginsFollowTheField`).
+        self.assertIn("_state_from = %s" % STATE_FROM_SOURCE, source)
         self.assertIn("_tier_validation_manual_config = False", source)
 
     def test_enabling_also_writes_the_model_picker(self):

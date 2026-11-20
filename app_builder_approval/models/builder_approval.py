@@ -70,6 +70,18 @@ PICKER = "_get_tier_validation_model_names"
 # "No cancelled state", spelled so the engine's substring test cannot match it.
 NO_CANCEL_STATE = ""
 
+# `_state_from`, as source: every value the state field has *when it is asked*
+# that is not a destination. Not a list frozen at enable time, because a
+# builder model's stages stay editable -- a status value added later and left
+# out of a frozen list would be a free way round the gate (draft -> review ->
+# done). The engine only ever reads `self._state_from` off a record (`in`
+# tests, `_check_state_from_condition`), so a property on the class is read
+# exactly where a list would be. The work is in a builder-owned method rather
+# than in the attribute, because class attributes are written on one line and
+# a long one would be rewrapped by any formatter run over the package.
+ORIGINS = "_builder_gate_origins"
+STATE_FROM_SOURCE = "property(lambda self: self.%s())" % ORIGINS
+
 
 def _py_list(values: list[str]) -> str:
     """A list of strings as source, quoted the way the rest of the file is."""
@@ -276,9 +288,15 @@ class BuilderApproval(models.AbstractModel):
         an ordinary writable column with a clickable statusbar: a state left
         out of ``_state_from`` is a state anybody can step through to walk
         round the gate (draft -> in progress -> done, when only draft -> done
-        was named). So the origins default to *every* value that is not a
+        was named). So the origins are *every* value that is not a
         destination, and a narrower list is refused rather than written as a
-        gate that only looks like one.
+        gate that only looks like one. What is written is that rule, not the
+        list it gives today (``STATE_FROM_SOURCE``), so a value added to the
+        field later is an origin too.
+
+        A field whose values cannot be listed is refused outright: coverage
+        of every way in cannot be checked there, and the rule written into
+        the class has to list them at run time.
         """
         state_to = list(state_to or [])
         if not state_to:
@@ -301,23 +319,20 @@ class BuilderApproval(models.AbstractModel):
         ordered = [v for v, _label in self._selection_values(model_name, state_field)]
         values = set(ordered)
         if not values:
-            # Nothing to check against; the field may be dynamic. The origins
-            # cannot be worked out either, so they have to be said.
-            if not state_from:
-                raise UserError(
-                    _(
-                        "The values of %(field)s cannot be read without a "
-                        "record, so say which states approval is asked from: "
-                        "every one that is not a destination.",
-                        field=state_field,
-                    )
+            # Not a selection, or one built by a callable that needs a record.
+            # Nothing named could be checked, and no list of origins -- the
+            # caller's or the run-time one -- could be shown to cover every
+            # way in.
+            raise UserError(
+                _(
+                    "The values of %(field)s cannot be listed, so there is no "
+                    "way to make sure approval is asked on every way into "
+                    "%(to)s. Gate a stored selection field whose values are "
+                    "fixed.",
+                    field=state_field,
+                    to=", ".join(state_to),
                 )
-            return {
-                "state_field": state_field,
-                "state_from": list(state_from),
-                "state_to": state_to,
-                "cancel_state": cancel_state or NO_CANCEL_STATE,
-            }
+            )
         named = set(state_from or []) | set(state_to)
         if cancel_state:
             named.add(cancel_state)
@@ -419,10 +434,18 @@ class BuilderApproval(models.AbstractModel):
             model_name, state_field, state_from, state_to, cancel_state
         )
         picker = self._model_picker(package)
-        self._write_gated_model(package, model_name, config)
-        self._write_model_picker(package, picker)
-        if apply:
-            package.action_apply(reason=_("enable approvals on %s", model_name))
+        gated = self._gated_spec(package, model_name, config)
+        self._commit_sources(
+            package,
+            {
+                model_name: gated,
+                "tier.definition": self._picker_spec(
+                    picker, set(self._gated_models(package)) | {model_name}
+                ),
+            },
+            apply=apply,
+            reason=_("enable approvals on %s", model_name),
+        )
         return {"model": model_name, "applied": apply}
 
     @api.model
@@ -447,10 +470,18 @@ class BuilderApproval(models.AbstractModel):
             model_name, state_field, state_from, state_to, cancel_state
         )
         picker = self._model_picker(package)
-        self._write_gated_model(package, model_name, config, replace=True)
-        self._write_model_picker(package, picker)
-        if apply:
-            package.action_apply(reason=_("change approvals on %s", model_name))
+        gated = self._gated_spec(package, model_name, config, replace=True)
+        self._commit_sources(
+            package,
+            {
+                model_name: gated,
+                "tier.definition": self._picker_spec(
+                    picker, set(self._gated_models(package)) | {model_name}
+                ),
+            },
+            apply=apply,
+            reason=_("change approvals on %s", model_name),
+        )
         return {"model": model_name, "applied": apply}
 
     @api.model
@@ -472,27 +503,75 @@ class BuilderApproval(models.AbstractModel):
         if spec is None or MIXIN not in spec.inherit:
             raise UserError(self._not_gated_here(package, model_name))
         picker = self._model_picker(package)
-        package._seed_source_for(
-            model_name,
-            _replace(
-                spec,
-                inherit=tuple(i for i in spec.inherit if i != MIXIN),
-                class_attrs=tuple(
-                    (k, v) for k, v in spec.class_attrs if k not in GATE_ATTRS
-                ),
-                methods=tuple(m for m in spec.methods if m.name != CREATE_GUARD),
+        ungated = _replace(
+            spec,
+            inherit=tuple(i for i in spec.inherit if i != MIXIN),
+            class_attrs=tuple(
+                (k, v) for k, v in spec.class_attrs if k not in GATE_ATTRS
             ),
+            methods=self._without_gate_methods(spec, model_name),
         )
-        self._write_model_picker(package, picker)
-        if apply:
-            package.action_apply(
-                reason=_("disable approvals on %s", model_name),
-                allow_destructive=self._drops_only_the_gate(package, model_name),
-            )
+        self._commit_sources(
+            package,
+            {
+                model_name: ungated,
+                "tier.definition": self._picker_spec(
+                    picker, set(self._gated_models(package)) - {model_name}
+                ),
+            },
+            apply=apply,
+            reason=_("disable approvals on %s", model_name),
+            ungating=model_name,
+        )
         return {"model": model_name, "applied": apply}
 
     @api.model
-    def _drops_only_the_gate(self, package: BuilderPackage, model_name: str) -> bool:
+    def _commit_sources(
+        self,
+        package: BuilderPackage,
+        specs: dict[str, modelspec.ModelSpec],
+        apply: bool,
+        reason: str,
+        ungating: str | None = None,
+    ) -> None:
+        """Put the rewritten classes on disk, through Apply when applying.
+
+        Every refusal has been made by the time this is called, and Apply's
+        own -- a stored field it would drop, a file that does not compile or
+        read back -- is made before it writes anything, because the files go
+        to it as an ``overlay`` rather than being written first. Written
+        first, a refusal would leave source on disk that the database and
+        the running registry never agreed to, and Apply's snapshot would
+        record the new bytes as the ones to roll back to.
+
+        Without ``apply`` (a test, or a caller that applies later) the files
+        are written as they are for any other unapplied edit.
+        """
+        if not apply:
+            for model_name, spec in specs.items():
+                package._seed_source_for(model_name, spec)
+            return
+        overlay = {
+            "models/%s" % pycodegen.module_file_for(model_name): (
+                pycodegen.render_model(spec)
+            )
+            for model_name, spec in specs.items()
+        }
+        overlay["models/__init__.py"] = package._render_models_init(
+            sorted(package._python_module_set() | set(specs))
+        )
+        overlay["__init__.py"] = pycodegen.render_package_init(True)
+        package.action_apply(
+            reason=reason,
+            allow_destructive=bool(ungating)
+            and self._drops_only_the_gate(package, ungating, overlay),
+            overlay=overlay,
+        )
+
+    @api.model
+    def _drops_only_the_gate(
+        self, package: BuilderPackage, model_name: str, overlay: dict[str, str]
+    ) -> bool:
         """Whether what this apply removes is the mixin's own fields and no more.
 
         Apply refuses to drop a stored field without being told to, and on a
@@ -504,8 +583,13 @@ class BuilderApproval(models.AbstractModel):
         exactly that and to nothing else: any other pending removal in the
         package still gets Apply's own refusal. The column is kept under
         another name, as it is for any confirmed removal.
+
+        Asked of the files Apply is about to write -- the render plus the
+        ``overlay`` -- not of the disk, which has not changed yet.
         """
-        dropped = package._destructive_changes(package._render_files())
+        files = package._render_files()
+        files.update(overlay)
+        dropped = package._destructive_changes(files)
         if not dropped:
             return False
         mixin_fields = set(cast("dict[str, Field[Any]]", self.env[MIXIN]._fields))
@@ -563,13 +647,14 @@ class BuilderApproval(models.AbstractModel):
         )
 
     @api.model
-    def _write_gated_model(
+    def _gated_spec(
         self,
         package: BuilderPackage,
         model_name: str,
         config: GateConfigJSON,
         replace: bool = False,
-    ) -> BuilderPackageModel:
+    ) -> modelspec.ModelSpec:
+        """The gated model's class with the gate in it, not yet written."""
         entry = self._gated_entry(package, model_name)
         if replace and not entry:
             raise UserError(self._not_gated_here(package, model_name))
@@ -588,7 +673,10 @@ class BuilderApproval(models.AbstractModel):
         # `_py`, never a bare '"%s"': these are written into a class body, and
         # a value with a quote in it would otherwise be source of its own.
         attrs["_state_field"] = pycodegen._py(config["state_field"])
-        attrs["_state_from"] = _py_list(config["state_from"])
+        # The rule, not today's list: see STATE_FROM_SOURCE and `ORIGINS`.
+        # `config` carries the list too, which is what `_resolve_transition`
+        # checked.
+        attrs["_state_from"] = STATE_FROM_SOURCE
         attrs["_state_to"] = _py_list(config["state_to"])
         # Without this the mixin injects no buttons at all: the default is True,
         # which means "the model wires up its own UI" -- and a generated model
@@ -602,17 +690,12 @@ class BuilderApproval(models.AbstractModel):
         # test when the new state is empty. A single string, never a list.
         attrs["_cancel_state"] = pycodegen._py(config["cancel_state"])
 
-        package._seed_source_for(
-            model_name,
-            _replace(
-                spec,
-                inherit=spec.inherit if gated else spec.inherit + (MIXIN,),
-                class_attrs=tuple(attrs.items()),
-                methods=tuple(m for m in spec.methods if m.name != CREATE_GUARD)
-                + (self._create_guard(),),
-            ),
+        return _replace(
+            spec,
+            inherit=spec.inherit if gated else spec.inherit + (MIXIN,),
+            class_attrs=tuple(attrs.items()),
+            methods=self._without_gate_methods(spec, model_name) + self._gate_methods(),
         )
-        return entry
 
     @api.model
     def _create_guard(self) -> modelspec.MethodSpec:
@@ -623,7 +706,16 @@ class BuilderApproval(models.AbstractModel):
         question asked. This puts a new record that is already in a gated
         state through the engine's own write-time check: a reviewer creating
         it approves it in passing, exactly as on a write, and anybody else is
-        told to ask.
+        told to ask. That includes a row imported in a gated state, and a
+        duplicate that lands in one (a field named ``state`` is not copied by
+        default, so usually it does not) -- both are records arriving past
+        the gate.
+
+        Module data is the exception: records a module ships, loaded by the
+        superuser as it installs (``install_mode``), are what the package
+        says they are, and a rule loaded before them must not make the
+        package uninstallable. An import by a person also runs in
+        ``install_mode``, but not as the superuser, so it is still asked.
 
         Generated into the class, not inherited from this addon: the package
         ships to databases the builder is not installed on, and a guard that
@@ -637,6 +729,8 @@ class BuilderApproval(models.AbstractModel):
             doc="Ask for approval of a record created already in a gated state.",
             body=(
                 "records = super()._create(data_list)\n"
+                'if self.env.su and self.env.context.get("install_mode"):\n'
+                "    return records\n"
                 "for record in records.with_context(skip_check_state_condition=True):\n"
                 "    state = record[record._state_field]\n"
                 "    if state in record._state_to:\n"
@@ -646,6 +740,63 @@ class BuilderApproval(models.AbstractModel):
                 "return records"
             ),
         )
+
+    @api.model
+    def _origins_method(self) -> modelspec.MethodSpec:
+        """What ``_state_from`` reads: every value but the destinations, now.
+
+        Builder-owned by its prefix; see STATE_FROM_SOURCE for why it exists.
+        """
+        return modelspec.MethodSpec(
+            name=ORIGINS,
+            doc="Every state but the gated ones, as the field has them now.",
+            body=(
+                "values = self._fields[self._state_field].get_values(self.env)\n"
+                "return [v for v in values if v not in self._state_to]"
+            ),
+        )
+
+    @api.model
+    def _gate_methods(self) -> tuple[modelspec.MethodSpec, ...]:
+        """The methods enabling writes into the gated class."""
+        return (self._origins_method(), self._create_guard())
+
+    @api.model
+    def _without_gate_methods(
+        self, spec: modelspec.ModelSpec, model_name: str
+    ) -> tuple[modelspec.MethodSpec, ...]:
+        """``spec``'s methods less the ones the gate wrote.
+
+        Recognised by what they are, not only by their names: the parser
+        accepts any ``_create`` in the block as generated, and one somebody
+        wrote there themselves is theirs -- as is a gate method somebody has
+        since edited. Replacing or dropping either would delete it without a
+        word, so finding one is a refusal instead.
+        """
+        ours = {m.name: m for m in self._gate_methods()}
+        kept: list[modelspec.MethodSpec] = []
+        for method in spec.methods:
+            expected = ours.get(method.name)
+            if expected is None:
+                kept.append(method)
+                continue
+            if (method.args, method.doc.strip(), method.body.strip()) != (
+                expected.args,
+                expected.doc.strip(),
+                expected.body.strip(),
+            ):
+                raise UserError(
+                    _(
+                        "%(model)s has a %(method)s method in its class that "
+                        "approvals did not write, or that has been changed "
+                        "since. Turning approvals on, changing them or turning "
+                        "them off would replace or remove it, so move it below "
+                        "the builder's block, or make the change by hand.",
+                        model=model_name,
+                        method=method.name,
+                    )
+                )
+        return tuple(kept)
 
     @api.model
     def _model_picker(
@@ -665,12 +816,12 @@ class BuilderApproval(models.AbstractModel):
         return entry, self._readable_spec(entry, "tier.definition", package)
 
     @api.model
-    def _write_model_picker(
+    def _picker_spec(
         self,
-        package: BuilderPackage,
         picker: tuple[BuilderPackageModel, modelspec.ModelSpec],
-    ) -> BuilderPackageModel:
-        """Make tier.definition's picker offer exactly the models gated here.
+        gated: set[str],
+    ) -> modelspec.ModelSpec:
+        """tier.definition's class, with a picker offering exactly ``gated``.
 
         ``_get_tier_validation_model_names`` returns ``[]`` in
         base_tier_validation, and its only caller is the domain on
@@ -678,12 +829,10 @@ class BuilderApproval(models.AbstractModel):
         rule cannot be created through Odoo's own form -- which is where we send
         people, so it is not optional.
 
-        Called after the gated model's own class is written, so the list is
-        read from the source rather than passed in: enabling, changing and
-        disabling all end here.
+        ``gated`` is the package's gated models *after* the change being
+        made, which the caller knows and the disk does not yet.
         """
-        entry, spec = picker
-        gated = sorted(self._gated_models(package))
+        _entry, spec = picker
         # Only this one method is ours to replace. Anything else on the class
         # -- a graduated automation, a later feature's override -- stays.
         methods = tuple(m for m in spec.methods if m.name != PICKER)
@@ -692,13 +841,12 @@ class BuilderApproval(models.AbstractModel):
                 modelspec.MethodSpec(
                     name=PICKER,
                     body="res = super()._get_tier_validation_model_names()\n"
-                    + "res.extend(%s)\n" % _py_list(gated)
+                    + "res.extend(%s)\n" % _py_list(sorted(gated))
                     + "return res",
                     doc="Models this package gates, so they can be picked in a rule.",
                 ),
             )
-        package._seed_source_for("tier.definition", _replace(spec, methods=methods))
-        return entry
+        return _replace(spec, methods=methods)
 
     @api.model
     def gate_config(self, model_name: str) -> GateConfigJSON | None:

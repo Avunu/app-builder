@@ -13,8 +13,10 @@ loaded and asked to actually stop a write.
 from __future__ import annotations
 
 import ast
+import textwrap
 from dataclasses import replace
-from typing import cast
+from types import SimpleNamespace
+from typing import Any, cast
 
 from odoo.exceptions import UserError
 from odoo.modules.module import get_manifest
@@ -26,7 +28,7 @@ from odoo.addons.app_builder_base.models.builder_package_model import (
 from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import modelspec, pycodegen, pyparse, typed
 
-from ..models.builder_approval import BuilderApproval
+from ..models.builder_approval import ORIGINS, STATE_FROM_SOURCE, BuilderApproval
 
 
 class GateCase(BuilderCase):
@@ -64,9 +66,45 @@ class GateCase(BuilderCase):
         return cast("str", self.package._read_source(cast("str", entry.python_path)))
 
     def attrs(self, model_name: str = "res.partner") -> dict[str, object]:
-        """The class attributes as Python would read them, not as text."""
+        """The class attributes as Python would read them, not as text.
+
+        ``_state_from`` is the one that is not a literal: it is the rule
+        "every value but the destinations", and what it reads as is the list
+        that rule gives for the field as it is now (`origins`).
+        """
         spec = pyparse.parse_model(self.source(model_name))
-        return {name: ast.literal_eval(value) for name, value in spec.class_attrs}
+        return {
+            name: value if name == "_state_from" else ast.literal_eval(value)
+            for name, value in spec.class_attrs
+        }
+
+    def origins(self, model_name: str = "res.partner") -> list[str]:
+        """What the written ``_state_from`` gives on this database's field.
+
+        The attribute is a property over a generated method; the method is
+        run here against a stand-in for a record -- it only reads the field,
+        the destinations and the environment -- and loading the class itself
+        is `test_live_gate`'s job.
+        """
+        attrs = self.attrs(model_name)
+        self.assertEqual(attrs["_state_from"], STATE_FROM_SOURCE)
+        method = next(
+            m
+            for m in pyparse.parse_model(self.source(model_name)).methods
+            if m.name == ORIGINS
+        )
+        namespace: dict[str, Any] = {}
+        exec(  # pylint: disable=exec-used
+            "def origins(self):\n%s" % textwrap.indent(method.body, "    "),
+            namespace,
+        )
+        record = SimpleNamespace(
+            _fields=self.env[model_name]._fields,
+            _state_field=attrs["_state_field"],
+            _state_to=attrs["_state_to"],
+            env=self.env,
+        )
+        return namespace["origins"](record)
 
 
 @tagged("post_install", "-at_install")
@@ -78,9 +116,7 @@ class TestGateCoverage(GateCase):
         self.enable()
         attrs = self.attrs()
         self.assertEqual(attrs["_state_to"], ["invoice"])
-        self.assertEqual(
-            attrs["_state_from"], [v for v in self.values if v != "invoice"]
-        )
+        self.assertEqual(self.origins(), [v for v in self.values if v != "invoice"])
 
     def test_an_origin_list_that_leaves_a_way_round_is_refused(self):
         with raises(self, UserError) as caught:
@@ -92,10 +128,26 @@ class TestGateCoverage(GateCase):
                 self.assertIn(value, message)
         self.assertFalse(self.entry("res.partner"), "a refusal must write nothing")
 
-    def test_a_complete_origin_list_is_accepted_as_given(self):
+    def test_a_complete_origin_list_is_accepted(self):
+        """Accepted, and written as the rule it amounts to: naming every
+        other state today is no promise about a state added tomorrow."""
         origins = [v for v in reversed(self.values) if v != "invoice"]
         self.enable(state_from=origins)
-        self.assertEqual(self.attrs()["_state_from"], origins)
+        self.assertEqual(sorted(self.origins()), sorted(origins))
+
+    def test_a_field_whose_values_cannot_be_listed_is_refused(self):
+        """Coverage of every way in cannot be checked on a field like that,
+        and an explicit list used to be written unchecked -- overlapping
+        lists and a cancelled state that was also a destination included."""
+        with raises(self, UserError) as caught:
+            self.enable(
+                state_field="name",
+                state_from=["a", "b"],
+                state_to=["b"],
+                cancel_state="b",
+            )
+        self.assertIn("cannot be listed", str(caught.exception))
+        self.assertFalse(self.entry("res.partner"), "a refusal must write nothing")
 
     def test_the_creation_guard_is_written_into_the_class(self):
         """tier.validation has no create(); a record born in a gated state
@@ -150,7 +202,7 @@ class TestCancelState(GateCase):
     def test_a_chosen_cancel_state_is_written(self):
         self.enable(cancel_state="other")
         self.assertEqual(self.attrs()["_cancel_state"], "other")
-        self.assertIn("other", cast("list[str]", self.attrs()["_state_from"]))
+        self.assertIn("other", self.origins())
 
     def test_a_cancel_state_the_field_does_not_have_is_refused(self):
         with raises(self, UserError) as caught:
@@ -171,8 +223,8 @@ class TestCancelState(GateCase):
         self.assertIn("cancelled state", str(caught.exception))
 
     def test_strings_are_escaped_not_interpolated(self):
-        """Belt to the validation's braces: a field whose values cannot be
-        read is not checked, so the writer itself must not trust them."""
+        """Belt to the validation's braces: the writer itself must not
+        trust a value just because something upstream checked it."""
         from ..models.builder_approval import GateConfigJSON
 
         config: GateConfigJSON = {
@@ -181,9 +233,11 @@ class TestCancelState(GateCase):
             "state_to": ["c\\d"],
             "cancel_state": 'e"f',
         }
-        self.approval._write_gated_model(self.package, "res.partner", config)
+        self.package._seed_source_for(
+            "res.partner",
+            self.approval._gated_spec(self.package, "res.partner", config),
+        )
         attrs = self.attrs()
-        self.assertEqual(attrs["_state_from"], ['a"b'])
         self.assertEqual(attrs["_state_to"], ["c\\d"])
         self.assertEqual(attrs["_cancel_state"], 'e"f')
         self.package._assert_sources_compile(self.package._render_files())
@@ -203,9 +257,7 @@ class TestChangeAndDisable(GateCase):
         )
         attrs = self.attrs()
         self.assertEqual(attrs["_state_to"], ["delivery"])
-        self.assertEqual(
-            attrs["_state_from"], [v for v in self.values if v != "delivery"]
-        )
+        self.assertEqual(self.origins(), [v for v in self.values if v != "delivery"])
         self.assertEqual(attrs["_cancel_state"], "other")
         source = self.source()
         self.assertEqual(source.count("tier.validation"), 1)
@@ -271,6 +323,53 @@ class TestChangeAndDisable(GateCase):
         spec = pyparse.parse_model(self.source())
         self.assertEqual(spec.class_attrs, (("_mail_post_access", '"read"'),))
         self.assertEqual([m.name for m in spec.methods], ["_builder_notify"])
+
+    def test_a_create_somebody_else_wrote_is_not_replaced(self):
+        """The parser takes any `_create` in the block as generated, so the
+        name alone does not make it the gate's. Enabling used to replace it
+        without a word; now it stops and says so."""
+        typed.model(self.env, BuilderPackageModel)._adopt(
+            self.package, "res.partner", extends=True
+        )
+        theirs = modelspec.MethodSpec(
+            name="_create",
+            args="data_list",
+            body="return super()._create(data_list)",
+        )
+        self.package._seed_source_for(
+            "res.partner",
+            modelspec.ModelSpec(
+                name="res.partner",
+                description="",
+                class_name=pycodegen.class_name_for("res.partner"),
+                extends=True,
+                methods=(theirs,),
+            ),
+        )
+        before = self.source()
+        with raises(self, UserError) as caught:
+            self.enable()
+        self.assertIn("_create", str(caught.exception))
+        self.assertEqual(self.source(), before)
+
+    def test_an_edited_guard_is_not_dropped_by_disabling(self):
+        self.enable()
+        spec = cast("modelspec.ModelSpec", self.entry("res.partner")._current_spec())
+        edited = tuple(
+            replace(m, body="assert data_list is not None\n" + m.body)
+            if m.name == "_create"
+            else m
+            for m in spec.methods
+        )
+        self.package._seed_source_for("res.partner", replace(spec, methods=edited))
+        before = self.source()
+        with raises(self, UserError) as caught:
+            self.approval.disable(
+                cast("int", self.package.id), "res.partner", apply=False
+            )
+        self.assertIn("changed", str(caught.exception))
+        self.assertEqual(self.source(), before)
+        self.assertIn("assert data_list is not None", before)
 
     def test_disabling_a_model_that_is_not_gated_is_refused(self):
         with raises(self, UserError) as caught:

@@ -238,11 +238,12 @@ class BuilderApproval(models.AbstractModel):
             "consequence": _(
                 "Writes the tier.validation mixin into the model's class in the "
                 "package; one reload. Approval is asked for on every way into "
-                "the states you pick -- from any other state, and for a record "
-                "created already in one -- because the status field is an "
-                "ordinary writable field and a gate on one path only would be "
-                "walked round. Rules decide who approves; with no rule, nothing "
-                "is asked."
+                "the states you pick -- from any other state, including one "
+                "added later, and for a record created, imported or duplicated "
+                "already in one -- because the status "
+                "field is an ordinary writable field and a gate on one path "
+                "only would be walked round. Rules decide who approves; with "
+                "no rule, nothing is asked."
             ),
             # What is being enforced right now, for a model that is gated, so
             # a wrong transition can be seen and changed rather than guessed

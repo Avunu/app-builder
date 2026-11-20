@@ -31,7 +31,11 @@ alone would leave two ways round it, and this addon closes both:
 
 - **Every other state is an origin.** Leave the origin states empty and they are every
   value that is not a gated one. A narrower list is refused: with only "Draft → Done"
-  gated, anybody could click "In Progress" and then "Done" and never be asked.
+  gated, anybody could click "In Progress" and then "Done" and never be asked. What is
+  written into the class is that rule rather than today's list (`_state_from` is a
+  property over a generated `_builder_gate_origins`), so a stage you add to the status
+  field later is gated too. A field whose values cannot be listed (a selection built by
+  a function) cannot be gated, because coverage cannot be checked there.
 - **Creation is gated too.** `tier.validation` has no `create()`, so a record created
   already in a gated state would never meet the gate. The generated class carries a
   `_create` override that puts such a record through the engine's own write-time check —
@@ -39,13 +43,32 @@ alone would leave two ways round it, and this addon closes both:
   written into your package, not inherited from this addon, so it still guards on a
   database the builder is not installed on.
 
+Every way of creating a record counts as creating it, so once a rule matches:
+
+- **Duplicate** starts the copy over: Odoo does not copy a field named `state` unless it
+  says so, so the builder's status field puts the duplicate back at its default and
+  nothing is asked. A duplicate that does land in a gated state (a status field that is
+  copied, or a default passed to `copy()`) is refused for anybody who cannot approve it,
+  and a reviewer who makes it approves it in passing.
+- **Import** of rows in a gated state is treated the same way.
+- **Module data** is the exception: records a module ships, loaded by the superuser
+  while it installs or upgrades, are loaded as they are, so a rule loaded first cannot
+  make a package uninstallable.
+
 What it does not cover is the engine's own: a rule fires only for records its condition
 matches before the write, and with no rule for a model nothing is asked at all.
 
-The transition can be changed, and the gate taken out again, from the same place
-(`builder.approval` `update_gate` / `disable_gate`): both rewrite the class in the
-package and reload. Turning the gate off leaves the rules where they are — they are your
-records — and they simply stop firing.
+Turning approvals on writes the `_create` override and `_builder_gate_origins`; changing
+or removing the gate rewrites or removes them. A `_create` somebody else wrote in the
+builder's block, or either method edited by hand, is never replaced or dropped silently:
+the change is refused and says which method is in the way.
+
+The transition can be changed, and the gate taken out again, but **not from the
+Approvals pane yet**: the pane only turns approvals on. Until it offers the other two,
+they are RPC calls on `builder.approval` — `update_gate(package_id, model_name, ...)`
+and `disable_gate(package_id, model_name)` — and both rewrite the class in the package
+and reload. Turning the gate off leaves the rules where they are — they are your records
+— and they simply stop firing.
 
 ## Installing
 
