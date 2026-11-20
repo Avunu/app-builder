@@ -266,6 +266,57 @@ class TestRepeatedLocators(SequenceCase):
         self.assertFalse(self._extension())
         self.assertEqual(self.history.history_for(self.view_id), [])
 
+    def test_a_replace_is_not_mistaken_for_a_replayed_add(self):
+        """x_x stands right after x_c's group. A raw add that *replaces*
+        that group with x_x asks for the group to go; x_x being beside it
+        is no answer to that."""
+        self._apply(
+            {
+                "type": "add_field",
+                "name": "x_x",
+                "xpath": "//group[field[@name='x_c']]",
+                "position": "replace",
+            }
+        )
+        self.assertNotIn("x_c", self._fields())
+        self.assertEqual(len(self.history.history_for(self.view_id)), 1)
+
+    def test_a_replayed_add_with_other_attributes_is_refused(self):
+        """The field is already there, so inserting it would show it twice;
+        dropping the request would claim attributes that were not set."""
+        with raises(self, UserError):
+            self._apply(
+                {
+                    "type": "add_field",
+                    "name": "x_x",
+                    "xpath": "//group[field[@name='x_c']]",
+                    "position": "after",
+                    "attrs": {"readonly": "1"},
+                }
+            )
+        self.assertFalse(self._extension())
+        self.assertNotIn("readonly", self.view.get_combined_arch())
+
+    def test_a_raw_removal_matching_two_nodes_is_not_a_retraction(self):
+        """``//field[@name='x_a']`` matches the original x_a first and the
+        one the last spec inserted second. Core removes the first; taking
+        back the insertion instead removed the other one."""
+        self._apply(
+            {
+                "type": "add_field",
+                "name": "x_a",
+                "xpath": "//field[@name='x_x']",
+                "position": "after",
+            }
+        )
+        self.assertEqual(self._fields().count("x_a"), 2, "fixture")
+        self._apply({"type": "remove_node", "xpath": "//field[@name='x_a']"})
+        self.assertEqual(self._fields(), ["x_b", "x_c", "x_x", "x_a"])
+        self.assertEqual(
+            [x.get("position") for x in self._spec().findall("xpath")],
+            ["after", "replace"],
+        )
+
     # -- attributes ----------------------------------------------------------
 
     def test_attributes_follow_the_node_not_the_path(self):
@@ -599,6 +650,63 @@ class TestViewsAppliedLater(SequenceCase):
             ["x_z", "x_x"],
         )
 
+    def test_a_later_sibling_of_an_edited_extension_counts_as_later(self):
+        """Editing an extension view: core applies the builder's extension
+        of it right after it -- before the extension's own later siblings.
+        One of those inserts a group above the others, so ``group[3]`` is
+        x_b's in the combined arch and x_c's where the spec runs."""
+        middle = self._foreign_extension(
+            """
+            <data>
+                <xpath expr="//field[@name='x_x']" position="attributes">
+                    <attribute name="readonly">1</attribute>
+                </xpath>
+            </data>
+            """
+        )
+        self._foreign_extension(
+            """
+            <data>
+                <xpath expr="//sheet/group[1]" position="before">
+                    <group name="late"/>
+                </xpath>
+            </data>
+            """
+        )
+        combined = etree.fromstring(middle.get_combined_arch().encode())
+        pointed_at = combined.findall(".//sheet/group")[2]
+        self.assertEqual(pointed_at[0].get("name"), "x_b", "fixture")
+        try:
+            self.editor.apply_operation(
+                cast("int", middle.id),
+                self.package_id,
+                {
+                    "type": "set_attributes",
+                    "xpath": "/form/sheet/group[3]",
+                    "attrs": {"string": "Wrong"},
+                    "_expect": self.editor._expectation_for(pointed_at),
+                },
+            )
+        except UserError as caught:
+            self.assertIn("applied after this package's own", str(caught))
+        else:
+            self.fail("group[3] must not be edited by position")
+        self.assertNotIn("Wrong", self.view.get_combined_arch())
+        # A locator that means the same node in both trees goes through, into
+        # an extension of the edited view.
+        result = self.editor.apply_operation(
+            cast("int", middle.id),
+            self.package_id,
+            {
+                "type": "set_attributes",
+                "xpath": "//group[field[@name='x_b']]",
+                "attrs": {"string": "Right"},
+            },
+        )
+        patch = typed.model(self.env, View).browse(result["view_id"])
+        self.assertEqual(patch.inherit_id, middle)
+        self.assertEqual(self._group_of("x_b").get("string"), "Right")
+
 
 @tagged("post_install", "-at_install")
 class TestOperationInput(SequenceCase):
@@ -862,3 +970,48 @@ class TestSourceLanguage(SequenceCase):
         self.assertIn("Sequence Demo", self._source())
         self.assertNotIn("Démo de suite", self._source())
         self.assertIn("Démo de suite", self._french(), "the translation survives")
+
+    def test_an_unnamed_page_is_found_by_its_label_whatever_the_language(self):
+        """An owned view another module extends, so the owned path compares
+        what the locator finds with what was expected there. A page with no
+        name, holding no named child, is known by its label -- and the label
+        was read in French while the tree it was compared with was not."""
+        self.view.with_context(lang=None).write(
+            {
+                "arch": """
+                    <form string="Sequence Demo">
+                        <sheet>
+                            <notebook>
+                                <page string="Extra">
+                                    <group><field name="x_a"/></group>
+                                </page>
+                            </notebook>
+                            <field name="x_x"/>
+                        </sheet>
+                    </form>
+                """
+            }
+        )
+        self.view.update_field_translations(
+            "arch_db",
+            {"fr_FR": {"Sequence Demo": "Démo de suite", "Extra": "Supplément"}},
+        )
+        self._foreign_extension(
+            """
+            <data>
+                <xpath expr="//field[@name='x_x']" position="attributes">
+                    <attribute name="readonly">1</attribute>
+                </xpath>
+            </data>
+            """
+        )
+        self.assertIn("Supplément", self._french(), "fixture")
+        self.french.apply_at(
+            self.view_id,
+            self.package_id,
+            {"kind": "page", "index": 0},
+            {"type": "add_field", "name": "x_z", "position": "inside"},
+        )
+        self.assertIn('name="x_z"', self._source())
+        self.assertIn("Extra", self._source())
+        self.assertIn("Supplément", self._french(), "the translation survives")
