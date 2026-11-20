@@ -11,8 +11,11 @@ go under, a feature staged on a model that exists, and adoption.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock, patch
+
+from psycopg2 import OperationalError
 
 from odoo import Command
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -363,9 +366,11 @@ class TestAppBuilderRpc(BuilderCase):
     # is the decision it makes on the way in: is a model of this name somebody
     # else's, or this very request left half done?
 
-    def _half_built(self, name="x_rpc_half"):
+    def _half_built(self, name="x_rpc_half", pending=True):
         """A model as a failed second half leaves it: declared by the package,
-        loaded, and with nothing a finished app has."""
+        flagged by the first half, loaded, and with nothing a finished app
+        has. ``pending=False`` is the same shape without the flag -- a manual
+        model adopted into the package that never got a view."""
         typed.model(self.env, IrModel).create(
             {  # pyright: ignore[reportArgumentType]
                 "name": "Half Built",
@@ -377,24 +382,35 @@ class TestAppBuilderRpc(BuilderCase):
                 ],
             }
         )
-        typed.model(self.env, BuilderPackageModel)._adopt(
+        entry = typed.model(self.env, BuilderPackageModel)._adopt(
             self.package, name, source="python"
         )
+        entry.write({"create_app_pending": pending})
         return name
 
-    def _create_app_without_applying(self, name, build_ui):
+    def _create_app_without_applying(
+        self, name, build_ui, options=None, seed=False, apply=None
+    ):
         """`create_app` with the two things a test cannot sit through mocked
-        out: the module install and the committing apply."""
+        out: the module install and the committing apply. ``seed`` lets the
+        source really be written, which is what the retry compares against."""
         Package = type(typed.model(self.env, BuilderPackage))
         App = type(self.builder)
-        apply = MagicMock()
+        apply = apply or MagicMock()
+        seeding = (
+            nullcontext()
+            if seed
+            else patch.object(Package, "_seed_source_for", MagicMock())
+        )
         with (
             patch.object(Package, "action_apply", apply),
-            patch.object(Package, "_seed_source_for", MagicMock()),
+            seeding,
             patch.object(App, "_ensure_module_installed", MagicMock()),
             patch.object(App, "_build_ui", build_ui),
         ):
-            return self.builder.create_app(self.package, "Half Built", model_name=name)
+            return self.builder.create_app(
+                self.package, "Half Built", model_name=name, options=options
+            )
 
     def test_a_half_built_model_is_recognised(self):
         name = self._half_built()
@@ -436,6 +452,63 @@ class TestAppBuilderRpc(BuilderCase):
         working = MagicMock(return_value=built)
         self.assertIs(self._create_app_without_applying(name, working), built)
         self.assertEqual(built["companions"], [])
+        # Finished: from now on it is an app like any other.
+        self.assertFalse(self.builder._unfinished_models(self.package, [name]))
+
+    def test_an_adopted_model_with_no_view_is_not_taken_for_half_built(self):
+        """Same shape as a half-built app -- declared, loaded, no ACL, no
+        view -- but no earlier create_app made it. "Finishing" it would
+        overwrite its source with a scaffold."""
+        name = self._half_built(pending=False)
+        self.assertFalse(self.builder._unfinished_models(self.package, [name]))
+        never = MagicMock()
+        with raises(self, UserError) as caught:
+            self._create_app_without_applying(name, never)
+        self.assertIn("already exists", str(caught.exception))
+        never.assert_not_called()
+
+    def _seeded_half_built(self, options):
+        """A half-built app whose source on disk is what create_app wrote."""
+        name = self._half_built()
+        self.package._seed_source_for(
+            name, scaffold.scaffold_spec(name, "Half Built", options)
+        )
+        return name
+
+    def test_an_identical_retry_skips_the_first_apply(self):
+        options = scaffold.ScaffoldOptions.from_keys([])
+        name = self._seeded_half_built(options)
+        apply = MagicMock()
+        built = {"model": typed.model(self.env, IrModel)._get(name)}
+        self._create_app_without_applying(
+            name, MagicMock(return_value=built), options=options, apply=apply
+        )
+        # The scaffold apply only: the class on disk is already this one.
+        self.assertEqual(apply.call_count, 1)
+
+    def test_a_retry_with_other_features_writes_and_applies_again(self):
+        name = self._seeded_half_built(scaffold.ScaffoldOptions.from_keys([]))
+        other = scaffold.ScaffoldOptions.from_keys(["picture"])
+        apply = MagicMock()
+        built = {"model": typed.model(self.env, IrModel)._get(name)}
+        self._create_app_without_applying(
+            name, MagicMock(return_value=built), options=other, apply=apply, seed=True
+        )
+        self.assertEqual(apply.call_count, 2)
+        entry = typed.model(self.env, BuilderPackageModel).search(
+            [("package_id", "=", self.package.id), ("model", "=", name)]
+        )
+        self.assertEqual(
+            entry._current_spec(), scaffold.scaffold_spec(name, "Half Built", other)
+        )
+
+    def test_a_lock_failure_is_not_dressed_up(self):
+        """Odoo retries a request that hit a serialization or lock error --
+        but only if it reaches the RPC layer as one."""
+        name = self._half_built()
+        locked = MagicMock(side_effect=OperationalError("could not obtain lock"))
+        with raises(self, OperationalError):
+            self._create_app_without_applying(name, locked)
 
     def test_a_model_that_is_not_ours_is_still_refused(self):
         typed.model(self.env, IrModel).create(

@@ -14,8 +14,9 @@ The lifecycle, and why it is in this order:
 
 Step 2 commits (``action_apply`` has to: a reload cannot be rolled back), so a
 failure in step 3 leaves a model with a table and no access rule, view or
-menu. That half-built model is recognised for what it is on the next attempt
-(``_unfinished_models``) and finished rather than refused as "already exists".
+menu. Step 2 flags the model as unfinished in the same commit, so on the next
+attempt it is recognised for what it is (``_unfinished_models``) and finished
+rather than refused as "already exists"; step 3 clears the flag.
 
 Step 3 is deliberately not "render the view XML from the spec at step 2". That
 would create a second, independent producer of the same file format and destroy
@@ -27,6 +28,8 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
+
+from psycopg2 import OperationalError
 
 from odoo import Command, api, models
 from odoo.exceptions import UserError
@@ -275,9 +278,14 @@ class BuilderApp(models.AbstractModel):
         )
         if not already_applied:
             self._ensure_module_installed(package)
+            entries = PackageModel
             for candidate in candidates:
-                PackageModel._adopt(package, candidate.name, source="python")
+                entries |= PackageModel._adopt(package, candidate.name, source="python")
                 package._seed_source_for(candidate.name, candidate)
+            # Committed by the apply's own commit, together with the model it
+            # marks: what lets a retry tell this app, half done, apart from a
+            # model of the same name that merely has no view yet.
+            entries.write({"create_app_pending": True})
             package.action_apply(reason=_("create %s", model_name))
 
         if model_name not in self.env:
@@ -289,11 +297,13 @@ class BuilderApp(models.AbstractModel):
                 )
             )
 
-        # Everything from here to the second apply is one transaction on top
-        # of a commit. If it fails it rolls back whole, and what is left is
-        # the model alone -- so say that, and say what to do about it, rather
-        # than let a view-validation traceback be the last word on a model
-        # nobody can see.
+        # Building the UI records is one transaction on top of a commit. If it
+        # fails it rolls back, and what is left is the model alone -- so say
+        # that, and say what to do about it, rather than let a view-validation
+        # traceback be the last word on a model nobody can see. Only this part:
+        # the second apply below has its own commit-and-restore story and its
+        # own message, and a lock or serialization failure has to reach the
+        # RPC layer as itself, which retries it.
         try:
             built = self._build_ui(package, spec, options, groups, parent=parent)
             # A companion needs an access rule or nobody can read it -- and a
@@ -314,7 +324,8 @@ class BuilderApp(models.AbstractModel):
             ]
             if built["companions"]:
                 package.builder_capture(built["companions"])
-            package.action_apply(reason=_("scaffold %s", model_name))
+        except OperationalError:
+            raise
         except Exception as err:
             _logger.exception(
                 "create_app: %s was applied but its UI could not be built",
@@ -324,14 +335,23 @@ class BuilderApp(models.AbstractModel):
                 _(
                     "The model %(model)s was created, but its access rules, "
                     "views and menu could not be built:\n\n%(error)s\n\n"
-                    "Nothing else was changed. Once the cause is fixed, create "
-                    "the app again under the same name and it will be finished "
-                    "rather than refused; or roll the last apply back from "
+                    "Once the cause is fixed, create the app again under the "
+                    "same name to finish it, or roll the last apply back from "
                     "Changes to remove the model.",
                     model=model_name,
                     error=str(err) or type(err).__name__,
                 )
             ) from err
+        package.action_apply(reason=_("scaffold %s", model_name))
+        # The app is whole: a model of this name is somebody's app from now on,
+        # not this request half done.
+        PackageModel.search(
+            [
+                ("package_id", "=", package.id),
+                ("model", "in", [c.name for c in candidates]),
+                ("create_app_pending", "=", True),
+            ]
+        ).write({"create_app_pending": False})
         return built
 
     @api.model
@@ -341,9 +361,12 @@ class BuilderApp(models.AbstractModel):
         ``create_app`` commits between making a model and making it usable, so
         a failure in the second half leaves the model behind with nothing
         pointing at it. That is told apart from a model that merely has the
-        same name by three things at once: this package declares it as a
-        Python class of its own (not an extension of somebody else's), it is
-        loaded, and nothing a finished app has exists for it -- no access
+        same name positively, by the ``create_app_pending`` flag the first
+        half commits with the model -- a manual model adopted into the package
+        with no view yet has the same shape and must not be overwritten with a
+        scaffold. Then, to be safe, by its shape as well: this package declares
+        it as a Python class of its own (not an extension of somebody else's),
+        it is loaded, and nothing a finished app has exists for it -- no access
         rule, no view, no window action. An access rule is the first thing
         ``_build_ui`` writes, so a model with one got further than this.
         """
@@ -353,6 +376,7 @@ class BuilderApp(models.AbstractModel):
                 ("model", "in", names),
                 ("source", "=", "python"),
                 ("extends", "=", False),
+                ("create_app_pending", "=", True),
             ]
         )
         unfinished: set[str] = set()
