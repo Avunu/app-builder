@@ -12,7 +12,7 @@
  * model-scoped one when the model does).
  *
  * The draft of a Python-owned model is the shell's too
- * (`draft_model.js`): the pill that counts what is pending and the
+ * (`draft_model.ts`): the pill that counts what is pending and the
  * button that applies it are on every pane.
  *
  * Navigation never remounts the console. A pane switch, a package switch
@@ -165,7 +165,10 @@ export class BuilderShell {
   /** `{key, title, lines}` after a flow completes: shown once, under
    * the bar, until dismissed or the next flow. */
   callout: {key: string; title: string; lines: string[]} | null;
-  _changesTimer?: ReturnType<typeof setTimeout>;
+  _changesTimer?: ReturnType<typeof setTimeout> | undefined;
+  /** Set by `destroy()`: the console that held this shell is gone, and
+   * nothing started from here may reach the server or the screen again. */
+  destroyed: boolean;
 
   constructor(env: ShellEnv, params: ShellParams, hooks: ShellHooks = {}) {
     this.env = env;
@@ -195,7 +198,38 @@ export class BuilderShell {
     this.entry = params.entry || {};
     this.sidebarWidth = null;
     this.callout = null;
+    this.destroyed = false;
     warnLegacyTabs();
+  }
+
+  /**
+   * The console is closing: drop what was scheduled. Called from the
+   * component's `onWillDestroy` (`shell.ts`); without it the counters'
+   * timer below would still fire, and ask the server, after the console
+   * had gone.
+   */
+  destroy(): void {
+    this.destroyed = true;
+    clearTimeout(this._changesTimer);
+    this._changesTimer = undefined;
+  }
+
+  /**
+   * Whether leaving now would interrupt or strand something: a write
+   * still on its way, an Apply running, or changes staged on the draft
+   * and not applied. The draft itself is kept on the server either way;
+   * the browser's own "leave this page?" (`shell.ts`) is there so it is
+   * not walked away from unknowingly.
+   */
+  get hasUnfinishedWork(): boolean {
+    const activity = this.activity;
+    return Boolean(
+      activity.busy ||
+        activity.applying ||
+        activity.status === "saving" ||
+        this.draft.applying ||
+        this.pendingCount > 0
+    );
   }
 
   // -- reading ------------------------------------------------------------
@@ -309,8 +343,20 @@ export class BuilderShell {
    */
   refreshChanges(): void {
     clearTimeout(this._changesTimer);
+    if (this.destroyed) {
+      return;
+    }
     this._changesTimer = setTimeout(() => {
-      this.refreshPackages().catch(() => {});
+      this._changesTimer = undefined;
+      if (this.destroyed) {
+        return;
+      }
+      // A background refresh: nobody is waiting on it, so a failure is
+      // not put in front of the user, but it is not swallowed either --
+      // stale counters with nothing in the console would be untraceable.
+      this.refreshPackages().catch((err: unknown) => {
+        console.debug("app_builder: refreshing the package counters failed", err);
+      });
     }, 800);
   }
 
@@ -494,7 +540,13 @@ export class BuilderShell {
     this._dropPaneModels("model");
     await this._loadModelLabel();
     if (modelName) {
-      this.orm.call("builder.workspace", "remember_model", [modelName]).catch(() => {});
+      // A convenience for the next visit, never worth interrupting this
+      // one for; logged, so a server that refuses it can be found.
+      this.orm
+        .call("builder.workspace", "remember_model", [modelName])
+        .catch((err: unknown) => {
+          console.debug("app_builder: remembering the model failed", err);
+        });
     }
     if (!open) {
       return;

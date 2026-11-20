@@ -131,6 +131,7 @@
             "app_builder_view/static/tests/drag.test.js",
             "app_builder_view/static/tests/geometry.test.js",
             "app_builder_view/static/tests/identity.test.js",
+            "app_builder_view/static/tests/lifetime.test.js",
             "app_builder_view/static/tests/outline.test.js",
             "app_builder_view/static/tests/outline_tree.test.js",
             "app_builder_view/static/tests/outline_zones.test.js",
