@@ -584,6 +584,11 @@ GENERATED_OVERRIDES = frozenset(
         # tier.validation mixin never appears in the approval rule's model
         # picker until something appends it.
         "_get_tier_validation_model_names",
+        # ...and it has no ``create()`` at all, so a record born in a gated
+        # state never meets the gate. ``_create`` rather than ``create``: the
+        # block's one ``create`` is the sequence's, and a class has room for
+        # only one.
+        "_create",
     }
 )
 
@@ -608,6 +613,9 @@ class MethodSpec:
     name: str
     body: str
     doc: str = ""
+    # Parameters after ``self``, verbatim. Only a generated override has any:
+    # its signature is the mixin's to choose, as its name is.
+    args: str = ""
 
 
 @dataclass(frozen=True, slots=True)

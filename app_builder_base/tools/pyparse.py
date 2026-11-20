@@ -447,7 +447,26 @@ def _parse_method(source: str, node: ast.FunctionDef) -> MethodSpec:
         body = ""
     else:
         body = "\n".join(lines[first.lineno - 1 : node.end_lineno])
-    return MethodSpec(name=node.name, body=_dedent(body), doc=doc)
+    return MethodSpec(
+        name=node.name, body=_dedent(body), doc=doc, args=_extra_args(node)
+    )
+
+
+def _extra_args(node: ast.FunctionDef) -> str:
+    """What a method takes after ``self``, as written.
+
+    Empty for everything the user wrote in the builder; a generated override
+    of a mixin's hook is the one kind of method whose signature is not ours.
+    """
+    arguments = node.args
+    positional = arguments.posonlyargs + arguments.args
+    if not positional or positional[0].arg != "self":
+        raise UnsupportedConstruct(
+            "%s does not take self first, so it is not a method the builder wrote"
+            % node.name
+        )
+    rest = ast.unparse(arguments).split(",", 1)
+    return rest[1].strip() if len(rest) > 1 else ""
 
 
 def _parse_compute(source: str, node: ast.FunctionDef) -> tuple[tuple[str, ...], str]:
