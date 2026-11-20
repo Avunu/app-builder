@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
+from unittest.mock import MagicMock, patch
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
@@ -181,9 +182,12 @@ class TestReportPreview(BuilderCase):
                 cast("int", form.id)
             )
 
-    def test_a_qweb_view_no_report_prints_is_not_a_report(self):
+    def test_a_qweb_view_no_report_prints_says_why_it_is_empty(self):
         """A qweb view is not a report template for being qweb: a mail layout
-        or a snippet expects values no report context has."""
+        or a snippet expects values no report context has. Nor is a report's
+        sub-template, which the console opens like any other -- so it is
+        answered with a reason the canvas shows, not an error that stops the
+        canvas loading."""
         loose = typed.model(self.env, View).create(
             {  # pyright: ignore[reportArgumentType]
                 "name": "loose",
@@ -192,10 +196,55 @@ class TestReportPreview(BuilderCase):
                 "arch": "<t t-name='x_builder_demo.loose_template'><p>loose</p></t>",
             }
         )
-        with raises(self, UserError):
-            typed.model(self.env, BuilderReportPreview).preview_html(
-                cast("int", loose.id)
-            )
+        result = typed.model(self.env, BuilderReportPreview).preview_html(
+            cast("int", loose.id)
+        )
+        self.assertEqual(result["html"], "")
+        self.assertFalse(result["model"])
+        self.assertIn("No report prints this template", cast("str", result["reason"]))
+        self.assertNotIn("loose", result["html"])
+
+    # -- a report whose values come from its own `report.<name>` model -------
+    #
+    # Base's module reference report is one: its template reads `findobj`,
+    # which only `report.base.report_irmodulereference` supplies.
+
+    _CUSTOM = "report.base.report_irmodulereference"
+
+    def _custom_preview(self):
+        view = typed.ref(self.env, "base.report_irmodulereference")
+        return typed.model(self.env, BuilderReportPreview).preview_html(
+            cast("int", view.id)
+        )
+
+    def test_a_report_model_supplies_the_values(self):
+        result = self._custom_preview()
+        self.assertFalse(result["reason"])
+        self.assertEqual(result["model"], "ir.module.module")
+        self.assertIn("Introspection report on objects", result["html"])
+
+    def test_a_report_model_that_refuses_says_why(self):
+        refusing = MagicMock(side_effect=UserError("Run this from the wizard."))
+        with patch.object(type(self.env[self._CUSTOM]), "_get_report_values", refusing):
+            result = self._custom_preview()
+        self.assertEqual(result["html"], "")
+        self.assertIn("Run this from the wizard.", cast("str", result["reason"]))
+
+    def test_a_report_model_that_breaks_says_why(self):
+        """A wizard-driven report indexes `data['form']`, which a preview never
+        has. That is the report's code failing, not the canvas: it still
+        loads, and the traceback goes to the log."""
+        breaking = MagicMock(side_effect=KeyError("form"))
+        with (
+            patch.object(type(self.env[self._CUSTOM]), "_get_report_values", breaking),
+            self.assertLogs(
+                "odoo.addons.app_builder_report.models.builder_report_preview",
+                "WARNING",
+            ),
+        ):
+            result = self._custom_preview()
+        self.assertEqual(result["html"], "")
+        self.assertIn("form", cast("str", result["reason"]))
 
     def test_the_preview_draws_the_record_it_is_asked_for(self):
         package = self.make_package()

@@ -29,6 +29,7 @@ added here the same way. Only the branding differs from a print.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
@@ -47,6 +48,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 from lxml import (  # pyright: ignore[reportMissingTypeStubs]
     etree,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
 )
+from psycopg2 import OperationalError
 from typing_extensions import NotRequired
 
 from odoo import api, fields, models
@@ -72,6 +74,8 @@ if TYPE_CHECKING:
     from odoo.models import BaseModel
 
     from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
+
+_logger = logging.getLogger(__name__)
 
 
 class PreviewHtmlJSON(TypedDict):
@@ -213,7 +217,19 @@ class BuilderReportPreview(models.AbstractModel):
             raise UserError(_("That is not a report template."))
         view, report = self._report_of(view)
         if not report:
-            raise UserError(_("That is not a report template."))
+            # A qweb view, just not one a report prints on its own -- a
+            # sub-template such as `sale.report_saleorder_document`, opened in
+            # the console like any other. Said through `reason`, which the
+            # canvas shows, rather than as an error that stops it loading.
+            return {
+                "html": "",
+                "model": False,
+                "reason": _(
+                    "No report prints this template on its own, so there is "
+                    "nothing to preview it with. Open the report that uses it "
+                    "instead."
+                ),
+            }
         model_name = cast("str", report.model)
         record = self._preview_record(model_name, res_id) if model_name else None
         if record is None:
@@ -253,12 +269,26 @@ class BuilderReportPreview(models.AbstractModel):
         # the report itself so a template that reads any of them previews the
         # way it prints.
         try:
-            values: dict[str, Any] = report._get_rendering_context(
-                report, record.ids, {"report_type": "html"}
-            )
-        except UserError as err:
+            # A savepoint, since what fails may be a query, and the
+            # transaction has to survive to say so.
+            with self.env.cr.savepoint():
+                values: dict[str, Any] = report._get_rendering_context(
+                    report, record.ids, {"report_type": "html"}
+                )
+        except OperationalError:
+            raise
+        except Exception as err:
             # A `report.<name>` model that wants a wizard's data it was not
-            # given says so with one of these. Not an error of the builder's.
+            # given says so with a UserError -- or simply fails on
+            # `data["form"]`, since a print never reaches it without one.
+            # Either way it is that report's code, not the builder's, and the
+            # canvas should still load and say why it is empty.
+            if not isinstance(err, UserError):
+                _logger.warning(
+                    "Report %s could not compute its values for a preview",
+                    report.report_name,
+                    exc_info=True,
+                )
             return {
                 "html": "",
                 "model": model_name,
