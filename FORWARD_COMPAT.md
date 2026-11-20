@@ -1,9 +1,14 @@
 # App Builder for Odoo — forward compatibility notes
 
+> **Status:** App Builder supports Odoo **18.0 only**. Nothing below has been run on a
+> 19.0 or master server; these are notes for a port that has not been made, and they are
+> not a statement of compatibility. File names are the TypeScript sources (`compat.ts`);
+> each compiles to a `.js` of the same name beside it, which is what Odoo loads.
+
 What the console's port to the next Odoo branches will have to do, with the core lines
 that say so. Written on 18.0 against three checkouts and kept factual: every claim
 carries a `file:line`, and the ones a test run can check are pinned by
-`app_builder_view/static/tests/compat.test.js` and `identity.test.ts`. Paths under
+`app_builder_view/static/tests/compat.test.ts` and `identity.test.ts`. Paths under
 `18:`, `19:` and `master:` are relative to the 18.0 checkout (`odoo/`), the 19.0
 checkout and the master checkout the audit read; everything else is relative to this
 repository.
@@ -33,7 +38,7 @@ line rather than falling back to 18 -- the one direction that would be wrong on 
 19-line server. Only a value with no digits at all falls back, and then to `[18, 0]` as
 a whole.
 
-## The one seam: `app_builder_view/static/src/console/compat.js`
+## The one seam: `app_builder_view/static/src/console/compat.ts`
 
 | Export                               | 18                                   | 19                  | master                      | Core lines                                                                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------ | ------------------------------------ | ------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

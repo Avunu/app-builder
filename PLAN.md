@@ -1,32 +1,40 @@
 # App Builder for Odoo — plan to feature completion
 
-Companion to [DESIGN.md](DESIGN.md), which describes what exists and why. This describes
-what is missing against Odoo Studio (enterprise), what of it we deliberately will not
-build, and the order the rest should be built in.
+Companion to [DESIGN.md](DESIGN.md), which describes what exists and why. This is the
+plan the builder was built to: what was missing against Odoo Studio (enterprise), what
+of it we deliberately will not build, and the order the rest was built in. The phases
+are done; the sections are kept because they record _why_, and the first section says
+what is still open.
 
 ## Where we stand
 
-Measured against the seven upstream documentation pages (`content/applications/builder`,
-3,112 lines), App Builder implements roughly a third of documented Builder
-functionality. The coverage is narrow but deep: what exists is more rigorous than Odoo's
-— deterministic source output, inheriting views rather than rewrites, real Python
-classes — while three of the six chapters are absent or near-absent.
+Every phase of this plan is built, tested and merged: the table under
+[Progress](#progress) lists them. The builder covers each chapter of Odoo Studio's
+documentation — models and apps, fields and widgets, views, automations and webhooks,
+PDF reports, approval rules — on **Odoo 18.0**, the only series it is tested on. It is
+beta software (the two approval addons are alpha); "built" here means implemented and
+covered by the suite, not hardened by field use.
 
-| Chapter                | Coverage | State                                                                                |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------ |
-| Models, modules & apps | ~45%     | Model builder and app scaffold solid; 7 of 14 suggested features missing             |
-| Fields and widgets     | ~40%     | All 15 ORM types; ~13 of ~40 widgets; no related or computed field in the composer   |
-| Views                  | ~35%     | 5 of 11 types editable, 4 creatable; no buttons, tabs, or add/remove field in a view |
-| Automation rules       | ~55%     | Inherits all of base_automation; the builder surface is one code-only wizard         |
-| Webhooks               | ~60%     | Functional through base_automation; no dedicated surface                             |
-| PDF reports            | ~5%      | A serializer for ir.actions.report exists; nothing else                              |
-| Approval rules         | 0%       | No equivalent of any kind                                                            |
+What is still open, gathered from the sections that record it:
 
-The single most consequential gap is that **a field cannot be placed on a view the
-package does not own**. `_op_add_field` exists and `apply_operation` is public RPC
-(`builder_view_editor.py:147`); the client simply never calls either. Adding a field to
-a core Odoo form — the most common Odoo Studio gesture there is — has no path through
-the UI, despite the server being able to emit exactly the inheriting `<xpath>` it needs.
+| Area             | Open                                                                                                                                                                    | Recorded in                             |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Feature packs    | _Tags_ and _Lines_: both need a companion model the app builder does not create yet                                                                                     | [Progress](#progress), §P4              |
+| View editor      | Dropping into an inline x2many subview; a kanban card written with `t-esc` has no parts to aim at; a second group-by level has no gesture                               | §P1, `app_builder_base/README.md`       |
+| PDF reports      | The document half: editing prose, a `/` powerbox, dragging a field into running text, dynamic tables, and a gesture and preview switch for `t-if` / `t-elif` / `t-else` | §P6, "What is left"                     |
+| Approval rules   | A pre-approval gate on a named button or server action — Studio's model — does not exist in tier validation; it is to be written as an upstreamable OCA module          | §P7                                     |
+| Automations      | The three triggers whose value is a `Many2oneReference` are set through Odoo's own form, not a builder gesture                                                          | `app_builder_base/README.md`            |
+| Fields           | `many2one_reference` cannot be built in the composer (an existing one serializes); `properties` and `json` are refused                                                  | `app_builder_base/README.md`            |
+| Odoo 19 / master | The port has been read against the 19.0 and master sources, never run on a 19 server. Not supported until it has been                                                   | [FORWARD_COMPAT.md](FORWARD_COMPAT.md)  |
+| Operations       | Multi-worker servers apply only across a restart; one database per source tree; no upgrade path from the pre-2.0 `studio.*` addons                                      | [README.md](README.md#scope-and-limits) |
+
+The per-addon limits that are not roadmap items — what the builder refuses and why — are
+under "Known limits" in [app_builder_base/README.md](app_builder_base/README.md) and
+[app_builder_view/README.md](app_builder_view/README.md).
+
+The gap analysis this plan was written from is kept, unchanged, as
+[the appendix](#appendix--the-gap-analysis-this-plan-started-from). Its percentages
+describe the code before P0, not today's.
 
 ## What we will not build
 
@@ -353,7 +361,7 @@ which is the product thesis finally reachable from the UI.
 distinct from `invisible`, which already exists and is usually the better answer.
 
 **1.4 New field from inside the view editor.** Two paths, because the asymmetry is real
-and documented (`readme/ROADMAP.md`, "Known limits"):
+and documented (`app_builder_base/README.md`, "Known limits"):
 
 - A model this package owns in Python — stage into `builder.model.draft`, surface the
   pending tray and Apply banner _in the view editor_, place on apply.
@@ -759,3 +767,33 @@ Relative sizes, not calendar estimates.
 | X3 builder shell              | M      | after P5 — done                |
 | X6 the console is the builder | XL     | after X3 — done                |
 | X7 the outline                | M      | after X6 — done                |
+
+---
+
+## Appendix — the gap analysis this plan started from
+
+_Historical. This is the state the plan was written against, before any phase landed.
+Every row below has since been addressed by the phase named in [Progress](#progress);
+the remaining gaps are the ones listed under [Where we stand](#where-we-stand)._
+
+Measured against the seven upstream documentation pages (`content/applications/builder`,
+3,112 lines), App Builder implements roughly a third of documented Builder
+functionality. The coverage is narrow but deep: what exists is more rigorous than Odoo's
+— deterministic source output, inheriting views rather than rewrites, real Python
+classes — while three of the six chapters are absent or near-absent.
+
+| Chapter                | Coverage | State                                                                                |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------ |
+| Models, modules & apps | ~45%     | Model builder and app scaffold solid; 7 of 14 suggested features missing             |
+| Fields and widgets     | ~40%     | All 15 ORM types; ~13 of ~40 widgets; no related or computed field in the composer   |
+| Views                  | ~35%     | 5 of 11 types editable, 4 creatable; no buttons, tabs, or add/remove field in a view |
+| Automation rules       | ~55%     | Inherits all of base_automation; the builder surface is one code-only wizard         |
+| Webhooks               | ~60%     | Functional through base_automation; no dedicated surface                             |
+| PDF reports            | ~5%      | A serializer for ir.actions.report exists; nothing else                              |
+| Approval rules         | 0%       | No equivalent of any kind                                                            |
+
+The single most consequential gap is that **a field cannot be placed on a view the
+package does not own**. `_op_add_field` exists and `apply_operation` is public RPC
+(`builder_view_editor.py:147`); the client simply never calls either. Adding a field to
+a core Odoo form — the most common Odoo Studio gesture there is — has no path through
+the UI, despite the server being able to emit exactly the inheriting `<xpath>` it needs.

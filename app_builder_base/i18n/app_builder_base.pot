@@ -1,0 +1,1831 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* app_builder_base
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-20 11:29+0000\n"
+"PO-Revision-Date: 2026-11-20 11:29+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "%(attr)s: %(old)s → %(new)s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid ""
+"%(comodel)s is not a model this package defines in Python, so the builder "
+"cannot add the link back to %(model)s for you. Add a link to %(model)s on "
+"%(comodel)s first, then pick it here."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "%(label)s (%(type)s)"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "%(model)s cannot be edited in the builder: %(why)s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_model.py:0
+msgid ""
+"%(model)s is still defined by %(path)s. Remove the file first, or the next "
+"reload would bring the model straight back."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_serializer.py:0
+msgid ""
+"%(model)s record %(name)s sets %(field)s, which Odoo Builder cannot write to"
+" source: %(why)s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid ""
+"%(model)s was changed, but its %(type)s view could not be updated to match:\n"
+"\n"
+"%(err)s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"%(model)s would be written both as a Python class and as data records "
+"(%(path)s). Its metadata rows are still marked manual; reload the package to"
+" let reflection settle them."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"%(models)s now live in models/ as Python. Restart the server (or rely on "
+"--dev=reload) for the classes to take effect."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_owned_mixin.py:0
+msgid ""
+"%(name)s already belongs to package '%(owner)s'. Move it there, or remove it"
+" from that package first -- a record can only be written into one addon."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_owned_mixin.py:0
+msgid ""
+"%(name)s is defined in Python code and belongs to the module that declares "
+"it. Only custom (manual) records can be owned by a builder package."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"%(record)s already belongs to module '%(owner)s'. A record can only be "
+"written into one addon."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "%(record)s belongs to %(owner)s. Switch to that package to edit it."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid ""
+"%(record)s is only in this database: it has no external id, so the package's"
+" file could not point at it. Pick one that comes from a module or a package."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "%(step)s is not a field of %(model)s."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid ""
+"%s already exists and is not empty. Adopt it as a package from its own "
+"directory, or pick another name."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "%s belongs to Odoo itself; a package cannot be created there."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid "%s belongs to Odoo itself; a package cannot live there."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "%s cannot be written to."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_apply.py:0
+msgid "%s did not exist before this change."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "%s has no source file to write into."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"%s is an addons directory (or contains one), not a single addon; a package "
+"cannot take it over."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid ""
+"%s is not a model any package defines in Python, so there is nothing to "
+"stage: add the field directly instead."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "%s is not a model this database has."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "%s is not a relation, so nothing can follow it."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"%s is not directly inside a directory on the addons path. Odoo only loads "
+"addons from directories that were on the path when the server started."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "%s is not editable here."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid ""
+"%s is not in source. Add it to a package first, so that the change is "
+"written somewhere."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid ""
+"%s is not on the addons path. Odoo only loads addons from directories that "
+"were on the path when the server started."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "%s is read-only."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "%s is required."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "%s must be a whole number."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "%s was not part of that apply."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid ""
+"'%s' is already the name of a module Odoo knows about; a package with that "
+"name would shadow it."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid "'%s' is not a valid Python module name."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid ""
+"'%s' is not a valid module name: lowercase letters, digits and underscores, "
+"starting with a letter."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"'%s' is not an absolute, normalised path; a package directory has to be one."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"'%s' is reserved by Odoo core (it is excluded from the module dependency "
+"graph) and cannot be used."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "'%s' is reserved by Odoo core and cannot be used."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.constraint,message:app_builder_base.constraint_builder_package_name_uniq
+msgid "A builder package with this name already exists."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/serializers/ir_ui_view.py:0
+msgid ""
+"A button in %(model)s runs %(action)s, which has no external ID and so "
+"cannot be named portably."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/serializers/ir_ui_view.py:0
+msgid "A button in %(model)s runs action #%(res_id)s, which no longer exists."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "A commit needs a message."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "A package called %s already exists."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.constraint,message:app_builder_base.constraint_builder_package_model_model_uniq_per_package
+msgid "A package defines each model at most once."
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.actions.act_window,help:app_builder_base.builder_package_action
+msgid ""
+"A package is one Odoo addon directory. Everything you build in the\n"
+"               builder is written into it as ordinary source files you can review,\n"
+"               diff and commit."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security_surfaces.py:0
+msgid ""
+"A rule that applies to nothing -- no read, write, create or delete -- does "
+"nothing."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__root_path
+msgid "Absolute path of the addon directory."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security_surfaces.py:0
+msgid ""
+"Access lines add up: a line in your package can only grant more than %s "
+"does, never less. Add a line of your own here; to narrow what a group sees, "
+"add a record rule."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Add to %s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid "Adopted"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__agpl-3
+msgid "Affero GPL-3"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package_apply__state__applied
+msgid "Applied"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__apply_ids
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__apply_id
+msgid "Apply"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__author
+msgid "Author"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__auto_commit
+msgid "Auto Commit"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package_apply__state__awaiting_restart
+msgid "Awaiting restart"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__backup_path
+msgid "Backup Path"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__base_spec_json
+msgid "Base Spec Json"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Belongs to %s. Switch to that package to edit it."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__boot_id
+msgid "Boot"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.ui.menu,name:app_builder_base.menu_builder_root
+msgid "Builder"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_access_surface
+msgid "Builder Access Control Surface"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_security_mixin
+msgid "Builder Access Guard"
+msgstr ""
+
+#. module: app_builder_base
+#: model:res.groups,name:app_builder_base.group_builder_manager
+msgid "Builder Administrator"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_mixin_arch
+msgid "Builder Arch Serializer Mixin"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_captured_on_create
+msgid "Builder Captured On Create"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_model_draft
+msgid "Builder Model Draft"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_owned_mixin
+msgid "Builder Owned Record"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_package
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_owned_mixin__builder_package_id
+#: model:ir.model.fields,field_description:app_builder_base.field_ir_model__builder_package_id
+#: model:ir.model.fields,field_description:app_builder_base.field_ir_model_fields__builder_package_id
+#: model:ir.model.fields,field_description:app_builder_base.field_ir_ui_view__builder_package_id
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "Builder Package"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_package_apply
+msgid "Builder Package Apply"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_package_apply_file
+msgid "Builder Package Apply File"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_package_file
+msgid "Builder Package File"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_package_model
+msgid "Builder Package Model"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_owned_mixin.py:0
+msgid "Builder Package cannot be searched with '%s'."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.actions.act_window,name:app_builder_base.builder_package_action
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_list
+msgid "Builder Packages"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_rule_surface
+msgid "Builder Record Rule Surface"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_record_surface
+msgid "Builder Record Surface"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer
+msgid "Builder Serializer"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_actions_act_window
+msgid "Builder Serializer for ir.actions.act_window"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_actions_act_window_view
+msgid "Builder Serializer for ir.actions.act_window.view"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_actions_report
+msgid "Builder Serializer for ir.actions.report"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_actions_server
+msgid "Builder Serializer for ir.actions.server"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_cron
+msgid "Builder Serializer for ir.cron"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_default
+msgid "Builder Serializer for ir.default"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_model
+msgid "Builder Serializer for ir.model"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_model_access
+msgid "Builder Serializer for ir.model.access"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_model_fields
+msgid "Builder Serializer for ir.model.fields"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_model_fields_selection
+msgid "Builder Serializer for ir.model.fields.selection"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_rule
+msgid "Builder Serializer for ir.rule"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_sequence
+msgid "Builder Serializer for ir.sequence"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_ui_menu
+msgid "Builder Serializer for ir.ui.menu"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_serializer_ir_ui_view
+msgid "Builder Serializer for ir.ui.view"
+msgstr ""
+
+#. module: app_builder_base
+#: model:res.groups,name:app_builder_base.group_builder_user
+msgid "Builder User"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_workspace
+msgid "Builder Workspace"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_res_users__builder_prefs
+msgid "Builder preferences"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_builder_domain
+msgid "Builder: Condition Builder"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security.py:0
+msgid ""
+"Building with the builder is restricted to Builder Administrators, because "
+"it writes source files into the addons path and reloads modules."
+msgstr ""
+
+#. module: app_builder_base
+#: model:res.groups,comment:app_builder_base.group_builder_manager
+msgid ""
+"Can additionally write packages to disk and reload modules, where the server"
+" has been started with APP_BUILDER_ENABLE_WRITE. That is arbitrary code "
+"execution as the Odoo process: treat this group as shell access. See "
+"SECURITY.md."
+msgstr ""
+
+#. module: app_builder_base
+#: model:res.groups,comment:app_builder_base.group_builder_user
+msgid ""
+"Can read what the builder knows: the metadata of every model, view, access "
+"rule and automation, and the files of every package. Not a low-privilege "
+"role. See SECURITY.md."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_serializer.py:0
+msgid ""
+"Cannot serialize %(model)s record %(name)s without losing data: %(fields)s %(verb)s a value the generated source would not carry, so reloading the package would not reproduce this record.\n"
+"\n"
+"This is a gap in App Builder rather than a mistake you made. The field needs adding to the serializer's _builder_fields, or to _builder_ignored with the reason it cannot matter."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_serializer.py:0
+msgid ""
+"Cannot serialize %(origin)s: it references %(model)s record #%(res_id)s, "
+"which has no external ID. Assign it to a builder package first."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__category
+msgid "Category"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__change_count
+msgid "Change Count"
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "Check drift"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "Choose a field to follow."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Choose a package to add this to first."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Choose a package to copy this into first."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Choose a package to record this in first."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid "Choose at least one model to adopt."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package_model__source__frozen
+msgid "Code-owned (unparseable)"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__depends
+msgid "Comma-separated module names for the manifest 'depends' key."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__auto_commit__commit
+msgid "Commit each change"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__companion_ids
+msgid "Companion"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_model.py:0
+msgid ""
+"Composing a model needs the builder console; install app_builder_view, which"
+" app_builder_model depends on."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__content_before
+msgid "Content Before"
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.actions.act_window,help:app_builder_base.builder_package_action
+msgid "Create your first builder package"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__create_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__create_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__create_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__create_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__create_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__create_uid
+msgid "Created by"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__create_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__create_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__create_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__create_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__create_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__create_date
+msgid "Created on"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package_model__source__xml
+msgid "Data records"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid ""
+"Defined by %s. Shown here so you can see what applies; edit it in that "
+"module."
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "Delete records"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__depends
+msgid "Depends"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__dirty
+msgid "Dirty"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__disk_checksum
+msgid "Disk Checksum"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__display_name
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__display_name
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__display_name
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__display_name
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__display_name
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__display_name
+msgid "Display Name"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__state__draft
+msgid "Draft"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__drifted
+msgid "Drifted"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__state__drifted
+msgid "Edited on disk"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__error
+msgid "Error"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security_surfaces.py:0
+msgid "Everyone"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security_surfaces.py:0
+msgid "Everyone (global)"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__existed
+msgid "Existed"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__extends
+msgid "Extends an existing model"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package_apply__state__failed
+msgid "Failed"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__features_json
+msgid "Features Json"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_serializer.py:0
+msgid ""
+"Field %(field)s on %(model)s holds a raw database id and does not say which "
+"model it points at, so App Builder cannot write it to source in a form that "
+"survives a fresh install. Set it per environment instead of recording it in "
+"the package."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_serializer.py:0
+msgid ""
+"Field %(field)s on %(model)s points at %(comodel)s record #%(res_id)s, which"
+" no longer exists."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_ir_model_fields
+msgid "Fields"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__file_ids
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__file_ids
+msgid "File"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__state__missing
+msgid "Files missing"
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid ""
+"Files on disk no longer match what the builder generated —\n"
+"                        somebody edited them by hand. Use <b>Reload from disk</b> to\n"
+"                        adopt those edits, or <b>Write to disk</b> to overwrite them."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "From %s"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__gpl-2
+msgid "GPL Version 2"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__gpl-3
+msgid "GPL Version 3"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__gpl-2_or_any_later_version
+msgid "GPL-2 or later version"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__gpl-3_or_any_later_version
+msgid "GPL-3 or later version"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Generated %(path)s does not round-trip. Nothing was written; please report "
+"this."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Generated %(path)s is not something the builder can read back (%(err)s). "
+"Nothing was written."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid "Generated %(path)s is not valid Python (%(err)s). Nothing was written."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__generated_checksum
+msgid "Generated Checksum"
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "Generated files"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__git_branch
+msgid "Git Branch"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_file__generated_checksum
+msgid "Hash of the content the builder last wrote."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_file__disk_checksum
+msgid "Hash of the file on disk."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__reload_mode
+msgid "How this deployment can pick up newly generated Python."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__id
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__id
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__id
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__id
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__id
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__id
+msgid "ID"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__state__synced
+msgid "In sync"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__reload_mode__inproc
+msgid "In this process"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Inactive"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Install the '%(name)s' module first (Reload from disk). Odoo only loads "
+"Python for installed modules, so adopting now would leave %(name)s with no "
+"definition at all after a restart."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__is_git
+msgid "Is Git"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__lgpl-3
+msgid "LGPL Version 3"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__write_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__write_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__write_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__write_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__write_uid
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__write_uid
+msgid "Last Updated by"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__write_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__write_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__write_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__write_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__write_date
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__write_date
+msgid "Last Updated on"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__license
+msgid "License"
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "Location"
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "Manifest"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__reload_mode__manual
+msgid "Manual restart required"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__model
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__model
+msgid "Model"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_ir_model
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__model_ids
+msgid "Models"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__python_models
+msgid ""
+"Models defined as Python classes. Kept as a plain string for readability; "
+"model_ids is the real registry."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__model_ids
+msgid "Models this package defines, and where each definition lives."
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "My Customizations"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__name
+msgid "Name"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid ""
+"No access rule grants read on %s yet, so there is nothing to preview. "
+"Editing still works -- add a rule and it will appear."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "Not a git repository."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Not in source"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Not in source. Add it to a package to edit it here."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "Not something the builder remembers: %s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Not something the builder sets here: %s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "Not something the builder sets: %s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "Nothing to commit."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__oeel-1
+msgid "Odoo Enterprise Edition License v1.0"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__opl-1
+msgid "Odoo Proprietary License v1.0"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Odoo does not see a module named '%(name)s' at %(path)s. The package must "
+"live inside a directory that was already on addons_path when the server "
+"started."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Odoo is running a scheduled action, and a module cannot be reloaded while "
+"one runs. Try again in a moment."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__auto_commit__off
+msgid "Off"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__other_osi_approved_licence
+msgid "Other OSI Approved License"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__license__other_proprietary
+msgid "Other Proprietary"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__package_id
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__package_id
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__package_id
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__package_id
+msgid "Package"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__package_model_id
+msgid "Package Model"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.ui.menu,name:app_builder_base.menu_builder_packages
+msgid "Packages"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__parent_draft_id
+msgid "Parent Draft"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__parse_error
+msgid "Parse Error"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply_file__path
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_file__path
+msgid "Path"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_file__path
+msgid "Path relative to the package root."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package_apply__state__pending
+msgid "Pending"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__state__dirty
+msgid "Pending write"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__placement_json
+msgid "Placement Json"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__python_models
+msgid "Python Models"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__python_path
+msgid "Python Path"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package_model__source__python
+msgid "Python class"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security.py:0
+msgid "Reading builder metadata is restricted to Builder Users."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__reason
+msgid "Reason"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__record_count
+msgid "Record Count"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__reload_mode
+msgid "Reload Mode"
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "Reload from disk"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__restart_hint
+msgid "Restart Hint"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__restart_required
+msgid "Restart Required"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Restart the server soon, with -u %(name)s: the package now depends on a "
+"module that is not installed yet, and only an explicit upgrade installs it. "
+"Until then Odoo runs no scheduled actions in this database (outgoing mail "
+"included)."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Restart the server soon. %(name)s is marked for upgrade, so the restart also"
+" updates the database schema; no -u is needed. Until then Odoo runs no "
+"scheduled actions in this database (outgoing mail included), and after about"
+" five hours of that it clears the mark by itself: a restart later than that "
+"needs -u %(name)s."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"Restart the server, then install %(name)s (from the builder or the Apps "
+"menu)."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package_apply__state__rolled_back
+msgid "Rolled back"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__root_path
+msgid "Root Path"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security_surfaces.py:0
+msgid ""
+"Rules of one group are OR-ed and global rules AND-ed, so a rule of %s cannot"
+" be loosened from your package -- only tightened by adding a rule of your "
+"own here."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_file__drifted
+msgid ""
+"Set when the file on disk no longer matches what we generated, i.e. somebody"
+" edited it by hand."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__restart_required
+msgid "Something was written to disk that only a server restart can load."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_model__source
+msgid "Source"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_model_draft__spec_json
+msgid "Spec Json"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields.selection,name:app_builder_base.selection__builder_package__auto_commit__stage
+msgid "Stage only"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__state
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package_apply__state
+msgid "State"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__summary
+msgid "Summary"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_model_draft__model
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_model__model
+msgid "Technical model name, e.g. workshop.project."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__name
+msgid ""
+"Technical module name. Becomes the directory name and the xmlid prefix for "
+"everything the package owns."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "That apply no longer exists."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "That is not a file of this package."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "That package no longer exists."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "That record no longer exists."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security.py:0
+msgid ""
+"The builder is read-only on this server: writing source code has not been "
+"enabled. It is switched on outside the database, by setting %(env)s=1 in the"
+" server's environment or %(key)s = True in odoo.conf, and should only be "
+"switched on where every Settings administrator is trusted with shell access."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_model__extends
+msgid ""
+"The class adds to a model another module declares, rather than declaring "
+"one. It renders as _inherit with no _name."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"The directory %(path)s is managed by the builder in the database '%(db)s', "
+"which this server is also serving. Two databases writing one package would "
+"overwrite each other's work; edit it from that database, or remove "
+"%(marker)s if it no longer does."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__license
+msgid ""
+"The licence written to the package's manifest. What you build is yours: it "
+"is not a derivative of the builder, and you may pick any licence compatible "
+"with the modules it depends on (a package extending Odoo Enterprise models "
+"normally uses OPL-1 or OEEL-1)."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid ""
+"The link back from %(comodel)s cannot be created here: it is not a model "
+"this package defines in Python."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"The package %s is being written or applied by somebody else right now. Try "
+"again in a moment."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"The package directory '%s' is not writable. This is normal on a production "
+"deployment: build packages in a development environment and ship them "
+"through git."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid ""
+"The package directory cannot be written to. This is normal on a production "
+"deployment: build packages in a development environment and ship them "
+"through git."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"The package directory has to be named after the package: expected "
+"'%(name)s', got '%(got)s'."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"The package version '%(version)s' is not one Odoo understands (%(err)s). Fix"
+" it before removing fields: the migration that keeps their data is filed by "
+"version."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_owned_mixin__builder_package_id
+#: model:ir.model.fields,help:app_builder_base.field_ir_model__builder_package_id
+#: model:ir.model.fields,help:app_builder_base.field_ir_model_fields__builder_package_id
+#: model:ir.model.fields,help:app_builder_base.field_ir_ui_view__builder_package_id
+msgid "The package whose source files this record is written into."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_apply__boot_id
+msgid "The process that started the apply."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_apply.py:0
+msgid ""
+"The server stopped while \"%s\" was being applied. The files on disk may be "
+"half-written; roll back to restore what was there before."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_apply.py:0
+msgid ""
+"The server stopped while \"%s\" was being written, before the change was "
+"recorded. The files on disk may be half-written; roll back to restore what "
+"was there before."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_apply.py:0
+msgid ""
+"The server was restarted, but %(name)s was not upgraded with it and the "
+"database is missing %(missing)s. Restart again with -u %(name)s; until then "
+"Odoo runs no scheduled actions in this database."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_model_draft__base_spec_json
+msgid "The spec as it was when this draft was opened."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_model_draft__spec_json
+msgid "The spec with the pending edits applied."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "There is no action called '%s'."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "There is no field called '%s' to change."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "There is no field called '%s' to move."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "There is no field called '%s' to place."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "There is no field called '%s' to remove."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "There is no template called '%s'."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_apply.py:0
+msgid "There is nothing recorded to put back."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid ""
+"This change cannot be applied:\n"
+"\n"
+"%s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"This change could not be applied and has been rolled back:\n"
+"\n"
+"%(err)s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"This change removes stored field(s) and would drop their data:\n"
+"\n"
+"%(detail)s\n"
+"\n"
+"Apply it again with the destructive option to keep the data under a renamed column instead."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid ""
+"This condition does not search, so it would raise every time it was "
+"evaluated: %s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_domain.py:0
+msgid ""
+"This condition groups its terms, or negates one, so it cannot be shown as a "
+"flat list without changing what it means. Edit it as source."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "This domain cannot be searched."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "This model already has a field called '%s'."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid ""
+"This model is not loaded yet. Apply your changes, or reload the package."
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid ""
+"This package directory is read-only. That is expected on a\n"
+"                        production deployment: build packages in development and\n"
+"                        ship them through git."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid "This package does not own %(models)s, so it cannot adopt them."
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid ""
+"This removes every record this package owns from"
+"                                      the database. The source files are "
+"left alone, so                                      you can reinstall the "
+"module to get them back.                                      Continue?"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"This server process also serves the database(s) %(dbs)s, which have %(name)s"
+" installed. Reloading its Python in place would change it under them without"
+" upgrading their schema. Restart the server to pick this change up, and "
+"upgrade the package in those databases too (-u %(name)s)."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package.py:0
+msgid ""
+"This server runs %(workers)s worker processes, so a package cannot be "
+"reloaded in place: the other workers would rebuild their registry against "
+"the Python they already have in memory. Restart the server to pick this "
+"change up."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__display_name_
+msgid "Title"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_domain.py:0
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "Unknown model '%s'."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_res_users
+msgid "User"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__version
+msgid "Version"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model,name:app_builder_base.model_ir_ui_view
+msgid "View"
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_apply__restart_hint
+msgid ""
+"What the restart an apply is waiting for has to be: a plain one, or one with"
+" -u."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package__auto_commit
+msgid "What to do with git after each write."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_model_draft__placement_json
+msgid ""
+"Which views each staged field should appear in. View intent, not class "
+"definition, so it is kept out of the spec."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,help:app_builder_base.field_builder_package_model__parse_error
+msgid "Why the builder had to stop rewriting this file."
+msgstr ""
+
+#. module: app_builder_base
+#: model:ir.model.fields,field_description:app_builder_base.field_builder_package__writable
+msgid "Writable"
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "Write to disk"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_record_surface.py:0
+msgid "You are not allowed to search this model."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "edit %s"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "edited"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security_surfaces.py:0
+msgid "everyone"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_serializer.py:0
+msgid "has"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_serializer.py:0
+msgid "have"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "its source is missing or code-owned."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "removed"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "removed — its data would be kept aside"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_workspace.py:0
+msgid "that directory"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_package_apply.py:0
+msgid "this change"
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_model_draft.py:0
+msgid "unset"
+msgstr ""
+
+#. module: app_builder_base
+#: model_terms:ir.ui.view,arch_db:app_builder_base.builder_package_view_form
+msgid "x_my_customizations"
+msgstr ""

@@ -147,7 +147,7 @@ were.
   the arch-version check: the second drop on a view the first just changed is refused
   and the canvas refreshed, never written twice.
 - **The 19.0 port has been read, not run.** Every version difference the console knows
-  is in one file (`static/src/console/compat.js`), each with the core lines that decide
+  is in one file (`static/src/console/compat.ts`), each with the core lines that decide
   it, and the checklist for the Owl 3 branch is in `FORWARD_COMPAT.md`; a run against a
   19 server is still to do.
 
