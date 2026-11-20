@@ -216,7 +216,10 @@ class TestWireContract(BaseCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.wire = Path(get_module_path("app_builder_view")) / WIRE
+        root = get_module_path("app_builder_view")
+        if not root:
+            raise RuntimeError("app_builder_view is not on the addons path")
+        cls.wire = Path(root) / WIRE
 
     def _interfaces(self) -> dict[str, set[str]]:
         """Every interface of ``wire.ts`` and its keys, a base's included."""
@@ -257,9 +260,11 @@ class TestWireContract(BaseCase):
         for name, (addon, relative, cls) in MIRRORS.items():
             with self.subTest(interface=name, typeddict=cls):
                 root = get_module_path(addon, display_warning=False)
-                self.assertTrue(root, "%s is not on the addons path" % addon)
+                if not root:
+                    self.fail("%s is not on the addons path" % addon)
                 python = _typeddict_keys(Path(root) / relative, cls)
-                self.assertIsNotNone(python, "%s is gone from %s" % (cls, relative))
+                if python is None:
+                    self.fail("%s is gone from %s" % (cls, relative))
                 typescript = interfaces[name] - TS_ONLY.get(name, set())
                 self.assertEqual(
                     sorted(typescript - python),
