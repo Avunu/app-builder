@@ -1,7 +1,7 @@
 {
     "name": "App Builder",
     "summary": "Open-source visual builder whose output is real source code",
-    "version": "18.0.1.0.0",
+    "version": "18.0.2.0.0",
     "category": "Technical",
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",
