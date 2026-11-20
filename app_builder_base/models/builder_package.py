@@ -9,19 +9,26 @@ in agreement and to be honest when they are not.
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import logging
 import os
 import shutil
 import sys
 import tempfile
+import threading
 import time
 from typing import TYPE_CHECKING, Any, cast
+
+import psycopg2
 
 from odoo import api, fields, models
 from odoo import models as models_module  # pylint: disable=reimported
 from odoo.exceptions import UserError, ValidationError
+from odoo.modules.registry import Registry
 from odoo.tools import config as tools_config
-from odoo.tools import file_path
+from odoo.tools import file_path, mute_logger, sql
+from odoo.tools.parse_version import parse_version
 
 from odoo.addons.base.models import ir_model as ir_model_module
 from odoo.addons.base.models.ir_model import IrModel, IrModelData
@@ -29,6 +36,7 @@ from odoo.addons.base.models.ir_module import Module as IrModuleModule
 from odoo.addons.base.models.res_lang import Lang
 
 from ..tools import (
+    atomicfile,
     checksum,
     gitrepo,
     migrationgen,
@@ -47,7 +55,7 @@ if TYPE_CHECKING:
     # Only for annotations/casts below; with `from __future__ import
     # annotations` nothing here needs these at runtime, the same bargain
     # every other Phase 1c file's `TYPE_CHECKING` block makes.
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Generator, Iterable, Iterator
 
     from odoo.fields import _String
     from odoo.models import BaseModel
@@ -129,6 +137,83 @@ UNLINK_ORDER = (
     "ir.model.fields",
     "ir.model",
 )
+
+# What a generated manifest may declare: exactly the values core's own
+# `ir.module.module.license` accepts, so a typo cannot reach a manifest and
+# come back as a warning on every boot.
+LICENSES = [
+    ("LGPL-3", "LGPL Version 3"),
+    ("OPL-1", "Odoo Proprietary License v1.0"),
+    ("OEEL-1", "Odoo Enterprise Edition License v1.0"),
+    ("AGPL-3", "Affero GPL-3"),
+    ("GPL-3", "GPL Version 3"),
+    ("GPL-3 or any later version", "GPL-3 or later version"),
+    ("GPL-2", "GPL Version 2"),
+    ("GPL-2 or any later version", "GPL-2 or later version"),
+    ("Other OSI approved licence", "Other OSI Approved License"),
+    ("Other proprietary", "Other Proprietary"),
+]
+# The default for a package nobody chose a licence for. A generated package
+# is its author's own work, not a derivative of the (AGPL) builder that
+# typed it out, and LGPL-3 is what Odoo's own scaffold and community addons
+# default to -- it does not put a network-copyleft label on somebody's
+# private customisation without their asking.
+DEFAULT_LICENSE = "LGPL-3"
+
+# Everything the builder keeps for itself inside a package directory.
+BUILDER_DIR = ".builder"
+# Which database last wrote this directory. See `_claim_directory`.
+OWNER_FILE = ".builder/owner"
+
+# First key of the two-key advisory lock taken around a package write; the
+# second is the package id. Arbitrary, fixed, and ours ("buil").
+ADVISORY_LOCK_NAMESPACE = 0x6275696C
+
+# How long an apply waits for a running scheduled action before giving up.
+# Core's module operations take `ir_cron ... FOR UPDATE NOWAIT` and fail
+# outright while a cron runs; most crons finish within seconds.
+CRON_LOCK_ATTEMPTS = 10
+# Where the per-transaction file undo keeps its record
+# (`cr.postrollback.data`), see `_undo_on_rollback`.
+UNDO_DATA_KEY = "app_builder_base.undo"
+CRON_LOCK_DELAY = 1.0
+
+# (database, package id) -> ident of the thread applying it. An apply
+# commits half way and then reloads, so no database lock can span it; within
+# one process this does. Across processes the advisory lock covers the part
+# before the commit, which under workers is the whole apply.
+_APPLYING: dict[tuple[str, int], int] = {}
+_APPLYING_GUARD = threading.Lock()
+
+
+def _registries() -> Any:
+    """``Registry.registries``: the process's database-name -> registry LRU.
+
+    Read through ``vars`` because the class attribute carries no annotation
+    of its own -- untyped vendor plumbing, the same boundary
+    ``_install_watcher_mute`` meets with ``FSWatcherBase``.
+    """
+    return vars(Registry)["registries"]
+
+
+def _adapt_version(version: str) -> str:
+    """Core's own ``adapt_version`` (``18.0.`` prefixed, validated)."""
+    from odoo.modules import module as module_tools
+
+    adapt: Any = vars(module_tools)["adapt_version"]
+    return cast("str", adapt(version))
+
+
+def _strict_root_path() -> bool:
+    """Whether a package must sit directly under an ``addons_path`` entry.
+
+    Always, except while a test runs: the suite builds its packages in
+    throwaway temporary directories, which is the one honest reason for a
+    package to live somewhere Odoo could never load it from. The checks that
+    keep a package out of core's own directories apply either way.
+    """
+    return not getattr(threading.current_thread(), "testing", False)
+
 
 STATES = [
     ("draft", "Draft"),
@@ -228,7 +313,14 @@ class BuilderPackage(models.Model):
     version = fields.Char(default="18.0.1.0.0", required=True)
     category = fields.Char(default="Customization")
     author = fields.Char(default="App Builder")
-    license = fields.Char(default="AGPL-3")
+    license = fields.Selection(
+        LICENSES,  # pyright: ignore[reportArgumentType] -- see `state`'s own comment below.
+        default=DEFAULT_LICENSE,
+        help="The licence written to the package's manifest. What you build "
+        "is yours: it is not a derivative of the builder, and you may pick "
+        "any licence compatible with the modules it depends on (a package "
+        "extending Odoo Enterprise models normally uses OPL-1 or OEEL-1).",
+    )
     depends = fields.Char(
         default="base",
         required=True,
@@ -330,15 +422,93 @@ class BuilderPackage(models.Model):
                     _("'%s' is not a valid Python module name.", package.name)
                 )
 
+    @api.constrains("root_path", "name")
+    def _check_root_path(self) -> None:
+        """Keep a package where a package may live, whoever sets the path.
+
+        ``builder.workspace.create_package`` checks all of this with a
+        sentence each, but it is one RPC: ``root_path`` is an ordinary
+        stored field, and a plain ``write`` -- from the backend form, an
+        import, another module -- reaches it without going near that
+        method. Everything the builder then does (write files, prune files,
+        run git, ``rmtree`` a backup) happens under this path, so the
+        invariant has to live with the field.
+        """
+        import odoo
+
+        import odoo.addons
+
+        # realpath, not abspath: the checkout Odoo runs from is often a
+        # symlink (a nix store path behind `.odoo-nix/odoo`), and every path
+        # below is compared resolved.
+        core_root = os.path.dirname(os.path.dirname(os.path.realpath(odoo.__file__)))
+        addons_dirs = {os.path.realpath(path) for path in odoo.addons.__path__}
+        strict = _strict_root_path()
+        for package in self:
+            path = package.root_path
+            if not path:
+                continue
+            if not os.path.isabs(path) or os.path.normpath(path) != path:
+                raise ValidationError(
+                    _(
+                        "'%s' is not an absolute, normalised path; a package "
+                        "directory has to be one.",
+                        path,
+                    )
+                )
+            real = os.path.realpath(path)
+            parent = os.path.dirname(real)
+            if real == core_root or real.startswith(core_root + os.sep):
+                raise ValidationError(
+                    _(
+                        "%s belongs to Odoo itself; a package cannot live there.",
+                        path,
+                    )
+                )
+            if any(
+                entry == real or entry.startswith(real.rstrip(os.sep) + os.sep)
+                for entry in addons_dirs | {core_root}
+            ):
+                raise ValidationError(
+                    _(
+                        "%s is an addons directory (or contains one), not a "
+                        "single addon; a package cannot take it over.",
+                        path,
+                    )
+                )
+            if not strict:
+                continue
+            if parent not in addons_dirs:
+                raise ValidationError(
+                    _(
+                        "%s is not directly inside a directory on the addons "
+                        "path. Odoo only loads addons from directories that "
+                        "were on the path when the server started.",
+                        path,
+                    )
+                )
+            if os.path.basename(real) != package.name:
+                raise ValidationError(
+                    _(
+                        "The package directory has to be named after the "
+                        "package: expected '%(name)s', got '%(got)s'.",
+                        name=package.name,
+                        got=os.path.basename(real),
+                    )
+                )
+
     # -- computes ---------------------------------------------------------
 
     @api.depends("name")
     def _compute_root_path(self) -> None:
         base = typed.model(self.env, BuilderPackage)._default_addons_dir()
         for package in self:
-            if not package.root_path and package.name:
-                package.root_path = os.path.join(base, package.name)
+            if not package.root_path and package.name and base:
+                package.root_path = os.path.join(os.path.realpath(base), package.name)
             elif not package.root_path:
+                # No writable addons directory: nowhere to put it, which is
+                # the read-only deployment. A bare relative name here would
+                # resolve against the server's working directory.
                 package.root_path = False
 
     @api.depends("root_path")
@@ -991,7 +1161,7 @@ class BuilderPackage(models.Model):
             "version": self.version,
             "category": self.category or "Customization",
             "author": self.author or "App Builder",
-            "license": self.license or "AGPL-3",
+            "license": self.license or DEFAULT_LICENSE,
             "installable": True,
             # Declared dependencies, plus every module we actually reference.
             # Deriving this rather than trusting the user is what makes a
@@ -1126,6 +1296,7 @@ class BuilderPackage(models.Model):
         cast("BuilderSecurityMixin", self)._assert_builder_manager()
         for package in self:
             package._assert_writable()
+            package._lock_for_write()
             files = package._render_files()
             written = package._write_files(files, prune=True)
             package._sync_file_records(files)
@@ -1151,8 +1322,12 @@ class BuilderPackage(models.Model):
         # `_seed_app_icon`'s own cast above.
         root = cast("str", self.root_path)
         os.makedirs(root, exist_ok=True)
+        self._claim_directory()
         _mute_dev_watcher(root)
         written: list[str] = []
+        # What each file we touch held before this *transaction*: one
+        # record per directory, shared by every write of the request.
+        previous = self._undo_on_rollback(root)
         for relative, content in files.items():
             full = os.path.join(root, relative)
             os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -1160,8 +1335,11 @@ class BuilderPackage(models.Model):
             # does not fire a pointless reload.
             if checksum.hash_file(full) == checksum.hash_text(content):
                 continue
-            with open(full, "w", encoding="utf-8") as handle:
-                handle.write(content)
+            if relative not in previous:
+                previous[relative] = self._read_bytes(full)
+            # Never truncate in place: a process killed between the truncate
+            # and the write leaves an empty module file on the addons path.
+            atomicfile.write_text(full, content)
             written.append(relative)
         # Again, after: the window is measured from the last write, not the
         # first, and the watcher hears about a file a moment after it lands.
@@ -1173,6 +1351,14 @@ class BuilderPackage(models.Model):
         for stale in cast("BuilderPackageFile", self.file_ids).filtered(
             lambda f: f.path not in files
         ):
+            if migrationgen.is_migration_path(cast("str", stale.path)):
+                # A pre-migration is rendered by the one apply that removed
+                # the column and by no later render. Pruned here before the
+                # upgrade has run it -- an apply waiting for a restart, then
+                # any ordinary write -- the manifest keeps the bumped version
+                # and the upgrade drops the column it was written to save.
+                # Migration scripts are history: they are never pruned.
+                continue
             # `path` is a required Char (`builder.package.file`, this file
             # below) -- same "declared str | False, never actually False"
             # cast as this file's other required-field reads.
@@ -1182,9 +1368,294 @@ class BuilderPackage(models.Model):
             if os.path.isfile(full) and (
                 checksum.hash_file(full) == stale.generated_checksum
             ):
+                if stale_path not in previous:
+                    previous[stale_path] = self._read_bytes(full)
                 os.remove(full)
                 written.append(stale_path)
         return written
+
+    @api.model
+    def _read_bytes(self, full: str) -> bytes | None:
+        try:
+            with open(full, "rb") as handle:
+                return handle.read()
+        except OSError:
+            return None
+
+    def _undo_on_rollback(self, root: str) -> dict[str, bytes | None]:
+        """Put the old bytes back if this transaction rolls back.
+
+        The files are written inside the request's transaction, and the
+        checksum rows that describe them roll back with it -- so without
+        this a failure after the write (or a serialization failure, which
+        makes Odoo roll back and *retry* the request) leaves source on disk
+        for a change the database never made.
+
+        Returns the record the caller fills in *before* it touches a file:
+        path to the bytes it held, ``None`` for "did not exist". There is
+        one record per directory and transaction, and a path is recorded
+        only the first time it is touched. A request writes a package
+        several times over -- bootstrap, seed, write; or one capture after
+        another -- and Odoo runs rollback hooks in the order they were
+        added, so a hook per write would restore the first write's
+        "before" and then the second's, leaving every file at an
+        intermediate state. What a rollback owes is the bytes from before
+        the transaction, and the earliest record is exactly that. It is
+        filled in as the writes go, so a failure half way through undoes
+        exactly the half that happened.
+
+        A commit clears the hook and the record with it, which is what
+        makes ``action_apply``'s own commit-then-reload safe: past that
+        commit the files are the truth and restoring them is the apply
+        record's job, not this one's. A savepoint rollback does not run it
+        -- Odoo has no hook there -- so a caller that catches an exception
+        around a write still owes the package an ``action_write_files()``.
+        """
+        hooks = cast("Cursor", self.env.cr).postrollback
+        records = cast(
+            "dict[str, dict[str, bytes | None]]",
+            hooks.data.setdefault(UNDO_DATA_KEY, {}),
+        )
+        known = records.get(root)
+        if known is not None:
+            return known
+        previous: dict[str, bytes | None] = {}
+        records[root] = previous
+
+        def undo() -> None:
+            if not previous:
+                return
+            _mute_dev_watcher(root)
+            for relative, before in previous.items():
+                full = os.path.join(root, relative)
+                try:
+                    if before is None:
+                        if os.path.isfile(full):
+                            os.remove(full)
+                    else:
+                        atomicfile.write_text(full, before.decode("utf-8"))
+                except (OSError, UnicodeDecodeError) as err:
+                    _logger.error(
+                        "Could not restore %s after a rollback: %s", full, err
+                    )
+            _mute_dev_watcher(root)
+
+        hooks.add(undo)
+        return previous
+
+    # -- mutual exclusion -------------------------------------------------
+
+    def _busy_error(self) -> UserError:
+        return UserError(
+            _(
+                "The package %s is being written or applied by somebody else "
+                "right now. Try again in a moment.",
+                self.name,
+            )
+        )
+
+    def _lock_for_write(self) -> None:
+        """One writer per package, until this transaction ends.
+
+        Every write renders the *whole* package and prunes what is no longer
+        in it; two of them interleaved prune each other's files and leave
+        checksum rows describing a tree neither of them wrote. A
+        transaction-scoped advisory lock serialises them across threads and
+        worker processes alike and needs no cleanup -- and it is refused,
+        not waited for, because the second writer's render is already stale
+        by the time the first one finishes.
+        """
+        self.ensure_one()
+        # Same `Environment.cr` gap as `_demote_manual_metadata`'s own cast.
+        cr = cast("Cursor", self.env.cr)
+        key = (cast("str", cr.dbname), cast("int", self.id))
+        owner = _APPLYING.get(key)
+        if owner is not None and owner != threading.get_ident():
+            raise self._busy_error()
+        cr.execute(
+            "SELECT pg_try_advisory_xact_lock(%s, %s)",
+            (ADVISORY_LOCK_NAMESPACE, self.id),
+        )
+        row = cr.fetchone()
+        if not (row and row[0]):
+            raise self._busy_error()
+
+    @contextlib.contextmanager
+    def _applying(self) -> Generator[None, None, None]:
+        """Hold the package for a whole apply, across its commits.
+
+        The advisory lock above ends at the apply's own commit, which is
+        *before* the reload -- the long part, and the part during which a
+        second apply's snapshot/restore would trample the files the first
+        one's upgrade is loading. In-place reloads only ever happen in a
+        single process, so a process-wide marker is enough to span them.
+        """
+        self.ensure_one()
+        key = (
+            cast("str", cast("Cursor", self.env.cr).dbname),
+            cast("int", self.id),
+        )
+        ident = threading.get_ident()
+        with _APPLYING_GUARD:
+            owner = _APPLYING.get(key)
+            if owner is not None and owner != ident:
+                raise self._busy_error()
+            nested = owner == ident
+            _APPLYING[key] = ident
+        try:
+            yield
+        finally:
+            if not nested:
+                with _APPLYING_GUARD:
+                    _APPLYING.pop(key, None)
+
+    def _try_cron_lock(self) -> bool:
+        """Take the lock core's module operations take, if it is free.
+
+        ``False`` means one thing only: somebody holds a row *now*
+        (``LockNotAvailable``). The other way this statement fails is not
+        caught here, on purpose. A cursor is REPEATABLE READ, so once a
+        scheduled action has finished and committed its own ``ir_cron`` row
+        (``lastcall``/``nextcall``), locking that row from a transaction
+        whose snapshot is older raises ``SerializationFailure`` -- for as
+        long as that transaction lives, however often it asks. Reading it
+        as "still locked" waits out every attempt and then blames a cron
+        that is not running.
+        """
+        cr = cast("Cursor", self.env.cr)
+        try:
+            with mute_logger("odoo.sql_db"), cr.savepoint(flush=False):
+                cr.execute("SELECT id FROM ir_cron FOR UPDATE NOWAIT")
+        except psycopg2.errors.LockNotAvailable:
+            return False
+        return True
+
+    def _acquire_cron_lock(self, fresh: bool = False) -> None:
+        """Wait, briefly, for scheduled actions to finish.
+
+        ``_button_immediate_function`` runs ``SELECT * FROM ir_cron FOR
+        UPDATE NOWAIT`` and raises if any scheduled action is running. Hit
+        *after* the files are written, that sends a perfectly good apply
+        down the failure path -- restore, second reload, an error -- for no
+        reason but timing. So the lock is taken here first, with a short
+        retry, before anything is written; holding it also keeps a cron
+        from starting in between.
+
+        The two callers differ in what a stale snapshot costs (see
+        ``_try_cron_lock``):
+
+        * Before the write (``fresh=False``) the transaction holds the
+          request's work and cannot be given up here. A
+          ``SerializationFailure`` is let through: it is one of the errors
+          Odoo retries the whole request for, and the retry starts from a
+          new snapshot with nothing written yet.
+        * Right after a commit (``fresh=True``) nothing is pending, so the
+          transaction is rolled back between attempts and each one sees
+          the rows as they are now. Nothing can be retried at that point
+          -- the files are written -- which is why it must not fail for a
+          cron that has already finished.
+        """
+        self.ensure_one()
+        cr = cast("Cursor", self.env.cr)
+        for attempt in range(CRON_LOCK_ATTEMPTS):
+            try:
+                if self._try_cron_lock():
+                    return
+            except psycopg2.errors.SerializationFailure:
+                if not fresh:
+                    raise
+                # Not a running cron: one that finished after our snapshot.
+                # A new snapshot is all it takes, so do not wait for it.
+                cr.rollback()
+                continue
+            if attempt + 1 < CRON_LOCK_ATTEMPTS:
+                if fresh:
+                    cr.rollback()
+                time.sleep(CRON_LOCK_DELAY)
+        raise UserError(
+            _(
+                "Odoo is running a scheduled action, and a module cannot be "
+                "reloaded while one runs. Try again in a moment."
+            )
+        )
+
+    def _claim_directory(self) -> None:
+        """Refuse a directory another database of this server is writing.
+
+        ``builder.package`` rows are per database and a directory is not:
+        two databases can each hold a row for the same addon, each with its
+        own checksums and apply history, and a rollback in one restores
+        bytes the other has since replaced. The directory remembers which
+        database wrote it last; a different one *that this same process is
+        serving* is refused. A copy of the database on another server, or a
+        renamed one, simply takes the directory over.
+        """
+        self.ensure_one()
+        root = cast("str", self.root_path)
+        marker = os.path.join(root, OWNER_FILE)
+        dbname = cast("str", cast("Cursor", self.env.cr).dbname)
+        owner = ""
+        # No marker yet: nobody has claimed the directory.
+        with contextlib.suppress(OSError), open(marker, encoding="utf-8") as handle:
+            owner = handle.read().strip()
+        if owner == dbname:
+            return
+        if owner and owner in self._loaded_databases():
+            raise UserError(
+                _(
+                    "The directory %(path)s is managed by the builder in "
+                    "the database '%(db)s', which this server is also "
+                    "serving. Two databases writing one package would "
+                    "overwrite each other's work; edit it from that "
+                    "database, or remove %(marker)s if it no longer does.",
+                    path=root,
+                    db=owner,
+                    marker=marker,
+                )
+            )
+        self._ignore_builder_dir()
+        atomicfile.write_text(marker, dbname + "\n")
+
+    def _ignore_builder_dir(self) -> None:
+        """Keep ``.builder/`` out of the package's git history.
+
+        Backups and markers live inside the package directory, and both the
+        "before" commit and auto-commit stage with ``git add .`` -- which
+        would put a second copy of every file the builder ever replaced into
+        the repository. A ``.gitignore`` of its own inside the directory
+        does it without touching the developer's.
+        """
+        self.ensure_one()
+        ignore = os.path.join(cast("str", self.root_path), BUILDER_DIR, ".gitignore")
+        if not os.path.isfile(ignore):
+            atomicfile.write_text(ignore, "*\n")
+
+    @api.model
+    def _loaded_databases(self) -> set[str]:
+        """Other databases this process has a registry for."""
+        current = cast("str", cast("Cursor", self.env.cr).dbname)
+        names = cast("list[str]", list(_registries().d))
+        return {name for name in names if name != current}
+
+    def _other_databases_using(self) -> list[str]:
+        """Databases in this process that have this package installed.
+
+        ``_reimport_module`` rewrites ``sys.modules`` and
+        ``MetaModel.module_to_models``, and both belong to the process, not
+        to a database. Another database with the package installed would
+        build its next registry from the re-imported classes without its
+        own schema upgrade -- new fields, no columns.
+        """
+        self.ensure_one()
+        current = cast("str", cast("Cursor", self.env.cr).dbname)
+        using: list[str] = []
+        loaded = cast("list[tuple[str, Any]]", list(_registries().d.items()))
+        for name, registry in loaded:
+            if name == current:
+                continue
+            if self.name in getattr(registry, "_init_modules", ()):
+                using.append(name)
+        return sorted(using)
 
     def _sync_file_records(self, files: dict[str, str]) -> None:
         self.ensure_one()
@@ -1227,10 +1698,17 @@ class BuilderPackage(models.Model):
         if self.auto_commit == "stage":
             gitrepo.add(root, paths)
         else:
-            gitrepo.commit(
-                root,
-                "builder(%s): update %s" % (self.name, ", ".join(sorted(written)[:5])),
-                paths,
+            # After the database commit, not before it: a git commit cannot
+            # be rolled back with the transaction, and one made here would
+            # record a change the database may yet refuse.
+            self.env.cr.postcommit.add(
+                functools.partial(
+                    gitrepo.commit,
+                    root,
+                    "builder(%s): update %s"
+                    % (self.name, ", ".join(sorted(written)[:5])),
+                    paths,
+                )
             )
 
     def builder_capture(
@@ -1240,9 +1718,12 @@ class BuilderPackage(models.Model):
 
         This is the single entry point every builder module calls after it
         changes something. Assigning the xmlid and writing the file happen in
-        the caller's transaction, so the database and the source tree either
-        both advance or both roll back -- which is what lets us treat the DB
-        write as an optimisation rather than a second source of truth.
+        the caller's transaction, and the write registers its own undo for a
+        rollback (``_undo_on_rollback``), so the database and the source
+        tree advance together or not at all -- which is what lets us treat
+        the DB write as an optimisation rather than a second source of
+        truth. Files are replaced atomically, and a git commit is made only
+        once the database has committed.
 
         ``write_files=False`` takes ownership without touching the disk, and
         leaves the package marked as having a write pending. It is for a
@@ -1371,6 +1852,14 @@ class BuilderPackage(models.Model):
         root = cast("str", self.root_path)
         os.makedirs(os.path.join(root, "models"), exist_ok=True)
         emitted = sorted(self._python_module_set() | set(model_names))
+        # Written outside `_write_files`, undone on rollback like it.
+        previous = self._undo_on_rollback(root)
+
+        def put(relative: str, content: str) -> None:
+            full = os.path.join(root, relative)
+            if relative not in previous:
+                previous[relative] = self._read_bytes(full)
+            atomicfile.write_text(full, content)
 
         for model_name in sorted(model_names):
             relative = "models/%s" % pycodegen.module_file_for(model_name)
@@ -1389,17 +1878,13 @@ class BuilderPackage(models.Model):
             owned = cast("IrModelFields", model.field_id).filtered(  # pyright: ignore[reportUnknownMemberType]
                 lambda f: f.state == "manual"
             )
-            with open(os.path.join(root, relative), "w", encoding="utf-8") as handle:
-                handle.write(
-                    pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned))
-                )
+            put(
+                relative,
+                pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned)),
+            )
 
-        with open(
-            os.path.join(root, "models/__init__.py"), "w", encoding="utf-8"
-        ) as handle:
-            handle.write(self._render_models_init(emitted))
-        with open(os.path.join(root, "__init__.py"), "w", encoding="utf-8") as handle:
-            handle.write(pycodegen.render_package_init(True))
+        put("models/__init__.py", self._render_models_init(emitted))
+        put("__init__.py", pycodegen.render_package_init(True))
 
     def _demote_manual_metadata(self, model_names: Iterable[str]) -> None:
         """Retire the manual metadata rows, keeping the table and its data.
@@ -1561,7 +2046,129 @@ class BuilderPackage(models.Model):
         """
         workers = cast("int", tools_config["workers"])
         for package in self:
-            package.reload_mode = "inproc" if not workers else "manual"
+            # Several databases in one process is the same problem as several
+            # workers, turned sideways: the re-import is process-wide and the
+            # upgrade that has to follow it is per database.
+            manual = bool(workers) or bool(package._other_databases_using())
+            package.reload_mode = "manual" if manual else "inproc"
+
+    def _manual_reload_reason(self) -> str:
+        """Why this package cannot be reloaded in place, as a sentence."""
+        self.ensure_one()
+        workers = cast("int", tools_config["workers"])
+        if workers:
+            return _(
+                "This server runs %(workers)s worker processes, so a package "
+                "cannot be reloaded in place: the other workers would rebuild "
+                "their registry against the Python they already have in "
+                "memory. Restart the server to pick this change up.",
+                workers=workers,
+            )
+        return _(
+            "This server process also serves the database(s) %(dbs)s, which "
+            "have %(name)s installed. Reloading its Python in place would "
+            "change it under them without upgrading their schema. Restart "
+            "the server to pick this change up, and upgrade the package in "
+            "those databases too (-u %(name)s).",
+            dbs=", ".join(self._other_databases_using()),
+            name=self.name,
+        )
+
+    def _can_install_in_place(self) -> bool:
+        """Whether this is a first install, which any server can do in place.
+
+        What makes an in-place *reload* wrong under workers is Python that
+        other processes already hold. A package that is not installed has
+        never been imported by anybody -- Odoo only imports installed
+        modules -- so installing it is exactly what the Apps menu does on a
+        multi-worker server every day: this process imports and installs,
+        signals, and the others import it fresh when they rebuild.
+        """
+        self.ensure_one()
+        if "odoo.addons.%s" % self.name in sys.modules:
+            return False
+        module = (
+            typed.model(self.env, IrModuleModule)
+            .sudo()
+            .search([("name", "=", self.name)], limit=1)
+        )
+        return module.state in (False, "uninstalled")
+
+    def _mark_for_restart(self) -> str:
+        """Make the restart the user is told about create the schema.
+
+        Written to disk and not loaded, an installed package is new Python
+        beside an old schema, and a plain boot does not close that gap:
+        ``load_modules`` imports the classes and runs ``init_models`` only
+        for a module that is marked. Left alone, the restart would bring up
+        a model whose new fields have no columns, and every read of it
+        would fail until somebody ran ``-u`` from a shell.
+
+        A module in state ``to upgrade`` *is* upgraded by any registry load,
+        with or without ``-u`` (``odoo/modules/loading.py``: ``needs_update``
+        is true for that state, and the first ``load_marked_modules`` pass
+        is unconditional) -- pre-migrations included. So the mark is set
+        here, durably, and the restart does the rest. A package that is not
+        installed needs nothing: its Python is not imported at boot.
+
+        The mark has a price, and it is not a durable promise. While any
+        module is in a ``to ...`` state, core's cron runner skips the whole
+        database (``ir_cron._check_modules_state``): no scheduled action
+        runs -- mail queues included -- until the restart. And once a job
+        is ``MAX_FAIL_TIME`` (five hours) overdue core gives up waiting and
+        resets every such module to ``installed``, after which the restart
+        upgrades nothing. Neither is ours to change: the runner is a
+        classmethod of the base class, called before any registry exists,
+        and nothing of a non-server-wide addon runs before
+        ``load_marked_modules`` has read the states. So the hint says both,
+        the apply row stays ``awaiting_restart`` as the builder's own
+        record of what is owed, and ``_settle_awaiting_restart`` puts a
+        lost mark back -- before the restart if it can, after it if not.
+
+        Returns what the restart has to be, as a sentence for the user.
+        """
+        self.ensure_one()
+        self._invalidate_module_caches()
+        Module = typed.model(self.env, IrModuleModule).sudo()
+        module = Module.search([("name", "=", self.name)], limit=1)
+        if module.state not in ("installed", "to upgrade"):
+            return _(
+                "Restart the server, then install %(name)s (from the builder "
+                "or the Apps menu).",
+                name=self.name,
+            )
+        if module.state == "installed":
+            try:
+                # Core's own entry point: it also marks whatever depends on
+                # this package, which has to be upgraded with it.
+                module.button_upgrade()
+            except UserError:
+                _logger.exception(
+                    "Could not mark %s for upgrade through button_upgrade; "
+                    "marking the module itself",
+                    self.name,
+                )
+                module.write({"state": "to upgrade"})
+        if Module.search_count([("state", "=", "to install")]):
+            # A dependency the package gained is not installed, and a plain
+            # boot does not install: only `-u`/`-i` runs that pass.
+            return _(
+                "Restart the server soon, with -u %(name)s: the package now "
+                "depends on a module that is not installed yet, and only an "
+                "explicit upgrade installs it. Until then Odoo runs no "
+                "scheduled actions in this database (outgoing mail "
+                "included).",
+                name=self.name,
+            )
+        return _(
+            "Restart the server soon. %(name)s is marked for upgrade, so "
+            "the restart also updates the database schema; no -u is "
+            "needed. Until then Odoo runs no scheduled actions in this "
+            "database (outgoing mail included), and after about five hours "
+            "of that it clears the mark by itself: a restart later than "
+            "that needs -u %(name)s.",
+            name=self.name,
+        )
 
     def _reimport_module(self) -> None:
         """Purge this package's Python so it is imported again.
@@ -1593,17 +2200,8 @@ class BuilderPackage(models.Model):
         ``init_models`` for modules marked ``to upgrade``.
         """
         self.ensure_one()
-        if self.reload_mode == "manual":
-            raise UserError(
-                _(
-                    "This server runs %(workers)s worker processes, so a "
-                    "package cannot be reloaded in place: the other workers "
-                    "would rebuild their registry against the Python they "
-                    "already have in memory. Restart the server to pick this "
-                    "change up.",
-                    workers=cast("int", tools_config["workers"]),
-                )
-            )
+        if self.reload_mode == "manual" and not self._can_install_in_place():
+            raise UserError(self._manual_reload_reason())
         self._reimport_module()
         module = self._find_or_create_module()
         if module.state == "installed":
@@ -1736,20 +2334,99 @@ class BuilderPackage(models.Model):
         )
         return set(cast("list[int]", entries.mapped("res_id")))
 
-    def _write_pre_migrations(
-        self, dropped: dict[str, tuple[str, ...]], stamp: str
-    ) -> dict[str, str]:
-        """Rename each doomed column aside before Odoo can drop it."""
+    def _bump_version_for_migration(self) -> str:
+        """Move the package to a version its pre-migration can run under.
+
+        Odoo runs ``migrations/<v>/pre-*.py`` only when ``installed < v <=
+        manifest version`` (``odoo/modules/migration.py``). A script filed
+        under the version that is already installed is therefore skipped --
+        silently, and ``_process_end`` then drops the very columns it was
+        written to save. So a destructive apply is a new version of the
+        package: the manifest says so, and the script lives under it.
+
+        The baseline is whichever is higher of the package's own version
+        and what the database says is installed, so a version raised by
+        hand in the manifest cannot leave the new one at or below it.
+        """
         self.ensure_one()
-        files: dict[str, str] = {}
-        for model_name, columns in sorted(dropped.items()):
-            table = model_name.replace(".", "_")
-            content = migrationgen.render_pre_migration(table, columns, stamp)
-            if content:
-                files[migrationgen.migration_path(cast("str", self.version), stamp)] = (
-                    content
+        base = cast("str", self.version)
+        try:
+            adapted = _adapt_version(base)
+        except ValueError as err:
+            raise UserError(
+                _(
+                    "The package version '%(version)s' is not one Odoo "
+                    "understands (%(err)s). Fix it before removing fields: "
+                    "the migration that keeps their data is filed by version.",
+                    version=base,
+                    err=err,
                 )
-        return files
+            ) from err
+        module = (
+            typed.model(self.env, IrModuleModule)
+            .sudo()
+            .search([("name", "=", self.name)], limit=1)
+        )
+        installed = module.latest_version
+        if installed and parse_version(installed) >= parse_version(adapted):
+            base = installed
+        version = migrationgen.bump_version(base)
+        self.version = version
+        return version
+
+    def _render_pre_migration(
+        self, dropped: dict[str, tuple[str, ...]], stamp: str
+    ) -> str | None:
+        """Rename everything this apply would drop aside, in one script.
+
+        One script for the whole apply, not one per model: they would all
+        share a path, and the last model's would be the only one written.
+
+        The table is the model's real one, read from the registry. A
+        many2many has no column on it; what Odoo drops with a *manual*
+        many2many is its relation table, unless another field still uses
+        it, so that is what is renamed. A many2many declared in Python is
+        left alone because core leaves its relation table alone too
+        (``IrModelFields._drop_column`` only drops for ``state='manual'``):
+        the links are still there, under the name they always had.
+        """
+        self.ensure_one()
+        Fields = typed.model(self.env, ir_model_module.IrModelFields).sudo()
+        columns: list[tuple[str, str]] = []
+        relations: list[str] = []
+        doomed = Fields.browse()
+        by_model: dict[str, dict[str, IrModelFields]] = {}
+        for model_name, names in dropped.items():
+            records = Fields.search(
+                [("model", "=", model_name), ("name", "in", list(names))]
+            )
+            doomed |= records
+            by_model[model_name] = {
+                cast("str", record.name): record for record in records
+            }
+        for model_name, names in sorted(dropped.items()):
+            model = cast("BaseModel | None", self.env.get(model_name))
+            table = (
+                cast("str", model._table)
+                if model is not None
+                else model_name.replace(".", "_")
+            )
+            for name in names:
+                record = by_model[model_name].get(name)
+                if record is None or record.ttype != "many2many":
+                    columns.append((table, name))
+                    continue
+                if record.state != "manual":
+                    continue
+                relation: Any = record.relation_table
+                if not relation and model is not None:
+                    declared: Any = cast("dict[str, Any]", model._fields).get(name)
+                    relation = getattr(declared, "relation", None)
+                if isinstance(relation, str) and not Fields.search_count(
+                    [("relation_table", "=", relation), ("id", "not in", doomed.ids)]
+                ):
+                    relations.append(relation)
+        return migrationgen.render_pre_migrations(columns, relations, stamp)
 
     def action_apply(
         self,
@@ -1772,10 +2449,15 @@ class BuilderPackage(models.Model):
 
         ``reload=False`` -- and any apply on a server that cannot reload
         in place -- stops after step 5. The files are on disk and
-        committed, the apply is ``awaiting_restart``, and the restart the
-        user is told about is what makes the change live. Nothing is
-        restored, because nothing was loaded and nothing could have gone
-        wrong yet.
+        committed, the apply is ``awaiting_restart``, the module is marked
+        ``to upgrade`` so that the restart creates the schema
+        (``_mark_for_restart``), and the restart the user is told about is
+        what makes the change live. Nothing is restored, because nothing
+        was loaded and nothing could have gone wrong yet.
+
+        One apply per package at a time (``_applying``): a second one is
+        refused rather than queued, because what it rendered is stale by
+        the time the first has finished.
         """
         # `_assert_builder_manager` lives on `builder.security.mixin`
         # (`_inherit`, not a Python base class -- Odoo's registry merges
@@ -1784,6 +2466,25 @@ class BuilderPackage(models.Model):
         cast("BuilderSecurityMixin", self)._assert_builder_manager()
         self.ensure_one()
         self._assert_writable()
+        with self._applying():
+            return self._apply(reason, allow_destructive, overlay, reload)
+
+    def _apply(
+        self,
+        reason: str,
+        allow_destructive: bool,
+        overlay: dict[str, str] | None,
+        reload: bool | None,
+    ) -> BuilderPackageApply:
+        self.ensure_one()
+        self._lock_for_write()
+        in_place = reload is not False and (
+            self.reload_mode != "manual" or self._can_install_in_place()
+        )
+        if in_place:
+            # Before anything is written: a scheduled action in flight makes
+            # the reload fail, and failing here costs nothing.
+            self._acquire_cron_lock()
 
         files = self._render_files()  # 1. render to memory
         files.update(overlay or {})
@@ -1807,10 +2508,18 @@ class BuilderPackage(models.Model):
                 )
             )
         if dropped:
-            # Ordering is what makes this work: migrate_module(pkg, 'pre') runs
-            # long before _process_end, so by the time _drop_column looks the
-            # column is already gone under its old name and it drops nothing.
-            files.update(self._write_pre_migrations(dropped, stamp))
+            migration = self._render_pre_migration(dropped, stamp)
+            if migration:
+                # Ordering is what makes this work: migrate_module(pkg, 'pre')
+                # runs long before _process_end, so by the time _drop_column
+                # looks the column is already gone under its old name and it
+                # drops nothing. And the *version* is what makes it run at
+                # all -- see `_bump_version_for_migration`.
+                version = self._bump_version_for_migration()
+                # The manifest carries the version, so it is rendered again.
+                files = self._render_files()
+                files.update(overlay or {})
+                files[migrationgen.migration_path(version, stamp)] = migration
         apply_model = cast("BuilderPackageApply", self.env["builder.package.apply"])
         apply = apply_model._snapshot(  # 3. keep the old bytes
             self, files, reason=reason, stamp=stamp
@@ -1824,27 +2533,50 @@ class BuilderPackage(models.Model):
         self._run_auto_commit(written)
         # Same `Environment.cr` gap as `_demote_manual_metadata`'s own cast.
         cast("Cursor", self.env.cr).commit()  # 5. commit BEFORE the reload
+        # The apply row is durable now; the on-disk journal that stood in
+        # for it while the files were being written has done its job.
+        apply._clear_journal()
 
-        if reload is False or self.reload_mode == "manual":
-            apply.state = "awaiting_restart"
+        if not in_place:
+            apply.write(
+                {
+                    "state": "awaiting_restart",
+                    "restart_hint": self._mark_for_restart(),
+                }
+            )
             self.state = "synced"
             return apply
 
+        reloading = False
         try:
+            # Again: the commit above released the lock taken before the
+            # write, and core will ask for it without waiting. Nothing is
+            # pending now, so each attempt gets a snapshot of its own.
+            self._acquire_cron_lock(fresh=True)
+            reloading = True
             self._reload_now()  # 6. reimport, then upgrade
         except Exception as err:  # 7. restore and go back to a good registry
             _logger.exception("Apply failed for package %s", self.name)
             apply._restore()
             cast("Cursor", self.env.cr).commit()
             try:
-                self._reload_now()
+                # Only if a reload was started: when the lock never came,
+                # nothing was loaded, the files are back, and a reload would
+                # only fail on the same scheduled action.
+                if reloading:
+                    self._reload_now()
             except Exception:  # pragma: no cover - already in trouble
                 _logger.exception(
                     "Could not reload %s after a failed apply; the package on "
                     "disk has been restored but this process may be stale",
                     self.name,
                 )
+                cast("Cursor", self.env.cr).rollback()
             apply.write({"state": "failed", "error": str(err)})
+            # The UserError below rolls this request back; without a commit
+            # the row would stay 'pending' and the failure would be recorded
+            # nowhere but the log.
+            cast("Cursor", self.env.cr).commit()
             raise UserError(
                 _(
                     "This change could not be applied and has been rolled "
@@ -1855,7 +2587,92 @@ class BuilderPackage(models.Model):
 
         apply.state = "applied"
         self.state = "synced"
+        self._close_awaiting_restart()
         return apply
+
+    def _close_awaiting_restart(self) -> None:
+        """A reload from disk makes every earlier written-not-loaded apply
+        live with it: there is nothing left for a restart to do."""
+        self.ensure_one()
+        waiting = cast("BuilderPackageApply", self.apply_ids).filtered(
+            lambda a: a.state == "awaiting_restart"
+        )
+        if waiting:
+            waiting.write({"state": "applied", "restart_hint": False})
+
+    @api.model
+    def _warn_orphans_on_uninstall(self) -> list[str]:
+        """Name the packages uninstalling the builder leaves without an owner.
+
+        Uninstalling removes the builder's own records -- the package
+        registry, the apply history and its snapshots -- and nothing a
+        package *contains*. For a package that is installed as a module
+        that is the right outcome: the module still owns its records and
+        Odoo manages them as it does any addon's. A package that was never
+        installed is different: the views, fields and menus it captured
+        stay live, under xmlids no installed module answers to, and with
+        the builder gone nothing is left that knows they belong together.
+        That is not destructive, and it is not something to do silently.
+        """
+        Module = typed.model(self.env, IrModuleModule).sudo()
+        Data = typed.model(self.env, IrModelData).sudo()
+        orphaned: list[str] = []
+        for package in self.sudo().search([]):
+            module = Module.search([("name", "=", package.name)], limit=1)
+            if module.state == "installed":
+                continue
+            count = Data.search_count([("module", "=", package.name)])
+            if not count:
+                continue
+            orphaned.append(cast("str", package.name))
+            _logger.warning(
+                "Uninstalling App Builder while package %s is not installed "
+                "as a module: its %d record(s) stay in the database under "
+                "the '%s.' xmlid prefix with no module managing them. Its "
+                "source is kept at %s; install that addon to give them an "
+                "owner again, or delete them by hand.",
+                package.name,
+                count,
+                package.name,
+                package.root_path or "(no directory)",
+            )
+        return orphaned
+
+    def _schema_behind(self) -> list[str]:
+        """What this package's Python declares and the database lacks.
+
+        The half-way state a restart without an upgrade leaves: the class
+        is imported, the registry has the field, and the table has no
+        column for it -- or no table at all. Empty when the two agree.
+        """
+        self.ensure_one()
+        missing: list[str] = []
+        for entry in cast("BuilderPackageModel", self.model_ids).filtered(
+            lambda m: m.source in ("python", "frozen") and m.model
+        ):
+            name = cast("str", entry.model)
+            model = cast("BaseModel | None", self.env.get(name))
+            if model is None:
+                missing.append(name)
+                continue
+            if model._abstract or not model._auto:
+                continue
+            columns = cast(
+                "dict[str, Any]",
+                sql.table_columns(
+                    cast("Cursor", self.env.cr), cast("str", model._table)
+                ),
+            )
+            if not columns:
+                missing.append(name)
+                continue
+            declared = cast("dict[str, Any]", model._fields)
+            missing.extend(
+                "%s.%s" % (name, field_name)
+                for field_name, field in declared.items()
+                if field.store and field.column_type and field_name not in columns
+            )
+        return missing
 
     # -- drift ------------------------------------------------------------
 
@@ -1906,23 +2723,20 @@ class BuilderPackage(models.Model):
         # `_demote_manual_metadata`'s own `Environment.cr`.
         cast("BuilderSecurityMixin", self)._assert_builder_manager()
         self.ensure_one()
-        if self.reload_mode == "manual":
-            # The same reason `_reload_now` refuses: the other workers would
-            # rebuild their registry against the Python already in memory.
-            raise UserError(
-                _(
-                    "This server runs %(workers)s worker processes, so a "
-                    "package cannot be reloaded in place. Restart the server "
-                    "to read the package from disk.",
-                    workers=cast("int", tools_config["workers"]),
-                )
-            )
+        if self.reload_mode == "manual" and not self._can_install_in_place():
+            # The same reason `_reload_now` refuses: the other workers (or
+            # databases) would rebuild their registry against the Python
+            # already in memory.
+            raise UserError(self._manual_reload_reason())
         self._invalidate_module_caches()
-        module = self._find_or_create_module()
-        if module.state == "installed":
-            action = module.button_immediate_upgrade()
-        else:
-            action = module.button_immediate_install()
+        with self._applying():
+            self._acquire_cron_lock()
+            module = self._find_or_create_module()
+            if module.state == "installed":
+                action = module.button_immediate_upgrade()
+            else:
+                action = module.button_immediate_install()
+        self._close_awaiting_restart()
         self.action_check_drift()
         # Returning Odoo's own {'tag': 'reload'} action matters: the registry
         # has just been rebuilt, so the browser is holding stale views and

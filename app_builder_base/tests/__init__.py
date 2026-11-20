@@ -1,6 +1,7 @@
 from . import (
     common,
     test_adopt,
+    test_apply_integrity,
     test_apply_lifecycle,
     test_assets,
     test_default_and_cron,
