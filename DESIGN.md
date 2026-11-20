@@ -281,6 +281,27 @@ degraded: `setup_models` makes every other worker rebuild its registry, but thei
 That is wrong rather than merely slow. Builder editing is a single-process development
 activity; production runs read-only from the nix store.
 
+"Refused" means the _reload_ is; the apply still lands. Under `manual` the files are
+written and committed, the apply stops as `awaiting_restart`, and the module is marked
+`to upgrade` (`_mark_for_restart`) -- because a plain boot imports the new classes and
+runs `init_models` only for a module that is marked, and without the mark the restart
+would bring up new Python on an old schema. Any registry load honours that state
+(`loading.py`: `needs_update` is true for `to upgrade`, and the first
+`load_marked_modules` pass is unconditional), so the restart needs no `-u`. Two things
+keep that honest. The mark can be lost before the restart -- a worker that rebuilds its
+registry meanwhile "upgrades" against the Python it still holds and resets the state --
+so `_settle_awaiting_restart` looks at the schema after the restart (`_schema_behind`)
+rather than assuming, and marks again if it is behind. And a package that is not
+installed is installed in place even under workers (`_can_install_in_place`): nothing
+has imported it, which makes it exactly what the Apps menu does.
+
+`manual` is also the answer when **one process serves several databases** and another of
+them has the package installed (`_other_databases_using`, read from
+`Registry.registries`): `sys.modules` and `MetaModel.module_to_models` belong to the
+process, the upgrade to one database. Relatedly, a package directory remembers which
+database writes it (`.builder/owner`), and a second database of the same process is
+refused -- two registries of one directory would roll back over each other.
+
 There used to be a third, `restart`, for `--dev=reload`: let the dev server's own file
 watcher restart the process when the generated `.py` lands. It never worked, and the
 reason is worth keeping. The watcher restarts on the _first_ `.py` written and gives
@@ -296,9 +317,18 @@ directory, outside that window, restarts the server exactly as before.
 
 Also: `_button_immediate_function` (\[ir_module.py:601-644\]) raises if the registry is
 initialising or in test mode, and takes `SELECT * FROM ir_cron FOR UPDATE NOWAIT` — it
-fails outright while cron runs, so this needs a retry/queue. And a **new addons
-directory** cannot be registered at runtime; packages must live under an existing
-addons_path entry (`custom/`).
+fails outright while cron runs. The apply therefore takes that lock itself first, with a
+short retry (`_acquire_cron_lock`), before anything is written, and again after its
+commit: a cron in flight costs a moment or a clean refusal, not a written-then-restored
+package. And a **new addons directory** cannot be registered at runtime; packages must
+live under an existing addons_path entry (`custom/`) -- which `builder.package` enforces
+as a constraint on `root_path`, not only in the create-package RPC.
+
+One apply per package at a time. A transaction-scoped advisory lock keyed on the package
+serialises every write (`_lock_for_write`); it ends at the apply's own commit, so a
+process-wide marker (`_applying`) holds the package through the reload that follows.
+Both refuse rather than queue: the second writer's render is stale by the time the first
+finishes.
 
 ### Apply is a state machine, because module operations commit
 
@@ -318,12 +348,28 @@ bytes matter: the on-disk one is all that is left when the process dies mid-relo
 recovery is then `git checkout` from a shell. An apply row still `pending` after a
 restart is exactly that signal.
 
+That row only becomes durable at the commit, though, which is _after_ the write. For the
+window in between the snapshot leaves a journal on disk (`.builder/apply-<stamp>.json`,
+written before the first file, removed after the commit); one found later with no row to
+match is turned back into a failed apply with a rollback on offer (`_recover_journals`).
+Files are replaced by rename, never truncated in place (`tools/atomicfile.py`), and
+every write registers an undo for the transaction's rollback, so a request Odoo rolls
+back -- or retries after a serialization failure -- does not leave source on disk for a
+change the database never made. `.builder/` carries its own `.gitignore`, and the daily
+vacuum trims apply history and its backups (`_gc_old_applies`).
+
 **Removing a field drops its column and its data** — measured, not assumed
 (`_process_end` → `IrModelFields.unlink` → `_drop_column` → `DROP COLUMN CASCADE`). An
-apply that would do that refuses unless asked explicitly, then emits
-`migrations/<version>/pre-builder-<stamp>.py` renaming the column aside.
-`migrate_module(pkg, 'pre')` runs long before `_process_end`, so there is nothing left
-under the old name and `_drop_column` drops nothing.
+apply that would do that refuses unless asked explicitly, then **bumps the package
+version** and emits `migrations/<new version>/pre-builder-<stamp>.py` renaming the
+column aside. `migrate_module(pkg, 'pre')` runs long before `_process_end`, so there is
+nothing left under the old name and `_drop_column` drops nothing. The bump is not
+cosmetic: Odoo runs a versioned script only when
+`installed < script version <= manifest version`, so a script filed under the version
+already installed is skipped and the column goes. One script covers every model the
+apply touches, against each model's real table. A many2many has no column: for a manual
+one the script renames its relation table (unless another field still uses it); for one
+declared in Python core leaves the relation table alone, so there is nothing to save.
 
 ### Reverse direction: developer edits the file
 
