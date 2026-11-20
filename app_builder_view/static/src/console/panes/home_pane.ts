@@ -353,6 +353,9 @@ export class HomeModel implements PaneModel {
 /** The flags `summaryOf` (below) checks, worst first -- a fixed subset of
  * `HEALTH_LINES`' own keys. */
 const WORST_HEALTH_ORDER = [
+  // Before `read_only`, which the server sends beside it: the switch is
+  // the cause, and the directory may be perfectly writable.
+  "write_disabled",
   "read_only",
   "missing",
   "failed_apply",
@@ -520,21 +523,27 @@ export class HomePane extends Component<Props> {
       return [];
     }
     const order = Object.keys(HEALTH_LINES);
-    return (info.health || [])
-      .slice()
-      .sort((a, b) => order.indexOf(a) - order.indexOf(b))
-      .map((flag): HealthRow => {
-        // Repeated-bracket-index trap: `HEALTH_LINES[flag]` is read
-        // once here and reused, rather than indexed twice (once to
-        // test, once to call).
-        const line = HEALTH_LINES[flag];
-        return {
-          flag,
-          label: line ? line() : flag,
-          action: HEALTH_ACTIONS[flag] || null,
-          dot: FLAG_DOT[flag] || "amber",
-        };
-      });
+    const flags = info.health || [];
+    const switchedOff = flags.includes("write_disabled");
+    return (
+      flags
+        // "The directory cannot be written" is not the reason when the
+        // server has writing switched off, and may not even be true.
+        .filter((flag) => !(switchedOff && flag === "read_only"))
+        .sort((a, b) => order.indexOf(a) - order.indexOf(b))
+        .map((flag): HealthRow => {
+          // Repeated-bracket-index trap: `HEALTH_LINES[flag]` is read
+          // once here and reused, rather than indexed twice (once to
+          // test, once to call).
+          const line = HEALTH_LINES[flag];
+          return {
+            flag,
+            label: line ? line() : flag,
+            action: HEALTH_ACTIONS[flag] || null,
+            dot: FLAG_DOT[flag] || "amber",
+          };
+        })
+    );
   }
 
   get healthy(): boolean {

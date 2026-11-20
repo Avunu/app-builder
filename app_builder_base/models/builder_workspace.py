@@ -1090,7 +1090,9 @@ class BuilderWorkspace(models.AbstractModel):
         if not package.is_git:
             return {"diff": "", "truncated": False}
         # Relative to the package root, which is git's working directory
-        # for this call: the pathspec cannot name anything above it.
+        # for this call, and taken literally (`gitrepo.diff`): as a file
+        # name it cannot name anything above the root, and git is not
+        # given the chance to read it as pathspec magic (`:/`, `:(top)`).
         diff = gitrepo.diff(cast("str", package.root_path), [path] if path else None)
         return {"diff": diff[:DIFF_LIMIT], "truncated": len(diff) > DIFF_LIMIT}
 

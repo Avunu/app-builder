@@ -10,8 +10,9 @@ through, still may not reach.
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
@@ -31,6 +32,11 @@ from odoo.addons.base.models.ir_config_parameter import IrConfigParameter
 from odoo.addons.base.models.ir_model import IrModelFields
 
 from .common import BuilderCase, raises, set_code_write
+
+if TYPE_CHECKING:
+    from odoo.addons.app_builder_base.models.builder_owned_mixin import (
+        BuilderOwnedMixin,
+    )
 
 SECRET = "admin_passwd = hunter2\n"
 
@@ -153,6 +159,62 @@ class TestCodeWriteSwitch(BuilderCase):
         # Reading is untouched: the console still opens and says why.
         self.assertTrue(self.workspace.with_user(admin).packages(include_git=False))
 
+    def _tree(self, root: str) -> dict[str, bytes]:
+        found: dict[str, bytes] = {}
+        for folder, _dirs, names in os.walk(root):
+            for name in names:
+                full = os.path.join(folder, name)
+                with open(full, "rb") as handle:
+                    found[os.path.relpath(full, root)] = handle.read()
+        return found
+
+    def test_off_does_not_break_a_plain_field_create(self):
+        """Read-only is the builder's own state, not the server's: a field
+        added to a model a package owns -- Settings > Technical, another
+        addon, a data file loaded as uid 1 -- is still created. It is just
+        not captured, and nothing is written."""
+        package = self.make_package(name="x_sec_plain")
+        model = self.build_demo_content(package)
+        package.action_write_files()
+        root = cast("str", package.root_path)
+        before = self._tree(root)
+        self.assertTrue(before)
+        admin = self.make_user("sec_plain_admin", ["base.group_system"])
+        self._switch(None)
+        package.invalidate_recordset(["writable"])
+        Fields = typed.model(self.env, IrModelFields)
+        for name, who in (
+            ("x_sec_plain_root", Fields),
+            ("x_sec_plain_admin", Fields.with_user(admin)),
+        ):
+            with self.subTest(name=name):
+                vals: dict[str, object] = {
+                    "name": name,
+                    "field_description": "Plain",
+                    "ttype": "char",
+                    "model_id": model.id,
+                }
+                with self.assertLogs(
+                    "odoo.addons.app_builder_base.models.builder_owned_mixin",
+                    level="WARNING",
+                ):
+                    field = who.create(vals)  # pyright: ignore[reportArgumentType]
+                self.assertTrue(field.exists())
+                self.assertFalse(
+                    cast("BuilderOwnedMixin", field.sudo()).builder_package_id,
+                    "not captured",
+                )
+        self.assertEqual(self._tree(root), before, "nothing reached the disk")
+        # Asking for a package by name is the builder acting, and is refused.
+        vals = {
+            "name": "x_sec_plain_asked",
+            "field_description": "Asked",
+            "ttype": "char",
+            "model_id": model.id,
+        }
+        with raises(self, AccessError):
+            Fields.with_context(builder_package_id=package.id).create(vals)  # pyright: ignore[reportArgumentType]
+
     def test_off_tells_a_non_builder_nothing(self):
         """The group is checked first, so the server's configuration is not
         described to somebody who is not a builder at all."""
@@ -267,6 +329,60 @@ class TestDiffPathsStayInThePackage(BuilderCase):
                 continue  # no path is "the whole package", and allowed
             with self.subTest(path=path), raises(self, UserError):
                 self.reader.git_diff(self.package_id, path)
+
+    def test_git_diff_reads_a_path_as_a_name_not_a_pathspec(self):
+        """``:/x`` and ``:(top)x`` are harmless file names and, to git,
+        "from the top of the repository": the rest of an addons repository
+        the package is one directory of."""
+        repo = tempfile.mkdtemp(prefix="builder-test-repo-")
+        nested = os.path.join(repo, "x_sec_nested")
+        other = os.path.join(repo, "other_addon")
+        os.makedirs(nested)
+        os.makedirs(other)
+        for folder in (nested, other):
+            with open(os.path.join(folder, "notes.py"), "w") as handle:
+                handle.write("# committed\n")
+
+        def git(*args: str) -> None:
+            subprocess.run(
+                ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+
+        git("init")
+        git("add", "-A")
+        git("commit", "-m", "start")
+        with open(os.path.join(other, "notes.py"), "a") as handle:
+            handle.write("# hunter2\n")
+        with open(os.path.join(nested, "notes.py"), "a") as handle:
+            handle.write("# by hand\n")
+        package = self.make_package(
+            name="x_sec_nested", installed=False, root_path=nested
+        )
+        self.assertTrue(package.is_git)
+        package_id = cast("int", package.id)
+        for path in (
+            ":/other_addon",
+            ":/",
+            ":(top)other_addon/notes.py",
+            ":(top)",
+            ":(glob)**",
+            ":!x_sec_nested",
+            "*",
+        ):
+            with self.subTest(path=path):
+                try:
+                    diff = self.reader.git_diff(package_id, path)["diff"]
+                except UserError:
+                    continue
+                self.assertNotIn("hunter2", diff)
+        # The package's own files still diff, whole or one by name.
+        for path in (None, "notes.py"):
+            diff = self.reader.git_diff(package_id, path)["diff"]
+            self.assertIn("by hand", diff)
+            self.assertNotIn("hunter2", diff)
 
     def test_a_path_that_is_not_a_string_is_refused(self):
         with raises(self, UserError):
