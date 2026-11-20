@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
-from ..tools import pycodegen, pyparse
+from ..tools import pycodegen, pyparse, typed
 from ..tools.i18n import _
 
 if TYPE_CHECKING:
@@ -145,6 +145,7 @@ class BuilderPackageModel(models.Model):
         rather than fail obscurely when nothing has overridden this -- a
         shell caller, or a database with the view addon missing.
         """
+        typed.security(self.env["builder.security.mixin"])._assert_builder_user()
         self.ensure_one()
         raise UserError(
             _(
@@ -155,6 +156,7 @@ class BuilderPackageModel(models.Model):
 
     def action_retry_parse(self) -> bool:
         """Give a frozen model another chance after the file was fixed."""
+        typed.security(self.env["builder.security.mixin"])._assert_builder_manager()
         for record in self.filtered(lambda r: r.source == "frozen"):
             # Same `package_id`/`python_path` cast as `_current_spec` above.
             package = cast("BuilderPackage", record.package_id)
@@ -227,6 +229,7 @@ class BuilderPackageModel(models.Model):
         return self.create(vals)  # pyright: ignore[reportArgumentType]
 
     def unlink(self) -> Literal[True]:
+        typed.security(self.env["builder.security.mixin"])._assert_builder_manager()
         for record in self:
             # Same `package_id` cast as `_current_spec`/`action_retry_parse`
             # above.

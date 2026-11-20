@@ -137,8 +137,13 @@ def status(path: str, paths: list[str] | None = None) -> list[tuple[str, str]]:
 
 def diff(path: str, paths: list[str] | None = None) -> str:
     """Combined staged + unstaged diff, which is what a reviewer wants to see."""
-    unstaged = _run(["diff", "--", *(paths or ["."])], path) or ""
-    staged = _run(["diff", "--cached", "--", *(paths or ["."])], path) or ""
+    # `--literal-pathspecs`: the paths are file names, some of them from an
+    # RPC caller. Read as pathspecs, `:/x` and `:(top)x` mean "from the top
+    # of the repository" and `*` is a glob, so a name that is harmless on
+    # the filesystem would reach outside the directory git was started in.
+    literal = ["--literal-pathspecs", "diff"]
+    unstaged = _run([*literal, "--", *(paths or ["."])], path) or ""
+    staged = _run([*literal, "--cached", "--", *(paths or ["."])], path) or ""
     return (staged + unstaged).strip()
 
 

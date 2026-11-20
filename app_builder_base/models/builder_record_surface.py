@@ -25,12 +25,13 @@ point is that nothing edits another module's source in place.
 from __future__ import annotations
 
 import ast
+import logging
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
 from typing_extensions import NotRequired
 
 from odoo import api, models
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.tools import safe_eval as safe_eval_module
 
 from odoo.addons.base.models.ir_model import IrModel, IrModelData
@@ -38,6 +39,8 @@ from odoo.addons.base.models.ir_model import IrModel, IrModelData
 from ..tools import catalogue, typed
 from ..tools.i18n import _
 from .builder_package import BuilderPackage
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     # Only used inside annotations (`from __future__ import annotations`
@@ -608,11 +611,26 @@ class BuilderRecordSurface(models.AbstractModel):
                 # `partially unknown` under strict, whereas a call through
                 # the module is checked against its `-> Any` return alone.
                 parsed = safe_eval_module.safe_eval(domain or "[]", context)
-            model = self.env[model_name].sudo()
+            # As the caller, not as superuser. Under `sudo()` this was an
+            # oracle: a read-tier caller could count the records of any
+            # model matching any condition, record rules notwithstanding.
+            model = self.env[model_name]
             count = model.search_count(parsed)
             total = model.search_count([])
-        except Exception as err:  # noqa: BLE001 - any failure is the same answer
+        except AccessError:
+            return {
+                "valid": False,
+                "reason": _("You are not allowed to search this model."),
+            }
+        except (ValueError, SyntaxError, TypeError, KeyError, UserError) as err:
+            # What a malformed domain raises, and what the person typing
+            # one needs to read: an unknown field, a bad operator.
             return {"valid": False, "reason": str(err)}
+        except Exception:
+            # Anything else (a database error, say) is logged rather than
+            # sent to the browser: its text can quote SQL and values.
+            _logger.info("builder: checking a domain failed", exc_info=True)
+            return {"valid": False, "reason": _("This domain cannot be searched.")}
         return {"valid": True, "count": count, "total": total}
 
     @api.model
