@@ -1722,7 +1722,7 @@ provides-extras = ["ldap"]
 
 [[package]]
 name = "odoo-addon-app-builder"
-version = "18.0.2.0.0"
+version = "18.0.2.0.0.1"
 source = { editable = "../app_builder" }
 dependencies = [
     { name = "odoo" },
@@ -1785,7 +1785,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-base"
-version = "18.0.2.0.3"
+version = "18.0.2.0.3.1"
 source = { editable = "../app_builder_base" }
 dependencies = [
     { name = "odoo" },
@@ -1800,7 +1800,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-mail"
-version = "18.0.2.0.0"
+version = "18.0.2.0.0.1"
 source = { editable = "../app_builder_mail" }
 dependencies = [
     { name = "odoo" },
@@ -1817,7 +1817,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-model"
-version = "18.0.2.0.1"
+version = "18.0.2.0.2"
 source = { editable = "../app_builder_model" }
 dependencies = [
     { name = "odoo" },
@@ -1836,7 +1836,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-report"
-version = "18.0.2.0.1"
+version = "18.0.2.0.2"
 source = { editable = "../app_builder_report" }
 dependencies = [
     { name = "odoo" },
@@ -1857,7 +1857,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-ui"
-version = "18.0.2.0.1"
+version = "18.0.2.0.2"
 source = { editable = "../app_builder_ui" }
 dependencies = [
     { name = "odoo" },
