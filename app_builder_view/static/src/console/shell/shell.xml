@@ -70,6 +70,13 @@
                         class="o_builder_console_content"
                         t-att-class="{ 'o_builder_console_canvas': this.shell.pane === 'views' }"
                     >
+                        <!-- The pane component (last below) is keyed by pane,
+                             like the sidebar: two record panes
+                             (Access Control, Filter Rules) share a component
+                             class, which reads its model once in setup. When
+                             the next pane's model opens before `loading` is
+                             ever rendered, Owl would otherwise keep the old
+                             instance, and the old pane stays on screen. -->
                         <div
                             t-if="this.shell.error"
                             class="alert alert-warning m-3"
@@ -85,6 +92,7 @@
                         <t
                             t-elif="this.content"
                             t-component="this.content"
+                            t-key="this.shell.pane"
                             t-props="this.paneProps"
                         />
                     </div>
