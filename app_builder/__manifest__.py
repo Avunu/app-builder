@@ -2,7 +2,7 @@
     "name": "App Builder",
     "summary": "Open-source visual builder whose output is real source code",
     "version": "18.0.2.0.0",
-    "category": "Technical",
+    "category": "Customizations",
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",
     "license": "AGPL-3",

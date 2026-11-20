@@ -1,7 +1,7 @@
 {
     "name": "App Builder: Models & Fields",
     "summary": "Visually build models and fields that are written to source",
-    "version": "18.0.2.0.2",
+    "version": "18.0.2.0.3",
     "category": "Technical",
     "website": "https://github.com/Avunu/app-builder",
     "author": "Avunu LLC",
