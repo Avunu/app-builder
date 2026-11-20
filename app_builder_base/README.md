@@ -76,10 +76,17 @@ stops, and Odoo upgrades a module in that state on any registry load, so the res
 creates the columns the new Python declares -- no `-u` needed. The one exception is
 recorded on the apply as its restart hint: a package that gained a dependency on a
 module that is not installed needs `-u <package>`, because a plain boot does not
-install. If the mark is lost before the restart (another worker rebuilt its registry in
-between), the builder notices the schema is behind the next time it is opened, marks the
-package again and says so. A package that is not installed yet is simply installed in
-place, workers or not: nothing has imported it, so there is nothing stale to reload.
+install. A package that is not installed yet is simply installed in place, workers or
+not: nothing has imported it, so there is nothing stale to reload.
+
+**Restart soon.** While a module is marked `to upgrade`, Odoo runs no scheduled actions
+in that database at all -- outgoing mail included -- so the wait is not free. After
+about five hours of it Odoo gives up and clears the mark by itself, and a restart later
+than that upgrades nothing. The apply stays _awaiting a restart_ either way, and the
+builder puts a lost mark back the next time it is opened: before the restart if that is
+when it notices (scheduled actions pause again), or after it, when it sees the schema is
+behind and asks for a second restart with `-u <package>`. The same covers a mark lost
+because another worker rebuilt its registry in between.
 
 The same restart path applies when **one server process serves several databases** and
 another of them has the package installed: re-importing Python is process-wide, the

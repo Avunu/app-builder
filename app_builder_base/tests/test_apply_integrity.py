@@ -19,6 +19,9 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import patch
 
+import psycopg2
+
+from odoo import sql_db
 from odoo.exceptions import UserError, ValidationError
 from odoo.modules.registry import Registry
 from odoo.tests import tagged
@@ -154,6 +157,35 @@ class TestApplyIntegrity(BuilderCase):
         )
         self.assertEqual(self._cr().fetchone(), (True,))
 
+    def test_a_later_write_keeps_the_migration_the_restart_has_yet_to_run(self):
+        """Only the destructive apply renders the script. Waiting for a
+        restart, any ordinary write renders the package without it -- and a
+        prune that took that for "deleted" left the bumped manifest to
+        upgrade with no pre-migration: the column was dropped after all."""
+        package = self._python_package(name="x_integ_keep")
+        module = self.register_module(cast("str", package.name))
+        module.latest_version = "18.0.1.0.0"
+        self._drop_a_field(package)
+        with self._no_reload(package):
+            apply = package.action_apply(
+                reason="drop", allow_destructive=True, reload=False
+            )
+        self.assertEqual(apply.state, "awaiting_restart")
+        directory = self._path(package, "migrations/18.0.1.0.1")
+        scripts = os.listdir(directory)
+        self.assertEqual(len(scripts), 1)
+        source = self._read(package, "migrations/18.0.1.0.1/" + scripts[0])
+
+        package.action_write_files()  # what one more builder edit does
+        package.action_write_files()  # and again, the file no longer tracked
+
+        self.assertEqual(os.listdir(directory), scripts)
+        self.assertEqual(
+            self._read(package, "migrations/18.0.1.0.1/" + scripts[0]), source
+        )
+        manifest = ast.literal_eval(self._read(package, "__manifest__.py"))
+        self.assertEqual(manifest["version"], "18.0.1.0.1")
+
     def test_the_new_version_clears_whatever_is_installed(self):
         package = self._python_package(name="x_integ_ver")
         module = self.register_module(cast("str", package.name))
@@ -245,6 +277,83 @@ class TestApplyIntegrity(BuilderCase):
 
         self.assertEqual(self._read(package, relative), before)
 
+    def test_several_writes_in_one_transaction_roll_back_to_the_first(self):
+        """Odoo runs rollback hooks oldest first. One hook per write put
+        the first write's "before" back and then the second's -- the
+        intermediate bytes -- and recreated files the first had created."""
+        package = self._python_package(name="x_integ_twice")
+        self.env.cr.postrollback.clear()  # as the commit of that request would
+        relative = "views/x_builder_project_views.xml"
+        before = self._read(package, relative)
+        view = typed.model(self.env, View).search(
+            [("model", "=", "x_builder_project")], limit=1
+        )
+        name = view.name
+
+        view.name = "%s (one)" % name
+        package.action_write_files()
+        package._write_files({"data/x_new.xml": "<odoo/>\n"})
+        middle = self._read(package, relative)
+        view.name = "%s (two)" % name
+        package.action_write_files()
+        package._write_files({"data/x_new.xml": "<odoo><!-- two --></odoo>\n"})
+        self.assertNotIn(self._read(package, relative), (before, middle))
+
+        self.env.cr.postrollback.run()  # what Cursor.rollback() does
+
+        self.assertEqual(self._read(package, relative), before)
+        self.assertFalse(os.path.exists(self._path(package, "data/x_new.xml")))
+
+    def test_an_adoption_that_rolls_back_takes_its_python_with_it(self):
+        package = self.make_package(name="x_integ_adopt_undo")
+        self.build_demo_content(package)
+        package.action_write_files()
+        self.env.cr.postrollback.clear()  # as the commit of that request would
+        self.assertFalse(os.path.exists(self._path(package)))
+
+        package._write_adopted_source(["x_builder_project"])
+        self.assertTrue(os.path.exists(self._path(package)))
+
+        self.env.cr.postrollback.run()
+
+        self.assertFalse(os.path.exists(self._path(package)))
+
+    def test_an_apply_that_rolls_back_leaves_no_journal(self):
+        """The journal is for a process that died. One whose transaction
+        merely rolled back has restored its files already; a journal left
+        behind is later read as a crash, and its "rollback" overwrites
+        whatever has been applied since."""
+        package = self._python_package(name="x_integ_nojournal")
+        self.env.cr.postrollback.clear()  # as the commit of that request would
+        Apply = typed.model(self.env, BuilderPackageApply)
+        before = self._read(package)
+        after = before.replace('string="Budget"', 'string="Budget!"')
+        self.assertNotEqual(after, before)
+        with (
+            self._no_reload(package),
+            patch.object(
+                type(package), "_sync_file_records", side_effect=UserError("no")
+            ),
+            raises(self, UserError),
+        ):
+            package.action_apply(
+                reason="fails",
+                overlay={"models/x_builder_project.py": after},
+            )
+        builder_dir = self._path(package, ".builder")
+        self.assertTrue(
+            [n for n in os.listdir(builder_dir) if n.endswith(".json")],
+            "the journal was there while the apply was in flight",
+        )
+
+        self.env.cr.postrollback.run()  # what Cursor.rollback() does
+
+        self.assertEqual(self._read(package), before)
+        self.assertFalse([n for n in os.listdir(builder_dir) if n.endswith(".json")])
+        backups = os.path.join(builder_dir, "backup")
+        self.assertFalse(os.path.isdir(backups) and os.listdir(backups))
+        self.assertFalse(Apply._recover_journals(package))
+
     def test_the_builder_directory_keeps_itself_out_of_the_repository(self):
         package = self._python_package(name="x_integ_ignore")
         with self._no_reload(package):
@@ -296,6 +405,41 @@ class TestApplyIntegrity(BuilderCase):
         self.assertEqual(self._read(package), before)
         self.assertFalse(package.apply_ids)
 
+    def test_after_the_commit_each_attempt_at_the_cron_lock_is_a_new_snapshot(self):
+        package = self._python_package(name="x_integ_fresh")
+        stale = psycopg2.errors.SerializationFailure()
+        with (
+            patch.object(
+                type(package), "_try_cron_lock", side_effect=[stale, False, True]
+            ),
+            patch.object(self.env.cr, "rollback") as rollback,
+            patch.object(builder_package.time, "sleep") as sleep,
+        ):
+            package._acquire_cron_lock(fresh=True)
+        self.assertEqual(rollback.call_count, 2, "a new snapshot per attempt")
+        self.assertEqual(sleep.call_count, 1, "waits for a lock, not a snapshot")
+
+    def test_no_cron_lock_after_the_commit_restores_without_reloading(self):
+        package = self._python_package(name="x_integ_latecron")
+        before = self._read(package)
+        after = before.replace('string="Budget"', 'string="Budget!"')
+        self.assertNotEqual(after, before)
+        with (
+            self._no_reload(package) as reload,
+            patch.object(
+                type(package),
+                "_acquire_cron_lock",
+                side_effect=[None, UserError("a cron runs")],
+            ),
+            raises(self, UserError),
+        ):
+            package.action_apply(
+                reason="late cron",
+                overlay={"models/x_builder_project.py": after},
+            )
+        reload.assert_not_called()
+        self.assertEqual(self._read(package), before)
+
     # -- a restart that creates the schema ----------------------------------
 
     def test_under_workers_the_restart_is_made_to_upgrade(self):
@@ -311,6 +455,8 @@ class TestApplyIntegrity(BuilderCase):
         self.assertEqual(apply.state, "awaiting_restart")
         self.assertEqual(module.state, "to upgrade")
         self.assertIn("marked for upgrade", apply.restart_hint or "")
+        # Core's cron runner skips a database with a module in `to upgrade`.
+        self.assertIn("scheduled actions", apply.restart_hint or "")
 
     def test_under_workers_a_first_install_happens_in_place(self):
         package = self._python_package(name="x_integ_first")
@@ -334,9 +480,17 @@ class TestApplyIntegrity(BuilderCase):
             "reason": "x",
         }
         apply = Apply.create(vals)  # pyright: ignore[reportArgumentType]
+        # Core resets the mark once crons have waited five hours; a stale
+        # worker's registry rebuild consumes it. The row still says an
+        # upgrade is owed, so the mark is put back before the restart.
+        self.assertEqual(module.state, "installed")
         Apply._reap_abandoned(package)
         self.assertEqual(apply.state, "awaiting_restart", "no restart yet")
+        self.assertEqual(module.state, "to upgrade", "the lost mark is back")
+        self.assertIn("scheduled actions", apply.restart_hint or "")
 
+        # Lost again, and this time the restart happens without it.
+        module.state = "installed"
         self._age(apply)
         with patch.object(
             type(package), "_schema_behind", return_value=["x_builder_project.x_new"]
@@ -576,3 +730,46 @@ class TestApplyIntegrity(BuilderCase):
         self.assertIn("x_integ_uninst_b", text)
         self.assertNotIn("x_integ_uninst_a", text)
         self.assertEqual(loose._warn_orphans_on_uninstall(), ["x_integ_uninst_b"])
+
+
+@tagged("post_install", "-at_install")
+class TestCronLockSnapshot(BuilderCase):
+    """Alone in its class on purpose: it ends with this transaction's
+    snapshot older than a committed ``ir_cron`` row, and a test class
+    shares one transaction between its tests."""
+
+    def test_a_cron_that_has_finished_is_not_taken_for_one_that_runs(self):
+        """Two real transactions. A cursor is REPEATABLE READ: once the
+        scheduled action has committed its row, locking it from an older
+        snapshot fails for good -- with a serialization failure, which is
+        not "somebody holds the lock"."""
+        package = self.make_package(name="x_integ_snapshot")
+        # `Environment.cr` is declared `BaseCursor` (TYPING.md, "Known traps").
+        cr = cast("Cursor", self.env.cr)
+        cr.execute("SELECT id FROM ir_cron ORDER BY id LIMIT 1")
+        (cron_id,) = cast("tuple[int]", cr.fetchone())
+        other = sql_db.db_connect(cast("str", cr.dbname)).cursor()
+        self.addCleanup(other.close)
+        other.execute(
+            "SELECT id FROM ir_cron WHERE id = %s FOR UPDATE NOWAIT", (cron_id,)
+        )
+
+        self.assertFalse(package._try_cron_lock(), "a cron is running: wait")
+
+        # The cron finishes the way core's runner does: its own row, then
+        # commit. (The value does not change; the row version does.)
+        other.execute(
+            "UPDATE ir_cron SET priority = priority WHERE id = %s", (cron_id,)
+        )
+        other.commit()
+
+        with raises(self, psycopg2.errors.SerializationFailure):
+            package._try_cron_lock()
+        # Before the write there is a transaction to keep: Odoo retries the
+        # request on this error, so it is passed on, not waited out.
+        with (
+            patch.object(builder_package.time, "sleep") as sleep,
+            raises(self, psycopg2.errors.SerializationFailure),
+        ):
+            package._acquire_cron_lock()
+        sleep.assert_not_called()

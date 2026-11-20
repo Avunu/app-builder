@@ -194,10 +194,24 @@ class BuilderPackageApply(models.Model):
             # `cls` for `typed.model()`, not a `TYPE_CHECKING`-only forward
             # reference (TYPING.md's own file-specific notes for this file).
             typed.model(self.env, BuilderPackageApplyFile).create(rows)
+        # A transaction that rolls back takes the row above with it and
+        # `_undo_on_rollback` puts the files back: nothing happened, and the
+        # journal must not outlive that, or `_recover_journals` later reports
+        # a crash that never was and offers a rollback to these stale bytes.
+        # A killed process runs no hook, which is the case the journal is for.
+        journal = self._journal_path(root, stamp)
+
+        def forget() -> None:
+            with contextlib.suppress(OSError):
+                os.remove(journal)
+            if stamp != "latest":
+                shutil.rmtree(backup, ignore_errors=True)
+
+        cast("Cursor", self.env.cr).postrollback.add(forget)
         # Last, and before any package file is touched: from here until the
         # apply's commit, this is the only durable trace that an apply began.
         atomicfile.write_text(
-            self._journal_path(root, stamp),
+            journal,
             json.dumps(
                 {
                     "stamp": stamp,
@@ -311,7 +325,7 @@ class BuilderPackageApply(models.Model):
             # live request actually gets (TYPING.md's own "Known traps").
             cast("Cursor", self.env.cr).commit()  # the reload rebuilds from disk
             if not restart_required:
-                package._acquire_cron_lock()
+                package._acquire_cron_lock(fresh=True)
                 package._reload_now()
             else:
                 # The files went back; the restart still has to load them,
@@ -504,36 +518,59 @@ class BuilderPackageApply(models.Model):
     def _settle_awaiting_restart(self, packages: BuilderPackage) -> None:
         """Close applies whose restart has happened -- or say it did not work.
 
-        The restart is expected to have upgraded the package, because the
-        apply marked it ``to upgrade`` (``BuilderPackage._mark_for_restart``).
-        That mark can be lost before the restart: a worker that rebuilds its
-        registry in the meantime "upgrades" the module against the Python it
-        still has in memory and resets the state. So the schema is looked
-        at rather than assumed. Complete, and the apply is applied. Behind,
-        and the package is marked again and the hint says what to do --
-        which is still better than a model that fails on every read with
-        nothing on screen to explain it.
+        The restart is expected to upgrade the package, because the apply
+        marked it ``to upgrade`` (``BuilderPackage._mark_for_restart``). The
+        mark is core's and can be lost before the restart: core resets it
+        once scheduled actions have been held up for five hours, and a
+        worker that rebuilds its registry in the meantime "upgrades" the
+        module against the Python it still has in memory and resets the
+        state. The ``awaiting_restart`` row is the builder's own record
+        that an upgrade is owed, and it outlives both.
+
+        So, before the restart: a row still waiting whose module is back to
+        ``installed`` has lost its mark, and it is put back (which pauses
+        scheduled actions again -- the lesser evil next to a restart onto
+        new Python and an old schema).
+
+        And after it, the schema is looked at rather than assumed.
+        Complete, and the apply is applied. Behind, and the package is
+        marked again and the hint says what to do -- which is still better
+        than a model that fails on every read with nothing on screen to
+        explain it.
         """
         waiting = self.search(
             [
                 ("package_id", "in", packages.ids),
                 ("state", "=", "awaiting_restart"),
-                ("write_date", "<", _server_started_at()),
             ]
         )
         if not waiting:
             return
+        started = _server_started_at()
         Module = typed.model(self.env, IrModuleModule).sudo()
         for package in cast("BuilderPackage", waiting.mapped("package_id")):
-            rows = waiting.filtered(lambda r, p=package: r.package_id == p)
+            mine = waiting.filtered(lambda r, p=package: r.package_id == p)
+            rows = mine.filtered(lambda r: r.write_date < started)
             module = Module.search([("name", "=", package.name)], limit=1)
             if module.state != "installed":
-                # Not installed: nothing was loaded, the restart changed
-                # nothing, and installing is still the user's next step.
+                # Still marked, or not installed: nothing was loaded, a
+                # restart changed nothing, and the next step is unchanged.
                 continue
-            behind = package._schema_behind()
+            behind = package._schema_behind() if rows else []
             if not behind:
+                # Whatever waited across a restart is live now.
                 rows.write({"state": "applied", "restart_hint": False})
+                later = mine - rows
+                if later:
+                    # No restart since these, and the mark they left is
+                    # gone. (Their `write_date` moves; it still says
+                    # "since the last restart", which is still true.)
+                    _logger.warning(
+                        "%s is waiting for a restart but is no longer "
+                        "marked for upgrade; marking it again.",
+                        package.name,
+                    )
+                    later.write({"restart_hint": package._mark_for_restart()})
                 continue
             _logger.warning(
                 "%s was restarted onto new source without its upgrade; "
@@ -542,12 +579,14 @@ class BuilderPackageApply(models.Model):
                 ", ".join(behind),
             )
             package._mark_for_restart()
-            rows.write(
+            mine.write(
                 {
                     "restart_hint": _(
                         "The server was restarted, but %(name)s was not "
                         "upgraded with it and the database is missing "
-                        "%(missing)s. Restart again with -u %(name)s.",
+                        "%(missing)s. Restart again with -u %(name)s; until "
+                        "then Odoo runs no scheduled actions in this "
+                        "database.",
                         name=package.name,
                         missing=", ".join(behind),
                     )

@@ -150,3 +150,13 @@ def bump_version(version: str) -> str:
 def migration_path(version: str, stamp: str) -> str:
     """Odoo looks for ``migrations/<version>/pre-*.py``."""
     return "migrations/%s/pre-builder-%s.py" % (version, stamp)
+
+
+def is_migration_path(path: str) -> bool:
+    """Whether ``path`` is one of a package's migration scripts.
+
+    They are written once, by the apply that needs them, and belong to the
+    package's history from then on: no later render produces them again, so
+    a pruning write must not read their absence as "deleted".
+    """
+    return path.startswith("migrations/")

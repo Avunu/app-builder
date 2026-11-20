@@ -173,6 +173,9 @@ ADVISORY_LOCK_NAMESPACE = 0x6275696C
 # Core's module operations take `ir_cron ... FOR UPDATE NOWAIT` and fail
 # outright while a cron runs; most crons finish within seconds.
 CRON_LOCK_ATTEMPTS = 10
+# Where the per-transaction file undo keeps its record
+# (`cr.postrollback.data`), see `_undo_on_rollback`.
+UNDO_DATA_KEY = "app_builder_base.undo"
 CRON_LOCK_DELAY = 1.0
 
 # (database, package id) -> ident of the thread applying it. An apply
@@ -1322,9 +1325,9 @@ class BuilderPackage(models.Model):
         self._claim_directory()
         _mute_dev_watcher(root)
         written: list[str] = []
-        # What each file we touch held before, for `_undo_on_rollback`.
-        previous: dict[str, bytes | None] = {}
-        self._undo_on_rollback(root, previous)
+        # What each file we touch held before this *transaction*: one
+        # record per directory, shared by every write of the request.
+        previous = self._undo_on_rollback(root)
         for relative, content in files.items():
             full = os.path.join(root, relative)
             os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -1332,7 +1335,8 @@ class BuilderPackage(models.Model):
             # does not fire a pointless reload.
             if checksum.hash_file(full) == checksum.hash_text(content):
                 continue
-            previous[relative] = self._read_bytes(full)
+            if relative not in previous:
+                previous[relative] = self._read_bytes(full)
             # Never truncate in place: a process killed between the truncate
             # and the write leaves an empty module file on the addons path.
             atomicfile.write_text(full, content)
@@ -1347,6 +1351,14 @@ class BuilderPackage(models.Model):
         for stale in cast("BuilderPackageFile", self.file_ids).filtered(
             lambda f: f.path not in files
         ):
+            if migrationgen.is_migration_path(cast("str", stale.path)):
+                # A pre-migration is rendered by the one apply that removed
+                # the column and by no later render. Pruned here before the
+                # upgrade has run it -- an apply waiting for a restart, then
+                # any ordinary write -- the manifest keeps the bumped version
+                # and the upgrade drops the column it was written to save.
+                # Migration scripts are history: they are never pruned.
+                continue
             # `path` is a required Char (`builder.package.file`, this file
             # below) -- same "declared str | False, never actually False"
             # cast as this file's other required-field reads.
@@ -1356,7 +1368,8 @@ class BuilderPackage(models.Model):
             if os.path.isfile(full) and (
                 checksum.hash_file(full) == stale.generated_checksum
             ):
-                previous[stale_path] = self._read_bytes(full)
+                if stale_path not in previous:
+                    previous[stale_path] = self._read_bytes(full)
                 os.remove(full)
                 written.append(stale_path)
         return written
@@ -1369,24 +1382,45 @@ class BuilderPackage(models.Model):
         except OSError:
             return None
 
-    def _undo_on_rollback(self, root: str, previous: dict[str, bytes | None]) -> None:
+    def _undo_on_rollback(self, root: str) -> dict[str, bytes | None]:
         """Put the old bytes back if this transaction rolls back.
 
         The files are written inside the request's transaction, and the
         checksum rows that describe them roll back with it -- so without
         this a failure after the write (or a serialization failure, which
         makes Odoo roll back and *retry* the request) leaves source on disk
-        for a change the database never made. ``previous`` is filled in as
-        the write goes, so a failure half way through undoes exactly the
-        half that happened.
+        for a change the database never made.
 
-        A commit clears the hook, which is what makes ``action_apply``'s own
-        commit-then-reload safe: past that commit the files are the truth
-        and restoring them is the apply record's job, not this one's. A
-        savepoint rollback does not run it -- Odoo has no hook there -- so a
-        caller that catches an exception around a write still owes the
-        package an ``action_write_files()``.
+        Returns the record the caller fills in *before* it touches a file:
+        path to the bytes it held, ``None`` for "did not exist". There is
+        one record per directory and transaction, and a path is recorded
+        only the first time it is touched. A request writes a package
+        several times over -- bootstrap, seed, write; or one capture after
+        another -- and Odoo runs rollback hooks in the order they were
+        added, so a hook per write would restore the first write's
+        "before" and then the second's, leaving every file at an
+        intermediate state. What a rollback owes is the bytes from before
+        the transaction, and the earliest record is exactly that. It is
+        filled in as the writes go, so a failure half way through undoes
+        exactly the half that happened.
+
+        A commit clears the hook and the record with it, which is what
+        makes ``action_apply``'s own commit-then-reload safe: past that
+        commit the files are the truth and restoring them is the apply
+        record's job, not this one's. A savepoint rollback does not run it
+        -- Odoo has no hook there -- so a caller that catches an exception
+        around a write still owes the package an ``action_write_files()``.
         """
+        hooks = cast("Cursor", self.env.cr).postrollback
+        records = cast(
+            "dict[str, dict[str, bytes | None]]",
+            hooks.data.setdefault(UNDO_DATA_KEY, {}),
+        )
+        known = records.get(root)
+        if known is not None:
+            return known
+        previous: dict[str, bytes | None] = {}
+        records[root] = previous
 
         def undo() -> None:
             if not previous:
@@ -1406,7 +1440,8 @@ class BuilderPackage(models.Model):
                     )
             _mute_dev_watcher(root)
 
-        self.env.cr.postrollback.add(undo)
+        hooks.add(undo)
+        return previous
 
     # -- mutual exclusion -------------------------------------------------
 
@@ -1475,16 +1510,27 @@ class BuilderPackage(models.Model):
                     _APPLYING.pop(key, None)
 
     def _try_cron_lock(self) -> bool:
-        """Take the lock core's module operations take, if it is free."""
+        """Take the lock core's module operations take, if it is free.
+
+        ``False`` means one thing only: somebody holds a row *now*
+        (``LockNotAvailable``). The other way this statement fails is not
+        caught here, on purpose. A cursor is REPEATABLE READ, so once a
+        scheduled action has finished and committed its own ``ir_cron`` row
+        (``lastcall``/``nextcall``), locking that row from a transaction
+        whose snapshot is older raises ``SerializationFailure`` -- for as
+        long as that transaction lives, however often it asks. Reading it
+        as "still locked" waits out every attempt and then blames a cron
+        that is not running.
+        """
+        cr = cast("Cursor", self.env.cr)
         try:
-            cr = cast("Cursor", self.env.cr)
             with mute_logger("odoo.sql_db"), cr.savepoint(flush=False):
                 cr.execute("SELECT id FROM ir_cron FOR UPDATE NOWAIT")
-        except psycopg2.OperationalError:
+        except psycopg2.errors.LockNotAvailable:
             return False
         return True
 
-    def _acquire_cron_lock(self) -> None:
+    def _acquire_cron_lock(self, fresh: bool = False) -> None:
         """Wait, briefly, for scheduled actions to finish.
 
         ``_button_immediate_function`` runs ``SELECT * FROM ir_cron FOR
@@ -1494,12 +1540,37 @@ class BuilderPackage(models.Model):
         reason but timing. So the lock is taken here first, with a short
         retry, before anything is written; holding it also keeps a cron
         from starting in between.
+
+        The two callers differ in what a stale snapshot costs (see
+        ``_try_cron_lock``):
+
+        * Before the write (``fresh=False``) the transaction holds the
+          request's work and cannot be given up here. A
+          ``SerializationFailure`` is let through: it is one of the errors
+          Odoo retries the whole request for, and the retry starts from a
+          new snapshot with nothing written yet.
+        * Right after a commit (``fresh=True``) nothing is pending, so the
+          transaction is rolled back between attempts and each one sees
+          the rows as they are now. Nothing can be retried at that point
+          -- the files are written -- which is why it must not fail for a
+          cron that has already finished.
         """
         self.ensure_one()
+        cr = cast("Cursor", self.env.cr)
         for attempt in range(CRON_LOCK_ATTEMPTS):
-            if self._try_cron_lock():
-                return
+            try:
+                if self._try_cron_lock():
+                    return
+            except psycopg2.errors.SerializationFailure:
+                if not fresh:
+                    raise
+                # Not a running cron: one that finished after our snapshot.
+                # A new snapshot is all it takes, so do not wait for it.
+                cr.rollback()
+                continue
             if attempt + 1 < CRON_LOCK_ATTEMPTS:
+                if fresh:
+                    cr.rollback()
                 time.sleep(CRON_LOCK_DELAY)
         raise UserError(
             _(
@@ -1781,6 +1852,14 @@ class BuilderPackage(models.Model):
         root = cast("str", self.root_path)
         os.makedirs(os.path.join(root, "models"), exist_ok=True)
         emitted = sorted(self._python_module_set() | set(model_names))
+        # Written outside `_write_files`, undone on rollback like it.
+        previous = self._undo_on_rollback(root)
+
+        def put(relative: str, content: str) -> None:
+            full = os.path.join(root, relative)
+            if relative not in previous:
+                previous[relative] = self._read_bytes(full)
+            atomicfile.write_text(full, content)
 
         for model_name in sorted(model_names):
             relative = "models/%s" % pycodegen.module_file_for(model_name)
@@ -1799,18 +1878,13 @@ class BuilderPackage(models.Model):
             owned = cast("IrModelFields", model.field_id).filtered(  # pyright: ignore[reportUnknownMemberType]
                 lambda f: f.state == "manual"
             )
-            atomicfile.write_text(
-                os.path.join(root, relative),
+            put(
+                relative,
                 pycodegen.render_model(pycodegen.spec_from_ir_model(model, owned)),
             )
 
-        atomicfile.write_text(
-            os.path.join(root, "models/__init__.py"),
-            self._render_models_init(emitted),
-        )
-        atomicfile.write_text(
-            os.path.join(root, "__init__.py"), pycodegen.render_package_init(True)
-        )
+        put("models/__init__.py", self._render_models_init(emitted))
+        put("__init__.py", pycodegen.render_package_init(True))
 
     def _demote_manual_metadata(self, model_names: Iterable[str]) -> None:
         """Retire the manual metadata rows, keeping the table and its data.
@@ -2037,6 +2111,20 @@ class BuilderPackage(models.Model):
         here, durably, and the restart does the rest. A package that is not
         installed needs nothing: its Python is not imported at boot.
 
+        The mark has a price, and it is not a durable promise. While any
+        module is in a ``to ...`` state, core's cron runner skips the whole
+        database (``ir_cron._check_modules_state``): no scheduled action
+        runs -- mail queues included -- until the restart. And once a job
+        is ``MAX_FAIL_TIME`` (five hours) overdue core gives up waiting and
+        resets every such module to ``installed``, after which the restart
+        upgrades nothing. Neither is ours to change: the runner is a
+        classmethod of the base class, called before any registry exists,
+        and nothing of a non-server-wide addon runs before
+        ``load_marked_modules`` has read the states. So the hint says both,
+        the apply row stays ``awaiting_restart`` as the builder's own
+        record of what is owed, and ``_settle_awaiting_restart`` puts a
+        lost mark back -- before the restart if it can, after it if not.
+
         Returns what the restart has to be, as a sentence for the user.
         """
         self.ensure_one()
@@ -2065,14 +2153,20 @@ class BuilderPackage(models.Model):
             # A dependency the package gained is not installed, and a plain
             # boot does not install: only `-u`/`-i` runs that pass.
             return _(
-                "Restart the server with -u %(name)s: the package now "
+                "Restart the server soon, with -u %(name)s: the package now "
                 "depends on a module that is not installed yet, and only an "
-                "explicit upgrade installs it.",
+                "explicit upgrade installs it. Until then Odoo runs no "
+                "scheduled actions in this database (outgoing mail "
+                "included).",
                 name=self.name,
             )
         return _(
-            "Restart the server. %(name)s is marked for upgrade, so the "
-            "restart also updates the database schema; no -u is needed.",
+            "Restart the server soon. %(name)s is marked for upgrade, so "
+            "the restart also updates the database schema; no -u is "
+            "needed. Until then Odoo runs no scheduled actions in this "
+            "database (outgoing mail included), and after about five hours "
+            "of that it clears the mark by itself: a restart later than "
+            "that needs -u %(name)s.",
             name=self.name,
         )
 
@@ -2453,17 +2547,24 @@ class BuilderPackage(models.Model):
             self.state = "synced"
             return apply
 
+        reloading = False
         try:
             # Again: the commit above released the lock taken before the
-            # write, and core will ask for it without waiting.
-            self._acquire_cron_lock()
+            # write, and core will ask for it without waiting. Nothing is
+            # pending now, so each attempt gets a snapshot of its own.
+            self._acquire_cron_lock(fresh=True)
+            reloading = True
             self._reload_now()  # 6. reimport, then upgrade
         except Exception as err:  # 7. restore and go back to a good registry
             _logger.exception("Apply failed for package %s", self.name)
             apply._restore()
             cast("Cursor", self.env.cr).commit()
             try:
-                self._reload_now()
+                # Only if a reload was started: when the lock never came,
+                # nothing was loaded, the files are back, and a reload would
+                # only fail on the same scheduled action.
+                if reloading:
+                    self._reload_now()
             except Exception:  # pragma: no cover - already in trouble
                 _logger.exception(
                     "Could not reload %s after a failed apply; the package on "

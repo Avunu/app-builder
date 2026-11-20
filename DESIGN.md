@@ -295,6 +295,22 @@ rather than assuming, and marks again if it is behind. And a package that is not
 installed is installed in place even under workers (`_can_install_in_place`): nothing
 has imported it, which makes it exactly what the Apps menu does.
 
+The mark is core's, and it costs something the builder cannot avoid. While any module is
+in a `to ...` state `ir_cron._process_jobs` skips the whole database
+(`_check_modules_state` raises `BadModuleState`): **no scheduled action runs until the
+restart**. Once the oldest ready job is `MAX_FAIL_TIME` (five hours) overdue, core calls
+`reset_modules_state` and the module is `installed` again -- so a late restart upgrades
+nothing. Neither end is reachable from an addon: the runner is a classmethod of the base
+class, called before a registry exists, and nothing of a non-server-wide module runs
+before `load_marked_modules` has read the states, so there is no boot hook early enough
+to upgrade from a record of our own. What the builder does instead: the restart hint
+says both things; the `awaiting_restart` row is the durable record that an upgrade is
+owed, independent of the module state; and `_settle_awaiting_restart` re-marks a waiting
+package whose module has gone back to `installed` before the restart, as well as
+checking the schema after it. That narrows the hole to "core reset the mark, nobody
+opened the builder, then the server was restarted", which is caught after the restart
+and costs a second one.
+
 `manual` is also the answer when **one process serves several databases** and another of
 them has the package installed (`_other_databases_using`, read from
 `Registry.registries`): `sys.modules` and `MetaModel.module_to_models` belong to the
@@ -320,9 +336,16 @@ initialising or in test mode, and takes `SELECT * FROM ir_cron FOR UPDATE NOWAIT
 fails outright while cron runs. The apply therefore takes that lock itself first, with a
 short retry (`_acquire_cron_lock`), before anything is written, and again after its
 commit: a cron in flight costs a moment or a clean refusal, not a written-then-restored
-package. And a **new addons directory** cannot be registered at runtime; packages must
-live under an existing addons_path entry (`custom/`) -- which `builder.package` enforces
-as a constraint on `root_path`, not only in the create-package RPC.
+package. Only `LockNotAvailable` counts as "a cron is running". A cursor is REPEATABLE
+READ, so a cron that has already finished, but after the transaction's snapshot, makes
+the same statement fail with a serialization failure for as long as that transaction
+lives: before the write it is passed on (Odoo retries the request on a new snapshot),
+and after the commit, where nothing is pending, each attempt rolls back first and gets a
+snapshot of its own. If the lock still cannot be had after the commit, the files are
+restored and no reload is attempted. And a **new addons directory** cannot be registered
+at runtime; packages must live under an existing addons_path entry (`custom/`) -- which
+`builder.package` enforces as a constraint on `root_path`, not only in the
+create-package RPC.
 
 One apply per package at a time. A transaction-scoped advisory lock keyed on the package
 serialises every write (`_lock_for_write`); it ends at the apply's own commit, so a
@@ -352,11 +375,19 @@ That row only becomes durable at the commit, though, which is _after_ the write.
 window in between the snapshot leaves a journal on disk (`.builder/apply-<stamp>.json`,
 written before the first file, removed after the commit); one found later with no row to
 match is turned back into a failed apply with a rollback on offer (`_recover_journals`).
-Files are replaced by rename, never truncated in place (`tools/atomicfile.py`), and
-every write registers an undo for the transaction's rollback, so a request Odoo rolls
-back -- or retries after a serialization failure -- does not leave source on disk for a
-change the database never made. `.builder/` carries its own `.gitignore`, and the daily
-vacuum trims apply history and its backups (`_gc_old_applies`).
+A transaction that merely rolls back removes its own journal and backup in a
+`postrollback` hook -- a killed process runs no hook, so a journal that is found still
+means a crash. Files are replaced by rename, never truncated in place
+(`tools/atomicfile.py`), and every write records what it replaces for the transaction's
+rollback, so a request Odoo rolls back -- or retries after a serialization failure --
+does not leave source on disk for a change the database never made. There is one such
+record per directory and transaction, and a path enters it the first time it is touched:
+a request writes a package several times, Odoo runs rollback hooks oldest first, and a
+hook per write would leave the files at the second-to-last state. Pruning never removes
+`migrations/`: a pre-migration is rendered only by the apply that needs it, and a later
+ordinary write would otherwise delete it before the upgrade had run it. `.builder/`
+carries its own `.gitignore`, and the daily vacuum trims apply history and its backups
+(`_gc_old_applies`).
 
 **Removing a field drops its column and its data** — measured, not assumed
 (`_process_end` → `IrModelFields.unlink` → `_drop_column` → `DROP COLUMN CASCADE`). An
