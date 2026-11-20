@@ -479,6 +479,7 @@ class BuilderMenu(models.AbstractModel):
     def remove_record(
         self, record_id: int, package_id: int | None = None, force: bool = False
     ) -> bool:
+        typed.security(self)._assert_builder_manager()
         record = cast("BuilderRecordSurface", self)._record(record_id)
         action = cast("BaseModel", cast("IrUiMenu", record).action)
         package = typed.model(self.env, BuilderPackage)._chosen(package_id)
