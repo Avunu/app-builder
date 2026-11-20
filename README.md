@@ -78,7 +78,26 @@ Adding a field means re-importing the class, so edits batch behind an explicit *
 
 ## Read-only in production is a feature
 
-The editor gates on `os.access(root_path, W_OK)`. Against a Nix-store build or any read-only deployment it disables itself with an explanatory banner instead of failing. You build in development, ship through git, and deploy immutably.
+The editor writes only where it is allowed to and able to, and says so when it is not. Against a Nix-store build or any read-only deployment it disables itself with an explanatory banner instead of failing. You build in development, ship through git, and deploy immutably.
+
+"Able to" is tested by doing it: the builder creates and removes a temporary file in the package directory. `os.access` is not asked, because it answers for the real uid, cannot see an ACL or an immutable flag, and says yes to everything when Odoo runs as root, which is how most containers run it.
+
+## Security
+
+**A Builder Administrator can run arbitrary code as the Odoo process.** The builder writes Python into the addons path and imports it, which stock Odoo never lets a database administrator do. Treat the role as shell access to the server. Every `Settings` administrator has it.
+
+For that reason writing code is **off by default** and is switched on outside the database, where no administrator account, stolen session or RPC call can reach it:
+
+```sh
+APP_BUILDER_ENABLE_WRITE=1        # in the server's environment, or
+app_builder_enable_write = True   # in odoo.conf, under [options]
+```
+
+With the switch off every package is read-only, every change is refused with a sentence naming the switch, and the console still opens as a viewer. The development shell of this repository sets the variable, so `devenv up` and the test gate build packages as before.
+
+Turn it on only where every `Settings` administrator is trusted with a shell: a developer's machine or a build environment. Leave it off in production, and mount the addons path read-only as well.
+
+The supported deployment is one Odoo process (`workers = 0`) serving one database, used by administrators only. [SECURITY.md](SECURITY.md) has the threat model, what each role can see, the hardening checklist, and how to report a vulnerability.
 
 ## Available addons
 
