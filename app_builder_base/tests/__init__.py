@@ -1,4 +1,7 @@
 from . import (
+    # First, and importing it installs it: under APP_BUILDER_STRICT_SKIPS (CI) an
+    # unexpected skip of any test below fails.
+    strict_skips,
     common,
     test_adopt,
     test_apply_integrity,
@@ -20,6 +23,7 @@ from . import (
     test_security,
     test_serializer,
     test_serializer_coverage,
+    test_strict_skips,
     test_typeguard,
     test_workspace,
     test_xml_writer,

@@ -2,8 +2,12 @@
   "name": "app-builder-tools",
   "private": true,
   "version": "0.0.0",
-  "description": "The locked lint tools (odoo-nix's js-xml module) and the type checkers (see TYPING.md). Each addon's own package.json compiles its TypeScript.",
+  "description": "The locked lint tools (odoo-nix's js-xml module) and the type checkers (see TYPING.md), and `npm run build`, which compiles every addon's TypeScript through each addon's own package.json.",
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "clean": "node scripts/build.mjs --clean",
+    "check:dist": "python3 scripts/dist.py check",
+    "dist": "python3 scripts/dist.py zip dist/app-builder.zip",
     "typecheck": "node scripts/typecheck.mjs",
     "lint:ts": "eslint -c eslint.typescript.config.mjs '**/*.ts'"
   },
