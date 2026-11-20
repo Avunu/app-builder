@@ -115,11 +115,10 @@ export function labelFor(node: BuilderNode | null | undefined): string {
   return labelOf(node);
 }
 
-// `pending_widget.js` isn't converted yet (TYPING.md's leaf-first order),
-// so its export is inferred from the object literal itself -- exact
+// `pending_widget.ts` exports the object literal itself -- exact
 // field-type keys, no index signature -- rather than a general
 // `Record<string, string>`. A builder field type is always one of Odoo's
-// own `ttype`s, but that is `pending_widget.js`'s contract to state, not
+// own `ttype`s, but that is `pending_widget.ts`'s contract to state, not
 // this file's to assume; widen at the one place this file reads it.
 const typeIcons: Record<string, string> = TYPE_ICONS;
 
@@ -397,6 +396,49 @@ export function moveTarget(
     return null;
   }
   return move;
+}
+
+/** A container `moveDestinations` offers, and how deep it sits. */
+export interface MoveDestination {
+  token: Token;
+  depth: number;
+}
+
+/**
+ * Every container `token` can be sent to the end of, in document order:
+ * the list behind "Move to…", which reaches in one step -- and without a
+ * pointer -- what a drag reaches. A container is listed when the server
+ * would take the move (`canDrop`), and left out when the node is already
+ * its last child, where the move would change nothing.
+ */
+export function moveDestinations(
+  nodes: NodeTable,
+  root: Token,
+  token: Token
+): MoveDestination[] {
+  const found: MoveDestination[] = [];
+  const node = nodes[token];
+  if (!node || !node.movable) {
+    return found;
+  }
+  const owned = ownedLabels(nodes);
+  const walk = (at: Token, depth: number): void => {
+    const entry = nodes[at];
+    if (!entry || at === token) {
+      // Nothing is sent into itself, or into what it holds.
+      return;
+    }
+    const children = visibleChildren(nodes, at, owned);
+    const isLast = children[children.length - 1] === token;
+    if (entry.container && !isLast && canDrop(nodes, token, at, "inside")) {
+      found.push({token: at, depth});
+    }
+    for (const child of children) {
+      walk(child, depth + 1);
+    }
+  };
+  walk(root, 0);
+  return found;
 }
 
 /**

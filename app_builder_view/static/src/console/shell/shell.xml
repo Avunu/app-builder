@@ -5,6 +5,16 @@
         <div class="o_builder_console">
             <TopBar shell="this.shell" onClose.bind="this.close" />
 
+            <!-- Laid out for a desktop: a phone-sized viewport is told so. -->
+            <div
+                t-if="this.tooSmall"
+                class="alert alert-warning rounded-0 mb-0 py-2 small o_builder_small_screen"
+                role="status"
+            >
+                The builder is designed for a desktop-sized screen. Dragging and
+                the side panels do not work well on a display this small.
+            </div>
+
             <div
                 t-if="this.state.error"
                 class="alert alert-danger m-3"
@@ -12,7 +22,10 @@
                 t-esc="this.state.error"
             />
             <div t-elif="!this.state.ready" class="o_builder_loading text-muted p-4">
-            <i class="fa fa-circle-o-notch fa-spin me-2" />Opening the builder…
+            <i
+                class="fa fa-circle-o-notch fa-spin me-2"
+                aria-hidden="true"
+            />Opening the builder…
         </div>
             <t t-else="">
                 <div
@@ -29,7 +42,10 @@
                     t-att-data-callout="this.shell.callout.key"
                 >
                     <div class="d-flex align-items-start gap-2">
-                        <i class="fa fa-check-circle o_builder_callout_icon" />
+                        <i
+                            class="fa fa-check-circle o_builder_callout_icon"
+                            aria-hidden="true"
+                        />
                         <div class="flex-grow-1">
                             <div class="fw-bold" t-esc="this.shell.callout.title" />
                             <ul class="mb-0 ps-3 small">
@@ -45,9 +61,10 @@
                             type="button"
                             class="btn btn-link btn-sm p-0 o_builder_callout_close"
                             title="Dismiss"
+                            aria-label="Dismiss"
                             t-on-click="() => this.shell.callout = null"
                         >
-                            <i class="fa fa-times" />
+                            <i class="fa fa-times" aria-hidden="true" />
                         </button>
                     </div>
                 </div>
@@ -87,7 +104,10 @@
                             t-elif="this.shell.loading"
                             class="o_builder_loading text-muted p-4"
                         >
-                        <i class="fa fa-circle-o-notch fa-spin me-2" />Opening…
+                        <i
+                            class="fa fa-circle-o-notch fa-spin me-2"
+                            aria-hidden="true"
+                        />Opening…
                     </div>
                         <t
                             t-elif="this.content"

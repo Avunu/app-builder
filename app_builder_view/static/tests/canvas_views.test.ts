@@ -2,7 +2,7 @@
 /**
  * The canvas view classes do nothing the canvas must never do.
  *
- * `canvas_views.js` derives, from each stock view, a class whose controller
+ * `canvas_views.ts` derives, from each stock view, a class whose controller
  * never saves and whose renderer cannot resequence. What these tests pin is
  * the premise as much as the fix: the *stock* form does create a record when
  * the tab is hidden over a new one -- which is what the canvas shows for a

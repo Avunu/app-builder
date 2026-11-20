@@ -37,7 +37,7 @@ interface RecordRefIn {
 }
 
 /**
- * One selectable group in a `"groups"` row, as `record_pane.js`'s own
+ * One selectable group in a `"groups"` row, as `record_pane.ts`'s own
  * `rowContext` getter builds it (`this.model.extra.groups`) -- that file
  * is still plain JS (a later cluster), so this is named narrowly here to
  * just the two fields this file's own template reads (`group.id` for the

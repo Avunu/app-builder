@@ -2,7 +2,7 @@
 /**
  * The outline's rows and moves, on a node table alone.
  *
- * `outline_tree.js` reads nothing but the table, so what it lists, in
+ * `outline_tree.ts` reads nothing but the table, so what it lists, in
  * what order, what it leaves out, what a path names across a re-stamp,
  * and what a key press asks for are pinned here with no view mounted.
  */
@@ -15,6 +15,7 @@ import {
   canDrop,
   flatten,
   isOwnedLabel,
+  moveDestinations,
   moveTarget,
   nextFocus,
   pathAfterMove,
@@ -341,6 +342,41 @@ test("before a field with its own label just before it means before the label", 
     n2: {...NODES.n2, children: ["n3", "n4", "n11", "p_weight", "n5"]},
   };
   expect(beforeAnchor(apart, "n3")).toBe("n3");
+});
+
+test("where a node can be sent: every container that takes it, less where it is", () => {
+  const places = (token: string) =>
+    moveDestinations(NODES, "n0", token).map((place) => [place.token, place.depth]);
+  // A field: the sheet, the groups and the pages -- not the root (a form
+  // with a sheet takes nothing beside it) nor the notebook (pages only).
+  expect(places("n4")).toEqual([
+    ["n1", 1],
+    ["n2", 2],
+    ["n6", 2],
+    ["n8", 3],
+    ["n9", 3],
+  ]);
+  // Already the last of its group: sending it there would change nothing.
+  expect(places("n5")).toEqual([
+    ["n1", 1],
+    ["n6", 2],
+    ["n8", 3],
+    ["n9", 3],
+  ]);
+  // A page goes to the end of its notebook, unless it is there.
+  expect(places("n8")).toEqual([["n7", 2]]);
+  expect(places("n9")).toEqual([]);
+  // A group goes to the end of its sheet, or into another group or a
+  // page -- never into itself or into what it holds.
+  expect(places("n2")).toEqual([
+    ["n1", 1],
+    ["n6", 2],
+    ["n8", 3],
+    ["n9", 3],
+  ]);
+  // What stays put goes nowhere.
+  expect(places("n1")).toEqual([]);
+  expect(places("missing")).toEqual([]);
 });
 
 test("what a key press asks for, and what it does not", () => {

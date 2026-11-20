@@ -19,7 +19,7 @@ import type {PackageEntryJSON} from "../wire";
 /**
  * This flow's own `flow.values` bag -- built up one field at a time as
  * each step's own `setup()` runs (`FlowModel.values` starts at `{}`,
- * `flows/flow.js`; this registration passes no `spec.initial`). Every
+ * `flows/flow.ts`; this registration passes no `spec.initial`). Every
  * field is optional on its own terms, not just defensively, since a step
  * earlier in the rail may not have run yet the moment a later one reads
  * its own field -- true in principle even though a flow always restarts
@@ -37,7 +37,7 @@ interface CreatePackageValues {
 }
 
 /**
- * What every step of this flow receives (`flows/flow.js`'s own contract:
+ * What every step of this flow receives (`flows/flow.ts`'s own contract:
  * a step component takes `{shell, flow}`). `shell` is typed `unknown`
  * rather than the real `BuilderShell` (`shell/shell_model.ts`): none of
  * the four steps below ever reads a member off it directly -- only this
@@ -46,7 +46,7 @@ interface CreatePackageValues {
  * reader that does not exist here would be exactly what this migration's
  * own rule against that warns against (`DraftPayload.spec`,
  * `CanvasPayload.models`, ...). `flow` is the reactive `FlowModel`
- * instance (`flows/flow.js`, not yet converted) narrowed to the one
+ * instance (`flows/flow.ts`) narrowed to the one
  * member every step reads and writes -- its own per-flow `values` bag.
  */
 interface FlowStepProps {

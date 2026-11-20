@@ -64,7 +64,10 @@ registry.category("web_tour.tours").add("app_builder_report_editor_tour", {
     },
     {
       content: "the report is rendered, not an arch dump",
-      trigger: ".o_builder_report_preview:contains('Job Sheet')",
+      // The document is in a sandboxed frame, so that its stylesheets
+      // stay its own: what it says is read inside the frame.
+      trigger:
+        ".o_builder_report_preview iframe.o_builder_report_frame[data-ready]:iframe body:contains('Job Sheet')",
     },
     {
       content: "the panel offers to place a value",
@@ -90,12 +93,18 @@ registry.category("web_tour.tours").add("app_builder_report_editor_tour", {
       // goes nowhere: the arch is written, the file is written, and the
       // preview still shows the document from before.
       content: "the value is now on the document",
-      trigger: ".o_builder_report_preview:contains('Budget')",
+      trigger:
+        ".o_builder_report_preview iframe.o_builder_report_frame[data-ready]:iframe body:contains('Budget')",
     },
     {
       content: "and it is selectable, because qweb branded it",
-      trigger: ".o_builder_report_preview [data-oe-expression='doc.x_budget']",
+      trigger:
+        ".o_builder_report_preview iframe.o_builder_report_frame[data-ready]:iframe [data-oe-expression='doc.x_budget']",
       run: "click",
+    },
+    {
+      content: "the report's stylesheets stayed in the frame",
+      trigger: ".o_builder_report_preview:not(:has(link, style, script))",
     },
     {
       content: "clicking it selects it rather than doing nothing",

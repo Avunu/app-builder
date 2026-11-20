@@ -4,11 +4,13 @@
  * send -- the vocabulary of what a row/widget/group is, not any one
  * node's current values (`types.ts` has those).
  *
- * Hand-kept in sync with the Python `TypedDict`s of the same names, as
- * that file's own docstring says it must be until TYPING.md's Phase 2d
- * generator exists: change one side, change the other in the same
- * commit. Field order matches the Python source so a diff of either file
- * lines up with the other.
+ * Hand-kept in sync with the Python `TypedDict`s of the same names:
+ * nothing generates one side from the other (TYPING.md, "The wire
+ * contract"), so change one side, change the other in the same commit.
+ * `app_builder_view/tests/test_wire_contract.py` compares the keys of
+ * every interface here that mirrors a `TypedDict`, and fails on a new
+ * interface it has not been told about. Field order matches the Python
+ * source so a diff of either file lines up with the other.
  */
 
 /** `app_builder_base/tools/catalogue.py:RowJSON`. */
@@ -60,7 +62,7 @@ export interface OptionGroupJSON {
 }
 
 /** `app_builder_base/tools/catalogue.py:CatalogueJSON` -- the whole
- * vocabulary, as `context.catalogue` carries it (`console_model.js`). */
+ * vocabulary, as `context.catalogue` carries it (`console_model.ts`). */
 export interface CatalogueJSON {
   widgets: WidgetJSON[];
   image_sizes: [string, string][];

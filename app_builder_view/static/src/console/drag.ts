@@ -9,9 +9,9 @@
  * geometry is the only thing that works, since the body takes no pointer
  * events while a drag is on. What is dragged is a palette tile, a leaf of
  * the view, a list heading, the grip of a selected container or a row of
- * the outline; where it can land is the set of zones `zones.js` lays out
+ * the outline; where it can land is the set of zones `zones.ts` lays out
  * from the node table the moment the drag starts -- and, when the outline
- * is open, the set `outline_zones.js` lays over its rows, in a layer of
+ * is open, the set `outline_zones.ts` lays over its rows, in a layer of
  * the outline's own. One drag, one chip, one drop, whichever layer takes
  * it. Nothing is re-rendered until it ends.
  *
@@ -201,7 +201,7 @@ const dragAndDrop = useDragAndDrop as (params: CanvasDragHookParams) => DragHook
 
 /**
  * What the outline registers on the model while it is mounted
- * (`sidebar/outline.js:registerDrag`, still `.js` -- outside this
+ * (`sidebar/outline.ts:registerDrag` -- outside this
  * cluster), traced to its real construction there rather than to
  * `ConsoleModel.outlineDrag`'s own declared `unknown` (`console_model.ts`,
  * left untyped since nothing converted before this file ever read it).
@@ -332,7 +332,7 @@ export class CanvasDrag {
   zoneOf: Map<Element, Zone>;
   tabs: Element[];
   dwell: TabDwell | null;
-  /** The outline's provider (`sidebar/outline.js`), taken from the
+  /** The outline's provider (`sidebar/outline.ts`), taken from the
    * model when a drag starts and held until it ends; `null` when
    * there is no outline to drop on. */
   outline: OutlineDragProvider | null;
@@ -1227,17 +1227,52 @@ function samePlace(a: Zone | null | undefined, b: Zone | null | undefined): bool
   );
 }
 
+/** The wait `focusLabelRow` has running, if any: there is one Label row,
+ * so there is never a reason for two waits to race for it. */
+let cancelFocusWait: (() => void) | null = null;
+
 /**
  * Put the cursor in the Label row of the properties, its text selected,
  * once the panel has drawn it: a field just dropped is most often
  * renamed next. The panel asks the server what the node carries before
  * it draws its rows, so the input is waited for rather than assumed.
+ *
+ * The wait is given up -- and the function it returns gives it up on
+ * request -- as soon as focusing would be an intrusion rather than a
+ * help: the console has left the page, another wait has started, or the
+ * user has pressed a key or a pointer button, which means they have moved
+ * on and the cursor is theirs.
  */
 export function focusLabelRow(
   rootEl: HTMLElement,
   {tries = 40, every = 50}: {tries?: number; every?: number} = {}
-): void {
+): () => void {
+  if (cancelFocusWait) {
+    cancelFocusWait();
+  }
+  const doc = rootEl.ownerDocument;
+  let timer: number | undefined;
+  let done = false;
+  const cancel = (): void => {
+    if (done) {
+      return;
+    }
+    done = true;
+    window.clearTimeout(timer);
+    doc.removeEventListener("pointerdown", cancel, true);
+    doc.removeEventListener("keydown", cancel, true);
+    if (cancelFocusWait === cancel) {
+      cancelFocusWait = null;
+    }
+  };
   const attempt = (left: number): void => {
+    if (done) {
+      return;
+    }
+    if (!rootEl.isConnected) {
+      cancel();
+      return;
+    }
     // Typed via the generic form rather than a cast after the fact:
     // the selector always names a real `<input>`, so this is the
     // element the query actually returns, not a widened `Element`
@@ -1246,6 +1281,7 @@ export function focusLabelRow(
       ".o_builder_properties .o_builder_row[data-row='string'] input"
     );
     if (input) {
+      cancel();
       input.focus();
       if (typeof input.select === "function") {
         input.select();
@@ -1253,8 +1289,14 @@ export function focusLabelRow(
       return;
     }
     if (left > 0) {
-      window.setTimeout(() => attempt(left - 1), every);
+      timer = window.setTimeout(() => attempt(left - 1), every);
+    } else {
+      cancel();
     }
   };
+  cancelFocusWait = cancel;
+  doc.addEventListener("pointerdown", cancel, true);
+  doc.addEventListener("keydown", cancel, true);
   attempt(tries);
+  return cancel;
 }

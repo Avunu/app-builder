@@ -39,7 +39,7 @@ import type {ApplyEntryJSON, PackageEntryJSON} from "../wire";
  * never by a `.ts` code path here -- typed fully anyway, since the real
  * shape was traced directly from the Python source and this is the one
  * file that renders it, unlike the "typing ahead of a reader" cases
- * elsewhere in this migration that involve a file not yet converted. */
+ * elsewhere, which involved a file not converted at the time. */
 interface ChangesGitLogEntry {
   sha: string;
   short: string;
@@ -352,7 +352,7 @@ export class ChangesPane extends Component<Props> {
     // `ApplyDialog`'s own `Props` (`apply_dialog.ts`, not exported)
     // declares `close: () => void` required, for its own internal
     // `this.props.close()` reads -- but no real caller of
-    // `dialog.add(ApplyDialog, ...)` (this one, or `top_bar.js`'s
+    // `dialog.add(ApplyDialog, ...)` (this one, or `top_bar.ts`'s
     // still-untyped sibling call) ever supplies one: the dialog
     // service injects `close` itself before constructing, the exact
     // reason `odoo.ts`'s own `ConfirmationDialogProps` deliberately

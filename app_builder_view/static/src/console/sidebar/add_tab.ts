@@ -4,7 +4,7 @@
  *
  * Every tile is a thing that can be put into the view, two ways. Dragged,
  * it lands where it is dropped: the tile carries what it stands for in
- * its dataset -- `data-kind` and `data-key` -- and `drag.js` reads that
+ * its dataset -- `data-kind` and `data-key` -- and `drag.ts` reads that
  * when it is picked up; nothing else about a drag lives here. Clicked (or
  * Enter, on a focused tile), it goes to the selection: inside a selected
  * container, after a selected leaf, at the end of the view when nothing

@@ -77,7 +77,9 @@ export class BuilderAutomations extends Component<Props, ViewEnv> {
 export const builderAutomationsItem: CogMenuItem = {
   Component: BuilderAutomations,
   groupNumber: 40,
+  // Not on a phone-sized viewport: the console is laid out for a desktop.
   isDisplayed: async (env) =>
+    !env.isSmall &&
     Boolean(env.config.resModel) &&
     (await user.hasGroup("app_builder_base.group_builder_user")),
 };

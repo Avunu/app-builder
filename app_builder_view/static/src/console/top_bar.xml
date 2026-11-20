@@ -8,10 +8,11 @@
                     type="button"
                     class="o_builder_crumb_home"
                     data-tooltip="Home"
+                    aria-label="Home"
                     t-att-class="{ active: this.shell.pane === 'home' }"
                     t-on-click="() => this.shell.openPane('home')"
                 >
-                    <i class="fa fa-magic" />
+                    <i class="fa fa-magic" aria-hidden="true" />
                 </button>
 
                 <!-- The package: the workspace every pane is scoped to. -->
@@ -26,7 +27,10 @@
                             t-attf-class="o_builder_dot_{{ this.packageDot }}"
                         />
                         <span t-esc="this.packageLabel" />
-                        <i class="fa fa-caret-down ms-1 opacity-75" />
+                        <i
+                            class="fa fa-caret-down ms-1 opacity-75"
+                            aria-hidden="true"
+                        />
                     </button>
                     <t t-set-slot="content">
                         <DropdownItem
@@ -60,7 +64,7 @@
                             class="'o_builder_package_new'"
                             onSelected="() => this.onNewPackage()"
                         >
-                        <i class="fa fa-plus me-2" />New package…
+                        <i class="fa fa-plus me-2" aria-hidden="true" />New package…
                     </DropdownItem>
                     </t>
                 </Dropdown>
@@ -77,7 +81,10 @@
                             <t t-esc="this.modelLabel" />
                         </t>
                         <span t-else="" class="opacity-75">choose a model</span>
-                        <i class="fa fa-caret-down ms-1 opacity-75" />
+                        <i
+                            class="fa fa-caret-down ms-1 opacity-75"
+                            aria-hidden="true"
+                        />
                     </button>
                     <t t-set-slot="content">
                         <div class="px-2 py-1">
@@ -145,13 +152,16 @@
                             class="'o_builder_model_build'"
                             onSelected="() => this.onBuildApp()"
                         >
-                        <i class="fa fa-plus me-2" />Build an app
+                        <i class="fa fa-plus me-2" aria-hidden="true" />Build an app
                     </DropdownItem>
                         <DropdownItem
                             class="'o_builder_model_adopt'"
                             onSelected="() => this.onAdoptModel()"
                         >
-                        <i class="fa fa-download me-2" />Adopt a model
+                        <i
+                            class="fa fa-download me-2"
+                            aria-hidden="true"
+                        />Adopt a model
                     </DropdownItem>
                     </t>
                 </Dropdown>
@@ -189,10 +199,12 @@
                     t-att-class="{ active: entry.active, add: entry.add }"
                     t-att-data-view-type="entry.type"
                     t-att-data-tooltip="entry.label"
+                    t-att-aria-label="entry.label"
+                    t-att-aria-pressed="entry.add ? undefined : (entry.active ? 'true' : 'false')"
                     t-att-disabled="this.busy"
                     t-on-click="() => this.onSwitch(entry)"
                 >
-                    <i t-att-class="entry.icon" />
+                    <i t-att-class="entry.icon" aria-hidden="true" />
                     <i t-if="entry.add" class="fa fa-plus o_builder_switch_plus" />
                 </button>
             </div>
@@ -206,7 +218,7 @@
                         t-att-data-tooltip="this.undoTooltip"
                         t-on-click="() => this.onUndo()"
                     >
-                        <i class="fa fa-undo" />
+                        <i class="fa fa-undo" aria-hidden="true" />
                         <span class="ms-1 o_builder_top_word">Undo</span>
                     </button>
                     <button
@@ -216,7 +228,7 @@
                         t-att-data-tooltip="this.redoTooltip"
                         t-on-click="() => this.onRedo()"
                     >
-                        <i class="fa fa-repeat" />
+                        <i class="fa fa-repeat" aria-hidden="true" />
                         <span class="ms-1 o_builder_top_word">Redo</span>
                     </button>
                 </t>
@@ -255,9 +267,10 @@
                     class="o_builder_top_button o_builder_changes_badge"
                     t-att-class="{ active: this.shell.pane === 'changes' }"
                     data-tooltip="Changes: what is pending, written and committed"
+                    aria-label="Changes"
                     t-on-click="() => this.openChanges()"
                 >
-                    <i class="fa fa-code-fork" />
+                    <i class="fa fa-code-fork" aria-hidden="true" />
                     <span
                         t-if="this.changesCount"
                         class="o_builder_badge_count"
@@ -272,7 +285,7 @@
                         t-att-data-tooltip="this.applyTooltip || undefined"
                         t-on-click="() => this.openApply()"
                     >
-                        <i class="fa fa-bolt" />
+                        <i class="fa fa-bolt" aria-hidden="true" />
                         <span class="ms-1" t-esc="this.applyLabel" />
                     </button>
                     <button
@@ -281,7 +294,7 @@
                         t-att-disabled="this.busy or this.applying"
                         t-on-click="() => this.onDiscard()"
                     >
-                        <i class="fa fa-trash-o" />
+                        <i class="fa fa-trash-o" aria-hidden="true" />
                         <span class="ms-1 o_builder_top_word">Discard</span>
                     </button>
                 </t>
@@ -290,7 +303,7 @@
                     class="o_builder_top_button o_builder_close"
                     t-on-click="() => this.props.onClose()"
                 >
-                    <i class="fa fa-times" />
+                    <i class="fa fa-times" aria-hidden="true" />
                     <span class="ms-1">Close</span>
                 </button>
             </div>

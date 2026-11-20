@@ -2,7 +2,7 @@
 /**
  * Where nodes are, on views the real compilers rendered.
  *
- * `geometry.js` answers "where is this node" and "where are its children"
+ * `geometry.ts` answers "where is this node" and "where are its children"
  * for the overlay and the drop zones, and the answers rest on how the
  * form compiler lays things out: the sheet's children in the inner
  * sheet, the notebook's tabs in its header strip, the active page's
