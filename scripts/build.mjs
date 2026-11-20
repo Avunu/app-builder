@@ -92,6 +92,9 @@ function run(addon, ...argv) {
   const result = spawnSync(npm, argv, {
     cwd: path.join(repoRoot, addon),
     stdio: "inherit",
+    // Node refuses to spawn a .cmd without a shell since CVE-2024-27980;
+    // argv is only fixed script names, so the shell adds no quoting hazard.
+    shell: process.platform === "win32",
   });
   if (result.error) {
     console.error(`build: cannot run npm: ${result.error.message}`);
