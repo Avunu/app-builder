@@ -673,6 +673,9 @@ class TestViewsAppliedLater(SequenceCase):
             </data>
             """
         )
+        # Another module's view, so the builder's patch of it has something
+        # to reference in source.
+        self.make_package(name="x_seq_middle").builder_capture(middle)
         combined = etree.fromstring(middle.get_combined_arch().encode())
         pointed_at = combined.findall(".//sheet/group")[2]
         self.assertEqual(pointed_at[0].get("name"), "x_b", "fixture")
