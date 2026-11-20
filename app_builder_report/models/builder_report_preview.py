@@ -17,11 +17,14 @@ community's base does not have. What base does have is field branding --
 and for a report that is the better anchor anyway: it names the qweb expression,
 which is the thing the arch also names.
 
-**Not through ir.actions.report.** ``_render_template`` forces
+**Not through ir.actions.report's renderer.** ``_render_template`` forces
 ``inherit_branding=False`` (``ir_actions_report.py:765``), so a report rendered
 the ordinary way comes back with no branding at all whatever context it is given.
-The template is rendered directly through ``ir.qweb`` instead, with the same
-``docs`` the report would have passed.
+The template is rendered directly through ``ir.qweb`` instead -- but with the
+values the report itself would have passed: ``_get_rendering_context`` builds
+them (which is also what calls a ``report.<name>`` model's
+``_get_report_values``), and the handful ``_render_template`` adds on top are
+added here the same way. Only the branding differs from a print.
 """
 
 from __future__ import annotations
@@ -151,30 +154,68 @@ class BuilderReportPreview(models.AbstractModel):
     _inherit = "builder.report"
 
     @api.model
-    def _preview_record(self, model_name: str) -> BaseModel | None:
+    def _preview_record(
+        self, model_name: str, res_id: int | None = None
+    ) -> BaseModel | None:
         """Something real to render, because a report of nothing shows nothing.
 
-        The most recently created record: a report is about the shape of the
-        document, and the newest record is the one the builder most likely just
-        made while trying this out.
+        ``res_id`` when the caller has one in mind and it can be read.
+        Otherwise the most recently created record: a report is about the
+        shape of the document, and the newest record is the one the builder
+        most likely just made while trying this out.
         """
         if model_name not in self.env:
             return None
         model = self.env[model_name]
+        if model._abstract:
+            # No table to search. A report on one is drawn from whatever its
+            # `report.<name>` model is handed, which a preview cannot guess.
+            return None
+        if res_id:
+            # A search, not a browse: it answers nothing for a record this
+            # user's rules hide, rather than rendering and failing halfway.
+            chosen = model.search([("id", "=", res_id)], limit=1)
+            if chosen:
+                return chosen
         return model.search([], order="id desc", limit=1) or None
 
     @api.model
-    def preview_html(self, view_id: int) -> PreviewHtmlJSON:
-        """The report's own output, branded so its fields can be clicked."""
+    def _report_of(self, view: View) -> tuple[View, IrActionsReport]:
+        """The template ``view`` belongs to, and the report that prints it.
+
+        ``view`` may be the template or a view that patches it; either way
+        what gets rendered is the template, combined. Both come back empty for
+        a qweb view no report names -- a website page, a mail layout, a
+        snippet -- which this must not render: they expect values no report
+        context has, and "preview any qweb view by id" was never the feature.
+        """
+        root = view
+        while root.mode == "extension" and root.inherit_id:
+            root = cast("View", root.inherit_id)
+        # `get_external_id` is unannotated; it answers `{id: xmlid}`, with an
+        # empty string for a record that has none.
+        xmlid = cast("dict[int, str]", root.get_external_id()).get(cast("int", root.id))
+        names: list[str] = [n for n in (root.key, xmlid) if n]
+        report = typed.model(self.env, IrActionsReport)
+        if names:
+            report = report.search([("report_name", "in", names)], limit=1)
+        return (root, report) if report else (root.browse(), report)
+
+    @api.model
+    def preview_html(self, view_id: int, res_id: int | None = None) -> PreviewHtmlJSON:
+        """The report's own output, branded so its fields can be clicked.
+
+        ``res_id`` picks the record to draw; without one it is the newest.
+        """
         typed.security(self)._assert_builder_user()
         view = typed.model(self.env, View).browse(view_id).exists()
         if not view or view.type != "qweb":
             raise UserError(_("That is not a report template."))
-        report = typed.model(self.env, IrActionsReport).search(
-            [("report_name", "=", view.key)], limit=1
-        )
-        model_name = report.model or view.model
-        record = self._preview_record(model_name) if model_name else None
+        view, report = self._report_of(view)
+        if not report:
+            raise UserError(_("That is not a report template."))
+        model_name = cast("str", report.model)
+        record = self._preview_record(model_name, res_id) if model_name else None
         if record is None:
             return {
                 "html": "",
@@ -206,13 +247,32 @@ class BuilderReportPreview(models.AbstractModel):
                 t,
             )
 
+        # What a print passes (`_render_qweb_html`): `docs`/`doc_ids`/
+        # `doc_model`, or whatever the report's own `report.<name>` model
+        # answers instead, plus `is_html_empty` and `report_type`. Built by
+        # the report itself so a template that reads any of them previews the
+        # way it prints.
+        try:
+            values: dict[str, Any] = report._get_rendering_context(
+                report, record.ids, {"report_type": "html"}
+            )
+        except UserError as err:
+            # A `report.<name>` model that wants a wizard's data it was not
+            # given says so with one of these. Not an error of the builder's.
+            return {
+                "html": "",
+                "model": model_name,
+                "reason": _(
+                    "This report works out what to print in Python, and that "
+                    "code refused the preview record: %s",
+                    str(err),
+                ),
+            }
+        values.setdefault("env", self.env)
         html = qweb._render(
             view.id,
             {
-                "docs": record,
-                "doc_ids": record.ids,
-                "doc_model": model_name,
-                "env": self.env,
+                **values,
                 "time": time,
                 "context_timestamp": context_timestamp,
                 "user": user,

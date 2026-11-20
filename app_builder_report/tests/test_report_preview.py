@@ -180,3 +180,69 @@ class TestReportPreview(BuilderCase):
             typed.model(self.env, BuilderReportPreview).preview_html(
                 cast("int", form.id)
             )
+
+    def test_a_qweb_view_no_report_prints_is_not_a_report(self):
+        """A qweb view is not a report template for being qweb: a mail layout
+        or a snippet expects values no report context has."""
+        loose = typed.model(self.env, View).create(
+            {  # pyright: ignore[reportArgumentType]
+                "name": "loose",
+                "type": "qweb",
+                "key": "x_builder_demo.loose_template",
+                "arch": "<t t-name='x_builder_demo.loose_template'><p>loose</p></t>",
+            }
+        )
+        with raises(self, UserError):
+            typed.model(self.env, BuilderReportPreview).preview_html(
+                cast("int", loose.id)
+            )
+
+    def test_the_preview_draws_the_record_it_is_asked_for(self):
+        package = self.make_package()
+        self.build_demo_content(package)
+        view = self._report(package)
+        Project = self.env["x_builder_project"]
+        first = Project.create({"x_name": "Bridge survey"})  # pyright: ignore[reportArgumentType]
+        newest = Project.create({"x_name": "Tunnel survey"})  # pyright: ignore[reportArgumentType]
+        Preview = typed.model(self.env, BuilderReportPreview)
+
+        chosen = Preview.preview_html(cast("int", view.id), cast("int", first.id))
+        self.assertEqual(chosen.get("res_id"), first.id)
+        self.assertIn("Bridge survey", chosen["html"])
+        self.assertNotIn("Tunnel survey", chosen["html"])
+
+        # No choice, or one that is gone: the newest, as before.
+        for res_id in (None, cast("int", newest.id) + 1000):
+            default = Preview.preview_html(cast("int", view.id), res_id)
+            self.assertEqual(default.get("res_id"), newest.id)
+            self.assertIn("Tunnel survey", default["html"])
+
+    def test_the_preview_gets_the_values_a_print_gets(self):
+        """`is_html_empty` and `report_type` come from the report's own
+        `_get_rendering_context`, not from a list kept by hand here -- and a
+        patch's id previews the template it patches, patch applied."""
+        package = self.make_package()
+        self.build_demo_content(package)
+        view = self._report(package)
+        self.env["x_builder_project"].create({"x_name": "Bridge survey"})  # pyright: ignore[reportArgumentType]
+        patch_view = typed.model(self.env, View).create(
+            {  # pyright: ignore[reportArgumentType]
+                "name": "job sheet patch",
+                "type": "qweb",
+                "mode": "extension",
+                "inherit_id": view.id,
+                "arch": """<data>
+                    <xpath expr="//div[hasclass('page')]" position="inside">
+                        <p t-if="is_html_empty('') and report_type == 'html'"
+                           >drawn-as-<t t-out="doc_model"/></p>
+                    </xpath>
+                </data>""",
+            }
+        )
+        for view_id in (view.id, patch_view.id):
+            result = typed.model(self.env, BuilderReportPreview).preview_html(
+                cast("int", view_id)
+            )
+            self.assertFalse(result["reason"])
+            self.assertIn("drawn-as-x_builder_project", result["html"])
+            self.assertIn("Bridge survey", result["html"])
