@@ -192,6 +192,7 @@ class BuilderApp(models.AbstractModel):
         constraint only covers ``state='manual'`` rows -- so the name a user
         sees in filters and domains can be an ordinary one.
         """
+        typed.security(self)._assert_builder_user()
         slug = "".join(c if c.isalnum() else "_" for c in (label or "").lower())
         slug = "_".join(part for part in slug.split("_") if part)
         prefix = (package.name or "builder").removeprefix("x_")
@@ -588,6 +589,7 @@ class BuilderApp(models.AbstractModel):
         built it and is invisible to everybody else. Asking the question as a
         real user is the only way to find out before they do.
         """
+        typed.security(self)._assert_builder_user()
         results: list[VisibilityResultJSON] = []
         for group in groups:
             user = (
