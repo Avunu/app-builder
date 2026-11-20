@@ -18,7 +18,7 @@
  * `app_builder.field_editor` shares, `field_editor_fallback.ts`'s own
  * module docstring names it in full) minus the two keys only the console's
  * own subclass adds (`initial`, `mode`; `app_builder_model/static/src/
- * console_items.js`'s `ConsoleFieldEditor`, still `.js`, not converted by
+ * console_items.ts`'s `ConsoleFieldEditor`, not converted by
  * this file). This popover also has an older, plainer life of its own --
  * `field: { type: [Object, { value: null }], optional: true }` plus
  * `fieldTypes`/`existingNames`/`modelName`/`onSave`/`onDelete`/

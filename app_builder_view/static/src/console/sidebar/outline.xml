@@ -18,6 +18,7 @@
                 >
                     <i
                         t-att-class="this.state.open ? 'fa fa-caret-down' : 'fa fa-caret-right'"
+                        aria-hidden="true"
                     />
                     <span>Outline</span>
                 </button>
@@ -27,6 +28,7 @@
                     type="search"
                     name="outline_filter"
                     placeholder="Filter…"
+                    aria-label="Filter the outline"
                     t-ref="filter"
                     t-att-value="this.state.filter"
                     t-on-input="(ev) => this.state.filter = ev.target.value"
@@ -38,6 +40,7 @@
                 class="o_builder_outline_list"
                 role="tree"
                 aria-label="View outline"
+                aria-describedby="o_builder_outline_keys"
                 t-ref="list"
                 t-on-keydown="(ev) => this.onKeyDown(ev)"
             >
@@ -82,28 +85,39 @@
                     >
                         <i
                             t-att-class="entry.expanded ? 'fa fa-caret-down' : 'fa fa-caret-right'"
+                            aria-hidden="true"
                         />
                     </button>
                     <span
                         t-else=""
                         class="o_builder_outline_caret o_builder_outline_leaf"
                     />
-                    <i class="o_builder_outline_icon" t-att-class="entry.icon" />
+                    <i
+                        class="o_builder_outline_icon"
+                        t-att-class="entry.icon"
+                        aria-hidden="true"
+                    />
                     <span class="o_builder_outline_label" t-esc="entry.label" />
                     <i
                         t-if="entry.badges.required"
                         class="o_builder_outline_badge fa fa-asterisk"
                         title="Required"
+                        role="img"
+                        aria-label="Required"
                     />
                     <i
                         t-if="entry.badges.hidden"
                         class="o_builder_outline_badge fa fa-eye-slash"
                         t-att-title="this.hiddenTitle(entry)"
+                        role="img"
+                        t-att-aria-label="this.hiddenTitle(entry)"
                     />
                     <i
                         t-if="entry.badges.pending"
                         class="o_builder_outline_badge fa fa-clock-o"
                         title="Pending until Apply"
+                        role="img"
+                        aria-label="Pending until Apply"
                     />
                 </li>
                 <li
@@ -115,6 +129,17 @@
                     <t t-else="">Nothing to show.</t>
                 </li>
             </ul>
+            <!-- Read out with the tree, shown to nobody: the outline is the
+                 way to select, move and remove without a pointer. -->
+            <div
+                t-if="this.state.open"
+                id="o_builder_outline_keys"
+                class="visually-hidden"
+            >
+                Arrow keys move between rows. Enter selects a row on the canvas.
+                Alt with an arrow key moves it. Delete removes it. Shift+F10
+                opens its menu, which can also move it to another container.
+            </div>
             <div
                 t-if="this.state.open"
                 class="o_builder_outline_divider"
@@ -127,7 +152,13 @@
     </t>
 
 <t t-name="app_builder_view.OutlineMenu">
-        <div class="o_builder_outline_menu" role="menu">
+        <div
+            class="o_builder_outline_menu"
+            role="menu"
+            aria-label="Outline row actions"
+            t-ref="root"
+            t-on-keydown="(ev) => this.onKeyDown(ev)"
+        >
             <button
                 class="dropdown-item"
                 t-att-class="{ disabled: item.disabled }"
@@ -140,9 +171,36 @@
                 t-att-data-item="item.key"
                 t-on-click="() => this.pick(item)"
             >
-                <i t-if="item.icon" t-att-class="item.icon + ' me-2'" />
+                <i
+                    t-if="item.icon"
+                    t-att-class="item.icon + ' me-2'"
+                    aria-hidden="true"
+                />
                 <t t-esc="item.label" />
             </button>
+            <!-- What a drag reaches, without a pointer: any container that
+                 takes the row, picked from a list. -->
+            <div
+                t-if="this.props.destinations and this.props.destinations.length"
+                class="o_builder_outline_move_to"
+                role="none"
+            >
+                <select
+                    class="form-select form-select-sm"
+                    name="move_to"
+                    aria-label="Move to…"
+                    t-on-change="(ev) => this.onMoveTo(ev)"
+                >
+                    <option value="">Move to…</option>
+                    <option
+                        t-foreach="this.props.destinations"
+                        t-as="place"
+                        t-key="place.token"
+                        t-att-value="place.token"
+                        t-esc="place.label"
+                    />
+                </select>
+            </div>
         </div>
     </t>
 

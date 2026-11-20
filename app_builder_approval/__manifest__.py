@@ -18,7 +18,9 @@
     "depends": ["app_builder_base", "base_tier_validation"],
     "external_dependencies": {"python": ["typing_extensions"]},
     "assets": {
-        "web.assets_backend": [
+        # The console is fetched on demand (app_builder_view): its panes go
+        # in its bundle, not in what every internal user downloads.
+        "app_builder_view.assets_console": [
             "app_builder_approval/static/src/console_items.js",
         ],
         "web.assets_tests": [

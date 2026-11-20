@@ -247,8 +247,8 @@ export class ConsoleModel implements PaneModel {
   revealSerial: number;
   revealToken: Token | null;
   /** Set by the outline while it is mounted: how the drag reaches
-   * its rows and its zone layer (`sidebar/outline.js`), read by
-   * `drag.js` when a drag starts. `null` when there is no outline. */
+   * its rows and its zone layer (`sidebar/outline.ts`), read by
+   * `drag.ts` when a drag starts. `null` when there is no outline. */
   outlineDrag: unknown;
   drag: DragState | null;
   /** Where a Button tile was dropped: the tile needs an action before

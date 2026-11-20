@@ -142,11 +142,15 @@ class _BodyAnchorFoundJSON(TypedDict):
     found: Literal[True]
     xpath: str
     position: Literal["inside"]
+    #: The model the report prints, read without rendering it: the canvas
+    #: asks ``printable_fields`` with it even when the preview failed.
+    model: str | Literal[False]
 
 
 class _BodyAnchorNotFoundJSON(TypedDict):
     found: Literal[False]
     reason: str
+    model: str | Literal[False]
 
 
 #: ``body_anchor()``'s own answer shape: always ``"inside"``, the one
@@ -413,11 +417,19 @@ class BuilderReportPreview(models.AbstractModel):
         ``div.page``, and so does every core report -- it is the convention
         `l10n_*` modules anchor on. Falling back to the loop keeps a
         hand-written template addressable.
+
+        ``model`` is the model the report prints (``False`` for a template no
+        report prints on its own), read without rendering anything: the
+        canvas needs it for the field lists when the preview itself fails.
         """
         typed.security(self)._assert_builder_user()
         view = typed.model(self.env, View).browse(view_id).exists()
         if not view:
             raise UserError(_("The report template no longer exists."))
+        _template, report = self._report_of(view)
+        model_name: str | Literal[False] = (
+            (cast("str", report.model) or False) if report else False
+        )
         root = cast("LxmlElement", etree.fromstring(view.get_combined_arch().encode()))
         for expr in (
             "//div[hasclass('page')]",
@@ -425,11 +437,17 @@ class BuilderReportPreview(models.AbstractModel):
             "//t[@t-call='web.html_container']",
         ):
             if root.xpath(expr.replace("hasclass('page')", "contains(@class,'page')")):
-                return {"found": True, "xpath": expr, "position": "inside"}
+                return {
+                    "found": True,
+                    "xpath": expr,
+                    "position": "inside",
+                    "model": model_name,
+                }
         return {
             "found": False,
             "reason": _(
                 "This template has no recognisable body to add to. Edit it as "
                 "source, or start from a layout the builder generated."
             ),
+            "model": model_name,
         }

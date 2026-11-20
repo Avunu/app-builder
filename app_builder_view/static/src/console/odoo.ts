@@ -50,7 +50,7 @@ declare module "registries" {
     // and nothing here reads more than an entry's own key.
     "app_builder.console_tabs": unknown;
     /** `field_editor_fallback.ts`'s own fallback, and
-     * `app_builder_model`'s full popover (`console_items.js`) --
+     * `app_builder_model`'s full popover (`console_items.ts`) --
      * whichever registers first wins (`fieldEditorComponent()`'s own
      * `entries[0]`). Every registrant is a plain component class
      * taking `FieldEditorProps` (`types.ts`); typed as the bare
@@ -90,8 +90,8 @@ declare module "registries" {
 // -- dialog -----------------------------------------------------------
 //
 // `@web/core/dialog/dialog_service.js` (the service, `useService("dialog")`,
-// called in nine real files so far -- `apply_dialog.js`, `top_bar.js`,
-// `views_pane.js`, `changes_pane.js`, `record_pane.js`,
+// called in nine real files so far -- `apply_dialog.ts`, `top_bar.ts`,
+// `views_pane.ts`, `changes_pane.ts`, `record_pane.ts`,
 // `sidebar/{view_tab,properties_tab,outline}.js`) and
 // `@web/core/dialog/dialog.js` (the component every one of them renders
 // or wraps).
@@ -210,7 +210,7 @@ export const ConfirmationDialog = ConfirmationDialogImpl as unknown as new (
 // -- action -------------------------------------------------------------
 //
 // `@web/core/actions/action_service.js`, `useService("action")`, called
-// in two real files (`cog_menu_item.js`, `systray_item.js`).
+// in two real files (`cog_menu_item.ts`, `systray_item.ts`).
 
 /**
  * As much of `doAction`'s real target shape (`action_service.js`'s own
@@ -233,7 +233,7 @@ export interface ActionDescription {
  * built by `_makeController` from whichever `_execute*` function ran --
  * far larger than what any one file here reads). Widened past the
  * original Phase 2c cut -- which named only `.action.res_model` and
- * `.currentState.resId`, the two fields `cog_menu_item.js` reads -- to
+ * `.currentState.resId`, the two fields `cog_menu_item.ts` reads -- to
  * also cover `systray_item.ts`'s own reads, traced against the same real
  * file: `.virtual` (`_controllersFromState`, a restored-from-router
  * placeholder whose `action`/`props` may still be empty objects) and
@@ -295,7 +295,7 @@ export interface ActionService {
 
 /**
  * The slice of Odoo's own per-view `env.config` this addon actually reads
- * (`cog_menu_item.ts`, `app_builder_ui/static/src/automations_menu_item.js`).
+ * (`cog_menu_item.ts`, `app_builder_ui/static/src/automations_menu_item.ts`).
  * Traced to the real construction (`@web/views/view.js:148`) rather than
  * guessed: `actionId` is the one member of that file's own `Config`
  * typedef this addon touches, always present (`getDefaultConfig()`
@@ -321,6 +321,10 @@ export interface ViewEnvConfig {
 
 export interface ViewEnv {
   config: ViewEnvConfig;
+  /** `ui_service.js` defines it on every env: a phone-sized viewport. The
+   * console is laid out for a desktop, so its entry points are not
+   * offered there. */
+  isSmall?: boolean;
 }
 
 /**
@@ -348,7 +352,7 @@ export interface CogMenuItem {
 export interface SystrayRegistryItemShape {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Component: typeof Component<any, any>;
-  isDisplayed?: (env: unknown) => boolean;
+  isDisplayed?: (env: {isSmall?: boolean}) => boolean;
 }
 
 // -- view widgets ---------------------------------------------------------
@@ -418,13 +422,17 @@ export interface ViewWidgetsRegistryItemShape {
 
 /** A registrant is either a plain handler function (given the console's
  * `env` and an `ActionDescription`) or a component class -- no real
- * registration in this tree uses the function arm (`BuilderConsole` is a
- * component), but the vendor category accepts both, so both are named
+ * registration used the function arm until `console_loader.ts` (the
+ * console itself, `BuilderConsole`, is a
+ * component); the vendor category accepts both, so both are named
  * here rather than narrowed to just this addon's own usage, the same
  * "transcribe the whole real shape" choice already made for `cogMenu`/
  * `systray`/`view_widgets`. */
 export type ActionsRegistryItemShape = (
-  | ((env: unknown, action: ActionDescription) => void)
+  | ((
+      env: unknown,
+      action: ActionDescription
+    ) => void | Promise<ActionDescription | void>)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   | typeof Component<any, any>
 ) & {
@@ -445,7 +453,7 @@ export type ActionsRegistryItemShape = (
 // guessed:
 //
 //  - `url` is declared required (`url: string`) there, but every tour in
-//    this addon suite omits it (`console_tour.js`'s own comment:
+//    this addon suite omits it (`console_tour.ts`'s own comment:
 //    "Deliberately no `url`: ... a url here would override the one
 //    `start_tour` passes"), and the real consumer
 //    (`tour_service.js`'s own `if (tour.url && tourConfig.startUrl !=

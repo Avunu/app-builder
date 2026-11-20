@@ -16,7 +16,13 @@
  * Close.
  */
 
-import {Component, onWillStart, useState} from "@odoo/owl";
+import {
+  Component,
+  onWillDestroy,
+  onWillStart,
+  useExternalListener,
+  useState,
+} from "@odoo/owl";
 import {_t} from "../l10n";
 import {ResizablePanel} from "@web/core/resizable_panel/resizable_panel";
 import * as compat from "../compat";
@@ -86,6 +92,8 @@ interface ConsoleEnv {
   };
   bus: {trigger: (name: string) => void};
   config?: ConsoleEnvConfig;
+  /** `ui_service.js` defines it on every env: a phone-sized viewport. */
+  isSmall?: boolean;
 }
 
 /** `useState({ready: false, error: ""})`'s own shape. `error` stays
@@ -139,6 +147,16 @@ export class BuilderConsole extends Component<Props, ConsoleEnv> {
     );
     this.state = useState<ConsoleState>({ready: false, error: ""});
 
+    // The shell outlives nothing: what it scheduled is dropped with the
+    // component (`BuilderShell.destroy`).
+    onWillDestroy(() => this.shell.destroy());
+    // Closing the tab or reloading while a write is on its way or an Apply
+    // is running: the browser asks first. Staged changes do not ask --
+    // the draft is kept on the server, and `close()` says so.
+    useExternalListener(window, "beforeunload", (ev: BeforeUnloadEvent) =>
+      this.onBeforeUnload(ev)
+    );
+
     onWillStart(async () => {
       try {
         await this.shell.load();
@@ -182,6 +200,25 @@ export class BuilderConsole extends Component<Props, ConsoleEnv> {
     if (config && config.setDisplayName) {
       config.setDisplayName(title);
     }
+  }
+
+  /**
+   * The browser is about to leave the page. `preventDefault` is what asks
+   * for the confirmation; `returnValue` is the same request as older
+   * engines read it.
+   */
+  onBeforeUnload(ev: BeforeUnloadEvent): void {
+    if (!this.shell.hasUnfinishedWork) {
+      return;
+    }
+    ev.preventDefault();
+    ev.returnValue = "";
+  }
+
+  /** A phone-sized viewport: the console is laid out for a desktop, and
+   * says so rather than showing a canvas nothing can be dropped on. */
+  get tooSmall(): boolean {
+    return Boolean(this.env.isSmall);
   }
 
   // -- the pane on screen ----------------------------------------------------
@@ -266,6 +303,21 @@ export class BuilderConsole extends Component<Props, ConsoleEnv> {
    * and would otherwise list it twice.
    */
   async close(): Promise<unknown> {
+    const pending = this.shell.pendingCount;
+    if (pending > 0) {
+      // Not a question: the draft is on the server and will be here on
+      // the way back. Said, so that nobody leaves thinking it was applied.
+      this.env.services.notification.add(
+        String(
+          _t(
+            "%s staged change(s) on %s are kept in your draft and are not applied yet. Open Changes in the builder to apply or discard them.",
+            pending,
+            this.shell.modelLabel || this.shell.modelName
+          )
+        ),
+        {type: "warning"}
+      );
+    }
     compat.clearViewCaches(this.env);
     const entry = this.shell.entry || {};
     const breadcrumbs = this.env.config?.breadcrumbs || [];

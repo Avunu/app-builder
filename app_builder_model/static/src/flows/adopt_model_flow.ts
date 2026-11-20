@@ -223,7 +223,7 @@ interface FlowShell {
   openView(target: {model?: string; view_type?: string}): Promise<void>;
   /** `BuilderShell.callout`'s own type carries no `model` key -- only
    * `key`/`title`/`lines` (`shell_model.ts`, `shell.xml`'s own reads).
-   * This flow (and its sibling `build_app_flow.js`, still untyped) sets
+   * This flow (and its sibling `build_app_flow.ts`, still untyped) sets
    * one anyway; typed `model?: string` here, optional, precisely so this
    * structurally still satisfies the real, narrower field -- see this
    * conversion's own findings for the dead-field question that raises. */

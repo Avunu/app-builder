@@ -114,7 +114,7 @@ export class ApplyDialog extends Component<Props> {
    * `shell.activeModel` is typed to the generic `PaneModel` contract
    * every pane satisfies (`shell_model.ts`); the real object it holds
    * whenever `pane === "views"` is always a `ConsoleModel`
-   * (`views_pane.js`'s own registration is the one thing that ever puts
+   * (`views_pane.ts`'s own registration is the one thing that ever puts
    * something there under that key), so the downcast asserts an
    * invariant the caller below already relies on (`.pending`/`.viewId`,
    * neither part of the generic `PaneModel` contract) rather than

@@ -270,7 +270,7 @@ const ROW = "display:block;height:24px;line-height:24px;font-size:12px;";
  * extraClass]` for the one folded row. */
 type OutlineRowFixture = [string, number] | [string, number, string];
 
-// The outline's rows for the form above, as `sidebar/outline.js` lays
+// The outline's rows for the form above, as `sidebar/outline.ts` lays
 // them out: one per node, depth first, the second page folded.
 const OUTLINE_ROWS: OutlineRowFixture[] = [
   ["o_builder_n_0", 0],

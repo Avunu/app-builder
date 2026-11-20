@@ -402,7 +402,7 @@ interface FlowShell {
   inventory: unknown;
   /** `BuilderShell.callout` itself (`shell_model.ts`) is typed
    * `{key, title, lines} | null`, without `model` -- this flow (and
-   * `adopt_model_flow.js`'s own still-untyped `onDone`) both build a
+   * `adopt_model_flow.ts`'s own still-untyped `onDone`) both build a
    * callout literal with an extra `model` key nothing ever reads back
    * (grepped every `.callout` read in the tree: `shell.xml` only shows
    * `key`/`title`/`lines`). `model` is optional here rather than

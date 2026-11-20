@@ -17,11 +17,11 @@
  *
  * "Ours" is anything tsc resolves to a path inside this repo's own
  * directory, checked by actually resolving each reported path against
- * this file's directory -- not by pattern-matching a leading "../", which
- * only holds for tsconfig.json's *relative* `@web/*` aliases. In CI
- * (`TSC_PROJECT=tsconfig.ci.json`, TYPING.md) those aliases point at the
- * container's absolute `/opt/odoo/addons/*` instead, which tsc reports
- * as-is, with no leading ".." to match.
+ * this file's directory -- not by pattern-matching a leading "../". The
+ * `@web/*` aliases go through `.odoo-nix/odoo`, a link the dev shell makes
+ * to the pinned OCB in the Nix store, so tsc may report a vendored file by
+ * the link's path inside this directory or by its absolute store path;
+ * resolving, rather than matching a prefix, is right for both.
  */
 
 import { spawnSync } from "node:child_process";
@@ -58,9 +58,9 @@ for (const line of lines) {
 }
 
 // path.relative(repoRoot, X) starts with ".." exactly when X lies outside
-// repoRoot -- true whether tsc reported X as a relative "../../odoo/..."
-// (local dev) or an absolute "/opt/odoo/..." (CI): both resolve() to the
-// same real path either way, so one check covers both configs.
+// repoRoot, however tsc spelled X (relative, or an absolute store path).
+// Odoo's own sources are also reachable *inside* it, through the
+// `.odoo-nix/odoo` link, and are no more ours for that.
 const isOurs = (file) => {
   const relative = path.relative(repoRoot, path.resolve(repoRoot, file));
   return !relative.startsWith("..") && !relative.startsWith(".odoo-nix");
