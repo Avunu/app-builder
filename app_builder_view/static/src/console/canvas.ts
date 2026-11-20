@@ -13,14 +13,14 @@
  *    tab is let through, since selecting a page you cannot see is useless,
  *    and the page it shows is remembered so that a remount lands on it.
  *  - **saving**, by rendering under a derived view class whose controller
- *    never saves (`canvas_views.js`).
+ *    never saves (`canvas_views.ts`).
  *  - **the pager and the rest of the control panel**, by stylesheet; the
  *    panel itself stays mounted because a form's smart buttons render in it.
  *
  * The overlay -- hover, selection, the drop zones -- is a layer this
- * component owns in its scroll container, drawn by `overlay.js` and
+ * component owns in its scroll container, drawn by `overlay.ts` and
  * re-aligned whenever the view underneath has re-rendered. The drag that
- * fills the zones is `drag.js`, created here because its life is the
+ * fills the zones is `drag.ts`, created here because its life is the
  * canvas's: it picks things up anywhere in the console -- the palette is
  * outside this component -- but everything it drops on is in here.
  *

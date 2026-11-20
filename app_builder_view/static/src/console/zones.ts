@@ -129,7 +129,7 @@ export interface BuildZonesParams {
 }
 
 /** Lay out the zones for one payload. `layer` is `"canvas"`; the outline
- * lays its own (`outline_zones.js`). */
+ * lays its own (`outline_zones.ts`). */
 export function buildZones({
   nodes,
   tag,

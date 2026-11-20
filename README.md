@@ -133,7 +133,7 @@ The console is written in TypeScript, and the compiled `.js` is not committed. E
 - **The shell:** entering it installs and builds, so a fresh clone serves a working console; `devenv up` keeps rebuilding through each addon's `watch` script; `odoo module build` builds by hand.
 - **Type checks:** esbuild checks nothing. `prek run -c .pre-commit-config.yaml --hook-stage manual -a` runs pyright, tsc and the type-aware eslint in the dev shell, as `typecheck.yml` does in CI.
 
-See [DESIGN.md](DESIGN.md) for the full architecture, the core machinery it drives, and the traps it works around — three Odoo caches that are never invalidated, two reserved module names, the `ir_cron` lock `button_immediate_upgrade` takes, and the findings from an adversarial review. See [TYPING.md](TYPING.md) for how the Python and TypeScript are typed and checked, what was found doing it, and the traps that cost time. That file is a history: its build and CI details predate the move to odoo-nix, which the note at its top describes.
+See [DESIGN.md](DESIGN.md) for the full architecture, the core machinery it drives, and the traps it works around — three Odoo caches that are never invalidated, two reserved module names, the `ir_cron` lock `button_immediate_upgrade` takes, and the findings from an adversarial review. See [TYPING.md](TYPING.md) for how the Python and TypeScript are typed, checked, built and loaded today, and the traps that cost time; the plan it came out of and the log of carrying it out are in [TYPING_HISTORY.md](TYPING_HISTORY.md).
 
 ## Licence
 

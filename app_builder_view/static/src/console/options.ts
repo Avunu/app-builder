@@ -30,7 +30,7 @@ import type {CatalogueJSON, OptionGroupJSON, RowJSON, WidgetJSON} from "./wire";
 const fieldRegistry = registry.category("fields");
 
 /** What `context.catalogue`/`.fields`/`.options` carry, wherever this
- * module is handed a context (`console_model.js`'s own `context`, or a
+ * module is handed a context (`console_model.ts`'s own `context`, or a
  * narrower ad hoc object built just for `fieldChoices`'s comodel case). */
 export interface OptionsContext {
   catalogue?: CatalogueJSON;

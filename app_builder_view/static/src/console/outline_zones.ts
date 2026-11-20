@@ -5,7 +5,7 @@
  * The tree is a column of rows, so every drop is a horizontal line
  * between two of them -- or the row itself, for a container that shows
  * nothing under it and takes what is dragged. The same three positions
- * the canvas offers (`zones.js`), laid out over rows instead of the
+ * the canvas offers (`zones.ts`), laid out over rows instead of the
  * rendering, and sent the same way: one token, one position.
  *
  * A gap between two rows can mean more than one thing. Below the last

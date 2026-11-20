@@ -2,7 +2,7 @@
 /**
  * The outline's drop-zone layout, on rectangles alone.
  *
- * `outline_zones.js` sees rows as `{token, depth, rect}` and nothing
+ * `outline_zones.ts` sees rows as `{token, depth, rect}` and nothing
  * else, so where a drop may land in the tree -- which gap means what,
  * how a gap that closes several containers is cut into bands, what a
  * move leaves out, what the list's edge clips -- is pinned here on
@@ -25,7 +25,7 @@ import type {
   ZonePosition,
 } from "@app_builder_view/console/types";
 
-// The form of zones.test.js: a sheet holding a group of three fields, an
+// The form of zones.test.ts: a sheet holding a group of three fields, an
 // empty group and a notebook of two pages, the first with one field.
 const NODES: NodeTable = {
   n0: node("root", "form", null, ["n1"], {accepts: ["sheet", "field", "group"]}),

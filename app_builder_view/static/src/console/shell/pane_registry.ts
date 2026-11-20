@@ -77,7 +77,7 @@ export function warnLegacyTabs(): void {
 /**
  * What a resolver (`setPaneResolver("record" | "flow", ...)`) must add to
  * turn a data-only entry into a renderable one. Traced from both real
- * resolvers (`record_pane.js`, `flow.js`), which each return exactly
+ * resolvers (`record_pane.ts`, `flow.ts`), which each return exactly
  * these three keys and nothing else -- a concrete triad, not the vaguer
  * `Partial<PaneEntry>` the module docstring's own shorthand above ("a
  * custom pane: Component, sidebar ..., makeModel(shell)") might suggest
@@ -186,7 +186,7 @@ export function paneAvailable(entry: PaneEntry, ctx: PaneContext): boolean {
 }
 
 /** A tab the bar lists: a resolved entry plus whether it can be opened
- * right now and, when it cannot, the sentence that says why (`top_bar.js`'s
+ * right now and, when it cannot, the sentence that says why (`top_bar.ts`'s
  * own reads: `tab.key`, `tab.available`, `tab.active`, `tab.label`,
  * `tab.icon`). */
 export interface PaneTab extends PaneEntry {

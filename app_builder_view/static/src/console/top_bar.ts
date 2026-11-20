@@ -373,7 +373,7 @@ export class TopBar extends Component<Props> {
    * The Views pane's own model, when it is on. `shell.activeModel` is
    * typed to the generic `PaneModel` contract every pane satisfies
    * (`shell_model.ts`); the real object it holds whenever
-   * `pane === "views"` is always a `ConsoleModel` (`views_pane.js`'s own
+   * `pane === "views"` is always a `ConsoleModel` (`views_pane.ts`'s own
    * registration is the one thing that ever puts something there under
    * that key) -- the identical downcast `apply_dialog.ts`'s own `views`
    * getter already makes for this same field.
@@ -552,7 +552,7 @@ export class TopBar extends Component<Props> {
     // `close` itself (`subProps: markRaw({ ...props, close })`,
     // `close` spread in *last*, so any value passed here is
     // overwritten before the component ever sees it). Neither real
-    // caller (`top_bar.js` here, `panes/changes_pane.js`, still `.js`)
+    // caller (`top_bar.ts` here, `panes/changes_pane.ts`)
     // has ever supplied one. `odoo.ts`'s own `ConfirmationDialogProps`
     // is deliberately typed *without* `close` for exactly this reason
     // (see its doc comment); `ApplyDialog`'s own `Props` was not given

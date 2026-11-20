@@ -277,7 +277,7 @@ test("a stale view and a confirmation are told apart by what the RPC layer keeps
   expect(compat.isConfirmError(plain)).toBe(false);
 });
 
-/** The params `drag.js` hands the hook, shaped for this server. */
+/** The params `drag.ts` hands the hook, shaped for this server. */
 function hookParams(rootEl: HTMLElement, overrides: Record<string, unknown> = {}) {
   return {
     ref: compat.dragRef({el: rootEl}),
@@ -307,7 +307,7 @@ test("the drag hook is where the console imports it from and takes what it is ha
   fixture.appendChild(rootEl);
   expect(typeof useDragAndDrop).toBe("function");
 
-  // Created outside any component, the way `drag.js` does in `onMounted`:
+  // Created outside any component, the way `drag.ts` does in `onMounted`:
   // the hook is Owl-free and validates its params on the spot.
   const hook = useDragAndDrop(hookParams(rootEl));
   try {

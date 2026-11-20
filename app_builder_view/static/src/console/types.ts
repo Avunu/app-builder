@@ -208,7 +208,7 @@ export interface FieldDefinition {
  * What the properties sidebar edits: the node table's own `kind`/`name`
  * (which the option catalogue matches on) merged with `describe_node`'s
  * answer for the same token -- what it currently carries and what its
- * field is (`console_model.js:describe`). `field` falls back to the node
+ * field is (`console_model.ts:describe`). `field` falls back to the node
  * table's own `field` when `describe_node` found none of its own, which
  * is why it is typed the same `CanvasFieldInfo | null` either way.
  */
@@ -238,10 +238,10 @@ export interface DescribedTarget {
 
 // -- drop zones -------------------------------------------------------------
 //
-// Shared by `zones.js` (the canvas's own zones, `layer: "canvas"`) and
-// `outline_zones.js` (the outline tree's, `layer: "outline"`, with a
+// Shared by `zones.ts` (the canvas's own zones, `layer: "canvas"`) and
+// `outline_zones.ts` (the outline tree's, `layer: "outline"`, with a
 // `line` a canvas zone never carries) -- one drop, two renderings; see
-// `outline_zones.js`'s own module docstring.
+// `outline_zones.ts`'s own module docstring.
 
 /** What a drop means, relative to the node it names. */
 export type ZonePosition = "before" | "after" | "inside";
@@ -255,7 +255,7 @@ export type ZoneAxis = "x" | "y";
 export type ZoneLayer = "canvas" | "outline";
 
 /** One place a drag can land, as a rectangle plus what dropping there
- * would mean (`zones.js:buildZones`, `outline_zones.js:outlineZones`). */
+ * would mean (`zones.ts:buildZones`, `outline_zones.ts:outlineZones`). */
 export interface Zone {
   layer: ZoneLayer;
   token: Token;
@@ -276,13 +276,13 @@ export interface Zone {
 }
 
 /** A container a zone can be dropped into, empty or not
- * (`zones.js:buildZones`'s second return value). */
+ * (`zones.ts:buildZones`'s second return value). */
 export interface ZoneContainer {
   token: Token;
   rect: PlainRect;
 }
 
-/** What a drag is carrying, named by `payloadTag` (`zones.js`) to decide
+/** What a drag is carrying, named by `payloadTag` (`zones.ts`) to decide
  * which containers accept it. `component`/`token` are read only for the
  * matching `kind`; other kind-specific fields (a new field's proposed
  * name, a pending edit's staged values...) are the dragging code's own
@@ -290,7 +290,7 @@ export interface ZoneContainer {
 export interface DragPayload {
   kind: "existing_field" | "new_field" | "move_pending" | "component" | "move";
   /** For `kind: "component"`: the palette's name for it
-   * (`zones.js:COMPONENT_TAGS`). `| undefined`, not just optional: a
+   * (`zones.ts:COMPONENT_TAGS`). `| undefined`, not just optional: a
    * component tile's `payloadFor` (`drag.ts`) builds this from
    * `el.dataset["key"] || el.dataset["name"]`, which is legitimately
    * `undefined` when a tile's markup sets neither -- an explicit
@@ -518,8 +518,8 @@ export interface OdooRpcError {
 //   - `sequence` was never a field of the *stored* entry -- despite the
 //     module docstring listing it beside `label`/`icon` as if it were
 //     one, every real `paneRegistry.add(key, value, options)` call
-//     (`views_pane.js`, `changes_pane.js`, `home_pane.js`, the
-//     addon-owned `console_items.js` files) passes it as `add()`'s own
+//     (`views_pane.ts`, `changes_pane.ts`, `home_pane.ts`, the
+//     addon-owned `console_items.ts` files) passes it as `add()`'s own
 //     third-argument *option* (`{ sequence: 10 }`), never inside the
 //     registered value -- the docstring's own parenthetical ("sequence
 //     (add() option)") already said so. `resolvePane`'s `paneRegistry.get()`
@@ -533,7 +533,7 @@ export interface OdooRpcError {
 //     kind of extra field a from-the-outside guess misses. `sidebar`/
 //     `makeModel` both need `| null`, not just optionality: no real
 //     registration ever writes a literal `sidebar`/`makeModel: null`
-//     itself (`home_pane.js`'s own `sidebar: null` is the one exception
+//     itself (`home_pane.ts`'s own `sidebar: null` is the one exception
 //     -- see `sidebar`'s own comment below), but `resolvePane`'s
 //     Component-branch default (`entry.makeModel ?? null`) genuinely
 //     produces a `null` value on the *resolved* entry when a
@@ -548,7 +548,7 @@ export interface OdooRpcError {
 //     not compile against a non-nullable `PaneRegistration.makeModel`.
 //     `surfaceArgs`/`rowActions`/`empty`/`newFlow` stay under the index
 //     signature -- `pane_registry.ts` never reads them (only
-//     `record_pane_model.ts`/`record_pane.js` do), so they remain
+//     `record_pane_model.ts`/`record_pane.ts` do), so they remain
 //     unmodeled until one of those is converted.
 
 /** What a pane needs in hand to decide it can be shown
@@ -591,14 +591,14 @@ export interface PaneRegistration {
    * more. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Component?: typeof Component<any, any>;
-  /** The custom pane's sidebar, or `null` for none (`home_pane.js`
+  /** The custom pane's sidebar, or `null` for none (`home_pane.ts`
    * sets this explicitly; every other `Component`-bearing entry
    * supplies a real one). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sidebar?: typeof Component<any, any> | null;
   /** `(shell) => new SomeModel(...)` at every real registration that
-   * has one (`record_pane.js`, `views_pane.js`, `home_pane.js`,
-   * `changes_pane.js`, `flow.js` -- never a literal `null` on this
+   * has one (`record_pane.ts`, `views_pane.ts`, `home_pane.ts`,
+   * `changes_pane.ts`, `flow.ts` -- never a literal `null` on this
    * side); `resolvePane`'s own Component-branch default can still
    * produce `null` on the *resolved* `PaneEntry` when an entry
    * supplies none, which is why `null` is part of this shared type at
@@ -607,7 +607,7 @@ export interface PaneRegistration {
   /** A record pane's surface name -- the second discriminator.
    * `surfaceArgs`/`rowActions`/`empty`/`newFlow`, the rest of "a
    * record pane"'s own vocabulary, are read by
-   * `record_pane_model.ts`/`record_pane.js`, never by
+   * `record_pane_model.ts`/`record_pane.ts`, never by
    * `pane_registry.ts`, so they stay under the index signature below. */
   surface?: string;
   /** A flow pane's spec -- the third discriminator. Only ever checked
@@ -694,7 +694,7 @@ export interface FlowSpec {
 // implements alike -- `field_editor_fallback.ts`'s own module docstring,
 // the load-bearing source for every key below. `app_builder_model`
 // registers its own full popover against this exact same shape
-// (`console_items.js`'s `ConsoleFieldEditor`, `field_popover.js`), so this
+// (`console_items.ts`'s `ConsoleFieldEditor`, `field_popover.ts`), so this
 // is a whole-tree contract, not just `field_editor_fallback.ts`'s own
 // usage of a subset of it. Named here rather than in
 // `field_editor_fallback.ts` itself because two wave-2 files in this
@@ -703,7 +703,7 @@ export interface FlowSpec {
 // depending on the fallback component's own module.
 
 /** What a brand new field starts from -- the palette tile's own
- * `{ttype, string}` (`sidebar/add_tab.js`'s new-field tiles); given
+ * `{ttype, string}` (`sidebar/add_tab.ts`'s new-field tiles); given
  * instead of `field` when there is nothing staged yet to edit. */
 export interface FieldEditorInitial {
   ttype?: string;
@@ -722,7 +722,7 @@ export interface FieldEditorProps {
   field?: DraftFieldJSON | null;
   initial?: FieldEditorInitial;
   /** `live` (an `ir.model.fields` row) or `staged` (a draft) -- absent
-   * only on the one call site (`view_tab.js`'s model-field editor) that
+   * only on the one call site (`view_tab.ts`'s model-field editor) that
    * never varies it, always effectively `"staged"`. */
   mode?: "live" | "staged";
   /** The picker's entries for this model, each saying whether it can be

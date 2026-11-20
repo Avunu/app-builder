@@ -2,7 +2,7 @@
 /**
  * The drop-zone layout, on rectangles alone.
  *
- * `zones.js` reaches the DOM only through callbacks, so what it decides --
+ * `zones.ts` reaches the DOM only through callbacks, so what it decides --
  * which containers take the payload, where the bars go, what a move may
  * not land beside, that no two zones overlap -- is pinned here on plain
  * numbers, with no view mounted.

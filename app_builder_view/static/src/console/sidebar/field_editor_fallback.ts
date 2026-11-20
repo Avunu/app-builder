@@ -33,7 +33,7 @@
  * `FieldEditorProps` (the shape this whole docstring above describes) is
  * declared in `types.ts`, not here -- it is the contract every registrant
  * of `app_builder.field_editor` shares (this file's own fallback, and
- * `app_builder_model/static/src/console_items.js`'s `ConsoleFieldEditor`,
+ * `app_builder_model/static/src/console_items.ts`'s `ConsoleFieldEditor`,
  * an addon outside this tree that has not converted yet but depends on
  * the same shape), so it belongs where a shared contract lives, the same
  * reasoning `PaneRegistration`/`PaneContext` already follow there.
