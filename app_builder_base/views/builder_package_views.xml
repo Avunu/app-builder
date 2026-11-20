@@ -104,7 +104,7 @@
                             <field name="depends" />
                         </group>
                         <group string="Location">
-                            <field name="root_path" />
+                            <field name="root_path" readonly="id" />
                             <field name="writable" />
                             <field name="record_count" />
                             <field name="is_git" />
