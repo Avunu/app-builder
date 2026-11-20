@@ -83,3 +83,29 @@ class TestStrictSkips(BaseCase):
             cls = getattr(importlib.import_module(module_name), cls_name, None)
             self.assertIsNotNone(cls, name)
             self.assertTrue(callable(getattr(cls, method, None)), name)
+
+    def test_a_class_level_skip_is_named_by_its_description(self):
+        """``setUpClass`` raising ``SkipTest`` reaches ``addSkip`` as an
+        ``_ErrorHolder``: it must not slip past the check."""
+        from odoo.tests.suite import _ErrorHolder
+
+        ours = _ErrorHolder(
+            "setUpClass (odoo.addons.app_builder_base.tests.test_x.TestX)"
+        )
+        self.assertEqual(strict_skips.test_id(ours), ours.description)
+        self.assertTrue(strict_skips.unexpected(strict_skips.test_id(ours)))
+        result = _Result()
+        self.assertTrue(strict_skips.on_skip(result, ours, "no such addon"))
+        self.assertEqual(len(result.failed), 1)
+
+        theirs = _ErrorHolder("setUpClass (odoo.addons.base.tests.test_x.TestX)")
+        self.assertFalse(strict_skips.unexpected(strict_skips.test_id(theirs)))
+
+    def test_a_browser_failure_says_it_is_the_runner(self):
+        name = strict_skips.test_id(self)
+        flake = strict_skips.message(name, "Cannot connect to chrome dev tools")
+        self.assertIn("runner's browser failed", flake)
+        self.assertNotIn("add it to EXPECTED", flake)
+        missing = strict_skips.message(name, "app_builder_view is not installed")
+        self.assertNotIn("runner's browser", missing)
+        self.assertIn("add it to EXPECTED", missing)

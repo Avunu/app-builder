@@ -77,21 +77,62 @@ def enabled(environ: Mapping[str, str] | None = None) -> bool:
     return value.strip().lower() not in ("", "0", "false")
 
 
+#: Odoo's ``HttpCase.browser_js`` raises ``SkipTest`` when Chrome itself fails
+#: to start or answer (odoo/tests/common.py). Such a skip of a tour of ours
+#: still fails -- the tour's coverage is lost all the same -- but its message
+#: says it is the runner's Chrome, so a flake is told apart from a test that
+#: stopped running.
+BROWSER_REASONS = (
+    "chrome devtools port",
+    "chrome headless connection",
+    "chrome connection",
+    "chrome dev tools",
+    "chrome executable not found",
+    "websocket-client module is not installed",
+)
+
+
 def test_id(test: Any) -> str:
-    """``module.Class.method`` of a test case, or of a subtest's case."""
+    """``module.Class.method`` of a test case, or of a subtest's case.
+
+    A ``SkipTest`` from ``setUpClass`` or ``setUpModule`` reaches ``addSkip``
+    as an ``_ErrorHolder`` that only carries a description such as
+    ``setUpClass (odoo.addons.app_builder_x.tests.test_y.TestZ)``: that
+    description is its name.
+    """
     case = getattr(test, "test_case", test)
+    if not hasattr(case, "_testMethodName") and isinstance(
+        getattr(case, "description", None), str
+    ):
+        return case.description
     cls = type(case)
     method = getattr(case, "_testMethodName", "")
     return f"{cls.__module__}.{cls.__qualname__}.{method}"
 
 
 def unexpected(name: str, expected: Mapping[str, str] | None = None) -> bool:
-    """Whether a skip of the test called ``name`` is one nobody signed off."""
+    """Whether a skip of the test called ``name`` is one nobody signed off.
+
+    A test's own name starts with ``PREFIX``; a class- or module-level skip's
+    name has it inside the parentheses, so the prefix may be anywhere.
+    """
     listed = EXPECTED if expected is None else expected
-    return name.startswith(PREFIX) and name not in listed
+    return PREFIX in name and name not in listed
+
+
+def is_browser_failure(reason: str) -> bool:
+    """Whether ``reason`` is one of Odoo's own skips for a Chrome that failed."""
+    lowered = reason.lower()
+    return any(marker in lowered for marker in BROWSER_REASONS)
 
 
 def message(name: str, reason: str) -> str:
+    if is_browser_failure(reason):
+        return (
+            f"{name} was skipped in CI because the runner's browser failed "
+            f"({reason}). This is infrastructure, not the test: re-run the job. "
+            f"{ENV} still fails it, since a tour that did not run covers nothing."
+        )
     return (
         f"{name} was skipped in CI ({reason}). A skip here removes coverage "
         f"without failing the gate, so {ENV} turns it into a failure. Make the "
