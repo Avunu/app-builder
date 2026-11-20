@@ -243,6 +243,45 @@ class TestCodegenFixedPoint(BaseCase):
             )
         )
 
+    def test_a_generated_override_keeps_its_parameters(self):
+        """A mixin's hook has the signature the mixin chose. `args` is what
+        follows `self`, verbatim, and it has to come back as it went out --
+        defaults and keyword-only parameters included -- or the next save
+        would write a method that no longer matches the one it overrides."""
+        for args in ("", "data_list", "vals, default=None", "records, *, strict=True"):
+            with self.subTest(args=args):
+                self.assert_fixed_point(
+                    spec_with(
+                        FieldSpec(name="name", ttype="char"),
+                        methods=(
+                            modelspec.MethodSpec(
+                                name="_create",
+                                args=args,
+                                doc="A generated override.",
+                                body="return super()._create(data_list)",
+                            ),
+                        ),
+                    )
+                )
+
+    def test_a_method_without_self_is_not_read_as_the_builders(self):
+        source = pycodegen.render_model(
+            spec_with(
+                FieldSpec(name="name", ttype="char"),
+                methods=(
+                    modelspec.MethodSpec(
+                        name="_create", args="data_list", body="return 1"
+                    ),
+                ),
+            )
+        )
+        broken = source.replace(
+            "def _create(self, data_list):", "def _create(data_list):"
+        )
+        self.assertNotEqual(broken, source)
+        with raises(self, pyparse.UnsupportedConstruct):
+            pyparse.parse_model(broken)
+
     def test_class_attributes_are_ordered_however_they_arrive(self):
         """Otherwise the fixed point would depend on the order a caller built
         them in, which is not a property of the model."""

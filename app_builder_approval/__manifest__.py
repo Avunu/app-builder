@@ -8,10 +8,13 @@
     "license": "AGPL-3",
     "development_status": "Alpha",
     "installable": True,
-    # Nothing to choose: if both sides are installed, an approval rule created
-    # here would otherwise be dropped from the generated source without saying
-    # so, which is the same reason app_builder_mail installs itself.
-    "auto_install": True,
+    # Chosen, not automatic. The serializer half would be safe to install
+    # wherever base_tier_validation is -- a rule created here must not be
+    # dropped from the generated source without saying so -- but the addon
+    # also overrides tier.definition and offers the gate, and an Alpha
+    # feature has no business arriving unasked on a database that merely
+    # uses OCA tier validation and installs the (Beta) builder core.
+    "auto_install": False,
     "depends": ["app_builder_base", "base_tier_validation"],
     "external_dependencies": {"python": ["typing_extensions"]},
     "assets": {
