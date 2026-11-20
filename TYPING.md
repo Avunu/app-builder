@@ -100,7 +100,9 @@ There are two bundles:
   canvas, and what `app_builder_model`, `app_builder_ui`, `app_builder_report` and
   `app_builder_approval` add to it. `console_loader.ts` registers the console's client
   action as a function that calls `loadBundle` and runs the action again, against the
-  component `console.ts` registered when the bundle arrived.
+  component `console.ts` registered when the bundle arrived. In a dark web client (the
+  `color_scheme` cookie) it fetches `app_builder_view.assets_console_dark` instead,
+  which includes the same files, as `web.assets_backend_lazy_dark` does for Odoo's own.
 
 A file in `web.assets_backend` must not import, at runtime, a module that is only in the
 console's bundle; `import type` is fine, being erased. The same test reads the imports

@@ -60,7 +60,7 @@ What the shell relies on for its URL, identical in all three unless said:
   the URL carries the pane, the package, the model, the view and the selected record.
 
 What loading the console on demand relies on. Read on 18 only: unlike the rest of this
-file, these three were **not** checked against the 19 and master checkouts, and are the
+file, these four were **not** checked against the 19 and master checkouts, and are the
 first thing to read there.
 
 - The action registry takes a function in place of a component, and runs what it returns
@@ -76,6 +76,12 @@ first thing to read there.
   included (`core/assets.js` 18:57, :148). The bundle's stylesheets compile on their
   own, so `app_builder_view.assets_console` starts with the same helpers and variables
   `web.assets_backend_lazy` does (`web/__manifest__.py` 18:133-140).
+- A dark web client is served `web.assets_web_dark` when the `color_scheme` cookie is
+  `dark` (`views/webclient_templates.xml` 18:300), and lazy loading picks
+  `web.assets_backend_lazy_dark`, a bundle that only includes the light one, on the same
+  cookie (`views/view.js` 18:350, `web/__manifest__.py` 18:144). The loader does the
+  same with `app_builder_view.assets_console_dark`, so dark variables a theme addon adds
+  reach the console.
 
 `static/tests/console_loader.test.ts` pins the loader's side of this; the tours pin the
 rest, since every one of them opens the console through it.

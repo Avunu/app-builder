@@ -14,10 +14,14 @@ import {expect, test} from "@odoo/hoot";
 import {patchWithCleanup} from "@web/../tests/web_test_helpers";
 
 import {assets} from "@web/core/assets";
+import {cookie} from "@web/core/browser/cookie";
 import {registry} from "@web/core/registry";
 import {
   CONSOLE_BUNDLE,
+  CONSOLE_BUNDLE_DARK,
+  CONSOLE_LOADERS,
   CONSOLE_TAGS,
+  consoleBundle,
   makeConsoleLoader,
 } from "@app_builder_view/console/console_loader";
 import type {
@@ -37,15 +41,26 @@ const ACTION: ActionDescription = {
   params: {pane: "views"},
 };
 
-test("both tags are held, full-screen and on /odoo/builder, before the console loads", () => {
-  for (const tag of CONSOLE_TAGS) {
-    expect(actionRegistry.contains(tag)).toBe(true);
+test("the loaders held under both tags are full-screen and on /odoo/builder", () => {
+  // The hoot page already has the console's bundle, which has replaced
+  // them in the registry; what is read here is what `web.assets_backend`
+  // registered before that.
+  expect(CONSOLE_LOADERS.map(({tag}) => tag)).toEqual(CONSOLE_TAGS);
+  for (const {loader} of CONSOLE_LOADERS) {
+    // What the action service reads off whatever is registered, function
+    // or class: without them a reload of the console's URL finds nothing.
+    expect(loader.target).toBe("fullscreen");
+    expect(loader.path).toBe("builder");
   }
-  const loader = makeConsoleLoader("app_builder_test_console");
-  // What the action service reads off whatever is registered, function
-  // or class: without them a reload of the console's URL finds nothing.
-  expect(loader.target).toBe("fullscreen");
-  expect(loader.path).toBe("builder");
+});
+
+test("a dark web client fetches the dark build of the bundle", () => {
+  cookie.set("color_scheme", "dark");
+  expect(consoleBundle()).toBe(CONSOLE_BUNDLE_DARK);
+  cookie.set("color_scheme", "light");
+  expect(consoleBundle()).toBe(CONSOLE_BUNDLE);
+  cookie.delete("color_scheme");
+  expect(consoleBundle()).toBe(CONSOLE_BUNDLE);
 });
 
 test("the loader fetches the console's bundle and hands the action back", async () => {

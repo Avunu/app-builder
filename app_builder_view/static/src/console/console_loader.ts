@@ -21,12 +21,25 @@
  */
 
 import {loadBundle} from "@web/core/assets";
+import {cookie} from "@web/core/browser/cookie";
 import {registry} from "@web/core/registry";
 import type {ActionDescription, ActionsRegistryItemShape} from "./odoo";
 
 /** The bundle `app_builder_view/__manifest__.py` declares, and the other
  * builder addons add their panes to. */
 export const CONSOLE_BUNDLE = "app_builder_view.assets_console";
+
+/** The same files for a dark web client. `web/views/view.js` picks
+ * `web.assets_backend_lazy_dark` over `web.assets_backend_lazy` the same
+ * way, so the dark variables a theme or dark-mode addon contributes reach
+ * the console's stylesheets too. */
+export const CONSOLE_BUNDLE_DARK = "app_builder_view.assets_console_dark";
+
+/** The bundle to fetch for the colour scheme the web client was served in
+ * (`web/views/webclient_templates.xml` reads the same cookie). */
+export function consoleBundle(): string {
+  return cookie.get("color_scheme") === "dark" ? CONSOLE_BUNDLE_DARK : CONSOLE_BUNDLE;
+}
 
 /** The console's tag, and the one the cog item and the report action sent
  * before the console existed (a bookmarked URL and an older caller still
@@ -49,12 +62,13 @@ export function makeConsoleLoader(tag: string): ActionsRegistryItemShape {
     _env: unknown,
     action: ActionDescription
   ): Promise<ActionDescription> => {
-    await loadBundle(CONSOLE_BUNDLE);
+    const bundle = consoleBundle();
+    await loadBundle(bundle);
     // `null` is the default `Registry.get` falls back to: its JSDoc makes
     // the second argument required, though the code does not.
     if (actionRegistry.get(tag, null) === loader) {
       throw new Error(
-        `The builder console's assets (${CONSOLE_BUNDLE}) loaded without registering "${tag}".`
+        `The builder console's assets (${bundle}) loaded without registering "${tag}".`
       );
     }
     return {...action};
@@ -64,11 +78,15 @@ export function makeConsoleLoader(tag: string): ActionsRegistryItemShape {
   return loader;
 }
 
-for (const tag of CONSOLE_TAGS) {
-  // Not forced: where the console's bundle is already on the page (the
-  // hoot runner includes it in its setup), `console.ts` may have run
-  // first, and its registration is the one to keep.
-  if (!actionRegistry.contains(tag)) {
-    actionRegistry.add(tag, makeConsoleLoader(tag));
-  }
+/** What this module registers under each tag, exported so the tests can
+ * read what the action service finds there before the console arrives. */
+export const CONSOLE_LOADERS: ReadonlyArray<{
+  tag: string;
+  loader: ActionsRegistryItemShape;
+}> = CONSOLE_TAGS.map((tag) => ({tag, loader: makeConsoleLoader(tag)}));
+
+// `console.ts` imports this module, so this always runs first, and the
+// console's forced registration replaces these once its bundle has loaded.
+for (const {tag, loader} of CONSOLE_LOADERS) {
+  actionRegistry.add(tag, loader);
 }

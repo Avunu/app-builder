@@ -111,6 +111,13 @@
             "app_builder_view/static/src/console/wire.js",
             "app_builder_view/static/src/console/zones.js",
         ],
+        # What console_loader.js fetches instead when the web client is dark
+        # (the color_scheme cookie), as web/views/view.js picks
+        # web.assets_backend_lazy_dark: the same files, compiled with whatever
+        # dark variables a theme or dark-mode addon adds to this bundle.
+        "app_builder_view.assets_console_dark": [
+            ("include", "app_builder_view.assets_console"),
+        ],
         "web.assets_tests": [
             "app_builder_view/static/tests/tours/console_drag_tour.js",
             "app_builder_view/static/tests/tours/console_kanban_tour.js",

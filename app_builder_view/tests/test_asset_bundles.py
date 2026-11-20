@@ -138,6 +138,8 @@ class TestAssets(BaseCase):
         self.assertIn(prefix + "console_loader.js", assets[BACKEND])
         self.assertIn(prefix + "console.js", assets[CONSOLE])
         self.assertNotIn(prefix + "console.js", assets[BACKEND])
+        # What a dark web client fetches instead: the same files.
+        self.assertEqual(assets[CONSOLE + "_dark"], [("include", CONSOLE)])
         # The hoot runner fetches nothing on demand.
         self.assertIn(("include", CONSOLE), assets["web.assets_unit_tests_setup"])
         for addon, path in self.addons.items():
