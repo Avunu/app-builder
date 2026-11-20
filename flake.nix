@@ -37,10 +37,33 @@
   };
 
   # Outputs:
-  #   devShells.<system>.default  devenv: PostgreSQL, Odoo, Mailpit
-  #   apps.<system>.relock        regenerate nix/pyproject.toml and nix/uv.lock
+  #   devShells.<system>.default        devenv: PostgreSQL, Odoo, Mailpit
+  #   devShells.<system>.odoo-nix-lint  the lint gate's shell
+  #   packages.<system>.default         the deployed tree, the TypeScript compiled
+  #   apps.<system>.relock              regenerate nix/pyproject.toml and nix/uv.lock
   outputs =
     { odoo-nix, ... }@inputs:
+    let
+      # A CI job gets ports of its own. Every port of the shell is a base plus
+      # one offset, by default a hash of the project's name: the same for every
+      # job of this repository, and the fleet's runners share hosts, so two pull
+      # requests tested at once met on Odoo's HTTP port and the loser died
+      # before its first test ("Port 10867 is in use by another program"). Under
+      # GitHub Actions the offset is hashed from the run, its attempt, the job
+      # and the runner instead. `nix develop --no-pure-eval` is what lets the
+      # evaluation read them; ODOO_NIX_PORT_OFFSET, when set, still wins (newer
+      # odoo-nix workflows set it themselves).
+      ciRun = builtins.getEnv "GITHUB_RUN_ID";
+      ciSeed = builtins.concatStringsSep "/" (
+        map builtins.getEnv [
+          "GITHUB_REPOSITORY"
+          "GITHUB_RUN_ID"
+          "GITHUB_RUN_ATTEMPT"
+          "GITHUB_JOB"
+          "RUNNER_NAME"
+        ]
+      );
+    in
     odoo-nix.lib.mkFlake { inherit inputs; } (
       { ... }:
       {
@@ -62,6 +85,10 @@
               # The one per-branch fact: the series this branch's code targets.
               odooSeries = lib.fileContents ./.odoo-series;
               addons.enable = true;
+              # 0..899, as python-devops-nix's lib.ports hashes a name.
+              ports.offset = lib.mkIf (ciRun != "") (
+                lib.mod (lib.fromHexString (builtins.substring 0 4 (builtins.hashString "sha256" ciSeed))) 900
+              );
               # NixOS's github-runner service filters out the capset syscall. Under
               # that filter Chromium's GPU process fails to launch and every tour
               # times out on Emulation.setDeviceMetricsOverride; --no-zygote avoids it.
@@ -89,10 +116,14 @@
             # entry only outside CI, hence the cleared variable; the build
             # itself takes a fraction of a second.
             #
-            # CI also runs the tools/ modules under typeguard (TYPING.md, Phase 1e).
+            # CI also runs the tools/ modules under typeguard (TYPING.md, Phase 1e),
+            # and fails a test that skips without being listed as expected to
+            # (app_builder_base/tests/strict_skips.py): a skip there is coverage
+            # that went missing, not a pass.
             devenv.shells.default.enterShell = lib.mkAfter ''
               if [ -n "''${ODOO_NIX_CI:-}" ]; then
                 export APP_BUILDER_TYPEGUARD=1
+                export APP_BUILDER_STRICT_SKIPS=1
               fi
               (cd "$DEVENV_ROOT" && ODOO_NIX_CI= odoo-nix-node install && odoo-nix-node build >/dev/null) \
                 || echo "app-builder: compiling the TypeScript failed; the console will not load" >&2

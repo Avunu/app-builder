@@ -1,0 +1,73 @@
+# The Apply path (app_builder_base/tests/e2e): write source, re-import the package and
+# upgrade it in a live process, then check the database and the files agree. Odoo's test
+# mode refuses to install, upgrade or reload a module, so `ci / test` covers everything
+# around Apply and nothing of Apply itself; these probes are what does. They run on every
+# pull request, so a Dependabot bump of OCB that moves the internals Apply leans on
+# (load_openerp_module, MetaModel.module_to_models, _process_end) fails here.
+#
+# A local workflow, not one of odoo-nix's managed ones. Like those, a fork's pull request
+# never runs on the fleet's self-hosted runners: it gets ubuntu-latest.
+name: e2e
+on:
+  push:
+    branches: ["develop"]
+  pull_request:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  FORCE_COLOR: "1"
+jobs:
+  probes:
+    name: probes
+    # Fail closed: a pull request whose head is not this repository -- a fork, or a fork
+    # since deleted (head.repo is then null) -- gets ubuntu-latest.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # A self-hosted runner reuses its workspace, and an interrupted job leaves read-only
+      # files there (copies out of the Nix store) that checkout cannot remove.
+      - if: runner.environment != 'github-hosted'
+        name: Make what an earlier job left in the workspace removable
+        working-directory: ${{ runner.temp }}
+        run: |
+          if [ -d "$GITHUB_WORKSPACE" ]; then
+            find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 ! -type l -exec chmod -R u+w {} +
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        if: runner.environment == 'github-hosted'
+        with:
+          determinate: false
+
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
+        if: runner.environment == 'github-hosted'
+        with:
+          diagnostic-endpoint: ""
+          use-flakehub: false
+
+      # A throwaway PostgreSQL cluster on a unix socket and free HTTP ports the kernel
+      # picks: nothing two jobs on one host could meet on.
+      - name: The Apply probes
+        env:
+          ODOO_NIX_CI: "1"
+        run: nix develop --no-pure-eval -c scripts/ci-e2e.sh
+
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-probes
+          path: |
+            .odoo-nix/e2e/probes.log
+            .odoo-nix/e2e/pg.log
+          # .odoo-nix is a dot-directory: upload-artifact skips it without this.
+          include-hidden-files: true
+          if-no-files-found: warn
