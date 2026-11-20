@@ -14,6 +14,7 @@ from . import (
     test_new_field,
     test_search_view,
     test_show_label,
+    test_spec_sequence,
     test_undo,
     test_view_editor,
     test_view_options,
