@@ -280,3 +280,20 @@ class TestPatchAnExistingReport(BuilderCase):
         with raises(self, UserError) as caught:
             typed.model(self.env, BuilderReport).edit_action(cast("int", report.id))
         self.assertIn("nothing to edit", str(caught.exception))
+
+
+@tagged("post_install", "-at_install")
+class TestReportTarget(BuilderCase):
+    def test_a_model_that_keeps_no_records_cannot_have_a_report(self):
+        """An abstract model has no table and a transient one is a wizard's
+        scratch rows: a report on either gets a Print entry nobody can reach."""
+        package = self.make_package()
+        for model_name in ("mail.thread", "base.language.install"):
+            if model_name not in self.env:
+                continue
+            with raises(self, UserError) as caught:
+                typed.model(self.env, BuilderReport).create_report(
+                    cast("int", package.id), model_name, "Nothing To Print"
+                )
+            self.assertIn("does not keep records", str(caught.exception))
+        self.assertTrue(self.env["base.language.install"]._transient)

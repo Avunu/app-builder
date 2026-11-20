@@ -85,3 +85,12 @@ could find it. Nothing in the product would have told them.
 
 It also checks the source is honest -- no `x_` prefix, `mail.thread` as a real mixin,
 and re-rendering the file produces no diff.
+
+## Not yet probed
+
+- **Graduate, apply, run the action.** `builder.graduate.code.graduate(apply=True)`
+  reloads the package, which no `TransactionCase` can do, so `app_builder_ui`'s suite
+  compiles the generated method out of the written file and patches it onto the registry
+  class instead. A probe should graduate a code action that uses each bound name (`env`,
+  `record`, `json`, `log`, `action = ...`), apply for real, and run the action in a
+  fresh registry.

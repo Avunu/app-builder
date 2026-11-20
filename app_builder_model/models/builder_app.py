@@ -12,6 +12,12 @@ The lifecycle, and why it is in this order:
 3. build the UI records **in the database**, against the live model, and let
    the existing serializers write them out.
 
+Step 2 commits (``action_apply`` has to: a reload cannot be rolled back), so a
+failure in step 3 leaves a model with a table and no access rule, view or
+menu. Step 2 flags the model as unfinished in the same commit, so on the next
+attempt it is recognised for what it is (``_unfinished_models``) and finished
+rather than refused as "already exists"; step 3 clears the flag.
+
 Step 3 is deliberately not "render the view XML from the spec at step 2". That
 would create a second, independent producer of the same file format and destroy
 the round-trip invariant, which has exactly one path from record to XML. One
@@ -23,7 +29,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
-from odoo import api, models
+from psycopg2 import OperationalError
+
+from odoo import Command, api, models
 from odoo.exceptions import UserError
 
 from odoo.addons.app_builder_base.models.builder_model_draft import BuilderModelDraft
@@ -184,6 +192,10 @@ class BuilderApp(models.AbstractModel):
 
     # -- naming -----------------------------------------------------------
 
+    # `@api.private`: takes a package record, not an id. `suggest_name` is
+    # the guarded, id-taking form the console calls; this one is not for the
+    # wire, and says so rather than relying on an id failing inside it.
+    @api.private
     @api.model
     def technical_name(self, label: str, package: BuilderPackage) -> str:
         """``Workshop Project`` -> ``x_workshop.project``-free, real dotted name.
@@ -231,13 +243,19 @@ class BuilderApp(models.AbstractModel):
         companions = scaffold.companion_specs(model_name, label, options)
         spec = scaffold.scaffold_spec(model_name, label, options)
 
+        candidates = [*companions, spec]
+        # What an earlier attempt at this same app left behind: models this
+        # package declared and applied, that never got the rest. They are not
+        # "taken" -- they are this request, half done.
+        unfinished = self._unfinished_models(package, [c.name for c in candidates])
         taken: set[str] = set(
             cast(
                 "list[str]",
                 typed.model(self.env, IrModel).sudo().search([]).mapped("model"),
             )
         )
-        for candidate in [*companions, spec]:
+        taken -= unfinished
+        for candidate in candidates:
             errors = modelspec.validate_spec(candidate, taken_model_names=taken)
             if errors:
                 raise UserError(
@@ -245,13 +263,30 @@ class BuilderApp(models.AbstractModel):
                 )
             taken.add(candidate.name)
 
-        self._ensure_module_installed(package)
-        for candidate in [*companions, spec]:
-            typed.model(self.env, BuilderPackageModel)._adopt(
+        PackageModel = typed.model(self.env, BuilderPackageModel)
+        # A retry of the very same request has nothing new to write: the
+        # classes on disk are already these, and already loaded. Anything
+        # else -- a first attempt, or a retry with other features ticked --
+        # is seeded and applied.
+        already_applied = all(
+            candidate.name in unfinished
+            and PackageModel._adopt(
                 package, candidate.name, source="python"
-            )
-            package._seed_source_for(candidate.name, candidate)
-        package.action_apply(reason=_("create %s", model_name))
+            )._current_spec()
+            == candidate
+            for candidate in candidates
+        )
+        if not already_applied:
+            self._ensure_module_installed(package)
+            entries = PackageModel
+            for candidate in candidates:
+                entries |= PackageModel._adopt(package, candidate.name, source="python")
+                package._seed_source_for(candidate.name, candidate)
+            # Committed by the apply's own commit, together with the model it
+            # marks: what lets a retry tell this app, half done, apart from a
+            # model of the same name that merely has no view yet.
+            entries.write({"create_app_pending": True})
+            package.action_apply(reason=_("create %s", model_name))
 
         if model_name not in self.env:
             raise UserError(
@@ -262,26 +297,113 @@ class BuilderApp(models.AbstractModel):
                 )
             )
 
-        built = self._build_ui(package, spec, options, groups, parent=parent)
-        # A companion needs an access rule or nobody can read it -- and a tag
-        # model with no ACL makes the parent's form fail to load rather than
-        # merely hiding the tags. No menu and no views: a tag is edited through
-        # the parent's widget and a line inside the parent's list, which is
-        # what makes them companions rather than apps.
-        built["companions"] = [
-            self._build_access(
-                typed.model(self.env, IrModel).search(
-                    [("model", "=", candidate.name)], limit=1
-                ),
-                groups or cast("Groups", self.env.ref("base.group_user")),
-                unlink=True,
+        # Building the UI records is one transaction on top of a commit. If it
+        # fails it rolls back, and what is left is the model alone -- so say
+        # that, and say what to do about it, rather than let a view-validation
+        # traceback be the last word on a model nobody can see. Only this part:
+        # the second apply below has its own commit-and-restore story and its
+        # own message, and a lock or serialization failure has to reach the
+        # RPC layer as itself, which retries it.
+        try:
+            built = self._build_ui(package, spec, options, groups, parent=parent)
+            # A companion needs an access rule or nobody can read it -- and a
+            # tag model with no ACL makes the parent's form fail to load
+            # rather than merely hiding the tags. No menu and no views: a tag
+            # is edited through the parent's widget and a line inside the
+            # parent's list, which is what makes them companions rather than
+            # apps.
+            built["companions"] = [
+                self._build_access(
+                    typed.model(self.env, IrModel).search(
+                        [("model", "=", candidate.name)], limit=1
+                    ),
+                    groups or cast("Groups", self.env.ref("base.group_user")),
+                    unlink=True,
+                )
+                for candidate in companions
+            ]
+            if built["companions"]:
+                package.builder_capture(built["companions"])
+        except OperationalError:
+            raise
+        except Exception as err:
+            _logger.exception(
+                "create_app: %s was applied but its UI could not be built",
+                model_name,
             )
-            for candidate in companions
-        ]
-        if built["companions"]:
-            package.builder_capture(built["companions"])
+            raise UserError(
+                _(
+                    "The model %(model)s was created, but its access rules, "
+                    "views and menu could not be built:\n\n%(error)s\n\n"
+                    "Once the cause is fixed, create the app again under the "
+                    "same name to finish it, or roll the last apply back from "
+                    "Changes to remove the model.",
+                    model=model_name,
+                    error=str(err) or type(err).__name__,
+                )
+            ) from err
         package.action_apply(reason=_("scaffold %s", model_name))
+        # The app is whole: a model of this name is somebody's app from now on,
+        # not this request half done.
+        PackageModel.search(
+            [
+                ("package_id", "=", package.id),
+                ("model", "in", [c.name for c in candidates]),
+                ("create_app_pending", "=", True),
+            ]
+        ).write({"create_app_pending": False})
         return built
+
+    @api.model
+    def _unfinished_models(self, package: BuilderPackage, names: list[str]) -> set[str]:
+        """Which of ``names`` are this package's own half-built app models.
+
+        ``create_app`` commits between making a model and making it usable, so
+        a failure in the second half leaves the model behind with nothing
+        pointing at it. That is told apart from a model that merely has the
+        same name positively, by the ``create_app_pending`` flag the first
+        half commits with the model -- a manual model adopted into the package
+        with no view yet has the same shape and must not be overwritten with a
+        scaffold. Then, to be safe, by its shape as well: this package declares
+        it as a Python class of its own (not an extension of somebody else's),
+        it is loaded, and nothing a finished app has exists for it -- no access
+        rule, no view, no window action. An access rule is the first thing
+        ``_build_ui`` writes, so a model with one got further than this.
+        """
+        entries = typed.model(self.env, BuilderPackageModel).search(
+            [
+                ("package_id", "=", package.id),
+                ("model", "in", names),
+                ("source", "=", "python"),
+                ("extends", "=", False),
+                ("create_app_pending", "=", True),
+            ]
+        )
+        unfinished: set[str] = set()
+        for name in cast("list[str]", entries.mapped("model")):
+            if name not in self.env:
+                continue
+            if (
+                typed.model(self.env, IrModelAccess)
+                .sudo()
+                .search_count([("model_id.model", "=", name)], limit=1)
+            ):
+                continue
+            if (
+                typed.model(self.env, View)
+                .sudo()
+                .with_context(active_test=False)
+                .search_count([("model", "=", name)], limit=1)
+            ):
+                continue
+            if (
+                typed.model(self.env, IrActionsActWindow)
+                .sudo()
+                .search_count([("res_model", "=", name)], limit=1)
+            ):
+                continue
+            unfinished.add(name)
+        return unfinished
 
     @api.model
     def _ensure_module_installed(self, package: BuilderPackage) -> IrModuleModule:
@@ -578,6 +700,12 @@ class BuilderApp(models.AbstractModel):
 
     # -- honesty check ----------------------------------------------------
 
+    # `@api.private`: it searches users with `sudo()` and reports whether a
+    # group can read a model, which is an oracle for both if anyone at all
+    # can ask. It takes a groups recordset and is called from
+    # `create_app_rpc`, behind that method's own manager guard; nothing calls
+    # it over the wire, so nothing should be able to.
+    @api.private
     @api.model
     def check_visibility(
         self, model_name: str, groups: Groups
@@ -873,6 +1001,11 @@ class BuilderApp(models.AbstractModel):
         package = typed.model(self.env, BuilderPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("That package no longer exists."))
+        # Before the capture below, not after it inside `action_adopt`: that
+        # one does raise and the transaction does roll back, but "capture,
+        # then discover the package is read-only" is the wrong order to
+        # depend on a rollback for.
+        package._assert_writable()
         names = [n for n in (model_names or []) if n]
         if not names:
             raise UserError(_("Choose at least one model."))
@@ -916,11 +1049,19 @@ class BuilderApp(models.AbstractModel):
         The console's drop creates a field where it lands; this is the
         field with no place yet -- a computed one, say -- made from the
         model's own list.
+
+        ``values["selection"]`` gives a selection field its options, as
+        ``[[value, label], ...]``.
         """
         typed.security(self)._assert_builder_manager()
         package = typed.model(self.env, BuilderPackage).browse(package_id).exists()
         if not package:
             raise UserError(_("That package no longer exists."))
+        # A read-only package cannot take the field's source, and
+        # `builder_capture` does not raise for one -- it marks the package
+        # dirty and returns. Without this the database gains a column that no
+        # file describes, which is the drift the whole project is against.
+        package._assert_writable()
         name = (values.get("name") or "").strip()
         if not name.startswith("x_"):
             raise UserError(_("A custom field name must start with 'x_'."))
@@ -932,6 +1073,8 @@ class BuilderApp(models.AbstractModel):
         if not ir_model:
             raise UserError(_("Unknown model '%s'.", model_name))
         ttype = values.get("ttype") or "char"
+        if ttype not in pycodegen.FIELD_CLASSES:
+            raise UserError(_("'%s' is not a field type.", ttype))
         vals: dict[str, Any] = {
             "name": name,
             "field_description": values.get("field_description") or name,
@@ -948,6 +1091,8 @@ class BuilderApp(models.AbstractModel):
             if not values.get("relation_field"):
                 raise UserError(_("A one2many field needs an inverse field."))
             vals["relation_field"] = values["relation_field"]
+        if ttype == "selection":
+            vals["selection_ids"] = self._selection_commands(values.get("selection"))
         if values.get("compute"):
             vals.update(
                 {
@@ -962,5 +1107,36 @@ class BuilderApp(models.AbstractModel):
             .with_context(builder_skip_autocapture=True)
             .create(vals)  # pyright: ignore[reportArgumentType]
         )
-        package.builder_capture(field)
+        # The options are records of their own (`ir.model.fields.selection`),
+        # each with an xmlid the package has to own or the field comes back
+        # from source with none of them.
+        package.builder_capture(
+            [field, cast("BaseModel", field.selection_ids)]
+            if field.selection_ids
+            else field
+        )
         return {"field_id": cast("int", field.id), "name": cast("str", field.name)}
+
+    @api.model
+    def _selection_commands(self, options: object) -> list[Any]:
+        """``[[value, label], ...]`` as the commands that create the options.
+
+        Refused when empty: a selection field with nothing to select is a
+        dropdown that can never be given a value, and Odoo accepts it.
+        """
+        pairs: list[tuple[str, str]] = []
+        for option in cast("list[Any]", options or []):
+            if not isinstance(option, list | tuple) or len(option) != 2:  # pyright: ignore[reportUnknownArgumentType]
+                raise UserError(_("Each selection option is a value and a label."))
+            value, label = (str(part).strip() for part in option)  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+            if not value:
+                raise UserError(_("A selection option needs a value."))
+            pairs.append((value, label or value))
+        if not pairs:
+            raise UserError(_("A selection field needs at least one option."))
+        if len({value for value, _label in pairs}) != len(pairs):
+            raise UserError(_("Two selection options have the same value."))
+        return [
+            Command.create({"value": value, "name": label, "sequence": index})
+            for index, (value, label) in enumerate(pairs)
+        ]
