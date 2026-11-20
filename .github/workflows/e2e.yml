@@ -22,7 +22,9 @@ env:
 jobs:
   probes:
     name: probes
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
+    # Fail closed: a pull request whose head is not this repository -- a fork, or a fork
+    # since deleted (head.repo is then null) -- gets ubuntu-latest.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -66,4 +68,6 @@ jobs:
           path: |
             .odoo-nix/e2e/probes.log
             .odoo-nix/e2e/pg.log
-          if-no-files-found: ignore
+          # .odoo-nix is a dot-directory: upload-artifact skips it without this.
+          include-hidden-files: true
+          if-no-files-found: warn

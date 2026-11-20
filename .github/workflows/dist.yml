@@ -73,8 +73,18 @@ jobs:
       - name: A clean clone has no compiled .js
         run: |
           set -euo pipefail
-          if python3 scripts/dist.py check >/dev/null 2>&1; then
+          # Only the script's own verdict counts: exit 1 *and* its "not installable"
+          # line. A missing script (exit 2) or a crash (a traceback, also exit 1)
+          # must fail here, not pass as if the tree were merely unbuilt.
+          rc=0
+          python3 scripts/dist.py check >/dev/null 2>"$RUNNER_TEMP/dist-check.err" || rc=$?
+          if [ "$rc" -eq 0 ]; then
             echo "::error::the checkout already passes scripts/dist.py check: compiled .js is committed"
+            exit 1
+          fi
+          if [ "$rc" -ne 1 ] || ! grep -q "this tree is not installable" "$RUNNER_TEMP/dist-check.err"; then
+            cat "$RUNNER_TEMP/dist-check.err" >&2
+            echo "::error::scripts/dist.py check could not run (exit $rc)"
             exit 1
           fi
 
