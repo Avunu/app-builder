@@ -7,8 +7,35 @@ reloads a module is unreachable from the normal suite. These probes drive real
 registries in a real process instead.
 
 ```sh
+# in the dev shell, with nothing else running: a throwaway PostgreSQL cluster on a
+# unix socket and a fresh database with app_builder installed (about two minutes)
+scripts/ci-e2e.sh
+
+# or against the dev shell's own PostgreSQL (`devenv up`), cloning a database that
+# already has the addons installed
 app_builder_base/tests/e2e/run_probes.sh -c odoo.conf -t <an_installed_db>
 ```
+
+CI runs the first form on every pull request and every push to `develop`
+(`.github/workflows/e2e.yml`, the `e2e / probes` check), and keeps the whole output as
+the `e2e-probes` artifact. The terminal only shows the verdict lines; `-l <file>` keeps
+the rest, and a probe that fails prints its last lines.
+
+`run_probes.sh` takes its database server from `odoo.conf`, or from `PGHOST`, `PGPORT`
+and `PGUSER` when they are set, and gives Odoo two free ports the kernel picks, so two
+runs on one machine do not meet. A probe passes when it exits 0 and printed its `RESULT`
+line with no `FAIL` above it.
+
+Two things to know before running them in a checkout you are working in:
+
+- The probes write their packages (`x_*_probe`) into the first writable directory of the
+  addons path, which is this repository, and remove them again.
+- The builder stages and commits what it writes when that directory is inside a git
+  repository. The commit runs the repository's pre-commit hooks, and pre-commit sets
+  unstaged changes aside while its hooks run: for those seconds your uncommitted edits
+  are not in the working tree. They come back, but do not edit, build or copy the tree
+  while the probes run. `run_probes.sh` takes the probes' entries back out of the index
+  when it ends.
 
 ## `probe_reimport.py` — is in-process re-import sound?
 
