@@ -421,10 +421,14 @@ class BuilderViewEditor(models.AbstractModel):
 
         ``labelled`` is a value and its label, ``value`` the value alone,
         ``column`` the column of a table the builder made and ``table`` the
-        whole table the value is printed in.
+        whole table the value is printed in. The last column of a builder
+        table offers only ``table``, which is what removing it does.
         """
-        if self._builder_column(node) is not None:
-            return ["column", "table"]
+        column = self._builder_column(node)
+        if column is not None:
+            # A table's last column takes the table with it: say so, rather
+            # than a "Remove column" that removes a table.
+            return ["table"] if column[2] == 1 else ["column", "table"]
         if self._labelled_unit(node) is not None:
             return ["labelled"]
         if self._enclosing_table(node) is not None:
@@ -434,17 +438,28 @@ class BuilderViewEditor(models.AbstractModel):
     @api.model
     def _table_locator(
         self,
+        tree: LxmlElement,
         table: LxmlElement,
         node: LxmlElement,
         occurrences: Counter[tuple[str, str, str]],
     ) -> str:
         """The table holding ``node``, located by what it prints: a table
         has no identity of its own, and its indexed path is the most
-        fragile locator there is."""
+        fragile locator there is.
+
+        The nearest table: ``//table[.//span[...]]`` would also answer for
+        every table wrapping it -- a layout table, a hand-written one -- and
+        core takes the first match in document order, the outermost. The
+        locator is checked against ``tree`` to select exactly ``table``;
+        when it does not, ``_locator_for`` decides.
+        """
         editor = cast("BuilderViewEditorBase", self)
         held = editor._unique_predicate(node, occurrences)
         if held:
-            return "//table[.//%s]" % held
+            located = "//%s/ancestor::table[1]" % held
+            found = editor._resolve_xpath(tree, located)
+            if found is not None and len(found) == 1 and found[0] is table:
+                return located
         return editor._locator_for(table, occurrences)
 
     def _op_remove_report_element(
@@ -489,7 +504,7 @@ class BuilderViewEditor(models.AbstractModel):
             table = self._enclosing_table(node)
             if table is None:
                 raise UserError(_("%s is not printed in a table.", expression))
-            exprs = [self._table_locator(table, node, occurrences)]
+            exprs = [self._table_locator(tree, table, node, occurrences)]
             operation["_what"] = _("the table printing %s", expression)
         else:
             column = self._builder_column(node)
@@ -502,7 +517,7 @@ class BuilderViewEditor(models.AbstractModel):
                     )
                 )
             table, index, width = column
-            located = self._table_locator(table, node, occurrences)
+            located = self._table_locator(tree, table, node, occurrences)
             if width == 1:
                 exprs = [located]
                 operation["_what"] = _("the table printing %s", expression)

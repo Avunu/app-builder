@@ -38,7 +38,8 @@
 import {Component, onWillStart, status, useEffect, useRef, useState} from "@odoo/owl";
 import {registry} from "@web/core/registry";
 import {_t} from "@app_builder_view/console/l10n";
-import {useService} from "@app_builder_view/console/odoo";
+import {ConfirmationDialog, useService} from "@app_builder_view/console/odoo";
+import type {DialogService} from "@app_builder_view/console/odoo";
 import {messageOf} from "@app_builder_view/console/shell/draft_model";
 import type {ConsoleModel} from "@app_builder_view/console/console_model";
 import type {OrmService} from "@app_builder_view/console/types";
@@ -159,6 +160,9 @@ type ReportTarget =
     }
   | {kind: "report_field"; expression: string; found: false; reason: string};
 
+/** A target that was found, and so may be removed. */
+type FoundReportTarget = Extract<ReportTarget, {found: true}>;
+
 /** The words on each Remove button. */
 const REMOVAL_LABELS: Record<ReportRemoval, () => string> = {
   value: () => String(_t("Remove value")),
@@ -251,6 +255,7 @@ export class ReportCanvas extends Component<Props> {
    */
   model!: ConsoleModel;
   orm!: OrmService;
+  dialog!: DialogService;
   frameRef!: {el: HTMLIFrameElement | null};
   state!: ReportCanvasState;
   loadedVersion: string | null | undefined;
@@ -265,6 +270,7 @@ export class ReportCanvas extends Component<Props> {
   override setup(): void {
     this.model = useState(this.props.model);
     this.orm = useService("orm");
+    this.dialog = useService("dialog");
     this.frameRef = useRef<HTMLIFrameElement>("frame");
     this.state = useState<ReportCanvasState>({
       report: {
@@ -600,6 +606,28 @@ export class ReportCanvas extends Component<Props> {
     if (!unit) {
       return;
     }
+    if (unit === "table") {
+      // A table always holds more than the value selected: asked first,
+      // as the view canvas asks before removing a container with children.
+      this.dialog.add(ConfirmationDialog, {
+        title: _t("Remove table"),
+        body: _t(
+          "Remove the whole table printing %s, with all its columns? Undo puts it back.",
+          target.expression
+        ),
+        confirmLabel: _t("Remove table"),
+        confirm: () => {
+          void this.commitRemoval(target, unit);
+        },
+        cancel: () => {},
+      });
+      return;
+    }
+    await this.commitRemoval(target, unit);
+  }
+
+  /** The removal itself, once it is decided. */
+  async commitRemoval(target: FoundReportTarget, unit: ReportRemoval): Promise<void> {
     const result = await this.model.applyOperation({
       type: "remove_report_element",
       xpath: target.xpath,

@@ -236,11 +236,36 @@ test("a table cell offers its column and its table", async () => {
   await animationFrame();
   expect("button[name='remove_report_column']").toHaveText("Remove column");
   expect("button[name='remove_report_table']").toHaveText("Remove table");
+  // A whole table is asked about first.
   await click("button[name='remove_report_table']");
+  await animationFrame();
+  expect(ops).toEqual([]);
+  expect(".modal .modal-body").toHaveText(/Remove the whole table printing doc\.name/);
+  await click(".modal .btn-primary");
   await animationFrame();
   expect(ops).toEqual([
     {type: "remove_report_element", xpath: "//span[1]", unit: "table"},
   ]);
+});
+
+test("Delete on a table's last column asks before removing the table", async () => {
+  const ops: Record<string, unknown>[] = [];
+  serve(() => RENDERED, ["table"]);
+  await mountWithCleanup(ReportCanvas as never, {
+    props: {model: makeWritableModel(ops)},
+  });
+  const value = await waitFor(VALUE);
+  await click(value);
+  await animationFrame();
+  expect(queryAll("button[name='remove_report_column']")).toHaveLength(0);
+  expect("button[name='remove_report_table']").toHaveText("Remove table");
+  keydown(value, "Delete");
+  await animationFrame();
+  expect(".modal").toHaveCount(1);
+  await click(".modal .btn-secondary");
+  await animationFrame();
+  expect(ops).toEqual([]);
+  expect(".modal").toHaveCount(0);
 });
 
 test("Backspace in the label being typed is typing, not a removal", async () => {
