@@ -397,6 +397,9 @@ export interface CanvasPackageSummary {
   id: number;
   name: string;
   writable: boolean;
+  /** Why not, in a sentence; `""` when `writable`. Optional: a canvas
+   * built before the server sent it (`builder_view_canvas.py`). */
+  read_only_reason?: string;
 }
 
 /** A field staged on the draft this canvas shows, drawn as a ghost or not
