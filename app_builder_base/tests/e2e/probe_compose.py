@@ -33,6 +33,7 @@ with its data, which only happens when the pre-migration is filed under a
 version above the installed one.
 
 Run:  python app_builder_base/tests/e2e/probe_compose.py -c odoo.conf -d <db>
+      (with APP_BUILDER_ENABLE_WRITE=1, as run_probes.sh sets it: no --dev here)
 """
 
 from __future__ import annotations

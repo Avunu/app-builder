@@ -18,6 +18,7 @@ Two subtleties that will bite if unstated, both encoded below:
   reason that has nothing to do with the code.
 
 Run:  python app_builder_base/tests/e2e/probe_reflection.py -c odoo.conf -d <db>
+      (with APP_BUILDER_ENABLE_WRITE=1, as run_probes.sh sets it: no --dev here)
 """
 
 from __future__ import annotations

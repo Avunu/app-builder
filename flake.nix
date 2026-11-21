@@ -105,10 +105,16 @@
             };
 
             # The builder writes source code only where the server's operator
-            # has said so, outside the database (SECURITY.md). A development
-            # shell is exactly that place: `odoo` started from it, and the
-            # test gate, both build packages.
-            devenv.shells.default.env.APP_BUILDER_ENABLE_WRITE = "1";
+            # has said so, outside the database (SECURITY.md). Nothing here
+            # sets that: with no explicit APP_BUILDER_ENABLE_WRITE or
+            # app_builder_enable_write, writing follows odoo-bin's --dev, and
+            # odoo-nix's dev server (`devenv up`) always runs with
+            # --dev=<odoo-nix.devMode> ("all" by default). The test gate runs without
+            # --dev and opts in itself: tests/common.py's BuilderCase and
+            # BuilderHttpCase, and tests/e2e/run_probes.sh. Setting the key in
+            # settings.options would make the dev shell's odoo.conf say "on"
+            # for every process that reads it, --dev or not, and hide a test
+            # that forgot to opt in.
 
             # The addons' .js is compiled, not committed, so a fresh clone and
             # `odoo-nix gate test` both need it built before Odoo serves a page:

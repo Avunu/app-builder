@@ -26,6 +26,8 @@ from odoo.addons.app_builder_base.models.builder_security import (
     WRITE_CONFIG_KEY,
     WRITE_ENV_VAR,
     code_write_enabled,
+    dev_mode_active,
+    explicit_write_setting,
 )
 from odoo.addons.app_builder_base.models.builder_workspace import BuilderWorkspace
 from odoo.addons.app_builder_base.tools import typed
@@ -46,28 +48,42 @@ class TestCodeWriteSwitch(BuilderCase):
         super().setUp()
         self.workspace = typed.model(self.env, BuilderWorkspace)
 
-    def _switch(self, env: str | None, conf: object = None):
+    def _switch(
+        self, env: str | None, conf: object = None, dev: list[str] | None = None
+    ):
         """The switch as an operator left it: the environment variable (or
-        its absence) and the ``odoo.conf`` key (or its absence)."""
+        its absence), the ``odoo.conf`` key (or its absence), and odoo-bin's
+        ``--dev`` as Odoo parsed it (``[]``, its absence, by default -- so a
+        suite run under ``--dev`` still tests what it says it does).
+
+        Put back by hand rather than with ``mock.patch.dict``, for the
+        reason ``common.set_code_write`` gives."""
         self.addCleanup(set_code_write(env))
         missing = object()
-        before = config.options.get(WRITE_CONFIG_KEY, missing)
+        before = {
+            key: config.options.get(key, missing)
+            for key in (WRITE_CONFIG_KEY, "dev_mode")
+        }
 
         def restore() -> None:
-            if before is missing:
-                config.options.pop(WRITE_CONFIG_KEY, None)
-            else:
-                config.options[WRITE_CONFIG_KEY] = before
+            for key, value in before.items():
+                if value is missing:
+                    config.options.pop(key, None)
+                else:
+                    config.options[key] = value
 
         self.addCleanup(restore)
         if conf is None:
             config.options.pop(WRITE_CONFIG_KEY, None)
         else:
             config.options[WRITE_CONFIG_KEY] = conf
+        config.options["dev_mode"] = list(dev or [])
 
     def test_it_is_off_unless_somebody_turned_it_on(self):
         self._switch(None)
         self.assertFalse(code_write_enabled())
+        self.assertIsNone(explicit_write_setting())
+        self.assertFalse(dev_mode_active())
 
     def test_the_environment_and_the_config_file_both_turn_it_on(self):
         for env, conf, expected in (
@@ -82,12 +98,70 @@ class TestCodeWriteSwitch(BuilderCase):
             (None, False, False),
             (None, "0", False),
             ("", True, True),  # an empty variable is not an answer
+            ("  ", False, False),
+            (None, "", False),  # nor is an empty key: the default, off here
             ("0", True, False),  # the environment wins over a shared file
             ("1", False, True),
         ):
             with self.subTest(env=env, conf=conf):
                 self._switch(env, conf)
                 self.assertEqual(code_write_enabled(), expected)
+
+    def test_dev_mode_turns_it_on_when_nothing_explicit_is_set(self):
+        """Odoo's own convention for development-only capabilities: any
+        ``--dev`` value, as ``tools.config`` parses it (``all`` arrives
+        expanded, a bare ``--dev=`` as no features at all)."""
+        for dev, expected in (
+            ([], False),
+            (["all", "reload", "qweb", "xml"], True),  # --dev=all
+            (["reload"], True),
+            (["werkzeug"], True),
+            (["xml"], True),
+            (["", ""], False),  # --dev=, -- nothing named
+        ):
+            with self.subTest(dev=dev):
+                self._switch(None, dev=dev)
+                self.assertEqual(dev_mode_active(), expected)
+                self.assertEqual(code_write_enabled(), expected)
+
+    def test_an_explicit_setting_wins_over_dev_mode_both_ways(self):
+        dev = ["all", "reload", "qweb", "xml"]
+        for env, conf, expected in (
+            ("0", None, False),  # a dev server the operator switched off
+            (None, False, False),
+            (None, "off", False),
+            ("1", None, True),  # a server without --dev, switched on
+            (None, True, True),
+            ("0", True, False),  # and the environment still beats the file
+            ("1", False, True),
+        ):
+            for with_dev in (True, False):
+                with self.subTest(env=env, conf=conf, dev=with_dev):
+                    self._switch(env, conf, dev=dev if with_dev else [])
+                    self.assertEqual(code_write_enabled(), expected)
+
+    def test_the_reason_says_which_setting_turned_it_off(self):
+        workspace = typed.security(self.workspace)
+        self._switch(None)
+        default = workspace._builder_write_disabled_reason()
+        self.assertIn("--dev", default)
+        self.assertIn(WRITE_ENV_VAR, default)
+        self.assertIn(WRITE_CONFIG_KEY, default)
+
+        self._switch("0", True, dev=["all"])
+        by_env = workspace._builder_write_disabled_reason()
+        self.assertIn(WRITE_ENV_VAR, by_env)
+        self.assertIn("environment", by_env)
+        self.assertNotEqual(by_env, default)
+
+        self._switch(None, False, dev=["all"])
+        by_conf = workspace._builder_write_disabled_reason()
+        self.assertIn(WRITE_CONFIG_KEY, by_conf)
+        self.assertIn("odoo.conf", by_conf)
+        self.assertNotIn(by_conf, (default, by_env))
+
+        self._switch(None, dev=["reload"])
+        self.assertEqual(workspace._builder_write_disabled_reason(), "")
 
     def test_it_is_not_a_system_parameter(self):
         """A row a Settings administrator can edit must not be the switch."""
@@ -114,6 +188,7 @@ class TestCodeWriteSwitch(BuilderCase):
         self.assertFalse(listed["writable"])
         self.assertIn(WRITE_ENV_VAR, listed["read_only_reason"])
         self.assertIn(WRITE_CONFIG_KEY, listed["read_only_reason"])
+        self.assertIn("--dev", listed["read_only_reason"])
         self.assertIn("read_only", listed["health"])
         self.assertIn("write_disabled", listed["health"])
         self.assertFalse(any(d["writable"] for d in self.workspace.addons_dirs()))
