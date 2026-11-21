@@ -2,7 +2,10 @@
 <templates xml:space="preserve">
 
 <t t-name="app_builder_report.ReportCanvas">
-        <div class="o_builder_report_canvas d-flex h-100 overflow-hidden">
+        <div
+            class="o_builder_report_canvas d-flex h-100 overflow-hidden"
+            t-on-keydown="(ev) => this.onKeyDown(ev)"
+        >
             <div class="o_builder_report_tools p-3 border-end overflow-auto">
                 <div class="text-muted small mb-2">
                 Click a value in the document to select it. The prose around
@@ -17,6 +20,33 @@
                 Selected <code t-esc="state.target.expression" /> — what you add
                 next goes just after it.
             </div>
+                <!-- Remove, as the view canvas offers it: on the selection,
+                     with Delete for the first choice, and said why not when
+                     nothing can be recorded. -->
+                <div t-if="removals.length" class="o_builder_report_remove mb-3">
+                    <button
+                        t-foreach="removals"
+                        t-as="removal"
+                        t-key="removal.kind"
+                        type="button"
+                        class="btn btn-outline-danger btn-sm w-100 mb-1 o_builder_remove_button"
+                        t-att-name="'remove_report_' + removal.kind"
+                        t-att-disabled="model.busy or removeBlocked"
+                        t-att-title="removeBlocked or undefined"
+                        t-att-aria-describedby="removeBlocked ? 'o_builder_report_remove_blocked' : undefined"
+                        t-on-click="() => this.removeSelected(removal.kind)"
+                        t-esc="removal.label"
+                    />
+                    <small
+                        t-if="removeBlocked"
+                        id="o_builder_report_remove_blocked"
+                        class="text-muted d-block o_builder_report_remove_blocked"
+                        t-esc="removeBlocked"
+                    />
+                    <small t-else="" class="text-muted d-block">
+                    Delete or Backspace does the first. Undo puts it back.
+                </small>
+                </div>
                 <div
                     t-if="state.message"
                     class="alert alert-info small"

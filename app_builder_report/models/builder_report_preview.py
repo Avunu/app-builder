@@ -74,6 +74,9 @@ if TYPE_CHECKING:
     from odoo.models import BaseModel
 
     from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
+    from odoo.addons.app_builder_view.models.builder_report_ops import (
+        BuilderViewEditor as ReportOps,
+    )
 
 _logger = logging.getLogger(__name__)
 
@@ -119,11 +122,17 @@ class PrintableFieldsJSON(TypedDict):
     lists: list[PrintableListJSON]
 
 
+#: What can be taken out with a selected value, the first being what
+#: Delete does (``builder_report_ops.py:_report_removals``).
+ReportRemovalJSON: TypeAlias = Literal["value", "labelled", "column", "table"]
+
+
 class _LocateExpressionFoundJSON(TypedDict):
     found: Literal[True]
     xpath: str
     expression: str
     tag: str
+    removals: list[ReportRemovalJSON]
 
 
 class _LocateExpressionNotFoundJSON(TypedDict):
@@ -407,6 +416,10 @@ class BuilderReportPreview(models.AbstractModel):
             "xpath": editor._locator_for(matches[0], editor._occurrences(root)),
             "expression": expression,
             "tag": matches[0].tag,
+            "removals": cast(
+                "list[ReportRemovalJSON]",
+                cast("ReportOps", editor)._report_removals(matches[0]),
+            ),
         }
 
     @api.model

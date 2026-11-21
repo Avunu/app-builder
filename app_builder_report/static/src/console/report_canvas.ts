@@ -31,8 +31,8 @@
  * `app_builder.canvas` registry, under the `editable_as` the server answers
  * for a qweb view: the console renders whatever that registry maps
  * "report" to, and never imports this file. The `model` prop is the
- * console's `ConsoleModel`; `viewId`, `archVersion`, `busy` and
- * `applyOperation` are all that is read of it.
+ * console's `ConsoleModel`; `viewId`, `archVersion`, `busy`, `packageId`,
+ * `package` and `applyOperation` are all that is read of it.
  */
 
 import {Component, onWillStart, status, useEffect, useRef, useState} from "@odoo/owl";
@@ -85,10 +85,22 @@ interface PrintableFieldsResult {
   lists: PrintableListEntry[];
 }
 
+/** What can be taken out with a selected value
+ * (`builder_report_ops.py:_report_removals`): the value alone, the value
+ * and its label, its column of a builder table, or the table it is in. */
+export type ReportRemoval = "value" | "labelled" | "column" | "table";
+
 /** `locate_expression`'s own two shapes (`builder_report_preview.py`): the
- * arch node printing `expression`, as a locator, or why none was found. */
+ * arch node printing `expression`, as a locator, and what may be removed
+ * with it -- the first being what Delete does -- or why none was found. */
 type LocateExpressionResult =
-  | {found: true; xpath: string; expression: string; tag: string}
+  | {
+      found: true;
+      xpath: string;
+      expression: string;
+      tag: string;
+      removals: ReportRemoval[];
+    }
   | {found: false; reason: string};
 
 /** `body_anchor`'s own found shape (`builder_report_preview.py`) -- always
@@ -137,8 +149,39 @@ interface ReportPreviewState {
  * the found branch, is the same value spread back in, not a second one).
  */
 type ReportTarget =
-  | {kind: "report_field"; expression: string; found: true; xpath: string; tag: string}
+  | {
+      kind: "report_field";
+      expression: string;
+      found: true;
+      xpath: string;
+      tag: string;
+      removals: ReportRemoval[];
+    }
   | {kind: "report_field"; expression: string; found: false; reason: string};
+
+/** The words on each Remove button. */
+const REMOVAL_LABELS: Record<ReportRemoval, () => string> = {
+  value: () => String(_t("Remove value")),
+  labelled: () => String(_t("Remove value and label")),
+  column: () => String(_t("Remove column")),
+  table: () => String(_t("Remove table")),
+};
+
+/** The keys that remove what is selected, as they do in the outline. */
+const REMOVE_KEYS = ["Delete", "Backspace"];
+
+/** Whether a key pressed on `target` is somebody's typing, not a command.
+ * Asked by method, not `instanceof`: a target in the frame belongs to the
+ * frame's own window. */
+function isTyping(target: EventTarget | null): boolean {
+  const el = target as Partial<HTMLElement> | null;
+  if (!el || typeof el.closest !== "function") {
+    return false;
+  }
+  return Boolean(
+    el.isContentEditable || el.closest("input, textarea, select, [contenteditable]")
+  );
+}
 
 interface ReportCanvasState {
   report: ReportPreviewState;
@@ -430,6 +473,8 @@ export class ReportCanvas extends Component<Props> {
     doc.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" || ev.key === " ") {
         void this.onClick(ev);
+      } else {
+        this.onKeyDown(ev);
       }
     });
     this.markSelection();
@@ -508,6 +553,79 @@ export class ReportCanvas extends Component<Props> {
     }
     this.state.target = {kind: "report_field", expression, ...found};
     this.state.message = found.found ? "" : found.reason;
+  }
+
+  // -- removing ---------------------------------------------------------------
+
+  /** What may be taken out with the selection, Delete's first. */
+  get removals(): {kind: ReportRemoval; label: string}[] {
+    const target = this.state.target;
+    if (!target || !target.found) {
+      return [];
+    }
+    return (target.removals || []).map((kind) => ({
+      kind,
+      label: REMOVAL_LABELS[kind](),
+    }));
+  }
+
+  /**
+   * Why nothing can be removed here, in a sentence; `""` when it can.
+   * The two refusals the server makes (`apply_operation`), said before
+   * the click rather than after it.
+   */
+  get removeBlocked(): string {
+    if (!this.model.packageId) {
+      return String(_t("Choose a package in the top bar to record this change in."));
+    }
+    const pkg = this.model.package;
+    if (pkg && !pkg.writable) {
+      return pkg.read_only_reason || String(_t("The package is read-only."));
+    }
+    return "";
+  }
+
+  /**
+   * Take the selected value out of the report, with what belongs to it:
+   * `kind` says how much (`builder_report_ops.py:_op_remove_report_element`),
+   * the first the server offered when not given. One edit, so Undo puts
+   * all of it back.
+   */
+  async removeSelected(kind?: ReportRemoval): Promise<void> {
+    const target = this.state.target;
+    if (!target || !target.found || this.model.busy || this.removeBlocked) {
+      return;
+    }
+    const unit = kind || (target.removals || [])[0];
+    if (!unit) {
+      return;
+    }
+    const result = await this.model.applyOperation({
+      type: "remove_report_element",
+      xpath: target.xpath,
+      unit,
+    });
+    if (result !== undefined && this.alive && this.state.target === target) {
+      // What was selected is gone: the reload must not look for it again.
+      this.state.target = null;
+      this.state.message = "";
+    }
+  }
+
+  /**
+   * Delete or Backspace removes the selection, from the document or the
+   * tools -- never out of a field somebody is typing in.
+   */
+  onKeyDown(ev: KeyboardEvent): void {
+    if (!REMOVE_KEYS.includes(ev.key) || isTyping(ev.target)) {
+      return;
+    }
+    if (!this.state.target || !this.state.target.found) {
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    void this.removeSelected();
   }
 
   get frameTitle(): string {
