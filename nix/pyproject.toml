@@ -128,6 +128,15 @@ profile = "github:Avunu/odoo-standards-profile/v1"
 repo = "Avunu/app-builder"
 integration-branch = "develop"
 
+[tool.odoo-nix.ci]
+# `ci / test` runs on the fleet's shared self-hosted host, beside every other
+# job the fleet has queued: this repository's own ci, e2e and typecheck for
+# each push and pull request among them. The suite is ~7.5 minutes on a
+# workstation and ~25 on that host alone, and a busy host has run it past the
+# default 60, cancelling it on every push to develop. Like the frappe profile's
+# `test-timeout-minutes = 120`, for the same host and the same reason.
+test-timeout-minutes = 120
+
 [tool.odoo-nix.js-xml]
 # ES modules, which the managed eslint config parses as scripts. .ts has its own.
 exclude = ["scripts/", "eslint.typescript.config.mjs"]
