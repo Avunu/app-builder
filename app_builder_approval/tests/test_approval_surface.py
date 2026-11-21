@@ -56,6 +56,12 @@ class TestApprovalSurface(BuilderCase):
         # The pane's hint is the one place a user is told what the gate
         # covers before they switch it on.
         self.assertIn("every way into", gate["consequence"])
+        # Nobody's gate, so nobody's to change.
+        self.assertEqual(gate["module"], "")
+        # Turning it off is explained before it is offered: the rules stay,
+        # and the one stored column the gate added is kept, renamed.
+        self.assertIn("rules stay", gate["off_consequence"])
+        self.assertIn("renamed column", gate["off_consequence"])
         gated = next(
             (
                 name
@@ -68,6 +74,11 @@ class TestApprovalSurface(BuilderCase):
             self.assertTrue(self.Surface.catalogue(gated)["gate"]["on"])
             # What is enforced is reported, so it can be changed.
             self.assertTrue(self.Surface.catalogue(gated)["gate"]["current"])
+            # And by whom: only that module's package can change it.
+            self.assertEqual(
+                self.Surface.catalogue(gated)["gate"]["module"],
+                self.env[gated]._inherit_module["tier.validation"],  # pyright: ignore[reportAttributeAccessIssue]
+            )
 
     def test_a_template_makes_a_rule_with_its_reviewer_in_the_file(self):
         row = cast("BuilderRecordSurface", self.Surface).create_record(
