@@ -19,7 +19,9 @@ concurrency:
 jobs:
   typecheck:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A run whose lockfiles have no cache entry yet builds the dev shell from nothing:
+    # ~15-20 minutes before the checks start.
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
