@@ -180,10 +180,13 @@ class TestReportRemove(ReportRemoveCase):
         self._nest_in_outer_table()
         self._table(["name", "email"], xpath=SLOT)
         self._take_out(EMAIL, "column")
-        outer = self._outer()
-        self.assertIsNotNone(outer)
+        self.assertIsNotNone(self._outer())
         self.assertEqual(
-            [th.text for th in outer.find("thead").iter("th")], ["Outer", "Side"]
+            [
+                th.text
+                for th in self._page().xpath("//table[hasclass('o_outer')]/thead/tr/th")
+            ],
+            ["Outer", "Side"],
         )
         name = self.env["res.partner"]._fields["name"].string
         self.assertEqual(self._headers(), ["Outer", "Side", name])
