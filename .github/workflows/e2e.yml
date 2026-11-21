@@ -44,26 +44,29 @@ jobs:
 
       # The whole store as one GitHub Actions cache entry: what cache.nixos.org and
       # devenv.cachix.org do not have (OCB's source, the Python environment, odoo-nix's
-      # tools) takes ~10 minutes to fetch and build. One entry, not a request per path:
+      # tools) takes ~15 minutes to fetch and build. One entry, not a request per path:
       # magic-nix-cache is throttled by the cache service part way through a cold build.
-      # Only a push or a manual run saves; a pull request restores the newest entry its
-      # base branch saved (caches are scoped by ref) and builds only what its lockfiles
-      # moved. The entry is the dev shell's closure: the step below roots it, and garbage
-      # collection drops everything else before the save.
+      #
+      # The key is the lockfiles. A push or a manual run whose key has no entry yet builds
+      # from nothing and saves one, so an entry holds one dev shell and what its evaluation
+      # fetched, never an older one's leftovers, and is not garbage-collected: that would
+      # drop the sources evaluation fetches (the flake inputs, uv's git dependencies) and
+      # cost minutes of re-fetching on every run. A pull request saves nothing; it restores
+      # its base branch's entry (caches are scoped by ref), the newest one when its own
+      # lockfiles moved, and builds only the difference.
       - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock', '.odoo-series', 'nix/pyproject.toml', 'nix/uv.lock') }}
-          restore-prefixes-first-match: nix-devshell-${{ runner.os }}-${{ runner.arch }}-
+          restore-prefixes-first-match: ${{ github.event_name == 'pull_request' && format('nix-devshell-{0}-{1}-', runner.os, runner.arch) || '' }}
           save: ${{ github.event_name != 'pull_request' }}
-          gc-max-store-size-linux: 7G
 
       # Its own step, so the log shows what building and entering the shell cost apart from
-      # the checks themselves. --profile makes the shell a garbage-collection root.
+      # the checks themselves.
       - name: The dev shell
         env:
           NIX_CONFIG: accept-flake-config = false
           ODOO_NIX_CI: "1"
-        run: nix develop --no-pure-eval --profile "$RUNNER_TEMP/dev-shell" -c true
+        run: nix develop --no-pure-eval -c true
 
       # A throwaway PostgreSQL cluster on a unix socket and free HTTP ports the kernel
       # picks: nothing two jobs on one host could meet on.
