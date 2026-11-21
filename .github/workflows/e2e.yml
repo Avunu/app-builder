@@ -5,8 +5,10 @@
 # pull request, so a Dependabot bump of OCB that moves the internals Apply leans on
 # (load_openerp_module, MetaModel.module_to_models, _process_end) fails here.
 #
-# A local workflow, not one of odoo-nix's managed ones. Like those, a fork's pull request
-# never runs on the fleet's self-hosted runners: it gets ubuntu-latest.
+# A local workflow, not one of odoo-nix's managed ones. It runs on a GitHub-hosted runner
+# for every event, not on the fleet's self-hosted host: the repository is public, so
+# hosted minutes cost nothing, and the self-hosted host is left to `ci / test`, which
+# needs it. A hosted runner also never runs a fork's flake.nix anywhere it could persist.
 name: e2e
 on:
   push:
@@ -22,42 +24,54 @@ env:
 jobs:
   probes:
     name: probes
-    # Fail closed: a pull request whose head is not this repository -- a fork, or a fork
-    # since deleted (head.repo is then null) -- gets ubuntu-latest.
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    # A run whose lockfiles have no cache entry yet builds the dev shell from nothing:
+    # ~15-20 minutes before the checks start.
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
-      # A self-hosted runner reuses its workspace, and an interrupted job leaves read-only
-      # files there (copies out of the Nix store) that checkout cannot remove.
-      - if: runner.environment != 'github-hosted'
-        name: Make what an earlier job left in the workspace removable
-        working-directory: ${{ runner.temp }}
-        run: |
-          if [ -d "$GITHUB_WORKSPACE" ]; then
-            find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 ! -type l -exec chmod -R u+w {} +
-          fi
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        if: runner.environment == 'github-hosted'
+      # Single-user Nix in seconds. It writes accept-flake-config = true; NIX_CONFIG, which
+      # Nix applies after nix.conf, turns that off, so a pull request's flake.nix cannot
+      # name substituters of its own. flake.nix's one (devenv.cachix.org) is set here.
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
-          determinate: false
+          nix_conf: |
+            extra-substituters = https://devenv.cachix.org
+            extra-trusted-public-keys = devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=
 
-      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
-        if: runner.environment == 'github-hosted'
+      # The whole store as one GitHub Actions cache entry: what cache.nixos.org and
+      # devenv.cachix.org do not have (OCB's source, the Python environment, odoo-nix's
+      # tools) takes ~15 minutes to fetch and build. One entry, not a request per path:
+      # magic-nix-cache is throttled by the cache service part way through a cold build.
+      #
+      # The key is the lockfiles. typecheck.yml's job is the one that saves, only on
+      # develop, and documents why; this job restores the same key and never saves. A pull
+      # request restores develop's entry (caches are scoped by ref), the newest one when
+      # its own lockfiles moved, and builds only the difference.
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          diagnostic-endpoint: ""
-          use-flakehub: false
+          primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock', '.odoo-series', 'nix/pyproject.toml', 'nix/uv.lock') }}
+          restore-prefixes-first-match: ${{ github.event_name == 'pull_request' && format('nix-devshell-{0}-{1}-', runner.os, runner.arch) || '' }}
+          save: false
+
+      # Its own step, so the log shows what building and entering the shell cost apart from
+      # the checks themselves.
+      - name: The dev shell
+        env:
+          NIX_CONFIG: accept-flake-config = false
+          ODOO_NIX_CI: "1"
+        run: nix develop --no-pure-eval -c true
 
       # A throwaway PostgreSQL cluster on a unix socket and free HTTP ports the kernel
       # picks: nothing two jobs on one host could meet on.
       - name: The Apply probes
         env:
+          NIX_CONFIG: accept-flake-config = false
           ODOO_NIX_CI: "1"
         run: nix develop --no-pure-eval -c scripts/ci-e2e.sh
 

@@ -2,26 +2,31 @@
 # dev shell's Python, which the lint gate's shell does not have, so they run here, on the
 # manual stage of .pre-commit-config.yaml.
 #
-# The step evaluates the pull request's own flake.nix and runs its hooks, so a fork's pull
-# request never runs it on the fleet's self-hosted runners: like odoo-nix's reusable
-# workflows (ci.yml, pr-policy.yml, deps.yml), it gets ubuntu-latest, whatever the labels
-# below say. A branch of this repository, Dependabot's included, is not a fork.
+# It runs on a GitHub-hosted runner for every event, not on the fleet's self-hosted host:
+# the repository is public, so hosted minutes cost nothing, and the self-hosted host is
+# left to `ci / test`, which needs it. A hosted runner also never runs a fork's flake.nix
+# anywhere it could persist. The Nix setup is the one e2e.yml uses.
 name: typecheck
 on:
   push:
     branches: ["develop"]
   pull_request:
   workflow_dispatch:
+  # GitHub evicts a cache entry nobody has restored for 7 days. A weekly run on develop
+  # (the default branch, where schedules run) restores its entry and keeps it, so a pull
+  # request after a quiet week still starts warm.
+  schedule:
+    - cron: "17 5 * * 1"
 permissions: {}
 concurrency:
   group: typecheck-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   typecheck:
-    # Fail closed: a pull request whose head is not this repository -- a fork, or a fork
-    # since deleted (head.repo is then null) -- gets ubuntu-latest.
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    # A run whose lockfiles have no cache entry yet builds the dev shell from nothing:
+    # ~15-20 minutes before the checks start.
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -29,19 +34,52 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        if: runner.environment == 'github-hosted'
+      # Single-user Nix in seconds. It writes accept-flake-config = true; NIX_CONFIG, which
+      # Nix applies after nix.conf, turns that off, so a pull request's flake.nix cannot
+      # name substituters of its own. flake.nix's one (devenv.cachix.org) is set here.
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
-          determinate: false
+          nix_conf: |
+            extra-substituters = https://devenv.cachix.org
+            extra-trusted-public-keys = devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=
 
-      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
-        if: runner.environment == 'github-hosted'
+      # The whole store as one GitHub Actions cache entry: what cache.nixos.org and
+      # devenv.cachix.org do not have (OCB's source, the Python environment, odoo-nix's
+      # tools) takes ~15 minutes to fetch and build. One entry, not a request per path:
+      # magic-nix-cache is throttled by the cache service part way through a cold build.
+      #
+      # The key is the lockfiles. Only this job saves, and only on develop (a push, the
+      # weekly schedule, a manual run there): an entry is ~2.7 GB against the repository's
+      # 10 GB, so entries saved on other branches, which no pull request can restore, would
+      # evict develop's. e2e.yml restores the same key and never saves. A develop run whose
+      # key has no entry yet builds from nothing and saves one, so an entry holds one dev
+      # shell and what its evaluation fetched, never an older one's leftovers, and is not
+      # garbage-collected: that would drop the sources evaluation fetches (the flake
+      # inputs, uv's git dependencies) and cost minutes of re-fetching on every run. A pull
+      # request saves nothing; it restores develop's entry (caches are scoped by ref), the
+      # newest one when its own lockfiles moved, and builds only the difference.
+      #
+      # Accepted cost: a lockfile change merged to develop (a Dependabot OCB or nixpkgs
+      # bump) is one cold build of ~15-20 minutes there, in both this job and e2e's.
+      # Restoring the old entry by prefix would make it incremental, but without garbage
+      # collection every entry would keep the leftovers of all the shells before it.
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          diagnostic-endpoint: ""
-          use-flakehub: false
+          primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock', '.odoo-series', 'nix/pyproject.toml', 'nix/uv.lock') }}
+          restore-prefixes-first-match: ${{ github.event_name == 'pull_request' && format('nix-devshell-{0}-{1}-', runner.os, runner.arch) || '' }}
+          save: ${{ github.ref == 'refs/heads/develop' && github.event_name != 'pull_request' }}
+
+      # Its own step, so the log shows what building and entering the shell cost apart from
+      # the checks themselves.
+      - name: The dev shell
+        env:
+          NIX_CONFIG: accept-flake-config = false
+          ODOO_NIX_CI: "1"
+        run: nix develop --no-pure-eval -c true
 
       - name: pyright, tsc, eslint
         env:
+          NIX_CONFIG: accept-flake-config = false
           ODOO_NIX_CI: "1"
         run: >-
           nix develop --no-pure-eval -c tools/.venv/bin/prek run
