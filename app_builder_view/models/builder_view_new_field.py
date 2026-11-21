@@ -541,7 +541,7 @@ class BuilderViewEditor(models.AbstractModel):
             if not values.get("name"):
                 values["name"] = cast("_DraftHandle", draft)._free_field_name(label)
             name = cast("str", values["name"])
-            if not name.isidentifier():
+            if not modelspec.usable_field_name(name):
                 raise UserError(_("'%s' is not a usable field name.", name))
             # The placement slots keep saying which views the field goes
             # in, and carry the widget the entry implies; the anchor says

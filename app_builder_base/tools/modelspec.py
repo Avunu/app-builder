@@ -913,16 +913,29 @@ def diff_specs(before: ModelSpec | None, after: ModelSpec | None) -> SpecDiff:
 
 # -- validation ----------------------------------------------------------
 
+# What Postgres keeps of an identifier; a longer one is silently cut.
+NAME_MAX = 63
 _IDENT = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_")
 
 
 def _valid_identifier(name: str) -> bool:
     """Postgres-safe and Python-safe: what check_pg_name accepts."""
-    if not name or len(name) > 63:
+    if not name or len(name) > NAME_MAX:
         return False
     if name[0] not in "abcdefghijklmnopqrstuvwxyz_":
         return False
     return all(c in _IDENT for c in name)
+
+
+def usable_field_name(name: str) -> bool:
+    """Whether ``name`` passes :func:`_validate_field_name`'s own checks on
+    the name alone: an identifier Postgres and Python both accept, and not a
+    Python keyword (soft keywords such as ``type`` included).
+
+    For callers that derive a name for the user, so a name refused at
+    validation is refused, or avoided, when it is made instead.
+    """
+    return _valid_identifier(name) and name not in PYTHON_KEYWORDS
 
 
 def _valid_model_name(name: str) -> bool:

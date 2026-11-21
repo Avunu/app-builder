@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import logging
+import unicodedata
 from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 # lxml ships no type stubs in this environment, the same gap `xml_writer.py`/
@@ -342,17 +343,40 @@ class BuilderModelDraft(models.TransientModel):
 
     def _free_field_name(self, label: str) -> str:
         """The clean name ``label`` implies for a class attribute, kept clear
-        of what the model has and what the draft is already adding."""
+        of what the model has and what the draft is already adding.
+
+        The name keeps to the rules the draft validates it by
+        (``modelspec.usable_field_name``), since the user never typed it and
+        has nowhere to correct it: accents are folded to ASCII ("Café" is
+        ``cafe``, "Größe" ``grosse``), a long label is cut with room left
+        for a ``_N`` suffix, and a Python keyword is taken like any other
+        name ("Class" is ``class_2``, and "Type" ``type_2`` where ``type``
+        is a soft keyword).
+        """
         self.ensure_one()
         base = cast("BuilderModelDraftBase", self)
-        name = manualfield.field_name_for(label, prefix="")
-        if not name.isidentifier():
-            raise UserError(_("'%s' is not a usable field name.", name))
-        taken = {f.name for f in base._spec().fields}
+        ascii_label = (
+            unicodedata.normalize("NFKD", label.casefold())
+            .encode("ascii", "ignore")
+            .decode("ascii")
+        )
+        name = manualfield.field_name_for(ascii_label, prefix="")
+        # Room for "_99" and then some: a suffix must not push the name
+        # back over the limit.
+        name = name[: modelspec.NAME_MAX - 5].rstrip("_")
+        # A keyword is a name to step around below, not a refusal.
+        if name not in modelspec.PYTHON_KEYWORDS and not modelspec.usable_field_name(
+            name
+        ):
+            raise UserError(_("'%s' is not a usable field name.", name or label))
+        taken = {f.name for f in base._spec().fields} | modelspec.PYTHON_KEYWORDS
         model_name = cast("str", base.model)
         if model_name in self.env:
             taken |= set(cast("dict[str, Any]", self.env[model_name]._fields))
-        return manualfield.unique_name(name, taken)
+        name = manualfield.unique_name(name, taken)
+        if not modelspec.usable_field_name(name):
+            raise UserError(_("'%s' is not a usable field name.", name))
+        return name
 
     # -- lifecycle: anchors follow the fields they belong to ----------------
 

@@ -255,33 +255,6 @@ class TestAnchorPlacement(BuilderCase):
         self.assertTrue(draft._place_in_views(spec, diff))
         return self._siblings(self.form)
 
-    # -- naming ----------------------------------------------------------------
-
-    def test_a_field_staged_with_only_a_label_is_named_from_it(self):
-        """The console's fallback field editor sends a label and a type and
-        no name: the draft derives one, clear of what the model and the
-        draft already have, and keeps a name that was sent."""
-        draft = self._draft()
-        base_draft = cast("BuilderModelDraft", draft)
-        base_draft.add_field({"ttype": "char", "string": "Colour"})
-        base_draft.add_field({"ttype": "char", "string": " Colour "})
-        base_draft.add_field({"ttype": "char", "string": "Budget"})
-        base_draft.add_field({"name": "hue", "ttype": "char", "string": "Colour"})
-        spec = base_draft._spec()
-        self.assertEqual(
-            [(f.name, f.string) for f in spec.fields if f.name in draft._added_names()],
-            [
-                ("colour", "Colour"),
-                ("colour_2", "Colour"),
-                ("budget", "Budget"),
-                ("hue", "Colour"),
-            ],
-        )
-        with raises(self, UserError):
-            base_draft.add_field({"ttype": "char", "string": "  "})
-        with raises(self, UserError):
-            base_draft.add_field({"ttype": "char", "string": "!!"})
-
     # -- the hook --------------------------------------------------------------
 
     def test_an_unchanged_view_takes_the_xpath_as_it_is(self):
@@ -802,6 +775,100 @@ class TestAnchorPlacement(BuilderCase):
         )
         self.assertEqual(_staged_of(first)["name"], "new_text")
         self.assertEqual(_staged_of(second)["name"], "new_text_2")
+
+    def test_a_field_staged_with_only_a_label_is_named_from_it(self):
+        """The console's fallback field editor sends a label and a type and
+        no name: the draft derives one by the rules it validates names by,
+        clear of what the model and the draft already have and of Python's
+        keywords, and keeps a name that was sent."""
+        draft = self._draft()
+        base_draft = cast("BuilderModelDraft", draft)
+        long_label = "A very long label " * 6
+        for values in (
+            {"ttype": "char", "string": "Colour"},
+            {"ttype": "char", "string": " Colour "},
+            {"ttype": "char", "field_description": "Budget"},
+            {"name": "hue", "ttype": "char", "string": "Colour"},
+            # Fields x_builder_project already has.
+            {"ttype": "char", "string": "X Name"},
+            {"ttype": "char", "string": "Display name"},
+            # Python keywords, a soft one included.
+            {"ttype": "char", "string": "Type"},
+            {"ttype": "char", "string": "Class"},
+            # Not ASCII.
+            {"ttype": "char", "string": "Größe"},
+            {"ttype": "char", "string": "Café"},
+            {"ttype": "char", "string": long_label},
+            {"ttype": "char", "string": long_label},
+        ):
+            base_draft.add_field(values)
+        # A soft keyword from Python 3.12 on: what the draft validates by
+        # is the running interpreter's list.
+        soft_type = "type_2" if "type" in modelspec.PYTHON_KEYWORDS else "type"
+        cut = "_".join(long_label.lower().split())[: modelspec.NAME_MAX - 5].rstrip("_")
+        added = draft._added_names()
+        spec = base_draft._spec()
+        self.assertEqual(
+            [(f.name, f.string) for f in spec.fields if f.name in added],
+            [
+                ("colour", "Colour"),
+                ("colour_2", "Colour"),
+                ("budget", "Budget"),
+                ("hue", "Colour"),
+                ("x_name_2", "X Name"),
+                ("display_name_2", "Display name"),
+                (soft_type, "Type"),
+                ("class_2", "Class"),
+                ("grosse", "Größe"),
+                ("cafe", "Café"),
+                (cut, long_label.strip()),
+                (cut + "_2", long_label.strip()),
+            ],
+        )
+        self.assertTrue(all(modelspec.usable_field_name(n) for n in added))
+        self.assertEqual(modelspec.validate_spec(spec), [])
+        for label in ("  ", "!!", "日本"):
+            with raises(self, UserError):
+                base_draft.add_field({"ttype": "char", "string": label})
+
+    def test_a_drop_names_its_field_as_the_model_list_does(self):
+        """A drop and the model list's "Add a field" name a label the same
+        way: a keyword is suffixed, an accent folded, a long label cut."""
+        first = self._drop(
+            self.form,
+            "x_budget",
+            "after",
+            {
+                "kind": "new_field",
+                "values": {"ttype": "char", "field_description": "Class"},
+            },
+        )
+        second = self._drop(
+            self.form,
+            "x_name",
+            "before",
+            {
+                "kind": "new_field",
+                "values": {"ttype": "char", "field_description": "Café"},
+            },
+            options={"draft_id": _staged_of(first)["draft_id"]},
+        )
+        third = self._drop(
+            self.form,
+            "x_name",
+            "after",
+            {
+                "kind": "new_field",
+                "values": {"ttype": "char", "field_description": "Word " * 20},
+            },
+            options={"draft_id": _staged_of(first)["draft_id"]},
+        )
+        self.assertEqual(_staged_of(first)["name"], "class_2")
+        self.assertEqual(_staged_of(second)["name"], "cafe")
+        self.assertEqual(
+            _staged_of(third)["name"],
+            ("word_" * 20)[: modelspec.NAME_MAX - 5].rstrip("_"),
+        )
 
     def test_a_drop_after_a_ghost_is_anchored_on_the_ghost(self):
         """The gap after a ghost is a place: the second field names the
