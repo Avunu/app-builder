@@ -440,18 +440,22 @@ export class RecordPane extends Component<Props, EnvWithBus> {
   /** What the confirmation says before the gate comes out: the model, the
    * rules left behind by count, then the server's own account of what
    * happens to data (`off_consequence`, the split `disable()` and
-   * `_drops_only_the_gate` make). */
+   * `_drops_only_the_gate` make). The count is every rule the pane lists
+   * for the model -- archived ones too -- and is left out when there are
+   * none, rather than promising that "0 rules" stay. */
   get gateOffBody(): string {
     const gate = this.gate;
     const rules = this.model.rows.length;
-    const lines = [
-      String(_t("Turn off approvals on %s?", this.modelLabel)),
-      rules === 1
-        ? String(_t("Its 1 approval rule stays, and is not asked any more."))
-        : String(
-            _t("Its %s approval rules stay, and are not asked any more.", String(rules))
-          ),
-    ];
+    const lines = [String(_t("Turn off approvals on %s?", this.modelLabel))];
+    if (rules === 1) {
+      lines.push(String(_t("Its 1 approval rule stays, and is not asked any more.")));
+    } else if (rules > 1) {
+      lines.push(
+        String(
+          _t("Its %s approval rules stay, and are not asked any more.", String(rules))
+        )
+      );
+    }
     if (gate && gate.off_consequence) {
       lines.push(gate.off_consequence);
     }

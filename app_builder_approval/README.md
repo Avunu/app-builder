@@ -74,8 +74,9 @@ Turning the gate off asks first, and says what it does to data:
 - the reviews already asked for stay in their history;
 - `validation_status`, the one stored column the mixin added, is removed with the mixin,
   and its values are kept under a renamed column, as for any confirmed removal. That is
-  all turning approvals off confirms: anything else waiting to be removed from the
-  package still has to be applied on its own.
+  all turning approvals off confirms: if anything else in the package is waiting to be
+  removed, turning approvals off is refused until that removal has been applied on its
+  own.
 
 ## Installing
 

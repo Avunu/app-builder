@@ -279,9 +279,10 @@ class BuilderApproval(models.AbstractModel):
                 "fire with no gate; the reviews already asked for stay in "
                 "their history. The validation status column the gate added "
                 "is the only stored field removed, and its values are kept "
-                "under a renamed column, as for any confirmed removal. "
-                "Anything else waiting to be removed from the package is not "
-                "confirmed by this and still has to be applied on its own."
+                "under a renamed column, as for any confirmed removal. If "
+                "anything else in the package is waiting to be removed, "
+                "turning approvals off is refused until that removal has been "
+                "applied on its own."
             ),
             # Offered when gated too: changing the transition picks from the
             # same fields enabling did.

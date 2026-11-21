@@ -112,6 +112,7 @@
                             type="button"
                             class="btn btn-primary btn-sm o_builder_gate_enable"
                             t-att-disabled="!this.gateReady or this.model.busy"
+                            t-att-aria-describedby="this.gateLockedReason ? 'o_builder_gate_locked' : undefined"
                             t-on-click="() => this.onEnableGate()"
                         >
                         <i class="fa fa-check-square-o me-1" />Turn on approvals
@@ -123,6 +124,7 @@
                     </fieldset>
                     <div
                         t-if="this.gateLockedReason"
+                        id="o_builder_gate_locked"
                         class="small text-muted mt-2 o_builder_gate_locked"
                         role="note"
                         t-esc="this.gateLockedReason"
