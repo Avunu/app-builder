@@ -498,7 +498,9 @@ class BuilderViewEditor(models.AbstractModel):
         exprs: list[str]
         if unit in ("value", "labelled"):
             doomed = self._labelled_unit(node)
-            exprs = [editor._locator_for(doomed or node, occurrences)]
+            exprs = [
+                editor._locator_for(doomed if doomed is not None else node, occurrences)
+            ]
             operation["_what"] = expression
         elif unit == "table":
             table = self._enclosing_table(node)
