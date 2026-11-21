@@ -815,29 +815,50 @@ class BuilderViewEditor(models.AbstractModel):
 
         Answers the field found there, or ``None``.
         """
-        found = self._resolve_xpath(tree, expr)
-        if not found:
-            return None
-        anchor = found[0]
-        if position == "inside":
-            children = self._specs(anchor)
-            neighbour = children[-1] if children else None
-        elif position == "before":
-            neighbour = self._element_beside(anchor, forward=False)
-        else:
-            neighbour = self._element_beside(anchor, forward=True)
-            if (
-                neighbour is not None
-                and neighbour.tag == "label"
-                and neighbour.get("for") == name
-            ):
-                neighbour = self._element_beside(neighbour, forward=True)
+        neighbour = self._beside_anchor(tree, expr, position)
+        if (
+            position == "after"
+            and neighbour is not None
+            and neighbour.tag == "label"
+            and neighbour.get("for") == name
+        ):
+            neighbour = self._element_beside(neighbour, forward=True)
         if (
             neighbour is not None
             and neighbour.tag == "field"
             and neighbour.get("name") == name
         ):
             return neighbour
+        return None
+
+    @api.model
+    def _beside_anchor(
+        self, tree: LxmlElement, expr: str, position: str
+    ) -> LxmlElement | None:
+        """The element standing exactly where an insertion at ``expr`` /
+        ``position`` would put its node, in ``tree``, or ``None``.
+
+        ``inside`` appends, so that is the anchor's last child; ``before``
+        and ``after`` put it right beside the anchor. ``tree`` is the one
+        the spec is about to be applied to (``_tree`` on the operation) --
+        never the spec, which remembers every insertion this extension made,
+        including the ones a later spec removed. Core takes the first node
+        a locator matches, and so does this.
+
+        The shared half of every "is this a replayed add?" question: a
+        handler compares what stands here with what it would insert, and an
+        equal node is the double-click it must not repeat. The same thing
+        anywhere *else* in the view is not a replay.
+        """
+        found = self._resolve_xpath(tree, expr)
+        if not found:
+            return None
+        anchor = found[0]
+        if position == "inside":
+            children = self._specs(anchor)
+            return children[-1] if children else None
+        if position in ("before", "after"):
+            return self._element_beside(anchor, forward=position == "after")
         return None
 
     @api.model
