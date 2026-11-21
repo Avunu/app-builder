@@ -33,32 +33,43 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+      # Single-user Nix in seconds. It writes accept-flake-config = true; NIX_CONFIG, which
+      # Nix applies after nix.conf, turns that off, so a pull request's flake.nix cannot
+      # name substituters of its own. flake.nix's one (devenv.cachix.org) is set here.
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
-          determinate: false
-          # flake.nix's nixConfig, which Nix applies only with accept-flake-config.
-          extra-conf: |
+          nix_conf: |
             extra-substituters = https://devenv.cachix.org
             extra-trusted-public-keys = devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=
 
-      # What cache.nixos.org and devenv.cachix.org do not have (the Python environment,
-      # the shell itself), kept between runs in the GitHub Actions cache.
-      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
+      # The whole store as one GitHub Actions cache entry: what cache.nixos.org and
+      # devenv.cachix.org do not have (OCB's source, the Python environment, odoo-nix's
+      # tools) takes ~10 minutes to fetch and build. One entry, not a request per path:
+      # magic-nix-cache is throttled by the cache service part way through a cold build.
+      # Only a push or a manual run saves; a pull request restores the newest entry its
+      # base branch saved (caches are scoped by ref) and builds only what its lockfiles
+      # moved. The entry is the dev shell's closure: the step below roots it, and garbage
+      # collection drops everything else before the save.
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          diagnostic-endpoint: ""
-          use-flakehub: false
+          primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock', '.odoo-series', 'nix/pyproject.toml', 'nix/uv.lock') }}
+          restore-prefixes-first-match: nix-devshell-${{ runner.os }}-${{ runner.arch }}-
+          save: ${{ github.event_name != 'pull_request' }}
+          gc-max-store-size-linux: 7G
 
       # Its own step, so the log shows what building and entering the shell cost apart from
-      # the checks themselves.
+      # the checks themselves. --profile makes the shell a garbage-collection root.
       - name: The dev shell
         env:
+          NIX_CONFIG: accept-flake-config = false
           ODOO_NIX_CI: "1"
-        run: nix develop --no-pure-eval -c true
+        run: nix develop --no-pure-eval --profile "$RUNNER_TEMP/dev-shell" -c true
 
       # A throwaway PostgreSQL cluster on a unix socket and free HTTP ports the kernel
       # picks: nothing two jobs on one host could meet on.
       - name: The Apply probes
         env:
+          NIX_CONFIG: accept-flake-config = false
           ODOO_NIX_CI: "1"
         run: nix develop --no-pure-eval -c scripts/ci-e2e.sh
 
