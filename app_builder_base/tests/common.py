@@ -179,11 +179,14 @@ def set_code_write(value: str | None) -> Callable[[], None]:
 def enable_code_write(cls: type[BaseCase]) -> None:
     """Opt this test class in to writing code, as an operator would.
 
-    The switch is off by default (``builder_security.code_write_enabled``)
-    and lives in the process environment, so a suite that builds packages
-    has to turn it on for itself rather than depend on the shell it was
-    started from. Set for the class and put back afterwards; a test of the
-    switch itself sets it again, narrower, inside the test.
+    With nothing set, the switch follows odoo-bin's ``--dev``
+    (``builder_security.code_write_enabled``), and ``odoo test`` runs
+    without it, so a suite that builds packages has to turn it on for itself
+    rather than depend on how the server or the shell was started. The
+    environment variable is the explicit setting, so it also holds when a
+    test patches ``dev_mode`` (several patch it to ``[]``). Set for the
+    class and put back afterwards; a test of the switch itself sets it
+    again, narrower, inside the test.
     """
     cls.addClassCleanup(set_code_write("1"))
 

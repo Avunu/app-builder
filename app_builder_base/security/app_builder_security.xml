@@ -14,7 +14,7 @@
         <field name="implied_ids" eval="[(4, ref('group_builder_user'))]" />
         <field
             name="comment"
-        >Can additionally write packages to disk and reload modules, where the server has been started with APP_BUILDER_ENABLE_WRITE. That is arbitrary code execution as the Odoo process: treat this group as shell access. See SECURITY.md.</field>
+        >Can additionally write packages to disk and reload modules, where the server allows it: started with --dev, or with APP_BUILDER_ENABLE_WRITE switched on. That is arbitrary code execution as the Odoo process: treat this group as shell access. See SECURITY.md.</field>
     </record>
 
     <!-- Settings administrators are Builder Administrators. Both groups are

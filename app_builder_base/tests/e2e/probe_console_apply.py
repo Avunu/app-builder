@@ -23,6 +23,7 @@ Three things are measured:
    second run finds the field already in the arch and does nothing.
 
 Run:  python app_builder_base/tests/e2e/probe_console_apply.py -c odoo.conf -d <db>
+      (with APP_BUILDER_ENABLE_WRITE=1, as run_probes.sh sets it: no --dev here)
 """
 
 from __future__ import annotations

@@ -42,6 +42,11 @@ PYTHON="${PYTHON:-python}"
 # workspace (the `odoo/` directory itself) does not shadow the real one.
 export PYTHONPATH="$PWD/.odoo-nix/odoo${PYTHONPATH:+:$PYTHONPATH}"
 PSQL="${PSQL:-psql}"
+# The probes build packages, and run without odoo-bin's --dev, which is what
+# turns writing on when nothing else says (SECURITY.md): so they say it, as an
+# operator would. Unconditionally: a 0 inherited from the shell would only make
+# every probe fail on the switch rather than on what it probes.
+export APP_BUILDER_ENABLE_WRITE=1
 
 # One option of odoo.conf's [options], or the fallback.
 conf_get() {

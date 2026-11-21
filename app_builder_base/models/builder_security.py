@@ -24,17 +24,23 @@ are ever surfaced.
 
 Two things narrow that further, and both are deliberate.
 
-**Writing code is opt-in, per server process.** Stock Odoo does not let a
-database administrator run arbitrary Python: server actions go through
-``safe_eval`` and ``base_import_module`` refuses Python files. This product
-does, by design, so the group alone is not allowed to be the whole gate.
-``code_write_enabled()`` reads a switch that lives *outside* the database --
-``APP_BUILDER_ENABLE_WRITE`` in the process environment, or
-``app_builder_enable_write`` in ``odoo.conf`` -- and that defaults to off.
-Nobody can flip it from the UI, an RPC call or a stolen admin session: it
-takes the access that already amounts to a shell. With it off the manager
-guard refuses every caller, the superuser included, and every package
-reports itself read-only. See ``SECURITY.md``.
+**Writing code is a development capability, per server process.** Stock
+Odoo does not let a database administrator run arbitrary Python: server
+actions go through ``safe_eval`` and ``base_import_module`` refuses Python
+files. This product does, by design, so the group alone is not allowed to be
+the whole gate. ``code_write_enabled()`` reads a switch that lives *outside*
+the database, and follows Odoo's own convention for capabilities that are
+for development only: odoo-bin's ``--dev`` flag, which Odoo documents as not
+for production and which already gates code-execution-grade features of its
+own (``--dev=werkzeug``'s interactive debugger, ``--dev=reload``). An
+explicit setting wins in both directions -- ``APP_BUILDER_ENABLE_WRITE`` in
+the process environment, then ``app_builder_enable_write`` in ``odoo.conf``
+-- and with neither set, writing is on exactly when Odoo was started with
+``--dev`` (any value). A production server, started without ``--dev`` and
+without the setting, is read-only. Nobody can flip it from the UI, an RPC
+call or a stolen admin session: it takes the access that already amounts to
+a shell. With it off the manager guard refuses every caller, the superuser
+included, and every package reports itself read-only. See ``SECURITY.md``.
 
 **``sudo()`` is not a way in.** Only the superuser *itself* (uid 1: module
 install, data loading, crons, the test bootstrap) passes without a group.
@@ -72,28 +78,64 @@ WRITE_CONFIG_KEY = "app_builder_enable_write"
 _TRUE = frozenset({"1", "true", "yes", "on"})
 
 
+def explicit_write_setting() -> tuple[Literal["env", "conf"], bool] | None:
+    """The operator's explicit answer and where it was given, or ``None``
+    when neither place says anything.
+
+    The environment variable, when it is set at all, wins over ``odoo.conf``
+    -- so ``APP_BUILDER_ENABLE_WRITE=0`` turns writing off on a host whose
+    shared config file turns it on. An empty value is not an answer, in
+    either place. Any other value is: ``1``, ``true``, ``yes`` or ``on``, in
+    any case, is on, and everything else is off.
+    """
+    env = os.environ.get(WRITE_ENV_VAR)
+    if env and env.strip():
+        return "env", env.strip().lower() in _TRUE
+    # `config.get` is unannotated; `odoo.conf` parsing leaves a real `bool`
+    # for `True`/`False` and the raw string for anything else.
+    raw = cast("object", config.get(WRITE_CONFIG_KEY))
+    if isinstance(raw, bool):
+        return "conf", raw
+    if raw is None or not str(raw).strip():
+        return None
+    return "conf", str(raw).strip().lower() in _TRUE
+
+
+def dev_mode_active() -> bool:
+    """Was Odoo started with ``--dev``, whatever its value?
+
+    ``tools.config['dev_mode']`` is the parsed flag (``odoo/tools/config.py``):
+    the comma-separated features as a list, ``all`` kept and expanded to
+    ``reload``, ``qweb`` and ``xml`` beside it, and ``[]`` without the flag.
+    Odoo takes it from the command line only -- it is neither read from nor
+    saved to ``odoo.conf`` -- so it says how this process was started, not
+    what a shared config file holds.
+    """
+    features = cast("object", config.get("dev_mode"))
+    if isinstance(features, str):
+        features = features.split(",")
+    if not isinstance(features, list | tuple):
+        return False
+    return any(str(f).strip() for f in cast("list[object]", features))
+
+
 def code_write_enabled() -> bool:
     """Has the operator of this *server* allowed the builder to write code?
 
-    Read on every call rather than cached at import: it is two dictionary
+    An explicit setting first (``explicit_write_setting``), in both
+    directions; with none, Odoo's development flag (``dev_mode_active``).
+    Read on every call rather than cached at import: it is three dictionary
     lookups, and a test (or an operator's ``odoo shell``) that changes the
-    environment must see the change. The environment variable, when it is
-    set at all, wins over ``odoo.conf`` -- so ``APP_BUILDER_ENABLE_WRITE=0``
-    turns writing off on a host whose shared config file turns it on.
+    environment must see the change.
 
     Deliberately not an ``ir.config_parameter``: a system parameter is a row
     a Settings administrator can edit, which is exactly the account this
     switch exists to not trust on its own.
     """
-    env = os.environ.get(WRITE_ENV_VAR)
-    # `config.get` is unannotated; `odoo.conf` parsing leaves a real `bool`
-    # for `True`/`False` and the raw string for anything else.
-    raw: object = (
-        env if env and env.strip() else cast("object", config.get(WRITE_CONFIG_KEY))
-    )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in _TRUE
+    explicit = explicit_write_setting()
+    if explicit is not None:
+        return explicit[1]
+    return dev_mode_active()
 
 
 class BuilderSecurityMixin(models.AbstractModel):
@@ -144,13 +186,34 @@ class BuilderSecurityMixin(models.AbstractModel):
         """
         if code_write_enabled():
             return ""
+        explicit = explicit_write_setting()
+        if explicit is not None and explicit[0] == "env":
+            return _(
+                "The builder is read-only on this server: writing source code "
+                "has been switched off by %(env)s in the server's "
+                "environment, which wins over --dev and odoo.conf. Set "
+                "%(env)s=1 to switch it on, only where every Settings "
+                "administrator is trusted with shell access.",
+                env=WRITE_ENV_VAR,
+            )
+        if explicit is not None:
+            return _(
+                "The builder is read-only on this server: writing source code "
+                "has been switched off by %(key)s in odoo.conf, which wins "
+                "over --dev. Set %(key)s = True, or %(env)s=1 in the "
+                "server's environment, to switch it on, only where every "
+                "Settings administrator is trusted with shell access.",
+                env=WRITE_ENV_VAR,
+                key=WRITE_CONFIG_KEY,
+            )
         return _(
             "The builder is read-only on this server: writing source code "
-            "has not been enabled. It is switched on outside the database, "
-            "by setting %(env)s=1 in the server's environment or "
-            "%(key)s = True in odoo.conf, and should only be switched on "
-            "where every Settings administrator is trusted with shell "
-            "access.",
+            "has not been enabled. It is on by default only when Odoo runs "
+            "with --dev, which is for development and never for production; "
+            "it is also switched on outside the database, by setting "
+            "%(env)s=1 in the server's environment or %(key)s = True in "
+            "odoo.conf. Switch it on only where every Settings administrator "
+            "is trusted with shell access.",
             env=WRITE_ENV_VAR,
             key=WRITE_CONFIG_KEY,
         )
