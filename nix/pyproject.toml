@@ -128,6 +128,26 @@ profile = "github:Avunu/odoo-standards-profile/v1"
 repo = "Avunu/app-builder"
 integration-branch = "develop"
 
+[tool.odoo-nix.ci]
+# `ci / test` runs on the fleet's shared self-hosted host, beside every other
+# job the fleet has queued: this repository's own ci, e2e and typecheck for
+# each push and pull request among them. The suite is ~7.5 minutes on a
+# workstation and ~25 on that host alone, and a busy host has run it past the
+# default 60, cancelling it on every push to develop. Like the frappe profile's
+# `test-timeout-minutes = 120`, for the same host and the same reason.
+test-timeout-minutes = 120
+
+[tool.odoo-nix.dependabot]
+# The profile turns this on, so every push to develop re-synced each open
+# Dependabot pull request, and each re-sync started ci, e2e, typecheck and deps
+# again on that same host: on 2026-11-20 two bot branches started e2e and
+# typecheck six times in sixteen minutes, five of them cancelled after holding
+# a runner. develop's ruleset does not require a branch to be up to date
+# (strict_required_status_checks_policy is false), so the re-sync is not what
+# lets a bot pull request merge. Back to odoo-nix's own default: Dependabot
+# still rebases a pull request whose lock conflicts with develop.
+update-branches = false
+
 [tool.odoo-nix.js-xml]
 # ES modules, which the managed eslint config parses as scripts. .ts has its own.
 exclude = ["scripts/", "eslint.typescript.config.mjs"]

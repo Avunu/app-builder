@@ -25,28 +25,54 @@ process.
 
 ## What stands between an administrator and the server
 
-### 1. Writing code is off until the server's operator turns it on
+### 1. Writing code is for development servers only
 
 The builder writes nothing, and reloads nothing, unless the process it runs in was
-started with the switch on:
+started with the switch on. The switch follows Odoo's own convention for capabilities
+that belong in development only: odoo-bin's `--dev` flag. Odoo documents `--dev` as a
+development option that must not be used in production, and already hangs features of
+the same weight on it (`--dev=werkzeug` serves an interactive Python debugger on error
+pages, `--dev=reload` re-imports code when a file changes). Writing source code belongs
+with them.
 
-| where               | how                               |
-| ------------------- | --------------------------------- |
-| process environment | `APP_BUILDER_ENABLE_WRITE=1`      |
-| `odoo.conf`         | `app_builder_enable_write = True` |
+The first of these that says anything decides:
 
-It defaults to **off**. The environment variable, when it is set, wins over `odoo.conf`,
-so `APP_BUILDER_ENABLE_WRITE=0` turns writing off on a host whose shared configuration
-turns it on. Accepted values are `1`, `true`, `yes` and `on`, in any case; anything else
-is off.
+| where                  | on                                | off                                |
+| ---------------------- | --------------------------------- | ---------------------------------- |
+| 1. process environment | `APP_BUILDER_ENABLE_WRITE=1`      | `APP_BUILDER_ENABLE_WRITE=0`       |
+| 2. `odoo.conf`         | `app_builder_enable_write = True` | `app_builder_enable_write = False` |
+| 3. odoo-bin's `--dev`  | any value (`--dev=all`, `xml`, …) | not given                          |
+
+An explicit setting wins in both directions: `APP_BUILDER_ENABLE_WRITE=0` keeps a
+`--dev` server read-only, and `app_builder_enable_write = True` lets a server without
+`--dev` write. The environment wins over `odoo.conf`, so the variable can override a
+shared configuration file. Accepted "on" values are `1`, `true`, `yes` and `on`, in any
+case; any other non-empty value is off, and an empty one counts as not set. `--dev` is
+read as Odoo parsed it (`tools.config['dev_mode']`): it exists on the command line only,
+never in `odoo.conf`.
+
+So a server started the way production servers are, without `--dev` and without the
+setting, is **read-only**. The odoo-nix development server (`devenv up`) always runs
+with `--dev` (its `devMode`, `all` by default), and so builds packages with nothing to
+configure. The test suite runs without `--dev`: its builder test cases and the e2e
+probes switch writing on for themselves.
 
 The switch is deliberately not a system parameter, a setting, or anything else stored in
 the database. Nobody can flip it from the UI or over RPC. Turning it on takes access to
-the server's configuration, which is the access that already amounts to a shell.
+the server's configuration or command line, which is the access that already amounts to
+a shell.
+
+On a NixOS host deployed with odoo-nix's module, the service starts Odoo without
+`--dev`, so the builder is read-only there. To say so explicitly, or to switch it on for
+a build or staging host:
+
+```nix
+services.odoo-nix.settings.options.app_builder_enable_write = false; # or true
+```
 
 With it off:
 
-- every package reports itself read-only, with a sentence that names the switch;
+- every package reports itself read-only, with a sentence that says what turned it off;
 - every operation that needs a Builder Administrator is refused with the same sentence,
   whoever asks, the superuser included: creating a package, applying a change, writing
   files, reloading, rolling back, committing, promoting code, and every edit made
@@ -121,7 +147,8 @@ App Builder is built for, and tested in, this envelope:
 - **Settings administrators only.** There is no supported way to give the builder to
   anybody else.
 - **`--dev=xml` is a development flag.** The builder uses it so that a view written to a
-  file is live without a module upgrade. It is not meant for a production server.
+  file is live without a module upgrade. It is not meant for a production server, and
+  any `--dev` switches code writing on unless the switch says otherwise.
 
 The intended workflow follows from that: build in development with the switch on, review
 and ship through git, deploy immutably with the switch off.
@@ -141,7 +168,8 @@ For any server where the switch is on:
 
 For production:
 
-- leave the switch off;
+- never start Odoo with `--dev`, and leave the switch unset or set it off
+  (`APP_BUILDER_ENABLE_WRITE=0`, or `app_builder_enable_write = False`);
 - mount the addons path read-only;
 - there is no reason to uninstall the builder: with the switch off it is a viewer.
 

@@ -620,9 +620,9 @@ msgstr ""
 #: model:res.groups,comment:app_builder_base.group_builder_manager
 msgid ""
 "Can additionally write packages to disk and reload modules, where the server"
-" has been started with APP_BUILDER_ENABLE_WRITE. That is arbitrary code "
-"execution as the Odoo process: treat this group as shell access. See "
-"SECURITY.md."
+" allows it: started with --dev, or with APP_BUILDER_ENABLE_WRITE switched "
+"on. That is arbitrary code execution as the Odoo process: treat this group "
+"as shell access. See SECURITY.md."
 msgstr ""
 
 #. module: app_builder_base
@@ -1411,10 +1411,32 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_base/models/builder_security.py:0
 msgid ""
+"The builder is read-only on this server: writing source code has been "
+"switched off by %(env)s in the server's environment, which wins over --dev "
+"and odoo.conf. Set %(env)s=1 to switch it on, only where every Settings "
+"administrator is trusted with shell access."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security.py:0
+msgid ""
+"The builder is read-only on this server: writing source code has been "
+"switched off by %(key)s in odoo.conf, which wins over --dev. Set %(key)s = "
+"True, or %(env)s=1 in the server's environment, to switch it on, only where "
+"every Settings administrator is trusted with shell access."
+msgstr ""
+
+#. module: app_builder_base
+#. odoo-python
+#: code:addons/app_builder_base/models/builder_security.py:0
+msgid ""
 "The builder is read-only on this server: writing source code has not been "
-"enabled. It is switched on outside the database, by setting %(env)s=1 in the"
-" server's environment or %(key)s = True in odoo.conf, and should only be "
-"switched on where every Settings administrator is trusted with shell access."
+"enabled. It is on by default only when Odoo runs with --dev, which is for "
+"development and never for production; it is also switched on outside the "
+"database, by setting %(env)s=1 in the server's environment or %(key)s = True"
+" in odoo.conf. Switch it on only where every Settings administrator is "
+"trusted with shell access."
 msgstr ""
 
 #. module: app_builder_base

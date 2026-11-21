@@ -14,6 +14,7 @@ builder root, which is gated on the builder group -- and nothing in the product
 would have told you.
 
 Run:  python app_builder_base/tests/e2e/probe_scaffold.py -c odoo.conf -d <db>
+      (with APP_BUILDER_ENABLE_WRITE=1, as run_probes.sh sets it: no --dev here)
 """
 
 from __future__ import annotations
