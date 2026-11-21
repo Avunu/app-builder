@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-20 11:29+0000\n"
-"PO-Revision-Date: 2026-11-20 11:29+0000\n"
+"POT-Creation-Date: 2026-11-21 03:10+0000\n"
+"PO-Revision-Date: 2026-11-21 03:10+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -164,6 +164,12 @@ msgid ""
 msgstr ""
 
 #. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "%s is already there; change its properties instead of adding it again."
+msgstr ""
+
+#. module: app_builder_view
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/top_bar.js:0
 msgid ""
@@ -201,6 +207,12 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_view/models/builder_view_new_field.py:0
 msgid "%s is not a selection."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "%s is read-only, so the gate cannot be written."
 msgstr ""
 
 #. module: app_builder_view
@@ -273,6 +285,12 @@ msgstr ""
 #: code:addons/app_builder_view/models/builder_view_new_field.py:0
 #: code:addons/app_builder_view/tools/manualfield.py:0
 msgid "'%s' is not a usable field name."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "'%s' is not a valid attribute name."
 msgstr ""
 
 #. module: app_builder_view
@@ -349,6 +367,18 @@ msgstr ""
 msgid ""
 "A %(type)s has to know which date to place records on. Choose a date field "
 "on %(model)s first."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A builder operation has to say what type it is."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "A builder operation is a set of named values."
 msgstr ""
 
 #. module: app_builder_view
@@ -918,6 +948,12 @@ msgid "Ask before running"
 msgstr ""
 
 #. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "Attributes are given as names and values."
+msgstr ""
+
+#. module: app_builder_view
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/flows/create_package_flow.xml:0
 #: code:addons/app_builder_view/static/src/console/panes/changes_pane.xml:0
@@ -1136,6 +1172,12 @@ msgid "Changes: what is pending, written and committed"
 msgstr ""
 
 #. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Change…"
+msgstr ""
+
+#. module: app_builder_view
 #. odoo-python
 #: code:addons/app_builder_view/tools/view_options.py:0
 msgid "Chart"
@@ -1196,6 +1238,12 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/shell/pane_registry.js:0
 msgid "Choose a model first — from the crumb, or open any view with Builder."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Choose a package to record approvals in."
 msgstr ""
 
 #. module: app_builder_view
@@ -2036,6 +2084,18 @@ msgstr ""
 
 #. module: app_builder_view
 #. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Its %s approval rules stay, and are not asked any more."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Its 1 approval rule stays, and is not asked any more."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/apply_dialog.xml:0
 msgid "Its column would be dropped; the data is kept aside, not deleted."
 msgstr ""
@@ -2864,6 +2924,12 @@ msgstr ""
 
 #. module: app_builder_view
 #. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Reaching %s clears the approvals asked so far."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
 msgid "Reaching it clears the approvals asked so far."
 msgstr ""
@@ -3154,6 +3220,14 @@ msgstr ""
 
 #. module: app_builder_view
 #. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid ""
+"Rewrites the gate in the model's class in the package; one reload. The "
+"approval rules are not touched."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/panes/changes_pane.js:0
 msgid "Roll back"
 msgstr ""
@@ -3187,6 +3261,12 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/canvas.xml:0
 msgid "Sample data"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Save the change"
 msgstr ""
 
 #. module: app_builder_view
@@ -3520,6 +3600,14 @@ msgstr ""
 #. module: app_builder_view
 #. odoo-python
 #: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid ""
+"That element is placed by an extension of this view that is applied after "
+"this package's own (%s), so it cannot be addressed from here."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
 msgid "That is not a place in the view the builder can address."
 msgstr ""
 
@@ -3533,6 +3621,25 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_view/models/builder_view_editor.py:0
 msgid "The %s stays where it is; it is not something to remove from the view."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "The '%s' operation has to name what it adds."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "The '%s' operation has to say where in the view it goes."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid ""
+"The approval gate on %s was written by %s; change it or turn it off there."
 msgstr ""
 
 #. module: app_builder_view
@@ -3630,12 +3737,6 @@ msgstr ""
 #. odoo-python
 #: code:addons/app_builder_view/tools/view_options.py:0
 msgid "The number of records behind each aggregate."
-msgstr ""
-
-#. module: app_builder_view
-#. odoo-javascript
-#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
-msgid "The package is read-only, so the gate cannot be written."
 msgstr ""
 
 #. module: app_builder_view
@@ -3880,6 +3981,18 @@ msgid "This pivot"
 msgstr ""
 
 #. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "This search already groups by %s."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_editor.py:0
+msgid "This search already has a filter for that condition: %s."
+msgstr ""
+
+#. module: app_builder_view
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/canvases/search_lists_canvas.xml:0
 msgid ""
@@ -3951,6 +4064,22 @@ msgstr ""
 
 #. module: app_builder_view
 #. odoo-python
+#: code:addons/app_builder_view/models/builder_view_edit.py:0
+msgid ""
+"This view has been changed outside the builder since '%s' was made, so "
+"undoing it would discard that change. Nothing was touched."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
+#: code:addons/app_builder_view/models/builder_view_edit.py:0
+msgid ""
+"This view has been changed outside the builder since '%s' was undone, so "
+"putting it back would discard that change. Nothing was touched."
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-python
 #: code:addons/app_builder_view/models/builder_view_new_field.py:0
 msgid "This view has no model."
 msgstr ""
@@ -4008,6 +4137,19 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/app_builder_view/static/src/console/sidebar/properties_tab.js:0
 msgid "Translatable"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.xml:0
+msgid "Turn off approvals"
+msgstr ""
+
+#. module: app_builder_view
+#. odoo-javascript
+#: code:addons/app_builder_view/static/src/console/record_pane/record_pane.js:0
+msgid "Turn off approvals on %s?"
 msgstr ""
 
 #. module: app_builder_view

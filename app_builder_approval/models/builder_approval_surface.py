@@ -66,6 +66,8 @@ class ApprovalGateJSON(TypedDict):
     help: str
     consequence: str
     current: GateConfigJSON | None
+    module: str
+    off_consequence: str
     state_fields: list[StateFieldJSON]
     call: str
     update_call: str
@@ -217,6 +219,19 @@ class BuilderApproval(models.AbstractModel):
         )
 
     @api.model
+    def _gate_module(self, model_name: str | None) -> str:
+        """The module that put ``tier.validation`` into the model's class."""
+        if not model_name or model_name not in self.env:
+            return ""
+        # `_inherit_module` maps each parent to the module that introduced it
+        # (`odoo/models.py`); the stub gap is the one `_gated` documents.
+        modules = cast(
+            "dict[str, str]",
+            self.env[model_name]._inherit_module,  # pyright: ignore[reportAttributeAccessIssue]
+        )
+        return modules.get(MIXIN, "")
+
+    @api.model
     def catalogue(self, model_name: str | None = None) -> ApprovalCatalogueJSON:
         out = cast(
             "ApprovalCatalogueJSON",
@@ -228,7 +243,7 @@ class BuilderApproval(models.AbstractModel):
             "on": gated,
             "title": _("Approvals are not switched on for %s", model_name or "")
             if not gated
-            else "",
+            else _("Approvals are on for %s", model_name or ""),
             "help": _(
                 "An approval rule gates a state change, and the model has to "
                 "carry the gate first."
@@ -251,6 +266,24 @@ class BuilderApproval(models.AbstractModel):
             "current": base._live_gate_config(model_name)
             if gated and model_name
             else None,
+            # Which module put the gate there: only that package's gate can be
+            # changed or taken out from here (`disable`'s own refusal), so the
+            # pane says so before the button rather than after it.
+            "module": self._gate_module(model_name) if gated else "",
+            # What turning approvals off does to data, said where the button
+            # is -- the same split `disable()` and `_drops_only_the_gate` make.
+            "off_consequence": _(
+                "Takes the tier.validation mixin, its configuration and the "
+                "creation guard back out of the model's class in the package; "
+                "one reload. The approval rules stay as they are and never "
+                "fire with no gate; the reviews already asked for stay in "
+                "their history. The validation status column the gate added "
+                "is the only stored field removed, and its values are kept "
+                "under a renamed column, as for any confirmed removal. If "
+                "anything else in the package is waiting to be removed, "
+                "turning approvals off is refused until that removal has been "
+                "applied on its own."
+            ),
             # Offered when gated too: changing the transition picks from the
             # same fields enabling did.
             "state_fields": (

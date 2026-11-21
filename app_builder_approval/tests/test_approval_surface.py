@@ -6,6 +6,7 @@ template with its reviewer, its sentence, and the file it lands in."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
+from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
@@ -14,6 +15,7 @@ from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.base_tier_validation.models.tier_definition import TierDefinition
 
+from ..models.builder_approval import BuilderApproval as BuilderApprovalBase
 from ..models.builder_approval_surface import BuilderApproval
 
 if TYPE_CHECKING:
@@ -56,6 +58,12 @@ class TestApprovalSurface(BuilderCase):
         # The pane's hint is the one place a user is told what the gate
         # covers before they switch it on.
         self.assertIn("every way into", gate["consequence"])
+        # Nobody's gate, so nobody's to change.
+        self.assertEqual(gate["module"], "")
+        # Turning it off is explained before it is offered: the rules stay,
+        # and the one stored column the gate added is kept, renamed.
+        self.assertIn("rules stay", gate["off_consequence"])
+        self.assertIn("renamed column", gate["off_consequence"])
         gated = next(
             (
                 name
@@ -68,6 +76,11 @@ class TestApprovalSurface(BuilderCase):
             self.assertTrue(self.Surface.catalogue(gated)["gate"]["on"])
             # What is enforced is reported, so it can be changed.
             self.assertTrue(self.Surface.catalogue(gated)["gate"]["current"])
+            # And by whom: only that module's package can change it.
+            self.assertEqual(
+                self.Surface.catalogue(gated)["gate"]["module"],
+                self.env[gated]._inherit_module["tier.validation"],  # pyright: ignore[reportAttributeAccessIssue]
+            )
 
     def test_a_template_makes_a_rule_with_its_reviewer_in_the_file(self):
         row = cast("BuilderRecordSurface", self.Surface).create_record(
@@ -157,3 +170,64 @@ class TestApprovalSurface(BuilderCase):
             mine["id"], cast("int", self.package.id), force=True
         )
         self.assertNotIn("Partners", "".join(self.package._render_files().values()))
+
+
+@tagged("post_install", "-at_install")
+class TestDisableOnlyDropsTheGate(BuilderCase):
+    """What the pane says about turning approvals off (``off_consequence``)
+    against what Apply is actually told (``_drops_only_the_gate``): the
+    gate's own column is confirmed, and any other pending removal in the
+    package makes the whole disable a refusal rather than a partial one."""
+
+    MODEL = "x_builder_project"
+
+    def setUp(self):
+        super().setUp()
+        self.Approval = typed.model(self.env, BuilderApprovalBase)
+        self.package = self.make_package()
+        self.build_demo_content(self.package)
+
+    def _decides(self, dropped: dict[str, tuple[str, ...]]) -> bool:
+        package_class = type(self.package)
+        with (
+            patch.object(package_class, "_render_files", return_value={}),
+            patch.object(package_class, "_destructive_changes", return_value=dropped),
+        ):
+            return self.Approval._drops_only_the_gate(self.package, self.MODEL, {})
+
+    def test_only_the_gates_own_column_is_confirmed(self):
+        self.assertTrue(self._decides({self.MODEL: ("validation_status",)}))
+
+    def test_another_pending_removal_refuses_the_disable(self):
+        # A removal on another model of the package.
+        self.assertFalse(
+            self._decides({self.MODEL: ("validation_status",), "x_other": ("x_note",)})
+        )
+        # A removal on the gated model itself that is not the gate's.
+        self.assertFalse(self._decides({self.MODEL: ("validation_status", "x_note")}))
+        # Nothing dropped: nothing to confirm, so nothing is.
+        self.assertFalse(self._decides({}))
+
+    def test_apply_is_not_told_to_drop_anything_else(self):
+        """The refusal itself: ``allow_destructive`` stays False, so Apply's
+        own guard refuses the disable, as the dialog says it will."""
+        package_class = type(self.package)
+        with (
+            patch.object(
+                package_class,
+                "_destructive_changes",
+                return_value={
+                    self.MODEL: ("validation_status",),
+                    "x_other": ("x_note",),
+                },
+            ),
+            patch.object(package_class, "action_apply") as apply,
+        ):
+            self.Approval._commit_sources(
+                self.package, {}, apply=True, reason="test", ungating=self.MODEL
+            )
+        self.assertFalse(apply.call_args.kwargs["allow_destructive"])
+        gate = typed.model(self.env, BuilderApproval).catalogue("res.partner")["gate"]
+        self.assertIn(
+            "is refused until that removal has been applied", gate["off_consequence"]
+        )

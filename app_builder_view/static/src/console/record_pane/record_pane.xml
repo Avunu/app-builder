@@ -86,120 +86,125 @@
 
             <!-- A gate the model has to carry before a record of this kind means
              anything (approvals): switched on from here, one reload. -->
-            <div t-if="this.gateClosed" class="o_builder_card o_builder_gate_card mb-3">
-                <div class="fw-bold mb-1" t-esc="this.gate.title" />
+            <section
+                t-if="this.gateClosed"
+                class="o_builder_card o_builder_gate_card mb-3"
+                aria-labelledby="o_builder_gate_title"
+            >
+                <div
+                    id="o_builder_gate_title"
+                    class="fw-bold mb-1"
+                    t-esc="this.gate.title"
+                />
                 <div class="small text-muted mb-2" t-esc="this.gate.help" />
                 <t t-if="!this.gate.state_fields.length">
                     <div class="small text-muted o_builder_gate_none">
                     This model has no status field to gate on. Add a Selection field first, from the Views pane.
                 </div>
                 </t>
-                <t t-elif="this.shell.packageWritable">
-                    <div class="o_builder_row" data-row="gate_field">
-                        <label class="o_builder_row_label">Status field</label>
-                        <div class="o_builder_row_content">
-                            <select
-                                class="form-select form-select-sm"
-                                t-on-change="(ev) => this.onGateField(ev)"
-                            >
-                                <option
-                                    t-foreach="this.gate.state_fields"
-                                    t-as="field"
-                                    t-key="field.name"
-                                    t-att-value="field.name"
-                                    t-att-selected="this.gateField and field.name === this.gateField.name"
-                                    t-esc="field.string"
-                                />
-                            </select>
-                        </div>
-                    </div>
-                    <div class="o_builder_row" data-row="gate_from">
-                        <label class="o_builder_row_label">From</label>
-                        <div class="o_builder_row_content">
-                            <select
-                                class="form-select form-select-sm"
-                                multiple="multiple"
-                                size="4"
-                                t-on-change="(ev) => this.onGateStates('from', ev)"
-                            >
-                                <option
-                                    t-foreach="this.gateValues"
-                                    t-as="value"
-                                    t-key="value.value"
-                                    t-att-value="value.value"
-                                    t-att-selected="this.state.gate.from.includes(value.value)"
-                                    t-esc="value.label"
-                                />
-                            </select>
-                            <small
-                                class="text-muted d-block o_builder_row_hint"
-                            >Empty: from any state.</small>
-                        </div>
-                    </div>
-                    <div class="o_builder_row" data-row="gate_to">
-                        <label class="o_builder_row_label">To</label>
-                        <div class="o_builder_row_content">
-                            <select
-                                class="form-select form-select-sm"
-                                multiple="multiple"
-                                size="4"
-                                t-on-change="(ev) => this.onGateStates('to', ev)"
-                            >
-                                <option
-                                    t-foreach="this.gateValues"
-                                    t-as="value"
-                                    t-key="value.value"
-                                    t-att-value="value.value"
-                                    t-att-selected="this.state.gate.to.includes(value.value)"
-                                    t-esc="value.label"
-                                />
-                            </select>
-                        </div>
-                    </div>
-                    <div class="o_builder_row" data-row="gate_cancel">
-                        <label class="o_builder_row_label">Cancel state</label>
-                        <div class="o_builder_row_content">
-                            <select
-                                class="form-select form-select-sm"
-                                t-on-change="(ev) => this.state.gate.cancel = ev.target.value"
-                            >
-                                <option value="">None</option>
-                                <option
-                                    t-foreach="this.gateValues"
-                                    t-as="value"
-                                    t-key="value.value"
-                                    t-att-value="value.value"
-                                    t-att-selected="this.state.gate.cancel === value.value"
-                                    t-esc="value.label"
-                                />
-                            </select>
-                            <small
-                                class="text-muted d-block o_builder_row_hint"
-                            >Reaching it clears the approvals asked so far.</small>
-                        </div>
-                    </div>
-                    <div
-                        class="small mb-2 o_builder_gate_sentence"
-                        t-esc="this.gateSentence"
-                    />
-                    <button
-                        type="button"
-                        class="btn btn-primary btn-sm o_builder_gate_enable"
-                        t-att-disabled="!this.gateReady or this.model.busy"
-                        t-on-click="() => this.onEnableGate()"
+                <t t-else="">
+                    <fieldset
+                        class="o_builder_gate_form"
+                        t-att-disabled="this.gateLockedReason ? 'disabled' : undefined"
                     >
-                    <i class="fa fa-check-square-o me-1" />Turn on approvals
-                </button>
-                    <small
-                        class="text-muted d-block mt-1 o_builder_row_hint"
-                        t-esc="this.gate.consequence"
+                        <t t-call="app_builder_view.RecordPaneGateForm" />
+                        <button
+                            type="button"
+                            class="btn btn-primary btn-sm o_builder_gate_enable"
+                            t-att-disabled="!this.gateReady or this.model.busy"
+                            t-att-aria-describedby="this.gateLockedReason ? 'o_builder_gate_locked' : undefined"
+                            t-on-click="() => this.onEnableGate()"
+                        >
+                        <i class="fa fa-check-square-o me-1" />Turn on approvals
+                    </button>
+                        <small
+                            class="text-muted d-block mt-1 o_builder_row_hint"
+                            t-esc="this.gate.consequence"
+                        />
+                    </fieldset>
+                    <div
+                        t-if="this.gateLockedReason"
+                        id="o_builder_gate_locked"
+                        class="small text-muted mt-2 o_builder_gate_locked"
+                        role="note"
+                        t-esc="this.gateLockedReason"
                     />
                 </t>
+            </section>
+
+            <!-- The gate once it is on: what it enforces, changed or taken out
+             from here, each one reload. -->
+            <section
+                t-if="this.gateOn"
+                class="o_builder_card o_builder_gate_card o_builder_gate_on mb-3"
+                aria-labelledby="o_builder_gate_title"
+            >
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="o_builder_dot o_builder_dot_green" />
+                    <span
+                        id="o_builder_gate_title"
+                        class="fw-bold flex-grow-1"
+                        t-esc="this.gate.title"
+                    />
+                </div>
                 <div
-                    t-else=""
-                    class="small text-muted"
-                >The package is read-only, so the gate cannot be written.</div>
-            </div>
+                    t-foreach="this.gateCurrentSentences"
+                    t-as="sentence"
+                    t-key="sentence_index"
+                    class="small o_builder_gate_current"
+                    t-esc="sentence"
+                />
+                <fieldset
+                    t-if="this.state.gate.editing"
+                    class="o_builder_gate_form mt-2"
+                    t-att-disabled="this.gateLockedReason ? 'disabled' : undefined"
+                >
+                    <t t-call="app_builder_view.RecordPaneGateForm" />
+                    <div class="d-flex gap-2">
+                        <button
+                            type="button"
+                            class="btn btn-primary btn-sm o_builder_gate_save"
+                            t-att-disabled="!this.gateReady or this.model.busy"
+                            t-on-click="() => this.onSaveChange()"
+                        >Save the change</button>
+                        <button
+                            type="button"
+                            class="btn btn-link btn-sm o_builder_gate_cancel_change"
+                            t-on-click="() => this.onCancelChange()"
+                        >Cancel</button>
+                    </div>
+                    <small
+                        class="text-muted d-block mt-1 o_builder_row_hint"
+                    >Rewrites the gate in the model's class in the package; one reload. The approval rules are not touched.</small>
+                </fieldset>
+                <div t-else="" class="d-flex flex-wrap gap-2 mt-2">
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm o_builder_gate_change"
+                        t-att-disabled="this.gateLockedReason or this.model.busy"
+                        t-att-aria-describedby="this.gateLockedReason ? 'o_builder_gate_locked' : undefined"
+                        t-on-click="() => this.onStartChange()"
+                    >
+                        <i class="fa fa-pencil me-1" />Change…
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-outline-danger btn-sm o_builder_gate_disable"
+                        t-att-disabled="this.gateLockedReason or this.model.busy"
+                        t-att-aria-describedby="this.gateLockedReason ? 'o_builder_gate_locked' : undefined"
+                        t-on-click="() => this.onDisableGate()"
+                    >
+                        <i class="fa fa-power-off me-1" />Turn off approvals
+                    </button>
+                </div>
+                <div
+                    t-if="this.gateLockedReason"
+                    id="o_builder_gate_locked"
+                    class="small text-muted mt-2 o_builder_gate_locked"
+                    role="note"
+                    t-esc="this.gateLockedReason"
+                />
+            </section>
 
             <!-- The inline New form: what a record cannot exist without. -->
             <div t-if="this.creating" class="o_builder_card o_builder_create_card mb-3">
@@ -315,6 +320,114 @@
                 </div>
             </div>
         </div>
+    </t>
+
+<!-- The gate's four questions, for turning it on and for changing it: called
+     from `RecordPane`'s template, so `this` is that component. One gate form
+     is on screen at a time, so the ids are fixed. -->
+<t t-name="app_builder_view.RecordPaneGateForm">
+        <div class="o_builder_row" data-row="gate_field">
+            <label
+                class="o_builder_row_label"
+                for="o_builder_gate_field"
+            >Status field</label>
+            <div class="o_builder_row_content">
+                <select
+                    id="o_builder_gate_field"
+                    class="form-select form-select-sm"
+                    t-on-change="(ev) => this.onGateField(ev)"
+                >
+                    <option
+                        t-foreach="this.gate.state_fields"
+                        t-as="field"
+                        t-key="field.name"
+                        t-att-value="field.name"
+                        t-att-selected="this.gateField and field.name === this.gateField.name"
+                        t-esc="field.string"
+                    />
+                </select>
+            </div>
+        </div>
+        <div class="o_builder_row" data-row="gate_from">
+            <label class="o_builder_row_label" for="o_builder_gate_from">From</label>
+            <div class="o_builder_row_content">
+                <select
+                    id="o_builder_gate_from"
+                    class="form-select form-select-sm"
+                    multiple="multiple"
+                    size="4"
+                    aria-describedby="o_builder_gate_from_hint"
+                    t-on-change="(ev) => this.onGateStates('from', ev)"
+                >
+                    <option
+                        t-foreach="this.gateValues"
+                        t-as="value"
+                        t-key="value.value"
+                        t-att-value="value.value"
+                        t-att-selected="this.state.gate.from.includes(value.value)"
+                        t-esc="value.label"
+                    />
+                </select>
+                <small
+                    id="o_builder_gate_from_hint"
+                    class="text-muted d-block o_builder_row_hint"
+                >Empty: from any state.</small>
+            </div>
+        </div>
+        <div class="o_builder_row" data-row="gate_to">
+            <label class="o_builder_row_label" for="o_builder_gate_to">To</label>
+            <div class="o_builder_row_content">
+                <select
+                    id="o_builder_gate_to"
+                    class="form-select form-select-sm"
+                    multiple="multiple"
+                    size="4"
+                    t-on-change="(ev) => this.onGateStates('to', ev)"
+                >
+                    <option
+                        t-foreach="this.gateValues"
+                        t-as="value"
+                        t-key="value.value"
+                        t-att-value="value.value"
+                        t-att-selected="this.state.gate.to.includes(value.value)"
+                        t-esc="value.label"
+                    />
+                </select>
+            </div>
+        </div>
+        <div class="o_builder_row" data-row="gate_cancel">
+            <label
+                class="o_builder_row_label"
+                for="o_builder_gate_cancel"
+            >Cancel state</label>
+            <div class="o_builder_row_content">
+                <select
+                    id="o_builder_gate_cancel"
+                    class="form-select form-select-sm"
+                    aria-describedby="o_builder_gate_cancel_hint"
+                    t-on-change="(ev) => this.state.gate.cancel = ev.target.value"
+                >
+                    <option value="">None</option>
+                    <option
+                        t-foreach="this.gateValues"
+                        t-as="value"
+                        t-key="value.value"
+                        t-att-value="value.value"
+                        t-att-selected="this.state.gate.cancel === value.value"
+                        t-esc="value.label"
+                    />
+                </select>
+                <small
+                    id="o_builder_gate_cancel_hint"
+                    class="text-muted d-block o_builder_row_hint"
+                >Reaching it clears the approvals asked so far.</small>
+            </div>
+        </div>
+        <div
+            class="small mb-2 o_builder_gate_sentence"
+            role="status"
+            t-esc="this.gateSentence"
+        />
     </t>
 
 <t t-name="app_builder_view.RecordSidebar">

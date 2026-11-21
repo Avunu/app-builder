@@ -8,13 +8,20 @@ registries in a real process instead.
 
 ```sh
 # in the dev shell, with nothing else running: a throwaway PostgreSQL cluster on a
-# unix socket and a fresh database with app_builder installed (about two minutes)
+# unix socket and a fresh database with app_builder and app_builder_approval
+# installed (about two minutes)
 scripts/ci-e2e.sh
 
 # or against the dev shell's own PostgreSQL (`devenv up`), cloning a database that
 # already has the addons installed
 app_builder_base/tests/e2e/run_probes.sh -c odoo.conf -t <an_installed_db>
 ```
+
+Besides the probes here, `run_probes.sh` runs
+`app_builder_approval/tests/e2e/ probe_approval.py` (an approval gate turned on, changed
+and turned off through the Approvals pane's own calls, each asked of a plain user), and
+installs `app_builder_approval` for it: with `app_builder` into a fresh database, and
+into a cloned one that does not have it yet.
 
 CI runs the first form on every pull request and every push to `develop`
 (`.github/workflows/e2e.yml`, the `e2e / probes` check), and keeps the whole output as

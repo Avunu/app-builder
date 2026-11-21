@@ -384,6 +384,71 @@ export interface RecordDescription {
   [key: string]: unknown;
 }
 
+// -- builder.approval (the approvals surface's gate) ----------------------
+//
+// `app_builder_approval/models/builder_approval.py`,
+// `app_builder_approval/models/builder_approval_surface.py`. The one key a
+// surface adds to `catalogue()` that the record pane reads by name: the
+// gate a model has to carry before an approval rule means anything, and
+// the three calls that turn it on, change it and take it out. Declared
+// here rather than beside `record_pane.ts`'s reader, so that
+// `tests/test_wire_contract.py` holds it to the `TypedDict`s it mirrors --
+// a local copy had already fallen three keys behind the server once.
+// `app_builder_view` does not depend on `app_builder_approval`; these are
+// types only, and the pane renders no gate for a surface that sends none.
+
+/** One value a candidate state field can hold
+ * (`builder_approval.py:StateValueJSON`). */
+export interface StateValueJSON {
+  value: string;
+  label: string;
+}
+
+/** One selection field a gate could hang on
+ * (`builder_approval.py:candidate_state_fields`). */
+export interface StateFieldJSON {
+  name: string;
+  string: string;
+  values: StateValueJSON[];
+}
+
+/** The transition a live gate asks approval for, read off the loaded
+ * class (`builder_approval.py:_live_gate_config`). `state_from` is what
+ * the written rule evaluates to now: every value that is not a
+ * destination. `cancel_state` is `""` for none. */
+export interface GateConfigJSON {
+  state_field: string;
+  state_from: string[];
+  state_to: string[];
+  cancel_state: string;
+}
+
+/** `catalogue()`'s `gate` key on the approvals surface
+ * (`builder_approval_surface.py:ApprovalGateJSON`). `module` is the module
+ * that put the mixin into the class (`""` when there is none): only that
+ * package's gate can be changed or taken out from the console.
+ * `call`/`update_call`/`disable_call` name the surface's own methods. */
+export interface ApprovalGateJSON {
+  on: boolean;
+  title: string;
+  help: string;
+  consequence: string;
+  current: GateConfigJSON | null;
+  module: string;
+  off_consequence: string;
+  state_fields: StateFieldJSON[];
+  call: string;
+  update_call: string;
+  disable_call: string;
+}
+
+/** What `enable_gate`/`update_gate`/`disable_gate` answer
+ * (`builder_approval.py:EnableApprovalJSON`). */
+export interface EnableApprovalJSON {
+  model: string;
+  applied: boolean;
+}
+
 // -- builder.view.editor / builder.view.canvas -----------------------------
 //
 // `app_builder_view/models/builder_view_editor.py`,

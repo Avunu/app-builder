@@ -102,6 +102,31 @@ MIRRORS = {
         "models/builder_record_surface.py",
         "RecordActionJSON",
     ),
+    "StateValueJSON": (
+        "app_builder_approval",
+        "models/builder_approval.py",
+        "StateValueJSON",
+    ),
+    "StateFieldJSON": (
+        "app_builder_approval",
+        "models/builder_approval.py",
+        "StateFieldJSON",
+    ),
+    "GateConfigJSON": (
+        "app_builder_approval",
+        "models/builder_approval.py",
+        "GateConfigJSON",
+    ),
+    "EnableApprovalJSON": (
+        "app_builder_approval",
+        "models/builder_approval.py",
+        "EnableApprovalJSON",
+    ),
+    "ApprovalGateJSON": (
+        "app_builder_approval",
+        "models/builder_approval_surface.py",
+        "ApprovalGateJSON",
+    ),
     "OperationResult": (
         "app_builder_view",
         "models/builder_view_editor.py",
@@ -158,6 +183,11 @@ MIRRORS = {
         "SearchElementsJSON",
     ),
 }
+
+# Addons a mirror lives in that this one does not depend on: a pane reads
+# their keys only when the addon is installed beside it, so a tree shipped
+# without one has nothing of it to drift from.
+NOT_DEPENDED_ON = {"app_builder_approval"}
 
 # Keys an interface carries that its ``TypedDict`` does not, and why.
 TS_ONLY = {
@@ -260,6 +290,8 @@ class TestWireContract(BaseCase):
         for name, (addon, relative, cls) in MIRRORS.items():
             with self.subTest(interface=name, typeddict=cls):
                 root = get_module_path(addon, display_warning=False)
+                if not root and addon in NOT_DEPENDED_ON:
+                    self.skipTest("%s is not on the addons path" % addon)
                 if not root:
                     self.fail("%s is not on the addons path" % addon)
                 python = _typeddict_keys(Path(root) / relative, cls)

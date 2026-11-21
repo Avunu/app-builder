@@ -822,10 +822,9 @@ Remaining:
   arch-version check.
 - **The panes** — what §X6 deferred and says so in the UI: sequences, crons and defaults
   have no pane (Changes lists their files), a foreign access line or rule is not copied,
-  a foreign automation is not switched off from source, the approval mixin is not
-  removed, there are no bulk actions, the menu tree is reordered with buttons rather
-  than by drag, and the legacy `action_open` list openers are still on the models though
-  nothing calls them.
+  a foreign automation is not switched off from source, there are no bulk actions, the
+  menu tree is reordered with buttons rather than by drag, and the legacy `action_open`
+  list openers are still on the models though nothing calls them.
 - **Relationships** — one2many with automatic inverse creation and notebook placement;
   then sub-models.
 - **19.0** — the code is kept 19.0-clean but is only tested on 18.0. Several OCA

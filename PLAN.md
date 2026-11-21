@@ -716,10 +716,10 @@ left `pending`), and a draft's rewritten sources go through the apply's snapshot
 overlay so a rollback restores the right bytes. Deferred, and said so in the UI:
 sequences, crons and defaults as panes (Changes lists their files), copying a foreign
 access line or rule (additive, so not honest), switching a foreign automation off from
-source, removing the approval mixin, bulk actions, drag in the menu tree (up/down
-buttons and a parent picker instead), the legacy `action_open` list openers (inert;
-nothing in the client calls them), and the report canvas as a mode of the Reports pane
-(it opens on the Views pane with the qweb view instead).
+source, bulk actions, drag in the menu tree (up/down buttons and a parent picker
+instead), the legacy `action_open` list openers (inert; nothing in the client calls
+them), and the report canvas as a mode of the Reports pane (it opens on the Views pane
+with the qweb view instead).
 
 **X7 — The outline.** _Done._ The document as a tree, above the sidebar's tabs
 (`console/sidebar/outline.js`), where the eye sees order and nesting at once and reaches

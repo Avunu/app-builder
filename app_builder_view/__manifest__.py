@@ -131,6 +131,7 @@
             ("include", "app_builder_view.assets_console"),
         ],
         "web.assets_unit_tests": [
+            "app_builder_view/static/tests/approval_gate.test.js",
             "app_builder_view/static/tests/canvas_views.test.js",
             "app_builder_view/static/tests/compat.test.js",
             "app_builder_view/static/tests/console_loader.test.js",
