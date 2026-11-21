@@ -1836,7 +1836,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-report"
-version = "18.0.2.0.3"
+version = "18.0.2.0.3.1"
 source = { editable = "../app_builder_report" }
 dependencies = [
     { name = "odoo" },
@@ -1874,7 +1874,7 @@ requires-dist = [
 
 [[package]]
 name = "odoo-addon-app-builder-view"
-version = "18.0.2.0.4"
+version = "18.0.2.0.5"
 source = { editable = "../app_builder_view" }
 dependencies = [
     { name = "odoo" },
