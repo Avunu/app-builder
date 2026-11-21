@@ -201,15 +201,21 @@ class BuilderViewEditor(models.AbstractModel):
             self._standing_at(operation, expr, position), expression
         )
         if held:
-            if held_label != label:
+            if label is not None and held_label != label:
                 # A replay asking for another label is a request to change
                 # it. Printing the value again would show it twice, and
                 # dropping the request would claim a label that was not set.
+                # No label at all is not a request to remove one: the console
+                # forgets the label once it has placed the value, so a second
+                # click on Place is a replay, the same as a double-click.
+                field = cast("dict[str, Field[Any]]", self.env[model_name]._fields)[
+                    name
+                ]
                 raise UserError(
                     _(
                         "%s is already printed there; change its label instead "
                         "of placing it again.",
-                        expression,
+                        field.string or name,
                     )
                 )
             return root
@@ -226,6 +232,52 @@ class BuilderViewEditor(models.AbstractModel):
             strong.tail = " "
         etree.SubElement(host, "span", {"t-field": expression})
         return node
+
+    @api.model
+    def _tabled_columns(self, node: LxmlElement | None, loop: str) -> list[str] | None:
+        """The columns of ``node`` if it is a table ``_op_add_report_table``
+        made over ``loop``, else None.
+
+        Only the shape this editor writes counts: a ``<table>`` holding a
+        ``<thead>`` with one header row and a ``<tbody>`` with one ``<tr
+        t-foreach t-as>`` whose every cell is a single ``<span t-field>`` on
+        the row's own loop variable, one header cell per body cell. Columns
+        are returned without the loop variable, so a replay naming it
+        differently is still the same table. A hand-written or core table over
+        the same list (an order-line table, with its own spans and widgets) is
+        somebody else's table, and a builder table is free to go beside it.
+        """
+
+        def elements(parent: LxmlElement) -> list[LxmlElement]:
+            return [child for child in parent if isinstance(child.tag, str)]
+
+        if node is None or node.tag != "table":
+            return None
+        parts = elements(node)
+        if [part.tag for part in parts] != ["thead", "tbody"]:
+            return None
+        heads, rows = elements(parts[0]), elements(parts[1])
+        if len(heads) != 1 or len(rows) != 1 or heads[0].tag != "tr":
+            return None
+        row = rows[0]
+        loop_var = row.get("t-as")
+        if row.tag != "tr" or row.get("t-foreach") != loop or not loop_var:
+            return None
+        cells = elements(row)
+        if not cells or len(elements(heads[0])) != len(cells):
+            return None
+        prefix = "%s." % loop_var
+        columns: list[str] = []
+        for cell in cells:
+            spans = elements(cell)
+            if cell.tag != "td" or len(spans) != 1 or spans[0].tag != "span":
+                return None
+            expression = spans[0].get("t-field") or ""
+            column = expression[len(prefix) :]
+            if not expression.startswith(prefix) or not column or "." in column:
+                return None
+            columns.append(column)
+        return columns
 
     def _op_add_report_table(
         self, root: LxmlElement, operation: dict[str, object]
@@ -272,24 +324,16 @@ class BuilderViewEditor(models.AbstractModel):
         loop = "%s.%s" % (cast("str", operation.get("parent_var") or "doc"), name)
         cells = ["%s.%s" % (loop_var, column) for column in columns]
 
-        standing = self._standing_at(operation, expr, position)
-        rows = (
-            [row for row in standing.iter("tr") if row.get("t-foreach") == loop]
-            if standing is not None and standing.tag == "table"
-            else []
+        printed = self._tabled_columns(
+            self._standing_at(operation, expr, position), loop
         )
-        if rows:
-            printed = [
-                cast("str", span.get("t-field"))
-                for span in rows[0].iter("span")
-                if span.get("t-field")
-            ]
-            if printed != cells:
+        if printed is not None:
+            if printed != columns:
                 raise UserError(
                     _(
-                        "%s is already tabled there; change that table's "
+                        "A table of %s is already there; change that table's "
                         "columns instead of adding another.",
-                        loop,
+                        field.string or name,
                     )
                 )
             return root

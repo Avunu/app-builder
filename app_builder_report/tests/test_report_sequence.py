@@ -28,6 +28,9 @@ from odoo.tests import tagged
 
 from odoo.addons.app_builder_base.tests.common import BuilderCase, raises
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.builder_report_ops import (
+    BuilderViewEditor as ReportOps,
+)
 from odoo.addons.app_builder_view.models.builder_view_edit import BuilderViewEdit
 from odoo.addons.app_builder_view.models.builder_view_editor import BuilderViewEditor
 from odoo.addons.base.models.ir_model import IrModel, IrModelFields
@@ -88,17 +91,19 @@ class ReportSequenceCase(BuilderCase):
         operation.update(extra)
         return self._apply(operation)
 
-    def _table(self, columns: list[str], xpath: str = PAGE, position: str = "inside"):
-        return self._apply(
-            {
-                "type": "add_report_table",
-                "xpath": xpath,
-                "position": position,
-                "model": "x_builder_project",
-                "name": "x_line_ids",
-                "columns": columns,
-            }
-        )
+    def _table(
+        self, columns: list[str], xpath: str = PAGE, position: str = "inside", **extra
+    ):
+        operation: dict[str, object] = {
+            "type": "add_report_table",
+            "xpath": xpath,
+            "position": position,
+            "model": "x_builder_project",
+            "name": "x_line_ids",
+            "columns": columns,
+        }
+        operation.update(extra)
+        return self._apply(operation)
 
     def _combined(self):
         return etree.fromstring(
@@ -216,6 +221,26 @@ class TestReportReAdd(ReportSequenceCase):
             self._place("x_budget", label="Cost")
         self.assertEqual(self._printed().count("doc.x_budget"), 1)
 
+    def test_a_label_conflict_names_the_field_not_the_expression(self):
+        self._place("x_budget", label="Budget")
+        label = self.env["x_builder_project"]._fields["x_budget"].string
+        with raises(self, UserError) as caught:
+            self._place("x_budget", label="Cost")
+        message = str(caught.exception)
+        self.assertIn(label, message)
+        self.assertNotIn("doc.x_budget", message)
+
+    def test_a_labelled_value_placed_again_without_a_label_is_a_replay(self):
+        """The console forgets the label once the value is placed; a second
+        click on Place sends none. That is not a request to drop the label."""
+        self._place("x_budget", label="Budget")
+        self._place("x_budget")
+        self.assertEqual(self._printed().count("doc.x_budget"), 1)
+        self.assertEqual(
+            [s.text for s in self._page().iter("strong")].count("Budget"), 1
+        )
+        self.assertEqual(len(self._entries()), 1)
+
     def test_a_value_may_be_printed_in_two_places(self):
         """Beside the display name and again at the end of the page: two
         places, two values. Only the same place twice is a replay."""
@@ -331,6 +356,34 @@ class TestReportTableSequence(ReportSequenceCase):
             self._table(["name", "email"])
         self.assertEqual(len(self._page().findall(".//table")), 1)
 
+    def test_a_replay_naming_the_loop_variable_differently_is_one_table(self):
+        """The columns are the same; only the name of the row changed."""
+        self._table(["name", "email"])
+        self._table(["name", "email"], loop_var="partner")
+        self.assertEqual(len(self._page().findall(".//table")), 1)
+        self.assertEqual(len(self._entries()), 1)
+
+    def test_a_table_not_made_by_the_builder_is_not_taken_for_one(self):
+        """A hand-written or core table over the same list -- here with a
+        widget cell and a header row of its own -- is somebody else's."""
+        editor = typed.model(self.env, ReportOps)
+        core = etree.fromstring(
+            "<table><thead><tr><th>Name</th><th>Total</th></tr></thead>"
+            "<tbody><tr t-foreach='doc.x_line_ids' t-as='l'>"
+            "<td><span t-field='l.name'/></td>"
+            "<td><span t-field='l.credit' t-options='{\"widget\": \"monetary\"}'/>"
+            "<span>extra</span></td>"
+            "</tr></tbody></table>"
+        )
+        self.assertIsNone(editor._tabled_columns(core, "doc.x_line_ids"))
+        made = etree.fromstring(
+            "<table class='table table-sm'><thead><tr><th>Name</th></tr></thead>"
+            "<tbody><tr t-foreach='doc.x_line_ids' t-as='l'>"
+            "<td><span t-field='l.name'/></td></tr></tbody></table>"
+        )
+        self.assertEqual(editor._tabled_columns(made, "doc.x_line_ids"), ["name"])
+        self.assertIsNone(editor._tabled_columns(made, "doc.x_other_ids"))
+
 
 @tagged("post_install", "-at_install")
 class TestReportOwnedSequence(ReportSequenceCase):
@@ -370,6 +423,56 @@ class TestReportOwnedSequence(ReportSequenceCase):
         self._table(["name"])
         self._table(["name"])
         self.assertEqual(self._arch().count("<table"), 1)
+
+    def test_values_placed_in_turn_print_in_that_order(self):
+        self._place("x_budget")
+        self._table(["name"])
+        self._place("x_name")
+        self.assertEqual(
+            self._page_children(),
+            ["h2", "doc.display_name", "doc.x_budget", "table:1", "doc.x_name"],
+        )
+
+    def test_a_removed_labelled_value_can_be_placed_back(self):
+        self._place("x_budget", label="Budget")
+        self._place("x_name")
+        self._remove("//div[span[@t-field='doc.x_budget']]")
+        self.assertNotIn("doc.x_budget", self._arch())
+        self._place("x_budget", label="Budget")
+        self.assertEqual(self._arch().count('t-field="doc.x_budget"'), 1)
+        self.assertEqual(self._arch().count("<strong>Budget</strong>"), 1)
+
+    def test_the_same_value_with_another_label_is_refused(self):
+        self._place("x_budget", label="Budget")
+        with raises(self, UserError):
+            self._place("x_budget", label="Cost")
+        self.assertEqual(self._arch().count('t-field="doc.x_budget"'), 1)
+        self.assertNotIn("Cost", self._arch())
+
+    def test_undo_then_redo_on_an_owned_report(self):
+        self._place("x_budget")
+        entry = self.history.browse(self._entries()[0]["id"])
+        entry.action_undo()
+        self.assertNotIn("doc.x_budget", self._arch())
+        entry.action_redo()
+        self.assertEqual(self._arch().count('t-field="doc.x_budget"'), 1)
+
+    def test_undo_and_redo_on_a_read_only_owned_report_are_refused(self):
+        self._place("x_budget")
+        self._place("x_name")
+        newest_first = [entry["id"] for entry in self._entries()]
+        latest, earlier = self.history.browse(newest_first)
+        latest.action_undo()
+        self.package.root_path = self.unwritable_path()
+        self.package.invalidate_recordset()
+        with raises(self, UserError):
+            latest.action_redo()
+        self.assertTrue(latest.undone)
+        self.assertNotIn("doc.x_name", self._arch())
+        with raises(self, UserError):
+            earlier.action_undo()
+        self.assertFalse(earlier.undone)
+        self.assertIn("doc.x_budget", self._arch())
 
     def test_the_display_name_already_on_the_page_is_not_added_again(self):
         self._apply(
@@ -424,12 +527,19 @@ class TestReportGuards(ReportSequenceCase):
 
     def test_undo_and_redo_on_a_read_only_package_are_refused(self):
         self._place("x_budget")
-        entry = self._entry()
+        self._place("x_name")
+        latest, earlier = self._entry(), self._entry(1)
+        latest.action_undo()
+        self.assertNotIn("doc.x_name", self._printed())
         self._freeze()
         with raises(self, UserError):
-            entry.action_undo()
-        self.assertFalse(entry.undone)
+            earlier.action_undo()
+        self.assertFalse(earlier.undone)
         self.assertIn("doc.x_budget", self._printed())
+        with raises(self, UserError):
+            latest.action_redo()
+        self.assertTrue(latest.undone)
+        self.assertNotIn("doc.x_name", self._printed())
 
     def test_undo_then_redo_puts_a_value_back(self):
         """The edit that created the patch: undo removes it, redo makes it
