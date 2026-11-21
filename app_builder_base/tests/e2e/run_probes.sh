@@ -36,6 +36,20 @@ while getopts "c:t:d:l:" opt; do
 done
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The repository root: every probe is named by its path from here, since the
+# approval one lives with its own addon.
+ROOT="$(cd "$HERE/../../.." && pwd)"
+PROBES=(
+    app_builder_base/tests/e2e/probe_reimport
+    app_builder_base/tests/e2e/probe_reflection
+    app_builder_base/tests/e2e/probe_scaffold
+    app_builder_base/tests/e2e/probe_compose
+    app_builder_base/tests/e2e/probe_console_apply
+    app_builder_approval/tests/e2e/probe_approval
+)
+# What a database built from scratch gets: the builder, and the approval
+# addon its probe drives.
+INSTALL="app_builder,app_builder_approval"
 PYTHON="${PYTHON:-python}"
 # The probes import odoo as a script would, not through odoo-bin: with the
 # checkout's own directory first, so a namespace package rooted at the
@@ -106,7 +120,7 @@ unstage() {
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
     [ -n "$START_HEAD" ] || return 0
     local pkg now
-    for pkg in x_reimport_probe x_reflect_probe x_scaffold_probe x_compose_probe x_console_probe; do
+    for pkg in x_reimport_probe x_reflect_probe x_scaffold_probe x_compose_probe x_console_probe x_approval_probe; do
         [ -e "$pkg" ] || git reset -q "$START_HEAD" -- "$pkg" >/dev/null 2>&1 || true
     done
     now="$(git rev-parse -q --verify HEAD 2>/dev/null || true)"
@@ -135,10 +149,23 @@ if [ -n "$TEMPLATE" ]; then
     echo "==> cloning $TEMPLATE -> $DB"
     "$PSQL" "${PSQL_ARGS[@]}" -d postgres -c "CREATE DATABASE \"$DB\" TEMPLATE \"$TEMPLATE\";" >/dev/null
 else
-    echo "==> building $DB from scratch (install app_builder)"
+    echo "==> building $DB from scratch (install $INSTALL)"
     if ! "$PYTHON" .odoo-nix/odoo/odoo-bin -c "$CONF" -d "$DB" "${ODOO_DB_ARGS[@]}" \
-        -i app_builder --stop-after-init "${PORT_ARGS[@]}" >>"$LOG" 2>&1; then
-        echo "  FAIL installing app_builder into a fresh database" >&2
+        -i "$INSTALL" --stop-after-init "${PORT_ARGS[@]}" >>"$LOG" 2>&1; then
+        echo "  FAIL installing $INSTALL into a fresh database" >&2
+        tail_log
+        exit 1
+    fi
+fi
+# A template made before the approval probe joined may not carry its addon
+# (it is not part of `app_builder`, and does not auto-install).
+approval_state="$("$PSQL" "${PSQL_ARGS[@]}" -d "$DB" -tA \
+    -c "SELECT state FROM ir_module_module WHERE name = 'app_builder_approval';" 2>/dev/null || true)"
+if [ "$approval_state" != "installed" ]; then
+    echo "==> installing app_builder_approval into $DB"
+    if ! "$PYTHON" .odoo-nix/odoo/odoo-bin -c "$CONF" -d "$DB" "${ODOO_DB_ARGS[@]}" \
+        -i app_builder_approval --stop-after-init "${PORT_ARGS[@]}" >>"$LOG" 2>&1; then
+        echo "  FAIL installing app_builder_approval into $DB" >&2
         tail_log
         exit 1
     fi
@@ -146,12 +173,12 @@ fi
 
 rc=0
 failed=()
-for probe in probe_reimport probe_reflection probe_scaffold probe_compose probe_console_apply; do
+for probe in "${PROBES[@]}"; do
     echo "==> probe: $probe"
     echo "==> probe: $probe" >>"$LOG"
     out="$(mktemp)"
     status=0
-    "$PYTHON" "$HERE/$probe.py" -c "$CONF" -d "$DB" "${ODOO_DB_ARGS[@]}" \
+    "$PYTHON" "$ROOT/$probe.py" -c "$CONF" -d "$DB" "${ODOO_DB_ARGS[@]}" \
         "${PORT_ARGS[@]}" >"$out" 2>&1 || status=$?
     cat "$out" >>"$LOG"
     # A probe passes when it exits 0 *and* printed its verdict: a probe that
