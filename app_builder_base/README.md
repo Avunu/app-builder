@@ -131,13 +131,17 @@ root, ACLs and read-only mounts). Against a read-only deployment it disables its
 an explanatory banner rather than failing: build in development, ship through git,
 deploy immutably.
 
-Writing code is also off unless the server enables it outside the database
-(`APP_BUILDER_ENABLE_WRITE=1` in the environment, or `app_builder_enable_write = True`
-in `odoo.conf`); with the switch off every package is read-only. Leave it off in
-production and mount the addons path read-only as well. The supported envelope (Odoo
-18.0, one process, one database) is in "Scope and limits" in the
-[repository README](../README.md#scope-and-limits), and the threat model in
-[SECURITY.md](../SECURITY.md).
+Writing code is also a development-only capability, decided outside the database. It
+follows Odoo's convention for those: it is on when Odoo runs with `--dev` (any value)
+and off without it, unless an explicit setting says otherwise, in either direction:
+`APP_BUILDER_ENABLE_WRITE=1` or `0` in the environment first, then
+`app_builder_enable_write = True` or `False` in `odoo.conf`. With the switch off every
+package is read-only. Never run production with `--dev`, leave the switch off there, and
+mount the addons path read-only as well. On NixOS with odoo-nix the service runs without
+`--dev`; `services.odoo-nix.settings.options.app_builder_enable_write = false;` states
+it explicitly. The supported envelope (Odoo 18.0, one process, one database) is in
+"Scope and limits" in the [repository README](../README.md#scope-and-limits), and the
+threat model in [SECURITY.md](../SECURITY.md).
 
 ## Roadmap
 

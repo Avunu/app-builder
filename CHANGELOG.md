@@ -18,12 +18,20 @@ affected addons patch versions; they are listed here until the next tagged relea
 
 ### Security
 
-- **Writing code needs a server-side opt-in** (`app_builder_base`, and the guard in
-  `app_builder_model`, `app_builder_ui`, `app_builder_report` and `app_builder_view`).
-  It is off by default; set `APP_BUILDER_ENABLE_WRITE=1` in the environment or
-  `app_builder_enable_write = True` in `odoo.conf`. With it off every package is
-  read-only and the console opens as a viewer. **After upgrading, a development server
-  that should keep building packages needs the switch set.** The Nix dev shell sets it.
+- **Writing code is a development capability, decided on the server**
+  (`app_builder_base`, and the guard in `app_builder_model`, `app_builder_ui`,
+  `app_builder_report` and `app_builder_view`). It follows Odoo's convention for
+  development-only features: on when Odoo runs with `--dev` (any value), off without it.
+  An explicit setting wins in both directions: `APP_BUILDER_ENABLE_WRITE=1`/`0` in the
+  environment, then `app_builder_enable_write = True`/`False` in `odoo.conf`. With it
+  off every package is read-only and the console opens as a viewer, with a sentence
+  saying what turned it off. **After upgrading, a development server started without
+  `--dev` needs the switch set to keep building packages.** The odoo-nix dev server
+  (`devenv up`) runs with `--dev=all` and needs nothing; the dev shell no longer exports
+  `APP_BUILDER_ENABLE_WRITE`, so `odoo shell` and other processes started from it need
+  `--dev` or the variable to write. A production server (no `--dev`) is read-only by
+  default; on NixOS, `services.odoo-nix.settings.options.app_builder_enable_write` makes
+  that explicit either way.
 - Domain checks no longer work as a read oracle, and the drift and git diffs stay inside
   the package and take paths literally. [SECURITY.md](SECURITY.md) documents the threat
   model and how to report a vulnerability.

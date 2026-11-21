@@ -88,16 +88,17 @@ The editor writes only where it is allowed to and able to, and says so when it i
 
 **A Builder Administrator can run arbitrary code as the Odoo process.** The builder writes Python into the addons path and imports it, which stock Odoo never lets a database administrator do. Treat the role as shell access to the server. Every `Settings` administrator has it.
 
-For that reason writing code is **off by default** and is switched on outside the database, where no administrator account, stolen session or RPC call can reach it:
+For that reason writing code is a **development capability**, decided outside the database where no administrator account, stolen session or RPC call can reach it. It follows Odoo's own convention for what is only for development: odoo-bin's `--dev` flag, which Odoo documents as not for production and which already turns on its interactive debugger and code reloading. An explicit setting wins, in both directions:
 
 ```sh
-APP_BUILDER_ENABLE_WRITE=1        # in the server's environment, or
-app_builder_enable_write = True   # in odoo.conf, under [options]
+APP_BUILDER_ENABLE_WRITE=1        # in the server's environment (0 turns it off), else
+app_builder_enable_write = True   # in odoo.conf, under [options] (False turns it off), else
+odoo-bin --dev=all                # on with any --dev value; off without --dev
 ```
 
-With the switch off every package is read-only, every change is refused with a sentence naming the switch, and the console still opens as a viewer. The development shell of this repository sets the variable, so `devenv up` and the test gate build packages as before.
+So a production server, started without `--dev`, is read-only unless its operator says otherwise. With the switch off every package is read-only, every change is refused with a sentence saying why, and the console still opens as a viewer. In this repository's development shell `devenv up` runs Odoo with `--dev=all` (odoo-nix's `devMode`), so it builds packages with nothing to set; the test suite and the e2e probes run without `--dev` and switch writing on for themselves. A process started some other way, such as `odoo shell`, needs `--dev` or `APP_BUILDER_ENABLE_WRITE=1` to write.
 
-Turn it on only where every `Settings` administrator is trusted with a shell: a developer's machine or a build environment. Leave it off in production, and mount the addons path read-only as well.
+Turn it on only where every `Settings` administrator is trusted with a shell: a developer's machine or a build environment. Leave it off in production, never run production with `--dev` (Odoo's own advice), and mount the addons path read-only as well. On a NixOS host deployed with odoo-nix the service runs without `--dev`, so it is off; `services.odoo-nix.settings.options.app_builder_enable_write = false;` makes that explicit, and `= true;` switches it on for a build or staging host.
 
 The supported deployment is one Odoo process (`workers = 0`) serving one database, used by administrators only. [SECURITY.md](SECURITY.md) has the threat model, what each role can see, the hardening checklist, and how to report a vulnerability.
 
@@ -107,7 +108,7 @@ What the builder is for, and the envelope it is tested in. Outside it the builde
 
 -   **Odoo 18.0 only.** OCB 18.0 is what the suite runs on. No other series is supported yet.
 -   **A development database, not production.** The builder writes Python and XML into the server's addons path and reloads modules in the running process. Use it on a development or staging copy, commit the result, and deploy the generated addon like any other. Back up (or be able to recreate) the database you build on.
--   **Writing switched on, on a writable addons path.** A package is editable only when the server-side switch described under [Security](#security) is on and its directory passes the write probe described above. With the switch off, or on a read-only checkout, a Nix-store build or a read-only container mount, the console opens read-only.
+-   **Writing switched on, on a writable addons path.** A package is editable only when the server-side switch described under [Security](#security) is on and its directory passes the write probe described above. With the switch off (the default without `--dev`), or on a read-only checkout, a Nix-store build or a read-only container mount, the console opens read-only.
 -   **Trusted administrators only.** A Builder Administrator, and so every `Settings` administrator, can write code that the server then imports and runs. Treat that access as equivalent to shell access on the server and grant it accordingly. See [Security](#security) above and [SECURITY.md](SECURITY.md) for the security model and how to report a vulnerability.
 -   **A single process: `workers = 0`.** Applying a change re-imports Python in the running process. Other workers would rebuild their registry against the stale classes they still hold, so under `workers > 0` (or with a package's reload mode set to manual) an Apply writes the files and stops at _Restart needed_; it finishes after the server restarts. Nothing is half-applied, but it is not the interactive loop the builder is designed for.
 -   **One database per source tree.** Files are the source of truth and are shared by every database served from the same addons path; the builder's records are per database. Editing the same package from two databases (or two servers on one checkout) is not coordinated: the second one sees drift and has to reload from files. Build in one database.

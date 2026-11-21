@@ -20,6 +20,7 @@ exists at all:
   without clearing it registers every class a second time.
 
 Run:  python app_builder_base/tests/e2e/probe_reimport.py -c odoo.conf -d <db>
+      (with APP_BUILDER_ENABLE_WRITE=1, as run_probes.sh sets it: no --dev here)
 Exit: 0 if the in-process path is sound, 1 if the builder must fall back to a
       process restart.
 """

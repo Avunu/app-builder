@@ -23,6 +23,7 @@ checkout the builder stages what it writes, so expect ``x_approval_probe``
 entries in the index to unstage (``git reset -- x_approval_probe``).
 
 Run:  python app_builder_approval/tests/e2e/probe_approval.py -c odoo.conf -d <db>
+      (with APP_BUILDER_ENABLE_WRITE=1, as run_probes.sh sets it: no --dev here)
 """
 
 from __future__ import annotations

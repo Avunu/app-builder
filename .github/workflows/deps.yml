@@ -5,9 +5,6 @@
 name: deps
 on:
   pull_request:
-  # Bring the bot pull requests that are behind up to date.
-  push:
-    branches: ["develop"]
   workflow_dispatch:
 permissions: {}
 jobs:
@@ -24,7 +21,6 @@ jobs:
       runs-on: '["self-hosted","nixos"]'
       auto-merge: true
       auto-merge-policy: all
-      update-branches: true
       merge-method: squash
       client-id: ${{ vars.AVUNU_CI_APP_ID }}
     secrets:

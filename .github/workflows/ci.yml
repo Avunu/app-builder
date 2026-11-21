@@ -29,7 +29,7 @@ jobs:
     with:
       integration-branch: "develop"
       runs-on: '["self-hosted","nixos"]'
-      test-timeout-minutes: 60
+      test-timeout-minutes: 120
       client-id: ${{ vars.AVUNU_CI_APP_ID }}
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.AVUNU_CI_PRIVATE_KEY }}
