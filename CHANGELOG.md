@@ -60,6 +60,11 @@ affected addons patch versions; they are listed here until the next tagged relea
   limits" section in the README stating the supported deployment: Odoo 18.0, a
   development database, a writable addons path, one process (`workers = 0`), one
   database per source tree.
+- **Changing and turning off approvals from the console** (`app_builder_view`,
+  `app_builder_approval`): the Approvals pane shows what a live gate enforces and offers
+  _Change…_ and _Turn off approvals_, the latter behind a confirmation that says what
+  happens to the rules, the reviews and the validation status column. Both are off, with
+  the reason, for a read-only package or a gate another module wrote.
 
 ### Changed
 

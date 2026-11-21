@@ -26,6 +26,8 @@ import type {EnvWithBus} from "../compat";
 import {setPaneResolver} from "../shell/pane_registry";
 import type {BuilderShell} from "../shell/shell_model";
 import type {
+  ApprovalGateJSON,
+  GateConfigJSON,
   RecordActionJSON,
   RecordChildrenJSON,
   RecordDescription,
@@ -33,6 +35,8 @@ import type {
   RecordTemplateJSON,
   RowJSON,
   SectionJSON,
+  StateFieldJSON,
+  StateValueJSON,
 } from "../wire";
 import {RecordPaneModel} from "./record_pane_model";
 import type {CreatingState, RecordPaneEntry} from "./record_pane_model";
@@ -81,41 +85,13 @@ const FormViewDialog = FormViewDialogImpl as unknown as new (
 // -- the gate: what `extra.gate` carries (`app_builder_approval`'s own
 // surface) --------------------------------------------------------------
 //
-// Traced to the real Python construction rather than guessed
-// (`app_builder_approval/models/builder_approval_surface.py:catalogue`,
-// `.../builder_approval.py:candidate_state_fields`) -- only the approvals
-// surface (`builder.approval`) ever sets `extra.gate`; grepping every
-// `catalogue()` implementation in the tree (`builder_record_surface.py`'s
-// base and this one gate override -- nothing else defines the method)
-// confirms it is the only source. Local to this file rather than promoted
-// to `wire.ts`: `extra` is this addon's own per-surface grab-bag
-// (`RecordPaneEntry`/`RecordPaneModel.extra`, `record_pane_model.ts`'s own
-// choice to leave it a `Record<string, unknown>`), not part of the
-// `catalogue()`/`describe()` wire contract every surface shares.
-
-interface GateStateFieldValue {
-  value: string;
-  label: string;
-}
-
-interface GateStateField {
-  name: string;
-  string: string;
-  values: GateStateFieldValue[];
-}
-
-/** `{on, title, help, consequence, state_fields, call}`, as
- * `builder_approval_surface.py:catalogue` always sends it when the surface
- * is `builder.approval` -- every other surface's `extra` simply has no
- * `"gate"` key, which `get gate()` below already reads as "no gate". */
-interface GateInfo {
-  on: boolean;
-  title: string;
-  help: string;
-  consequence: string;
-  state_fields: GateStateField[];
-  call: string;
-}
+// Only the approvals surface (`builder.approval`) ever sets `extra.gate`
+// (`app_builder_approval/models/builder_approval_surface.py:catalogue`);
+// every other surface's `extra` has no `"gate"` key, which `get gate()`
+// below reads as "no gate". The shape is `wire.ts:ApprovalGateJSON`,
+// pinned to its `TypedDict` by `tests/test_wire_contract.py` -- it used to
+// be declared here, and had fallen behind the server's `current`/
+// `update_call`/`disable_call` by the time a reader needed them.
 
 // -- `entry`'s own vocabulary, the rest of "a record pane" -----------------
 //
@@ -180,11 +156,15 @@ interface Props {
   model: RecordPaneModel;
 }
 
+/** The gate form's values: the same four questions whether the gate is
+ * being turned on or changed. `editing` is the change form open on a gate
+ * that is already on (the form of a closed gate is always open). */
 interface GateState {
   field: string;
   from: string[];
   to: string[];
   cancel: string;
+  editing: boolean;
 }
 
 interface RecordPaneState {
@@ -214,7 +194,7 @@ export class RecordPane extends Component<Props, EnvWithBus> {
     // own `ApplyDialogState` already does): inferred from the literal
     // alone, `from: []`/`to: []` would type as `never[]`, not `string[]`.
     this.state = useState<RecordPaneState>({
-      gate: {field: "", from: [], to: [], cancel: ""},
+      gate: {field: "", from: [], to: [], cancel: "", editing: false},
     });
   }
 
@@ -246,16 +226,58 @@ export class RecordPane extends Component<Props, EnvWithBus> {
 
   // -- the gate: a surface whose records need the model prepared first -----------
 
-  /** `{on, title, help, consequence, state_fields, call}` or null. */
-  get gate(): GateInfo | null {
-    return (this.model.extra["gate"] as GateInfo | undefined) || null;
+  /** `catalogue()`'s gate, or null for a surface that has none. */
+  get gate(): ApprovalGateJSON | null {
+    return (this.model.extra["gate"] as ApprovalGateJSON | undefined) || null;
   }
 
   get gateClosed(): boolean {
     return Boolean(this.gate && !this.gate.on);
   }
 
-  get gateField(): GateStateField | null {
+  get gateOn(): boolean {
+    return Boolean(this.gate && this.gate.on);
+  }
+
+  /** What the live gate enforces now, or null. */
+  get gateCurrent(): GateConfigJSON | null {
+    return (this.gate && this.gate.current) || null;
+  }
+
+  /**
+   * Why the gate cannot be written from here, in a sentence; `""` when it
+   * can. The same refusals the server makes (`builder_approval.py:
+   * _writable_package`, `_not_gated_here`), said beside the controls
+   * before they are pressed: no package chosen, a package that is
+   * read-only -- the server's own sentence when the builder's write
+   * switch is off, which is fixed by somebody else than a read-only
+   * directory is -- and a gate another module wrote.
+   */
+  get gateLockedReason(): string {
+    const pkg = this.shell.package;
+    if (!pkg) {
+      return String(_t("Choose a package to record approvals in."));
+    }
+    if (!this.shell.packageWritable) {
+      return (
+        pkg.read_only_reason ||
+        String(_t("%s is read-only, so the gate cannot be written.", pkg.name))
+      );
+    }
+    const gate = this.gate;
+    if (gate && gate.on && gate.module && gate.module !== pkg.name) {
+      return String(
+        _t(
+          "The approval gate on %s was written by %s; change it or turn it off there.",
+          this.modelLabel,
+          gate.module
+        )
+      );
+    }
+    return "";
+  }
+
+  get gateField(): StateFieldJSON | null {
     const gate = this.gate;
     if (!gate) {
       return null;
@@ -265,7 +287,7 @@ export class RecordPane extends Component<Props, EnvWithBus> {
   }
 
   /** The values the chosen state field has, for the from/to pickers. */
-  get gateValues(): GateStateFieldValue[] {
+  get gateValues(): StateValueJSON[] {
     const field = this.gateField;
     return field ? field.values : [];
   }
@@ -283,6 +305,25 @@ export class RecordPane extends Component<Props, EnvWithBus> {
     this.state.gate[key] = [...target.selectedOptions].map((o) => o.value);
   }
 
+  /** "Approval is asked for when Status goes from Draft to Done." */
+  _transitionSentence(
+    field: StateFieldJSON | null,
+    fieldName: string,
+    from: string[],
+    to: string[]
+  ): ReturnType<typeof _t> {
+    const label = (value: string): string => {
+      const found = field && field.values.find((v) => v.value === value);
+      return found ? found.label : value;
+    };
+    return _t(
+      "Approval is asked for when %s goes from %s to %s.",
+      field ? field.string : fieldName,
+      from.length ? from.map(label).join(", ") : _t("any state"),
+      to.map(label).join(", ")
+    );
+  }
+
   /** What the gate will say, before it is written. */
   get gateSentence(): ReturnType<typeof _t> {
     const field = this.gateField;
@@ -290,22 +331,69 @@ export class RecordPane extends Component<Props, EnvWithBus> {
     if (!field || !to.length) {
       return _t("Say which state needs approving into.");
     }
-    const label = (value: string): string => {
-      const found = field.values.find((v) => v.value === value);
-      return found ? found.label : value;
-    };
-    return _t(
-      "Approval is asked for when %s goes from %s to %s.",
-      field.string,
-      from.length ? from.map(label).join(", ") : _t("any state"),
-      to.map(label).join(", ")
-    );
+    return this._transitionSentence(field, field.name, from, to);
+  }
+
+  /** What the live gate does now, in words; the cancel state after it. */
+  get gateCurrentSentences(): ReturnType<typeof _t>[] {
+    const gate = this.gate;
+    const current = this.gateCurrent;
+    if (!gate || !current) {
+      return [];
+    }
+    const field =
+      (gate.state_fields || []).find((f) => f.name === current.state_field) || null;
+    const out = [
+      this._transitionSentence(
+        field,
+        current.state_field,
+        current.state_from,
+        current.state_to
+      ),
+    ];
+    if (current.cancel_state) {
+      const found = field && field.values.find((v) => v.value === current.cancel_state);
+      out.push(
+        _t(
+          "Reaching %s clears the approvals asked so far.",
+          found ? found.label : current.cancel_state
+        )
+      );
+    }
+    return out;
   }
 
   get gateReady(): boolean {
     return Boolean(
-      this.gateField && this.state.gate.to.length && this.shell.packageWritable
+      this.gateField && this.state.gate.to.length && !this.gateLockedReason
     );
+  }
+
+  /** The form's answers, as `enable_gate`/`update_gate` take them: the
+   * pane sends `false` for "any state" and for "no cancel state". */
+  _gateArgs(field: StateFieldJSON): unknown[] {
+    const {from, to, cancel} = this.state.gate;
+    return [
+      this.shell.packageId,
+      this.shell.modelName,
+      field.name,
+      from.length ? from : false,
+      to,
+      cancel || false,
+    ];
+  }
+
+  /** Run one of the gate's calls; true when the server took it. */
+  async _gateCall(method: string, args: unknown[]): Promise<boolean> {
+    const result = await this.model.call(method, args);
+    if (result === undefined) {
+      return false;
+    }
+    // The model's class changed under the web client: its views carry
+    // the approval buttons now, or no longer do.
+    compat.clearViewCaches(this.env);
+    this.shell.refreshChanges();
+    return true;
   }
 
   async onEnableGate(): Promise<void> {
@@ -314,21 +402,84 @@ export class RecordPane extends Component<Props, EnvWithBus> {
     if (!gate || !field || !this.gateReady) {
       return;
     }
-    const {from, to, cancel} = this.state.gate;
-    const result = await this.model.call(gate.call, [
-      this.shell.packageId,
-      this.shell.modelName,
-      field.name,
-      from.length ? from : false,
-      to,
-      cancel || false,
-    ]);
-    if (result !== undefined) {
-      // The model's class changed under the web client: its views
-      // carry buttons now.
-      compat.clearViewCaches(this.env);
-      this.shell.refreshChanges();
+    await this._gateCall(gate.call, this._gateArgs(field));
+  }
+
+  /** Open the change form on what is enforced now. The origins start
+   * empty ("from any state"): the class is written with "every state that
+   * is not a destination" whatever is picked (`builder_approval.py:
+   * STATE_FROM_SOURCE`), and today's list, kept, would overlap whichever
+   * destination is added next. */
+  onStartChange(): void {
+    const current = this.gateCurrent;
+    if (this.gateLockedReason) {
+      return;
     }
+    this.state.gate.field = current ? current.state_field : "";
+    this.state.gate.from = [];
+    this.state.gate.to = current ? [...current.state_to] : [];
+    this.state.gate.cancel = current ? current.cancel_state : "";
+    this.state.gate.editing = true;
+  }
+
+  onCancelChange(): void {
+    this.state.gate.editing = false;
+  }
+
+  async onSaveChange(): Promise<void> {
+    const gate = this.gate;
+    const field = this.gateField;
+    if (!gate || !field || !this.gateReady) {
+      return;
+    }
+    if (await this._gateCall(gate.update_call, this._gateArgs(field))) {
+      this.state.gate.editing = false;
+    }
+  }
+
+  /** What the confirmation says before the gate comes out: the model, the
+   * rules left behind by count, then the server's own account of what
+   * happens to data (`off_consequence`, the split `disable()` and
+   * `_drops_only_the_gate` make). */
+  get gateOffBody(): string {
+    const gate = this.gate;
+    const rules = this.model.rows.length;
+    const lines = [
+      String(_t("Turn off approvals on %s?", this.modelLabel)),
+      rules === 1
+        ? String(_t("Its 1 approval rule stays, and is not asked any more."))
+        : String(
+            _t("Its %s approval rules stay, and are not asked any more.", String(rules))
+          ),
+    ];
+    if (gate && gate.off_consequence) {
+      lines.push(gate.off_consequence);
+    }
+    return lines.join("\n\n");
+  }
+
+  onDisableGate(): void {
+    const gate = this.gate;
+    if (!gate || !gate.on || this.gateLockedReason) {
+      return;
+    }
+    this.dialog.add(ConfirmationDialog, {
+      title: _t("Turn off approvals"),
+      body: this.gateOffBody,
+      confirmLabel: _t("Turn off approvals"),
+      confirmClass: "btn-danger",
+      confirm: () => {
+        void this._gateCall(gate.disable_call, [
+          this.shell.packageId,
+          this.shell.modelName,
+        ]).then((done) => {
+          if (done) {
+            this.state.gate.editing = false;
+          }
+        });
+      },
+      cancel: () => {},
+    });
   }
 
   /** The empty state's words: the pane's own, else the plain ones. */

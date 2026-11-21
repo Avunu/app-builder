@@ -63,12 +63,19 @@ or removing the gate rewrites or removes them. A `_create` somebody else wrote i
 builder's block, or either method edited by hand, is never replaced or dropped silently:
 the change is refused and says which method is in the way.
 
-The transition can be changed, and the gate taken out again, but **not from the
-Approvals pane yet**: the pane only turns approvals on. Until it offers the other two,
-they are RPC calls on `builder.approval` — `update_gate(package_id, model_name, ...)`
-and `disable_gate(package_id, model_name)` — and both rewrite the class in the package
-and reload. Turning the gate off leaves the rules where they are — they are your records
-— and they simply stop firing.
+Once the gate is on, the Approvals pane says what it enforces — which status field, from
+which states into which, and the cancel state — and offers **Change…** and **Turn off
+approvals** (`update_gate` and `disable_gate` on `builder.approval`; both rewrite the
+class in the package and reload). Both are offered only for a gate your package wrote,
+in a package that can be written; otherwise the buttons are off and the pane says why.
+Turning the gate off asks first, and says what it does to data:
+
+- the rules stay where they are — they are your records — and simply stop firing;
+- the reviews already asked for stay in their history;
+- `validation_status`, the one stored column the mixin added, is removed with the mixin,
+  and its values are kept under a renamed column, as for any confirmed removal. That is
+  all turning approvals off confirms: anything else waiting to be removed from the
+  package still has to be applied on its own.
 
 ## Installing
 
