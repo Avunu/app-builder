@@ -78,7 +78,7 @@ if TYPE_CHECKING:
         ``BuilderModelDraft``-typed ``draft``. The same narrow
         composed-elsewhere workaround ``builder_view_editor.py``'s own
         ``_DraftHandle`` Protocol is, for the same sibling file, here for
-        the two methods this file's own ``_drop_field_definition`` calls.
+        the methods this file's own ``_drop_field_definition`` calls.
         """
 
         def set_anchor(
@@ -88,6 +88,7 @@ if TYPE_CHECKING:
             release_dependents: bool = True,
         ) -> object: ...
         def _added_names(self) -> list[str]: ...
+        def _free_field_name(self, label: str) -> str: ...
 
 
 # What the panel offered before the picker did. Kept because the answer to
@@ -538,9 +539,7 @@ class BuilderViewEditor(models.AbstractModel):
             values["string"] = label
             values.pop("field_description", None)
             if not values.get("name"):
-                values["name"] = self._staged_field_name(
-                    label, cast("str", view.model), draft
-                )
+                values["name"] = cast("_DraftHandle", draft)._free_field_name(label)
             name = cast("str", values["name"])
             if not name.isidentifier():
                 raise UserError(_("'%s' is not a usable field name.", name))
@@ -617,18 +616,6 @@ class BuilderViewEditor(models.AbstractModel):
             "history": canvas["history"],
             "draft": None,
         }
-
-    @api.model
-    def _staged_field_name(
-        self, label: str, model_name: str, draft: BuilderModelDraft
-    ) -> str:
-        """The clean name a label implies for a class attribute, kept clear
-        of what the model has and what the draft is already adding."""
-        name = manualfield.field_name_for(label, prefix="")
-        taken = set(cast("dict[str, Field[Any]]", self.env[model_name]._fields)) | {
-            f.name for f in draft._spec().fields
-        }
-        return manualfield.unique_name(name, taken)
 
     @api.model
     def _mint_anchor(

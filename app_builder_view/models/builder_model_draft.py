@@ -59,6 +59,7 @@ from odoo.addons.app_builder_base.tools import modelspec, scaffold, typed
 from odoo.addons.app_builder_base.tools.i18n import _
 from odoo.addons.base.models.ir_ui_view import View
 
+from ..tools import manualfield
 from .builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
@@ -315,6 +316,43 @@ class BuilderModelDraft(models.TransientModel):
             )
         )
         return out
+
+    # -- naming a field staged from its label ----------------------------------
+
+    def add_field(self, values: dict[str, Any] | None) -> Literal[True]:
+        """A field staged without a name is named from its label.
+
+        The console stages a field from its model list through whichever
+        field editor is registered, and the one it falls back on when
+        ``app_builder_model`` is not installed (``field_editor_fallback.ts``)
+        asks for a label and a type, not a technical name: the name is the
+        draft's to derive, as it is for a field dropped on the canvas. A
+        name that was sent is kept as it is.
+        """
+        typed.security(self)._assert_builder_manager()
+        if isinstance(values, dict) and not values.get("name"):
+            label = str(
+                values.get("string") or values.get("field_description") or ""
+            ).strip()
+            if not label:
+                raise UserError(_("The field needs a label."))
+            values = dict(values, string=label, name=self._free_field_name(label))
+            values.pop("field_description", None)
+        return cast("BuilderModelDraftBase", super()).add_field(values)
+
+    def _free_field_name(self, label: str) -> str:
+        """The clean name ``label`` implies for a class attribute, kept clear
+        of what the model has and what the draft is already adding."""
+        self.ensure_one()
+        base = cast("BuilderModelDraftBase", self)
+        name = manualfield.field_name_for(label, prefix="")
+        if not name.isidentifier():
+            raise UserError(_("'%s' is not a usable field name.", name))
+        taken = {f.name for f in base._spec().fields}
+        model_name = cast("str", base.model)
+        if model_name in self.env:
+            taken |= set(cast("dict[str, Any]", self.env[model_name]._fields))
+        return manualfield.unique_name(name, taken)
 
     # -- lifecycle: anchors follow the fields they belong to ----------------
 

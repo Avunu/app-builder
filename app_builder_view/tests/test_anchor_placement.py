@@ -255,6 +255,33 @@ class TestAnchorPlacement(BuilderCase):
         self.assertTrue(draft._place_in_views(spec, diff))
         return self._siblings(self.form)
 
+    # -- naming ----------------------------------------------------------------
+
+    def test_a_field_staged_with_only_a_label_is_named_from_it(self):
+        """The console's fallback field editor sends a label and a type and
+        no name: the draft derives one, clear of what the model and the
+        draft already have, and keeps a name that was sent."""
+        draft = self._draft()
+        base_draft = cast("BuilderModelDraft", draft)
+        base_draft.add_field({"ttype": "char", "string": "Colour"})
+        base_draft.add_field({"ttype": "char", "string": " Colour "})
+        base_draft.add_field({"ttype": "char", "string": "Budget"})
+        base_draft.add_field({"name": "hue", "ttype": "char", "string": "Colour"})
+        spec = base_draft._spec()
+        self.assertEqual(
+            [(f.name, f.string) for f in spec.fields if f.name in draft._added_names()],
+            [
+                ("colour", "Colour"),
+                ("colour_2", "Colour"),
+                ("budget", "Budget"),
+                ("hue", "Colour"),
+            ],
+        )
+        with raises(self, UserError):
+            base_draft.add_field({"ttype": "char", "string": "  "})
+        with raises(self, UserError):
+            base_draft.add_field({"ttype": "char", "string": "!!"})
+
     # -- the hook --------------------------------------------------------------
 
     def test_an_unchanged_view_takes_the_xpath_as_it_is(self):

@@ -282,6 +282,7 @@ msgstr ""
 
 #. module: app_builder_view
 #. odoo-python
+#: code:addons/app_builder_view/models/builder_model_draft.py:0
 #: code:addons/app_builder_view/models/builder_view_new_field.py:0
 #: code:addons/app_builder_view/tools/manualfield.py:0
 msgid "'%s' is not a usable field name."
@@ -3696,6 +3697,7 @@ msgstr ""
 
 #. module: app_builder_view
 #. odoo-python
+#: code:addons/app_builder_view/models/builder_model_draft.py:0
 #: code:addons/app_builder_view/models/builder_view_new_field.py:0
 #: code:addons/app_builder_view/tools/manualfield.py:0
 msgid "The field needs a label."
