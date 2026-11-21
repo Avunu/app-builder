@@ -137,6 +137,17 @@ integration-branch = "develop"
 # `test-timeout-minutes = 120`, for the same host and the same reason.
 test-timeout-minutes = 120
 
+[tool.odoo-nix.dependabot]
+# The profile turns this on, so every push to develop re-synced each open
+# Dependabot pull request, and each re-sync started ci, e2e, typecheck and deps
+# again on that same host: on 2026-11-20 two bot branches started e2e and
+# typecheck six times in sixteen minutes, five of them cancelled after holding
+# a runner. develop's ruleset does not require a branch to be up to date
+# (strict_required_status_checks_policy is false), so the re-sync is not what
+# lets a bot pull request merge. Back to odoo-nix's own default: Dependabot
+# still rebases a pull request whose lock conflicts with develop.
+update-branches = false
+
 [tool.odoo-nix.js-xml]
 # ES modules, which the managed eslint config parses as scripts. .ts has its own.
 exclude = ["scripts/", "eslint.typescript.config.mjs"]
