@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import logging
+import unicodedata
 from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 # lxml ships no type stubs in this environment, the same gap `xml_writer.py`/
@@ -59,6 +60,7 @@ from odoo.addons.app_builder_base.tools import modelspec, scaffold, typed
 from odoo.addons.app_builder_base.tools.i18n import _
 from odoo.addons.base.models.ir_ui_view import View
 
+from ..tools import manualfield
 from .builder_view_editor import BuilderViewEditor
 
 if TYPE_CHECKING:
@@ -315,6 +317,66 @@ class BuilderModelDraft(models.TransientModel):
             )
         )
         return out
+
+    # -- naming a field staged from its label ----------------------------------
+
+    def add_field(self, values: dict[str, Any] | None) -> Literal[True]:
+        """A field staged without a name is named from its label.
+
+        The console stages a field from its model list through whichever
+        field editor is registered, and the one it falls back on when
+        ``app_builder_model`` is not installed (``field_editor_fallback.ts``)
+        asks for a label and a type, not a technical name: the name is the
+        draft's to derive, as it is for a field dropped on the canvas. A
+        name that was sent is kept as it is.
+        """
+        typed.security(self)._assert_builder_manager()
+        if isinstance(values, dict) and not values.get("name"):
+            label = str(
+                values.get("string") or values.get("field_description") or ""
+            ).strip()
+            if not label:
+                raise UserError(_("The field needs a label."))
+            values = dict(values, string=label, name=self._free_field_name(label))
+            values.pop("field_description", None)
+        return cast("BuilderModelDraftBase", super()).add_field(values)
+
+    def _free_field_name(self, label: str) -> str:
+        """The clean name ``label`` implies for a class attribute, kept clear
+        of what the model has and what the draft is already adding.
+
+        The name keeps to the rules the draft validates it by
+        (``modelspec.usable_field_name``), since the user never typed it and
+        has nowhere to correct it: accents are folded to ASCII ("Café" is
+        ``cafe``, "Größe" ``grosse``), a long label is cut with room left
+        for a ``_N`` suffix, and a Python keyword is taken like any other
+        name ("Class" is ``class_2``, and "Type" ``type_2`` where ``type``
+        is a soft keyword).
+        """
+        self.ensure_one()
+        base = cast("BuilderModelDraftBase", self)
+        ascii_label = (
+            unicodedata.normalize("NFKD", label.casefold())
+            .encode("ascii", "ignore")
+            .decode("ascii")
+        )
+        name = manualfield.field_name_for(ascii_label, prefix="")
+        # Room for "_99" and then some: a suffix must not push the name
+        # back over the limit.
+        name = name[: modelspec.NAME_MAX - 5].rstrip("_")
+        # A keyword is a name to step around below, not a refusal.
+        if name not in modelspec.PYTHON_KEYWORDS and not modelspec.usable_field_name(
+            name
+        ):
+            raise UserError(_("'%s' is not a usable field name.", name or label))
+        taken = {f.name for f in base._spec().fields} | modelspec.PYTHON_KEYWORDS
+        model_name = cast("str", base.model)
+        if model_name in self.env:
+            taken |= set(cast("dict[str, Any]", self.env[model_name]._fields))
+        name = manualfield.unique_name(name, taken)
+        if not modelspec.usable_field_name(name):
+            raise UserError(_("'%s' is not a usable field name.", name))
+        return name
 
     # -- lifecycle: anchors follow the fields they belong to ----------------
 
