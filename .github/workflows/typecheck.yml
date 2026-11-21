@@ -12,6 +12,11 @@ on:
     branches: ["develop"]
   pull_request:
   workflow_dispatch:
+  # GitHub evicts a cache entry nobody has restored for 7 days. A weekly run on develop
+  # (the default branch, where schedules run) restores its entry and keeps it, so a pull
+  # request after a quiet week still starts warm.
+  schedule:
+    - cron: "17 5 * * 1"
 permissions: {}
 concurrency:
   group: typecheck-${{ github.event.pull_request.number || github.ref }}
@@ -43,18 +48,26 @@ jobs:
       # tools) takes ~15 minutes to fetch and build. One entry, not a request per path:
       # magic-nix-cache is throttled by the cache service part way through a cold build.
       #
-      # The key is the lockfiles. A push or a manual run whose key has no entry yet builds
-      # from nothing and saves one, so an entry holds one dev shell and what its evaluation
-      # fetched, never an older one's leftovers, and is not garbage-collected: that would
-      # drop the sources evaluation fetches (the flake inputs, uv's git dependencies) and
-      # cost minutes of re-fetching on every run. A pull request saves nothing; it restores
-      # its base branch's entry (caches are scoped by ref), the newest one when its own
-      # lockfiles moved, and builds only the difference.
+      # The key is the lockfiles. Only this job saves, and only on develop (a push, the
+      # weekly schedule, a manual run there): an entry is ~2.7 GB against the repository's
+      # 10 GB, so entries saved on other branches, which no pull request can restore, would
+      # evict develop's. e2e.yml restores the same key and never saves. A develop run whose
+      # key has no entry yet builds from nothing and saves one, so an entry holds one dev
+      # shell and what its evaluation fetched, never an older one's leftovers, and is not
+      # garbage-collected: that would drop the sources evaluation fetches (the flake
+      # inputs, uv's git dependencies) and cost minutes of re-fetching on every run. A pull
+      # request saves nothing; it restores develop's entry (caches are scoped by ref), the
+      # newest one when its own lockfiles moved, and builds only the difference.
+      #
+      # Accepted cost: a lockfile change merged to develop (a Dependabot OCB or nixpkgs
+      # bump) is one cold build of ~15-20 minutes there, in both this job and e2e's.
+      # Restoring the old entry by prefix would make it incremental, but without garbage
+      # collection every entry would keep the leftovers of all the shells before it.
       - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock', '.odoo-series', 'nix/pyproject.toml', 'nix/uv.lock') }}
           restore-prefixes-first-match: ${{ github.event_name == 'pull_request' && format('nix-devshell-{0}-{1}-', runner.os, runner.arch) || '' }}
-          save: ${{ github.event_name != 'pull_request' }}
+          save: ${{ github.ref == 'refs/heads/develop' && github.event_name != 'pull_request' }}
 
       # Its own step, so the log shows what building and entering the shell cost apart from
       # the checks themselves.

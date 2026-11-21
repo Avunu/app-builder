@@ -49,18 +49,15 @@ jobs:
       # tools) takes ~15 minutes to fetch and build. One entry, not a request per path:
       # magic-nix-cache is throttled by the cache service part way through a cold build.
       #
-      # The key is the lockfiles. A push or a manual run whose key has no entry yet builds
-      # from nothing and saves one, so an entry holds one dev shell and what its evaluation
-      # fetched, never an older one's leftovers, and is not garbage-collected: that would
-      # drop the sources evaluation fetches (the flake inputs, uv's git dependencies) and
-      # cost minutes of re-fetching on every run. A pull request saves nothing; it restores
-      # its base branch's entry (caches are scoped by ref), the newest one when its own
-      # lockfiles moved, and builds only the difference.
+      # The key is the lockfiles. typecheck.yml's job is the one that saves, only on
+      # develop, and documents why; this job restores the same key and never saves. A pull
+      # request restores develop's entry (caches are scoped by ref), the newest one when
+      # its own lockfiles moved, and builds only the difference.
       - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: nix-devshell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock', '.odoo-series', 'nix/pyproject.toml', 'nix/uv.lock') }}
           restore-prefixes-first-match: ${{ github.event_name == 'pull_request' && format('nix-devshell-{0}-{1}-', runner.os, runner.arch) || '' }}
-          save: ${{ github.event_name != 'pull_request' }}
+          save: false
 
       # Its own step, so the log shows what building and entering the shell cost apart from
       # the checks themselves.
