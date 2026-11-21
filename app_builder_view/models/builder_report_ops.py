@@ -18,8 +18,10 @@ happened to produce.
 And deliberately a *sequence*, like every other edit of somebody else's view:
 each operation appends one spec, evaluated on the tree the specs before it
 left behind, and "is it already there?" is asked of that tree
-(``_beside_anchor``), never of the spec. Removal, moving and attributes are
-the view editor's own operations and need nothing report-specific.
+(``_beside_anchor``), never of the spec. Moving and attributes are the view
+editor's own operations and need nothing report-specific. Removal is too,
+underneath; what a report adds is knowing what goes with a value -- its
+label, its column's header, its table (``_op_remove_report_element``).
 """
 
 from __future__ import annotations
@@ -50,6 +52,8 @@ from odoo.addons.app_builder_base.tools.i18n import _
 from .builder_view_editor import INSERT_POSITIONS
 
 if TYPE_CHECKING:
+    from collections import Counter
+
     from odoo.fields import Field
 
     from odoo.addons.app_builder_base.tools.lxml_types import LxmlElement
@@ -356,3 +360,210 @@ class BuilderViewEditor(models.AbstractModel):
             cell = cast("LxmlElement", etree.SubElement(row, "td"))
             etree.SubElement(cell, "span", {"t-field": expression})
         return node
+
+    # -- taking a value out ------------------------------------------------------
+
+    @api.model
+    def _labelled_unit(self, node: LxmlElement) -> LxmlElement | None:
+        """The labelled unit ``node`` is the value of, or None.
+
+        ``_op_add_report_field`` writes a labelled value as one ``<div>``
+        holding a ``<strong>`` and the span. Taking out the span alone
+        leaves the label printed beside nothing.
+        """
+        expression = node.get("t-field")
+        parent = node.getparent()
+        if node.tag != "span" or not expression or parent is None:
+            return None
+        held, _label = self._printed_unit(parent, expression)
+        return parent if held and parent.tag == "div" else None
+
+    @api.model
+    def _builder_column(self, node: LxmlElement) -> tuple[LxmlElement, int, int] | None:
+        """The table ``_op_add_report_table`` made that ``node`` is a cell
+        value of, the cell's index in its row and how many cells the row
+        has; None otherwise.
+
+        Only that shape has columns the builder can take out: one header
+        cell per body cell, in the same order. A hand-written table's
+        columns are whatever its ``t-if``s and ``colspan``s make them.
+        """
+        cell = node.getparent()
+        row = cell.getparent() if cell is not None else None
+        body = row.getparent() if row is not None else None
+        table = body.getparent() if body is not None else None
+        if (
+            node.tag != "span"
+            or cell is None
+            or cell.tag != "td"
+            or row is None
+            or table is None
+            or self._tabled_columns(table, row.get("t-foreach") or "") is None
+        ):
+            return None
+        cells = cast("BuilderViewEditorBase", self)._specs(row)
+        index = next(i for i, each in enumerate(cells) if each is cell)
+        return table, index, len(cells)
+
+    @api.model
+    def _enclosing_table(self, node: LxmlElement) -> LxmlElement | None:
+        """The nearest ``<table>`` ``node`` is printed in, or None."""
+        return next(
+            (ancestor for ancestor in node.iterancestors() if ancestor.tag == "table"),
+            None,
+        )
+
+    @api.model
+    def _report_removals(self, node: LxmlElement) -> list[str]:
+        """What the console may offer to take out when ``node`` -- a value
+        printed by ``t-field`` -- is selected, the first being what Delete
+        does.
+
+        ``labelled`` is a value and its label, ``value`` the value alone,
+        ``column`` the column of a table the builder made and ``table`` the
+        whole table the value is printed in. The last column of a builder
+        table offers only ``table``, which is what removing it does.
+        """
+        column = self._builder_column(node)
+        if column is not None:
+            # A table's last column takes the table with it: say so, rather
+            # than a "Remove column" that removes a table.
+            return ["table"] if column[2] == 1 else ["column", "table"]
+        if self._labelled_unit(node) is not None:
+            return ["labelled"]
+        if self._enclosing_table(node) is not None:
+            return ["value", "table"]
+        return ["value"]
+
+    @api.model
+    def _table_locator(
+        self,
+        tree: LxmlElement,
+        table: LxmlElement,
+        node: LxmlElement,
+        occurrences: Counter[tuple[str, str, str]],
+    ) -> str:
+        """The table holding ``node``, located by what it prints: a table
+        has no identity of its own, and its indexed path is the most
+        fragile locator there is.
+
+        The nearest table: ``//table[.//span[...]]`` would also answer for
+        every table wrapping it -- a layout table, a hand-written one -- and
+        core takes the first match in document order, the outermost. The
+        locator is checked against ``tree`` to select exactly ``table``;
+        when it does not, ``_locator_for`` decides.
+        """
+        editor = cast("BuilderViewEditorBase", self)
+        held = editor._unique_predicate(node, occurrences)
+        if held:
+            located = "//%s/ancestor::table[1]" % held
+            found = editor._resolve_xpath(tree, located)
+            if found is not None and len(found) == 1 and found[0] is table:
+                return located
+        return editor._locator_for(table, occurrences)
+
+    def _op_remove_report_element(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
+        """Take a value out of a report, with what belongs to it.
+
+        ``xpath`` locates the value the console has selected -- a
+        ``t-field`` -- and ``unit`` says how much goes with it: ``value``
+        (or ``labelled``) the value, and its label when it has one;
+        ``column`` its column of a builder table, header and all; ``table``
+        the table it is printed in. A column that is the table's last takes
+        the table with it: a table of nothing is not a table.
+
+        What the unit is, is read off the tree the spec applies to
+        (``_tree``), like every other report edit, and the removal is the
+        view editor's own (``_op_remove_node``): a ``replace`` per node, or
+        the insertion taken back when the last spec made it -- so a value
+        removed can be placed again (``_standing_at``).
+        """
+        editor = cast("BuilderViewEditorBase", self)
+        unit = operation.get("unit") or "value"
+        if unit not in ("value", "labelled", "column", "table"):
+            raise UserError(
+                _("A value, a column or a table can be removed, not '%s'.", unit)
+            )
+        tree = cast("LxmlElement | None", operation.get("_tree"))
+        expr = cast("str", operation["xpath"])
+        found = editor._resolve_xpath(tree, expr) if tree is not None else None
+        if tree is None or not found:
+            # Already gone: nothing to take out, and nothing is written.
+            return root
+        node = found[0]
+        expression = node.get("t-field") or node.tag
+        occurrences = editor._occurrences(tree)
+        exprs: list[str]
+        if unit in ("value", "labelled"):
+            doomed = self._labelled_unit(node)
+            exprs = [
+                editor._locator_for(doomed if doomed is not None else node, occurrences)
+            ]
+            operation["_what"] = expression
+        elif unit == "table":
+            table = self._enclosing_table(node)
+            if table is None:
+                raise UserError(_("%s is not printed in a table.", expression))
+            exprs = [self._table_locator(tree, table, node, occurrences)]
+            operation["_what"] = _("the table printing %s", expression)
+        else:
+            column = self._builder_column(node)
+            if column is None:
+                raise UserError(
+                    _(
+                        "%s is not a column of a table the builder made; "
+                        "remove the whole table, or edit it as source.",
+                        expression,
+                    )
+                )
+            table, index, width = column
+            located = self._table_locator(tree, table, node, occurrences)
+            if width == 1:
+                exprs = [located]
+                operation["_what"] = _("the table printing %s", expression)
+            else:
+                # The header first: its locator goes through the table,
+                # which is found by the value this removal takes out.
+                exprs = [
+                    "%s/thead/tr/th[%d]" % (located, index + 1),
+                    editor._locator_for(
+                        cast("LxmlElement", node.getparent()), occurrences
+                    ),
+                ]
+                operation["_what"] = _("the %s column", expression)
+        removal: dict[str, object] = {"xpath": exprs[0], "_tree": tree}
+        if len(exprs) > 1:
+            removal["label_xpath"] = exprs[1]
+        return self._op_remove_node(root, removal)
+
+    def _op_remove_node(
+        self, root: LxmlElement, operation: dict[str, object]
+    ) -> LxmlElement:
+        """A labelled value's span takes its label with it.
+
+        A raw ``remove_node`` on ``//span[@t-field=...]`` of a value
+        ``_op_add_report_field`` placed with a label used to leave the
+        ``<strong>`` behind, printing a label for nothing. The unit is
+        removed instead -- read off the tree the spec applies to, so a span
+        somebody else wrapped is left to mean what it says.
+        """
+        editor = cast("BuilderViewEditorBase", self)
+        tree = cast("LxmlElement | None", operation.get("_tree"))
+        expr = cast("str", operation["xpath"])
+        found = editor._resolve_xpath(tree, expr) if tree is not None else None
+        if tree is not None and found and not operation.get("label_xpath"):
+            unit = self._labelled_unit(found[0])
+            if unit is not None:
+                operation = dict(
+                    operation,
+                    xpath=editor._locator_for(unit, editor._occurrences(tree)),
+                )
+        return cast("BuilderViewEditorBase", super())._op_remove_node(root, operation)
+
+    @api.model
+    def _describe(self, operation: dict[str, object]) -> str:
+        if operation.get("type") == "remove_report_element":
+            return _("removed %s", operation.get("_what") or _("a value"))
+        return cast("BuilderViewEditorBase", super())._describe(operation)

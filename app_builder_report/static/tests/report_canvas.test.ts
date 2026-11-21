@@ -64,8 +64,35 @@ function makeModel(): ConsoleModel {
   }) as unknown as ConsoleModel;
 }
 
+/** A model with a package to record into, whose `applyOperation` notes
+ * what it was asked to do. */
+function makeWritableModel(
+  ops: Record<string, unknown>[],
+  pkg: {writable: boolean; read_only_reason?: string} = {writable: true}
+): ConsoleModel {
+  return reactive({
+    viewId: 7,
+    archVersion: "v1",
+    busy: false,
+    packageId: 3,
+    package: {id: 3, name: "x_pkg", ...pkg},
+    applyOperation: (op: Record<string, unknown>) => {
+      ops.push(op);
+      return Promise.resolve({});
+    },
+  }) as unknown as ConsoleModel;
+}
+
+/** A key pressed on `el`, the way the browser sends it: bubbling, and
+ * cancelable so the canvas can claim it. */
+function keydown(el: Element, key: string): KeyboardEvent {
+  const ev = new KeyboardEvent("keydown", {key, bubbles: true, cancelable: true});
+  el.dispatchEvent(ev);
+  return ev;
+}
+
 /** The three reads a load makes, `preview_html` as the test says. */
-function serve(preview: () => unknown): string[] {
+function serve(preview: () => unknown, removals: string[] = ["value"]): string[] {
   const calls: string[] = [];
   onRpc("preview_html", () => {
     calls.push("preview_html");
@@ -84,7 +111,7 @@ function serve(preview: () => unknown): string[] {
   onRpc("locate_expression", ({args}) => {
     const expression = String(args[1]);
     calls.push(`locate ${expression}`);
-    return {found: true, xpath: "//span[1]", expression, tag: "span"};
+    return {found: true, xpath: "//span[1]", expression, tag: "span", removals};
   });
   return calls;
 }
@@ -158,4 +185,140 @@ test("a report that does not render opens anyway, says why, and can be retried",
     "preview_html",
     "printable_fields x.job",
   ]);
+});
+
+const VALUE = `${READY}:iframe [data-oe-expression='doc.name']`;
+const RENDERED = {html: REPORT, reason: false, model: "x.job", res_id: 1};
+
+test("a selected value is removed with its label, by its button or by Delete", async () => {
+  const ops: Record<string, unknown>[] = [];
+  serve(() => RENDERED, ["labelled"]);
+  await mountWithCleanup(ReportCanvas as never, {
+    props: {model: makeWritableModel(ops)},
+  });
+  // Nothing selected, nothing to remove.
+  expect(queryAll(".o_builder_report_remove")).toHaveLength(0);
+
+  await click(await waitFor(VALUE));
+  await animationFrame();
+  expect("button[name='remove_report_labelled']").toBeEnabled();
+  expect("button[name='remove_report_labelled']").toHaveText("Remove value and label");
+  await click("button[name='remove_report_labelled']");
+  await animationFrame();
+  expect(ops).toEqual([
+    {type: "remove_report_element", xpath: "//span[1]", unit: "labelled"},
+  ]);
+  // What was selected is gone, and so is the selection.
+  expect(queryAll(".o_builder_report_remove")).toHaveLength(0);
+
+  // Delete, pressed on the value in the document, does the same.
+  const value = await waitFor(VALUE);
+  await click(value);
+  await animationFrame();
+  const ev = keydown(value, "Delete");
+  await animationFrame();
+  expect(ev.defaultPrevented).toBe(true);
+  expect(ops).toHaveLength(2);
+  expect(ops[1]).toEqual({
+    type: "remove_report_element",
+    xpath: "//span[1]",
+    unit: "labelled",
+  });
+});
+
+test("a table cell offers its column and its table", async () => {
+  const ops: Record<string, unknown>[] = [];
+  serve(() => RENDERED, ["column", "table"]);
+  await mountWithCleanup(ReportCanvas as never, {
+    props: {model: makeWritableModel(ops)},
+  });
+  await click(await waitFor(VALUE));
+  await animationFrame();
+  expect("button[name='remove_report_column']").toHaveText("Remove column");
+  expect("button[name='remove_report_table']").toHaveText("Remove table");
+  // A whole table is asked about first.
+  await click("button[name='remove_report_table']");
+  await animationFrame();
+  expect(ops).toEqual([]);
+  expect(".modal .modal-body").toHaveText(/Remove the whole table printing doc\.name/);
+  await click(".modal .btn-primary");
+  await animationFrame();
+  expect(ops).toEqual([
+    {type: "remove_report_element", xpath: "//span[1]", unit: "table"},
+  ]);
+});
+
+test("Delete on a table's last column asks before removing the table", async () => {
+  const ops: Record<string, unknown>[] = [];
+  serve(() => RENDERED, ["table"]);
+  await mountWithCleanup(ReportCanvas as never, {
+    props: {model: makeWritableModel(ops)},
+  });
+  const value = await waitFor(VALUE);
+  await click(value);
+  await animationFrame();
+  expect(queryAll("button[name='remove_report_column']")).toHaveLength(0);
+  expect("button[name='remove_report_table']").toHaveText("Remove table");
+  keydown(value, "Delete");
+  await animationFrame();
+  expect(".modal").toHaveCount(1);
+  await click(".modal .btn-secondary");
+  await animationFrame();
+  expect(ops).toEqual([]);
+  expect(".modal").toHaveCount(0);
+});
+
+test("Backspace in the label being typed is typing, not a removal", async () => {
+  const ops: Record<string, unknown>[] = [];
+  serve(() => RENDERED);
+  await mountWithCleanup(ReportCanvas as never, {
+    props: {model: makeWritableModel(ops)},
+  });
+  await click(await waitFor(VALUE));
+  await animationFrame();
+  const ev = keydown(queryOne("input[name='report_label']"), "Backspace");
+  await animationFrame();
+  expect(ev.defaultPrevented).toBe(false);
+  expect(ops).toEqual([]);
+  // Pressed anywhere else in the tools, it removes.
+  keydown(
+    queryAll(".o_builder_report_tools .o_builder_section_title")[0]!,
+    "Backspace"
+  );
+  await animationFrame();
+  expect(ops).toEqual([
+    {type: "remove_report_element", xpath: "//span[1]", unit: "value"},
+  ]);
+});
+
+test("on a read-only package Remove is offered disabled, and says why", async () => {
+  const ops: Record<string, unknown>[] = [];
+  serve(() => RENDERED);
+  await mountWithCleanup(ReportCanvas as never, {
+    props: {
+      model: makeWritableModel(ops, {
+        writable: false,
+        read_only_reason: "Writing source code has not been enabled on this server.",
+      }),
+    },
+  });
+  const value = await waitFor(VALUE);
+  await click(value);
+  await animationFrame();
+  expect("button[name='remove_report_value']").not.toBeEnabled();
+  expect(".o_builder_report_remove_blocked").toHaveText(
+    "Writing source code has not been enabled on this server."
+  );
+  keydown(value, "Delete");
+  await animationFrame();
+  expect(ops).toEqual([]);
+});
+
+test("with no package chosen Remove is disabled, and says so", async () => {
+  serve(() => RENDERED);
+  await mountWithCleanup(ReportCanvas as never, {props: {model: makeModel()}});
+  await click(await waitFor(VALUE));
+  await animationFrame();
+  expect("button[name='remove_report_value']").not.toBeEnabled();
+  expect(".o_builder_report_remove_blocked").toHaveText(/Choose a package/);
 });

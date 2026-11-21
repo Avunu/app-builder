@@ -37,6 +37,7 @@ from odoo.exceptions import UserError
 
 from odoo.addons.app_builder_base.models.builder_model_draft import BuilderModelDraft
 from odoo.addons.app_builder_base.models.builder_package import BuilderPackage
+from odoo.addons.app_builder_base.models.builder_workspace import BuilderWorkspace
 from odoo.addons.app_builder_base.tools import typed
 from odoo.addons.app_builder_base.tools.i18n import _
 from odoo.addons.base.models.ir_model import IrModelFields
@@ -220,6 +221,12 @@ class BuilderViewEditor(models.AbstractModel):
                 "id": cast("int", package.id),
                 "name": cast("str", package.name),
                 "writable": package.writable,
+                # Why not, so a canvas can say it beside what it disables:
+                # the switch being off and the directory being unwritable
+                # are fixed by different people.
+                "read_only_reason": typed.model(
+                    self.env, BuilderWorkspace
+                )._read_only_reason(package),
             }
             if package
             else None,

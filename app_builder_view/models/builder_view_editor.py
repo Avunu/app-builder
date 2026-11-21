@@ -122,6 +122,11 @@ VALID_POSITIONS = ("after", "before", "inside", "replace", "attributes")
 # are operations, not places.
 INSERT_POSITIONS = ("before", "after", "inside")
 
+# Operations that take something out of the view. A replayed one whose node
+# is already gone changes nothing (``apply_operation``): appending a second
+# ``replace`` for a node that is not there would be an invalid view.
+REMOVALS = ("remove_node", "remove_report_element")
+
 # Keys a caller of ``apply_operation`` may find on the operation that no
 # handler reads: what the minting step *expected* to find at the locator, so
 # the owned path can check it is editing the node the user pointed at.
@@ -422,6 +427,9 @@ class CanvasPackageJSON(TypedDict):
     id: int
     name: str
     writable: bool
+    #: Why not, in a sentence; ``""`` when ``writable``
+    #: (``builder_workspace.py:_read_only_reason``).
+    read_only_reason: str
 
 
 class CanvasJSON(TypedDict):
@@ -735,12 +743,22 @@ class BuilderViewEditor(models.AbstractModel):
     @api.model
     def _named_locators(self, node: LxmlElement) -> set[str]:
         """Every ``//tag[@attr='value']`` that ``_locator_for`` could have
-        minted for ``node``."""
+        minted for ``node`` -- and, for a node with no identity of its own,
+        every ``//tag[child[@attr='value']]`` "the one holding" form it falls
+        back to (a report's labelled value, ``//div[span[@t-field=...]]``)."""
         locators: set[str] = set()
         for attr in IDENTIFYING_ATTRS:
             literal = self._xpath_literal(node.get(attr))
             if literal:
                 locators.add("//%s[@%s=%s]" % (node.tag, attr, literal))
+        if not locators:
+            for child in self._specs(node):
+                for attr in IDENTIFYING_ATTRS:
+                    literal = self._xpath_literal(child.get(attr))
+                    if literal:
+                        locators.add(
+                            "//%s[%s[@%s=%s]]" % (node.tag, child.tag, attr, literal)
+                        )
         return locators
 
     @api.model
@@ -1101,7 +1119,7 @@ class BuilderViewEditor(models.AbstractModel):
             # nothing comes later: see `_tree_at`.
             tree, later = self._tree_at(base_view, target)
             if (
-                operation.get("type") == "remove_node"
+                operation.get("type") in REMOVALS
                 and not later
                 and self._resolve_xpath(tree, cast("str", operation["xpath"])) == []
             ):

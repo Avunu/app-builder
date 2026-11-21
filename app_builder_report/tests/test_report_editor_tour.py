@@ -17,6 +17,7 @@ from odoo.tests import tagged
 from odoo.addons.app_builder_base.models.builder_package import BuilderPackage
 from odoo.addons.app_builder_base.tests.common import BuilderHttpCase
 from odoo.addons.app_builder_base.tools import typed
+from odoo.addons.app_builder_view.models.builder_view_edit import BuilderViewEdit
 from odoo.addons.base.models.ir_actions_report import IrActionsReport
 from odoo.addons.base.models.ir_ui_view import View
 
@@ -138,3 +139,14 @@ class TestReportEditorTour(BuilderHttpCase):
             "".join(package._render_files().values()),
             "and it reached the source file, not just the database",
         )
+        # The tour removed the value with its label and undid that: the
+        # removal is in the history, as one edit, undone.
+        removed = typed.model(self.env, BuilderViewEdit).search(
+            [
+                ("base_view_id", "=", made["view_id"]),
+                ("summary", "=like", "removed %"),
+            ]
+        )
+        self.assertEqual(len(removed), 1)
+        self.assertIn("doc.x_budget", cast("str", removed.summary))
+        self.assertTrue(removed.undone)

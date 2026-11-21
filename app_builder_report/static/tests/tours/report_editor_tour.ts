@@ -110,5 +110,32 @@ registry.category("web_tour.tours").add("app_builder_report_editor_tour", {
       content: "clicking it selects it rather than doing nothing",
       trigger: ".o_builder_report_tools:contains('doc.x_budget')",
     },
+    {
+      // A labelled value is one unit: what is offered takes the label too,
+      // so nothing is left printing "Budget" beside nothing.
+      content: "remove the value, with its label",
+      trigger:
+        ".o_builder_report_remove button[name='remove_report_labelled']:not(:disabled)",
+      run: "click",
+    },
+    {
+      content: "the value and its label are gone from the document",
+      trigger:
+        ".o_builder_report_preview iframe.o_builder_report_frame[data-ready]:iframe body:contains('Job Sheet'):not(:contains('Budget')):not(:has([data-oe-expression='doc.x_budget']))",
+    },
+    {
+      content: "and the selection went with them",
+      trigger: ".o_builder_report_tools:not(:has(.o_builder_report_remove))",
+    },
+    {
+      content: "the removal is one edit, so Undo puts it back",
+      trigger: ".o_builder_top_bar .o_builder_undo:not(:disabled)",
+      run: "click",
+    },
+    {
+      content: "the value is back, label and all",
+      trigger:
+        ".o_builder_report_preview iframe.o_builder_report_frame[data-ready]:iframe body:contains('Budget'):has([data-oe-expression='doc.x_budget'])",
+    },
   ],
 });
