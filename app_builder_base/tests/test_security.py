@@ -257,14 +257,16 @@ class TestCodeWriteSwitch(BuilderCase):
         self._switch(None)
         package.invalidate_recordset(["writable"])
         Fields = typed.model(self.env, IrModelFields)
-        for name, who in (
-            ("x_sec_plain_root", Fields),
-            ("x_sec_plain_admin", Fields.with_user(admin)),
+        # Distinct labels: two fields sharing one make Odoo log a warning, which
+        # fails the gate's checklog.
+        for name, label, who in (
+            ("x_sec_plain_root", "Plain (root)", Fields),
+            ("x_sec_plain_admin", "Plain (admin)", Fields.with_user(admin)),
         ):
             with self.subTest(name=name):
                 vals: dict[str, object] = {
                     "name": name,
-                    "field_description": "Plain",
+                    "field_description": label,
                     "ttype": "char",
                     "model_id": model.id,
                 }
