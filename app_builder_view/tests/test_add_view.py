@@ -156,6 +156,12 @@ class TestAddView(BuilderCase):
         self.package.builder_capture(action)
         self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
         view_mode = cast("str", action.view_mode)
+        if "builder_package_id" not in action._fields:
+            # A window action carries an owner only once app_builder_ui is
+            # installed; without it no action is the package's, so none is
+            # changed -- not even one the package captured.
+            self.assertEqual(view_mode, "list,form")
+            return
         self.assertIn("kanban", view_mode)
         self.assertLess(
             view_mode.index("kanban"),

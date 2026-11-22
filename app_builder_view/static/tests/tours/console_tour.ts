@@ -274,9 +274,11 @@ registry.category("web_tour.tours").add("app_builder_console_form_tour", {
       run: "click",
     },
     {
+      // Base's own `<field name="company_id" invisible="1"/>` on the tab
+      // that is open: hidden by a literal, whatever else is installed.
       content: "a field the view hides is now on the canvas, marked",
       trigger:
-        ".o_builder_canvas .o_field_widget[name='is_blacklisted'].o_builder_invisible",
+        ".o_builder_canvas .o_notebook .tab-pane.active .o_field_widget[name='company_id'].o_builder_invisible",
     },
     {
       content: "the notebook is still on the tab that was open",
@@ -288,9 +290,11 @@ registry.category("web_tour.tours").add("app_builder_console_form_tour", {
       run: "click",
     },
     {
+      // Only the revealed one carries the mark: base also has a visible
+      // `company_id` here for multi-company users, which must not count.
       content: "the hidden field is gone again",
       trigger:
-        ".o_builder_canvas .o_form_view:not(:has(.o_field_widget[name='is_blacklisted']))",
+        ".o_builder_canvas .o_form_view:not(:has(.o_field_widget[name='company_id'].o_builder_invisible))",
     },
     {
       content: "close the console",
