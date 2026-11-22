@@ -140,7 +140,14 @@ class TestConsoleTour(BuilderHttpCase):
         self.env["ir.model.fields"].create(field_vals)  # pyright: ignore[reportArgumentType]
         # With a job position, so that field is rendered rather than folded
         # away as empty, and its generated label has a widget beside it.
-        partner_vals = {"name": "Tour Subject", "function": "Tour Tester"}
+        # With a company too: base's form hides `company_id` with a literal
+        # `invisible="1"`, which is the field the tour reveals -- base's, not
+        # an installed module's, so the tour holds with only this addon.
+        partner_vals = {
+            "name": "Tour Subject",
+            "function": "Tour Tester",
+            "company_id": typed.ref(self.env, "base.main_company").id,
+        }
         partner = self.env["res.partner"].create(partner_vals)  # pyright: ignore[reportArgumentType]
         action_vals = {
             "name": "Tour Contact",

@@ -35,6 +35,7 @@ from odoo.addons.base.models.ir_ui_view import View
 from ..models.builder_view_new_field import (
     BuilderViewEditor as BuilderViewEditorNewField,
 )
+from ..tools import canvas_stamp
 from .test_drop_at import _snapshot
 
 if TYPE_CHECKING:
@@ -438,11 +439,19 @@ class TestNewFieldFromTheEditor(BuilderCase):
         canvas = cast("BuilderViewEditorCanvas", self.editor).canvas(
             cast("int", view.id)
         )
-        email = next(t for t, n in canvas["nodes"].items() if n["name"] == "email")
+        # Street, in base's own address block: a div inside the group, so a
+        # field put beside it is one the group draws no label for. Anchored
+        # on base's layout rather than an installed module's, so the test
+        # holds whatever else is installed.
+        before = etree.fromstring(view.get_combined_arch().encode())
+        street_parent = before.find(".//field[@name='street']").getparent()
+        self.assertEqual(street_parent.tag, "div")
+        self.assertFalse(canvas_stamp.draws_label(street_parent))
+        street = next(t for t, n in canvas["nodes"].items() if n["name"] == "street")
         result = cast("BuilderViewEditorBase", self.editor).drop_at(
             cast("int", view.id),
             cast("int", self.package.id),
-            {"token": email, "position": "after"},
+            {"token": street, "position": "after"},
             {
                 "kind": "new_field",
                 "values": {"ttype": "char", "field_description": "Nick"},
@@ -468,11 +477,10 @@ class TestNewFieldFromTheEditor(BuilderCase):
         assert selected["field"] is not None
         self.assertEqual(selected["field"]["origin"], "manual")
         combined = etree.fromstring(view.get_combined_arch().encode())
-        email_node = combined.find(".//field[@name='email']")
-        # Right after Email -- which `mail` keeps in a row div the group
-        # draws no label for, so the new field is given one of its own,
-        # in the same edit.
-        label = email_node.getnext()
+        street_node = combined.find(".//field[@name='street']")
+        # Right after Street -- in a div the group draws no label for, so
+        # the new field is given one of its own, in the same edit.
+        label = street_node.getnext()
         self.assertEqual((label.tag, label.get("for")), ("label", "x_nick"))
         self.assertEqual(label.getnext().get("name"), "x_nick")
         # `None` only on a non-field node or a non-form view (`FieldLabel`'s
