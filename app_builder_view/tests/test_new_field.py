@@ -442,12 +442,28 @@ class TestNewFieldFromTheEditor(BuilderCase):
         # Street, in base's own address block: a div inside the group, so a
         # field put beside it is one the group draws no label for. Anchored
         # on base's layout rather than an installed module's, so the test
-        # holds whatever else is installed.
+        # holds whatever else is installed. The form's own Street, not the
+        # one in the contacts' inline form (base has both): the only one
+        # with no field above it, in the arch and on the canvas alike.
+        own_street = "//field[@name='street'][not(ancestor::field)]"
         before = etree.fromstring(view.get_combined_arch().encode())
-        street_parent = before.find(".//field[@name='street']").getparent()
+        (street_node,) = before.xpath(own_street)
+        street_parent = street_node.getparent()
         self.assertEqual(street_parent.tag, "div")
         self.assertFalse(canvas_stamp.draws_label(street_parent))
-        street = next(t for t, n in canvas["nodes"].items() if n["name"] == "street")
+        nodes = canvas["nodes"]
+
+        def outside_subviews(token: canvas_stamp.Token) -> bool:
+            parent = nodes[token]["parent"]
+            while parent is not None:
+                if nodes[parent]["tag"] == "field":
+                    return False
+                parent = nodes[parent]["parent"]
+            return True
+
+        (street,) = (
+            t for t, n in nodes.items() if n["name"] == "street" and outside_subviews(t)
+        )
         result = cast("BuilderViewEditorBase", self.editor).drop_at(
             cast("int", view.id),
             cast("int", self.package.id),
@@ -477,7 +493,7 @@ class TestNewFieldFromTheEditor(BuilderCase):
         assert selected["field"] is not None
         self.assertEqual(selected["field"]["origin"], "manual")
         combined = etree.fromstring(view.get_combined_arch().encode())
-        street_node = combined.find(".//field[@name='street']")
+        (street_node,) = combined.xpath(own_street)
         # Right after Street -- in a div the group draws no label for, so
         # the new field is given one of its own, in the same edit.
         label = street_node.getnext()

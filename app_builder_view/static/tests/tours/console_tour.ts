@@ -290,9 +290,11 @@ registry.category("web_tour.tours").add("app_builder_console_form_tour", {
       run: "click",
     },
     {
+      // Only the revealed one carries the mark: base also has a visible
+      // `company_id` here for multi-company users, which must not count.
       content: "the hidden field is gone again",
       trigger:
-        ".o_builder_canvas .o_form_view:not(:has(.o_field_widget[name='company_id']))",
+        ".o_builder_canvas .o_form_view:not(:has(.o_field_widget[name='company_id'].o_builder_invisible))",
     },
     {
       content: "close the console",
