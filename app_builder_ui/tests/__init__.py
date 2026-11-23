@@ -8,3 +8,4 @@ from . import test_automations_pane_tour
 from . import test_security_panes_tour
 from . import test_menu_surface
 from . import test_menu_pane_tour
+from . import test_add_view_actions

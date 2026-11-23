@@ -146,34 +146,31 @@ class TestAddView(BuilderCase):
 
     # -- reachability, which is the half that is easy to forget -------------
 
-    def test_the_new_type_is_added_to_our_own_action(self):
+    def test_without_owned_actions_no_action_is_changed(self):
+        """A window action carries an owner only once app_builder_ui is
+        installed; without it no action is the package's, so none is changed
+        -- not even one the package captured. With it, the new type does reach
+        the package's own actions, which app_builder_ui's TestAddViewActions
+        pins."""
+        Action = typed.model(self.env, IrActionsActWindow)
+        if "builder_package_id" in Action._fields:
+            self.skipTest("app_builder_ui owns actions; see its TestAddViewActions")
         action_vals: dict[str, object] = {
             "name": "Ours",
             "res_model": self.demo,
             "view_mode": "list,form",
         }
-        action = typed.model(self.env, IrActionsActWindow).create(action_vals)  # pyright: ignore[reportArgumentType]
+        action = Action.create(action_vals)  # pyright: ignore[reportArgumentType]
         self.package.builder_capture(action)
         self.editor.add_view(self.demo, "kanban", cast("int", self.package.id))
-        view_mode = cast("str", action.view_mode)
-        if "builder_package_id" not in action._fields:
-            # A window action carries an owner only once app_builder_ui is
-            # installed; without it no action is the package's, so none is
-            # changed -- not even one the package captured.
-            self.assertEqual(view_mode, "list,form")
-            return
-        self.assertIn("kanban", view_mode)
-        self.assertLess(
-            view_mode.index("kanban"),
-            view_mode.index("form"),
-            "a form is a detail view and reads last",
-        )
+        self.assertEqual(action.view_mode, "list,form")
 
-    def test_somebody_elses_action_is_left_alone(self):
+    def test_an_unowned_action_is_left_alone(self):
         """The builder's whole premise is that it does not rewrite what it does
-        not own."""
+        not own. An action of another package is app_builder_ui's
+        TestAddViewActions, where actions can have owners."""
         foreign_vals: dict[str, object] = {
-            "name": "Theirs",
+            "name": "Nobody's",
             "res_model": self.demo,
             "view_mode": "list,form",
         }

@@ -44,6 +44,13 @@ EXPECTED: Mapping[str, str] = {
         "is installed"
     ),
     "odoo.addons.app_builder_view.tests.test_add_view"
+    ".TestAddView.test_without_owned_actions_no_action_is_changed": (
+        "app_builder_ui is installed, so window actions have owners; the "
+        "behaviour with owners is app_builder_ui's TestAddViewActions. The "
+        "ownerless guard it observes runs only on a database with "
+        "app_builder_view but not app_builder_ui, which CI does not build"
+    ),
+    "odoo.addons.app_builder_view.tests.test_add_view"
     ".TestViewTypeDiscovery.test_a_timeline_reports_what_it_needs": (
         "web_timeline is not a dependency of any addon here"
     ),
